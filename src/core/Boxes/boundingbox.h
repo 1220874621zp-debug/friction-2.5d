@@ -88,6 +88,7 @@ enum class eBoxType {
     custom,
     deprecated0, // sculptPath,
     nullObject,
+    psdImage,
 
     count
 };
@@ -106,6 +107,16 @@ protected:
 public:
     ~BoundingBox();
 
+    // AE-style solo property display (A/P/S/R/T/U shortcuts):
+    // hide every property row except the requested one; restore all
+    // hidden rows when the layer row is collapsed and re-expanded,
+    // or when the same shortcut is pressed again (toggle)
+    void swtSoloHideAllExcept(Property * const keep);
+    void swtRestoreSoloHidden();
+    void swtHideWithoutKeys(); // U key: hide rows with no keyframes
+    Property *swtSoloActiveProp() const { return mSoloActiveProp; }
+    void SWT_contentVisibleChanged(const bool visible) override;
+
     virtual stdsptr<BoxRenderData> createRenderData() = 0;
 
     static BoundingBox *sGetBoxByDocumentId(const int documentId);
@@ -120,6 +131,12 @@ private:
 
     static int sNextWriteId;
     static QList<const BoundingBox*> sBoxesWithWriteIds;
+
+    // property rows hidden by the solo shortcuts, restored when the
+    // layer row is collapsed and re-expanded
+    QList<SingleWidgetTarget*> mSoloHiddenTargets;
+    // property currently shown solo (null = no solo active)
+    Property *mSoloActiveProp = nullptr;
 protected:
     virtual void getMotionBlurProperties(QList<Property*> &list) const;
 
@@ -513,6 +530,9 @@ private:
     BasicTransformAnimator* mParentTransform = nullptr;
 
     QList<Property*> mCanvasProps;
+    // AE-style motion path overlay handler (owned, not in the
+    // property tree so it never gets serialized)
+    qsptr<class MotionPathHandler> mMotionPathHandler;
 
     RenderContainer mDrawRenderContainer;
 };

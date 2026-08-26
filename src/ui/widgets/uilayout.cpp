@@ -229,17 +229,9 @@ UILayout::UILayout(QWidget *parent)
 
 void UILayout::readSettings()
 {
-    bool firstrun = AppSupport::getSettings(UI_CONF_GROUP, UI_CONF_KEY_MAIN).isNull();
-    restoreState(AppSupport::getSettings(UI_CONF_GROUP, UI_CONF_KEY_MAIN).toByteArray());
-    mLeft->restoreState(AppSupport::getSettings(UI_CONF_GROUP, UI_CONF_KEY_LEFT).toByteArray());
-    mMiddle->restoreState(AppSupport::getSettings(UI_CONF_GROUP, UI_CONF_KEY_MIDDLE).toByteArray());
-    mRight->restoreState(AppSupport::getSettings(UI_CONF_GROUP, UI_CONF_KEY_RIGHT).toByteArray());
-    mTop->restoreState(AppSupport::getSettings(UI_CONF_GROUP, UI_CONF_KEY_TOP).toByteArray());
-    mBottom->restoreState(AppSupport::getSettings(UI_CONF_GROUP, UI_CONF_KEY_BOTTOM).toByteArray());
-
-    if (firstrun) {
-        setSizes({300, 1024, 300});
-    }
+    // Always use the default layout (saved splitter states are ignored),
+    // so the user interface is identical on every startup.
+    setSizes({300, 1024, 300});
 }
 
 void UILayout::writeSettings()
@@ -261,14 +253,8 @@ void UILayout::addDocks(std::vector<Item> items)
     for (auto item : items) {
         if (!item.widget) { continue; }
         qDebug() << "==> setup new dock" << item.label;
-        QString keyPos = QString(UI_CONF_KEY_POS).arg(AppSupport::filterTextAZW(item.label));
-        QString keyIndex = QString(UI_CONF_KEY_INDEX).arg(AppSupport::filterTextAZW(item.label));
-
-        const auto confIndex = AppSupport::getSettings(UI_CONF_GROUP, keyIndex);
-        if (confIndex.isValid()) { item.index = confIndex.toInt(); }
-
-        const auto confPos = AppSupport::getSettings(UI_CONF_GROUP, keyPos);
-        if (confPos.isValid()) { item.pos = confPos.toInt(); }
+        // Saved dock positions/indexes are ignored:
+        // the default layout is always used.
 
         switch (item.pos) {
         case UIDock::Position::Left:

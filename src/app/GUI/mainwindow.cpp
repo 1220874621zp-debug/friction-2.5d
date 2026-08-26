@@ -41,10 +41,34 @@
 #include <iostream>
 #include <QClipboard>
 #include <QMimeData>
+#include <QPlainTextEdit>
+#include <QDialog>
+#include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QDateTime>
+#include <QMutex>
+#include <QMutexLocker>
+#include <QScrollBar>
+#include <QMenu>
+#include <QMouseEvent>
+#include <QLabel>
+#include <QLineEdit>
+#include <QTextEdit>
+#include <QKeySequence>
+#include <QTabBar>
+#include <QGroupBox>
+#include <QTimer>
+#include <QStandardPaths>
+#include <QTextStream>
+#include <QInputDialog>
 
 #include "dialogs/applyexpressiondialog.h"
 #include "dialogs/markereditordialog.h"
 #include "timelinedockwidget.h"
+#include "easingpresetspanel.h"
+#include "scriptmanager.h"
+#include "scriptconsole.h"
+#include "GUI/keysview.h"
 #include "canvaswindow.h"
 #include "GUI/BoxesList/boxscrollwidget.h"
 #include "clipboardcontainer.h"
@@ -80,6 +104,198 @@ using namespace Friction;
 
 MainWindow *MainWindow::sInstance = nullptr;
 
+namespace {
+// In-memory debug log buffer, filled by the Qt message handler and by
+// the user-action logger below. Bounded so it can never grow without limit.
+QMutex gDebugLogMutex;
+QStringList gDebugLogLines;
+const int gDebugLogMaxLines = 3000;
+QtMessageHandler gDefaultMessageHandler = nullptr;
+
+// Mirror of the in-memory log kept on disk, so the log can still be
+// inspected with an external editor if the UI freezes or crashes.
+class DebugLogFile {
+public:
+    DebugLogFile() {
+        mPath = QStandardPaths::writableLocation(QStandardPaths::TempLocation)
+                + QStringLiteral("/friction_debug.log");
+        mFile.setFileName(mPath);
+        if (mFile.open(QIODevice::WriteOnly | QIODevice::Text
+                       | QIODevice::Truncate)) {
+            mStream.setDevice(&mFile);
+            mStream.setCodec("UTF-8");
+        }
+    }
+    void append(const QString &line) {
+        if (!mStream.device()) { return; }
+        mStream << line << "\n";
+        mStream.flush();
+    }
+    const QString &path() const { return mPath; }
+private:
+    QFile mFile;
+    QTextStream mStream;
+    QString mPath;
+};
+Q_GLOBAL_STATIC(DebugLogFile, gDebugLogFile)
+
+void debugLogAppendLine(const QString &typeName,
+                        const QString &msg,
+                        const QString &suffix = QString())
+{
+    QString line = QStringLiteral("[%1] %2: %3")
+            .arg(QDateTime::currentDateTime().toString(QStringLiteral("hh:mm:ss.zzz")),
+                 typeName, msg);
+    if (!suffix.isEmpty()) { line += suffix; }
+    {
+        // the file append must be inside the same mutex: concurrent
+        // writes from multiple threads would corrupt the shared
+        // QTextStream and can deadlock the emitting thread
+        QMutexLocker lock(&gDebugLogMutex);
+        gDebugLogLines.append(line);
+        while (gDebugLogLines.size() > gDebugLogMaxLines) {
+            gDebugLogLines.removeFirst();
+        }
+        if (gDebugLogFile) { gDebugLogFile->append(line); }
+    }
+}
+
+void debugLogMessageHandler(const QtMsgType type,
+                            const QMessageLogContext &context,
+                            const QString &msg)
+{
+    QString typeName;
+    switch (type) {
+        case QtDebugMsg:    typeName = QStringLiteral("DEBUG"); break;
+        case QtWarningMsg:  typeName = QStringLiteral("WARN");  break;
+        case QtCriticalMsg: typeName = QStringLiteral("CRIT");  break;
+        case QtFatalMsg:    typeName = QStringLiteral("FATAL"); break;
+        case QtInfoMsg:     typeName = QStringLiteral("INFO");  break;
+    }
+    QString suffix;
+    if (context.file) {
+        suffix = QStringLiteral(" (%1:%2)")
+                .arg(QString::fromLatin1(context.file))
+                .arg(context.line);
+    }
+    debugLogAppendLine(typeName, msg, suffix);
+    if (gDefaultMessageHandler) {
+        gDefaultMessageHandler(type, context, msg);
+    }
+}
+
+// --- user action logging ----------------------------------------------
+
+QString debugLogClip(const QString &s,
+                     const int maxLen = 40)
+{
+    const auto t = s.simplified();
+    return t.size() > maxLen ? t.left(maxLen) + QStringLiteral("...") : t;
+}
+
+QString debugLogDescribeWidget(const QWidget *w)
+{
+    QString desc = QString::fromLatin1(w->metaObject()->className());
+    QString label;
+    const auto btn = qobject_cast<const QAbstractButton*>(w);
+    const auto lbl = qobject_cast<const QLabel*>(w);
+    const auto gb = qobject_cast<const QGroupBox*>(w);
+    const auto tab = qobject_cast<const QTabBar*>(w);
+    if (btn) { label = btn->text(); }
+    else if (lbl) { label = lbl->text(); }
+    else if (gb) { label = gb->title(); }
+    else if (tab) {
+        label = tab->tabText(tab->tabAt(tab->mapFromGlobal(QCursor::pos())));
+    }
+    if (label.simplified().isEmpty()) { label = w->objectName(); }
+    if (!label.simplified().isEmpty()) {
+        desc += QStringLiteral(" \"%1\"").arg(debugLogClip(label));
+    }
+    const auto win = w->window();
+    if (win && win != w) {
+        const auto wt = win->windowTitle().simplified();
+        if (!wt.isEmpty()) {
+            desc += QStringLiteral(" @ %1").arg(debugLogClip(wt, 30));
+        } else if (!win->objectName().isEmpty()) {
+            desc += QStringLiteral(" @ %1").arg(debugLogClip(win->objectName(), 30));
+        }
+    }
+    return desc;
+}
+
+bool debugLogIsTextEntry(const QWidget *w)
+{
+    return qobject_cast<const QLineEdit*>(w)
+        || qobject_cast<const QTextEdit*>(w)
+        || qobject_cast<const QPlainTextEdit*>(w);
+}
+
+bool debugLogIsModifierKey(const int key)
+{
+    switch (key) {
+        case Qt::Key_Shift: case Qt::Key_Control: case Qt::Key_Meta:
+        case Qt::Key_Alt: case Qt::Key_AltGr: case Qt::Key_CapsLock:
+        case Qt::Key_NumLock: case Qt::Key_ScrollLock:
+            return true;
+        default:
+            return false;
+    }
+}
+
+// Records every user interaction (mouse clicks, menu items, key presses)
+// into the debug log buffer.
+class DebugEventLogger : public QObject {
+public:
+    using QObject::QObject;
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        const auto type = event->type();
+        if (type == QEvent::MouseButtonPress) {
+            const auto w = qobject_cast<QWidget*>(watched);
+            // QMenu clicks are logged via MouseButtonRelease + actionAt
+            if (w && !qobject_cast<QMenu*>(w)) {
+                debugLogAppendLine(QStringLiteral("USER"),
+                    QStringLiteral("%1 %2").arg(
+                        QStringLiteral("\u70B9\u51FB"), // click
+                        debugLogDescribeWidget(w)));
+            }
+        } else if (type == QEvent::MouseButtonRelease) {
+            const auto menu = qobject_cast<QMenu*>(watched);
+            if (menu) {
+                const auto me = static_cast<QMouseEvent*>(event);
+                const auto action = menu->actionAt(me->pos());
+                if (action && !action->isSeparator()) {
+                    debugLogAppendLine(QStringLiteral("USER"),
+                        QStringLiteral("%1 \"%2\" @ %3").arg(
+                            QStringLiteral("\u83DC\u5355"), // menu
+                            debugLogClip(action->text()),
+                            debugLogClip(menu->windowTitle().isEmpty()
+                                            ? QString::fromLatin1("MenuBar")
+                                            : menu->windowTitle(), 30)));
+                }
+            }
+        } else if (type == QEvent::KeyPress) {
+            const auto w = qobject_cast<QWidget*>(watched);
+            if (w && !debugLogIsTextEntry(w)) {
+                const auto ke = static_cast<QKeyEvent*>(event);
+                if (!debugLogIsModifierKey(ke->key())) {
+                    const auto keyStr = QKeySequence(ke->key()).toString();
+                    debugLogAppendLine(QStringLiteral("USER"),
+                        QStringLiteral("%1 %2 @ %3").arg(
+                            QStringLiteral("\u6309\u952E"), // key press
+                            keyStr,
+                            QString::fromLatin1(w->metaObject()->className())));
+                }
+            }
+        }
+        return QObject::eventFilter(watched, event);
+    }
+};
+
+DebugEventLogger gDebugEventLogger;
+}
+
 void MainWindow::keyPressEvent(QKeyEvent *event)
 {
     processKeyEvent(event);
@@ -100,7 +316,6 @@ MainWindow::MainWindow(Document& document,
     , mRenderWidget(nullptr)
     , mToolbar(nullptr)
     , mToolBox(nullptr)
-    , mUI(nullptr)
     , mSaveAct(nullptr)
     , mSaveAsAct(nullptr)
     , mSaveBackAct(nullptr)
@@ -181,6 +396,7 @@ MainWindow::MainWindow(Document& document,
     installEventFilter(this);
 
     setupLayout();
+    setupDebugLog();
     readSettings(openProject);
 }
 
@@ -264,7 +480,10 @@ void MainWindow::openTimelineWindow()
         mTimelineWindow->addWidget(mTimeline);
     }
     mTimelineWindowAct->setChecked(true);
-    mUI->setDockVisible(tr("Timeline"), false);
+    if (mTimelineDock) {
+        mTimelineDock->setWidget(nullptr);
+        mTimelineDock->hide();
+    }
     mTimelineWindow->focusWindow();
 }
 
@@ -275,7 +494,12 @@ void MainWindow::closedTimelineWindow()
                             "TimelineWindow",
                             false);
     mTimelineWindowAct->setChecked(false);
-    mUI->addDockWidget(tr("Timeline"), mTimeline);
+    if (mTimelineDock) {
+        mTimelineDock->setWidget(mTimeline);
+        mTimelineDock->show();
+        mTimeline->show();
+        if (mViewTimelineAct) { mViewTimelineAct->setChecked(true); }
+    }
 }
 
 void MainWindow::openRenderQueueWindow()
@@ -352,6 +576,145 @@ void MainWindow::askRunQuickSetup()
                                               tr("Are you sure you want to run Quick Setup the next time you start Friction?"));
     if (result != QMessageBox::Yes) { return; }
     AppSupport::setSettings("settings", "firstRun", true);
+}
+
+void MainWindow::installDebugLogHandler()
+{
+    // Installed as early as possible from main() so that startup
+    // debug output is captured as well.
+    if (gDefaultMessageHandler) { return; }
+    gDefaultMessageHandler = qInstallMessageHandler(debugLogMessageHandler);
+}
+
+void MainWindow::setupDebugLog()
+{
+    // record every user interaction (clicks, menu items, key presses)
+    qApp->installEventFilter(&gDebugEventLogger);
+
+    // Floating debug log button in the bottom-left corner
+    mDebugLogButton = new QPushButton(QString(QChar(0x2315)), this);
+    mDebugLogButton->setObjectName("DebugLogButton");
+    mDebugLogButton->setFixedSize(30, 30);
+    mDebugLogButton->setToolTip(QStringLiteral("\u8C03\u8BD5\u65E5\u5FD7"));
+    mDebugLogButton->setCursor(Qt::PointingHandCursor);
+    mDebugLogButton->setFocusPolicy(Qt::NoFocus);
+    mDebugLogButton->setFlat(true);
+    connect(mDebugLogButton, &QPushButton::clicked,
+            this, &MainWindow::openDebugLogDialog);
+    updateDebugLogButtonPos();
+}
+
+void MainWindow::updateDebugLogButtonPos()
+{
+    if (!mDebugLogButton) { return; }
+    // anchor to the window bottom-left corner (above the status bar)
+    int bottomOffset = 8;
+    if (statusBar() && statusBar()->isVisible()) {
+        bottomOffset += statusBar()->height();
+    }
+    mDebugLogButton->move(8,
+                          height() - mDebugLogButton->height() - bottomOffset);
+    mDebugLogButton->raise();
+}
+
+void MainWindow::openDebugLogDialog()
+{
+    // Non-modal dialog: importing or rendering keeps running while the
+    // log is open, so the user can always copy its contents.
+    if (!mDebugLogDialog) {
+        mDebugLogDialog = new QDialog(this);
+        mDebugLogDialog->setWindowTitle(QStringLiteral("\u8C03\u8BD5\u65E5\u5FD7"));
+        mDebugLogDialog->resize(560, 440);
+        mDebugLogDialog->setSizeGripEnabled(true);
+
+        const auto layout = new QVBoxLayout(mDebugLogDialog);
+
+        const auto pathLabel = new QLabel(mDebugLogDialog);
+        pathLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        pathLabel->setText(QStringLiteral("\u65E5\u5FD7\u6587\u4EF6: %1")
+                           .arg(gDebugLogFile ? gDebugLogFile->path()
+                                              : QStringLiteral("-")));
+        pathLabel->setToolTip(QStringLiteral("\u5373\u4F7F\u7A97\u53E3\u5361\u6B7B\uFF0C"
+                                             "\u4E5F\u53EF\u7528\u8BB0\u4E8B\u672C\u6253"
+                                             "\u5F00\u6B64\u6587\u4EF6\u67E5\u770B\u65E5\u5FD7"));
+
+        mDebugLogView = new QPlainTextEdit(mDebugLogDialog);
+        mDebugLogView->setReadOnly(true);
+        mDebugLogView->setLineWrapMode(QPlainTextEdit::NoWrap);
+
+        const auto btnLayout = new QHBoxLayout();
+        const auto copyBtn = new QPushButton(QStringLiteral("\u590D\u5236\u65E5\u5FD7"), mDebugLogDialog);
+        const auto clearBtn = new QPushButton(QStringLiteral("\u6E05\u9664\u65E5\u5FD7"), mDebugLogDialog);
+        const auto closeBtn = new QPushButton(QStringLiteral("\u5173\u95ED"), mDebugLogDialog);
+
+        const auto viewPtr = mDebugLogView;
+        connect(copyBtn, &QPushButton::clicked, copyBtn, [copyBtn, viewPtr]() {
+            QApplication::clipboard()->setText(viewPtr->toPlainText());
+            const auto oldText = copyBtn->text();
+            copyBtn->setText(QStringLiteral("\u5DF2\u590D\u5236"));
+            QTimer::singleShot(1500, copyBtn, [copyBtn, oldText]() {
+                copyBtn->setText(oldText);
+            });
+        });
+        connect(clearBtn, &QPushButton::clicked, this, [this, viewPtr]() {
+            {
+                QMutexLocker lock(&gDebugLogMutex);
+                gDebugLogLines.clear();
+            }
+            mDebugLogShownLines = 0;
+            viewPtr->clear();
+        });
+        connect(closeBtn, &QPushButton::clicked,
+                mDebugLogDialog, &QDialog::close);
+
+        btnLayout->addWidget(copyBtn);
+        btnLayout->addWidget(clearBtn);
+        btnLayout->addStretch();
+        btnLayout->addWidget(closeBtn);
+
+        layout->addWidget(pathLabel);
+        layout->addWidget(mDebugLogView);
+        layout->addLayout(btnLayout);
+
+        mDebugLogTimer = new QTimer(this);
+        connect(mDebugLogTimer, &QTimer::timeout,
+                this, &MainWindow::refreshDebugLogView);
+        connect(mDebugLogDialog, &QDialog::finished, this, [this]() {
+            if (mDebugLogTimer) { mDebugLogTimer->stop(); }
+        });
+    }
+
+    // full reload on (re)open
+    mDebugLogShownLines = 0;
+    mDebugLogView->clear();
+    refreshDebugLogView();
+    mDebugLogDialog->show();
+    mDebugLogDialog->raise();
+    mDebugLogDialog->activateWindow();
+    mDebugLogTimer->start(400);
+}
+
+void MainWindow::refreshDebugLogView()
+{
+    if (!mDebugLogView) { return; }
+    QStringList newLines;
+    {
+        QMutexLocker lock(&gDebugLogMutex);
+        // buffer was trimmed (or cleared), rebuild from scratch
+        if (gDebugLogLines.size() < mDebugLogShownLines) {
+            mDebugLogShownLines = 0;
+            mDebugLogView->clear();
+        }
+        if (mDebugLogShownLines < gDebugLogLines.size()) {
+            newLines = gDebugLogLines.mid(mDebugLogShownLines);
+            mDebugLogShownLines = gDebugLogLines.size();
+        }
+    }
+    if (newLines.isEmpty()) { return; }
+    const auto bar = mDebugLogView->verticalScrollBar();
+    const bool atBottom = bar->value() >= bar->maximum() - 4;
+    mDebugLogView->appendPlainText(newLines.join(QStringLiteral("\n")));
+    if (atBottom) { bar->setValue(bar->maximum()); }
 }
 
 void MainWindow::openWelcomeDialog()
@@ -520,6 +883,7 @@ void MainWindow::setupImporters()
     ImportHandler::sInstance->addImporter<evImporter>();
 
     ImportHandler::sInstance->addImporter<eSvgImporter>();
+    ImportHandler::sInstance->addImporter<ePsdImporter>();
     //ImportHandler::sInstance->addImporter<eOraImporter>();
 }
 
@@ -746,13 +1110,62 @@ bool MainWindow::processBoxesListKeyEvent(QKeyEvent *event)
 }
 #endif
 
+static QString workspaceStateKey(const QString &name)
+{
+    // base64url keeps the settings key ASCII-safe for any (also CJK) name
+    return QStringLiteral("state_") +
+           QString::fromLatin1(name.toUtf8().toBase64(
+                                   QByteArray::Base64UrlEncoding |
+                                   QByteArray::OmitTrailingEquals));
+}
+
 void MainWindow::readSettings(const QString &openProject)
 {
-    mUI->readSettings();
-    restoreState(AppSupport::getSettings("ui",
-                                         "state").toByteArray());
     restoreGeometry(AppSupport::getSettings("ui",
                                             "geometry").toByteArray());
+
+    // Restore the last used panel layout (docks/toolbars). When the user
+    // asked to restore the default UI, the saved state was cleared and
+    // the factory layout is used instead. The state version guards
+    // against restoring layouts saved by an incompatible panel system.
+    const int stateVersion = AppSupport::getSettings("ui",
+                                                     "stateVersion",
+                                                     1).toInt();
+    qWarning() << "WORKSPACE: stateVersion" << stateVersion
+               << "restoreDefaultUi" << eSettings::instance().fRestoreDefaultUi;
+    if (!eSettings::instance().fRestoreDefaultUi && stateVersion == 2) {
+        // A custom workspace that the user applied/saved takes priority
+        // over the ad-hoc last session layout, so it is re-applied on
+        // every startup.
+        const QString activeWorkspace = AppSupport::getSettings("workspaces",
+                                                                 "active").toString();
+        QByteArray stateToRestore;
+        if (!activeWorkspace.isEmpty()) {
+            stateToRestore = AppSupport::getSettings("workspaces",
+                                                     workspaceStateKey(activeWorkspace)).toByteArray();
+        }
+        qWarning() << "WORKSPACE: active" << activeWorkspace
+                   << "state bytes" << stateToRestore.size();
+        if (stateToRestore.isEmpty()) {
+            stateToRestore = AppSupport::getSettings("ui",
+                                                     "state").toByteArray();
+            qWarning() << "WORKSPACE: fallback to ui/state bytes"
+                       << stateToRestore.size();
+        }
+        if (!stateToRestore.isEmpty()) {
+            // Do NOT call restoreState() here: the window is not shown
+            // yet and its final size arrives asynchronously (maximize),
+            // so the dock layout would be clamped to the dock minimums
+            // and the saved dock sizes lost. The state is applied by
+            // applyPendingStateRestore() once the window geometry is
+            // stable (debounced in showEvent/resizeEvent).
+            mPendingStateRestore = stateToRestore;
+            qWarning() << "WORKSPACE: state restore deferred until shown,"
+                       << stateToRestore.size() << "bytes";
+        } else {
+            qWarning() << "WORKSPACE: no state to restore, using default layout";
+        }
+    }
 
     bool isMax = AppSupport::getSettings("ui",
                                          "maximized",
@@ -760,33 +1173,17 @@ void MainWindow::readSettings(const QString &openProject)
     bool isFull = AppSupport::getSettings("ui",
                                           "fullScreen",
                                           false).toBool();
-    bool isTimelineWindow = AppSupport::getSettings("ui",
-                                                    "TimelineWindow",
-                                                    false).toBool();
-    bool isRenderWindow = AppSupport::getSettings("ui",
-                                                  "RenderWindow",
-                                                  false).toBool();
 
-    const bool visibleToolBarMain = AppSupport::getSettings("ui",
-                                                            "ToolBarMainVisible",
-                                                            true).toBool();
-    const bool visibleToolBarColor = AppSupport::getSettings("ui",
-                                                             "ToolBarColorVisible",
-                                                             true).toBool();
+    mToolBarMainAct->setChecked(true);
+    mToolBarColorAct->setChecked(true);
 
-    const bool visibleFillStroke = AppSupport::getSettings("ui",
-                                                           "FillStrokeVisible",
-                                                           true).toBool();
-
-    mToolBarMainAct->setChecked(visibleToolBarMain);
-    mToolBarColorAct->setChecked(visibleToolBarColor);
-    mToolbar->setVisible(visibleToolBarMain);
-    mColorToolBar->setVisible(visibleToolBarColor);
-
-    mViewFillStrokeAct->setChecked(visibleFillStroke);
-    if (!visibleFillStroke) {
-        mUI->setDockVisible("Fill and Stroke", false);
-    }
+    // sync menu actions with the restored dock visibility
+    mViewTimelineAct->blockSignals(true);
+    mViewTimelineAct->setChecked(!mTimelineDock->isHidden());
+    mViewTimelineAct->blockSignals(false);
+    mViewFillStrokeAct->blockSignals(true);
+    mViewFillStrokeAct->setChecked(!mFillStrokeDock->isHidden());
+    mViewFillStrokeAct->blockSignals(false);
 
 #ifdef Q_OS_LINUX
     if (AppSupport::isWayland()) { // Disable fullscreen on wayland
@@ -800,11 +1197,11 @@ void MainWindow::readSettings(const QString &openProject)
     mViewFullScreenAct->blockSignals(false);
 
     mTimelineWindowAct->blockSignals(true);
-    mTimelineWindowAct->setChecked(isTimelineWindow);
+    mTimelineWindowAct->setChecked(false);
     mTimelineWindowAct->blockSignals(false);
 
     mRenderWindowAct->blockSignals(true);
-    mRenderWindowAct->setChecked(isRenderWindow);
+    mRenderWindowAct->setChecked(false);
     mRenderWindowAct->blockSignals(false);
 
     {
@@ -812,9 +1209,6 @@ void MainWindow::readSettings(const QString &openProject)
         const auto toolbar = mToolBox->getToolBar(Ui::ToolBox::Controls);
         if (toolbar) { insertToolBarBreak(toolbar); }
     }
-
-    if (isTimelineWindow) { openTimelineWindow(); }
-    if (isRenderWindow) { openRenderQueueWindow(); }
 
     if (isFull) { showFullScreen(); }
     else if (isMax) { showMaximized(); }
@@ -831,15 +1225,17 @@ void MainWindow::readSettings(const QString &openProject)
 
 void MainWindow::writeSettings()
 {
-    mUI->writeSettings();
-
     if (eSettings::instance().fRestoreDefaultUi) {
         AppSupport::clearSettings("ui");
+        // also drop the auto-applied workspace so the default UI sticks
+        AppSupport::setSettings("workspaces", "active", QVariant());
     } else {
-        AppSupport::setSettings("ui", "state", saveState());
         AppSupport::setSettings("ui", "geometry", saveGeometry());
         AppSupport::setSettings("ui", "maximized", isMaximized());
         AppSupport::setSettings("ui", "fullScreen", isFullScreen());
+        // persist the current panel layout so it is restored on startup
+        AppSupport::setSettings("ui", "state", saveState());
+        AppSupport::setSettings("ui", "stateVersion", 2);
     }
 
     AppSupport::setSettings("FillStroke", "LastStrokeColor",
@@ -858,6 +1254,132 @@ void MainWindow::writeSettings()
 bool MainWindow::isEnabled()
 {
     return !mGrayOutWidget;
+}
+
+QStringList MainWindow::savedWorkspaceNames() const
+{
+    return AppSupport::getSettings("workspaces",
+                                   "names",
+                                   QStringList()).toStringList();
+}
+
+void MainWindow::saveCurrentWorkspaceAs()
+{
+    bool ok = false;
+    const QString name = QInputDialog::getText(this,
+                                               tr("Save Workspace"),
+                                               tr("Workspace name:"),
+                                               QLineEdit::Normal,
+                                               QString(),
+                                               &ok).trimmed();
+    if (!ok || name.isEmpty()) { return; }
+
+    QStringList names = savedWorkspaceNames();
+    if (names.contains(name)) {
+        const auto ret = QMessageBox::question(
+                             this,
+                             tr("Overwrite Workspace"),
+                             tr("Workspace '%1' already exists. "
+                                "Overwrite it?").arg(name));
+        if (ret != QMessageBox::Yes) { return; }
+    } else {
+        names.append(name);
+        AppSupport::setSettings("workspaces", "names", names);
+    }
+    AppSupport::setSettings("workspaces", workspaceStateKey(name), saveState());
+    // the saved workspace becomes the one re-applied on startup
+    AppSupport::setSettings("workspaces", "active", name);
+}
+
+void MainWindow::applyWorkspace(const QString &name)
+{
+    const QByteArray state = AppSupport::getSettings("workspaces",
+                                                     workspaceStateKey(name)).toByteArray();
+    if (state.isEmpty()) { return; }
+    restoreState(state);
+    // remember the applied workspace so it is restored on startup
+    AppSupport::setSettings("workspaces", "active", name);
+}
+
+void MainWindow::deleteWorkspace(const QString &name)
+{
+    QStringList names = savedWorkspaceNames();
+    if (names.removeAll(name) == 0) { return; }
+    AppSupport::setSettings("workspaces", "names", names);
+    // an invalid QVariant removes the key from QSettings
+    AppSupport::setSettings("workspaces", workspaceStateKey(name), QVariant());
+    if (AppSupport::getSettings("workspaces", "active").toString() == name) {
+        AppSupport::setSettings("workspaces", "active", QVariant());
+    }
+}
+
+void MainWindow::applyDefaultWorkspace()
+{
+    // the default layout is not a saved workspace: stop auto-applying
+    // the previous custom workspace on startup
+    AppSupport::setSettings("workspaces", "active", QVariant());
+
+    const QList<QDockWidget*> docks = {mTimelineDock,
+                                       mFillStrokeDock,
+                                       mPropertiesDock,
+                                       mEasingDock};
+    for (const auto dock : docks) {
+        if (!dock) { continue; }
+        dock->setFloating(false);
+        dock->setVisible(true);
+    }
+
+    addDockWidget(Qt::RightDockWidgetArea, mFillStrokeDock);
+    addDockWidget(Qt::RightDockWidgetArea, mPropertiesDock);
+    addDockWidget(Qt::RightDockWidgetArea, mEasingDock);
+    addDockWidget(Qt::BottomDockWidgetArea, mTimelineDock);
+
+    const int w = width();
+    const int h = height();
+    if (w > 0 && h > 0) {
+        resizeDocks({mFillStrokeDock, mPropertiesDock},
+                    {int(w * 0.3), int(w * 0.3)}, Qt::Horizontal);
+        resizeDocks({mFillStrokeDock, mPropertiesDock},
+                    {int(h * 0.3), int(h * 0.35)}, Qt::Vertical);
+        resizeDocks({mTimelineDock}, {int(h * 0.3)}, Qt::Vertical);
+    }
+}
+
+void MainWindow::rebuildWorkspaceMenu()
+{
+    if (!mWorkspaceMenu) { return; }
+    mWorkspaceMenu->clear();
+
+    mWorkspaceMenu->addAction(tr("Reset to Default Layout"),
+                              this, &MainWindow::applyDefaultWorkspace);
+    mWorkspaceMenu->addAction(tr("Save Current Workspace..."),
+                              this, &MainWindow::saveCurrentWorkspaceAs);
+
+    const QStringList names = savedWorkspaceNames();
+    if (!names.isEmpty()) {
+        mWorkspaceMenu->addSeparator();
+        for (const auto &name : names) {
+            mWorkspaceMenu->addAction(name, this, [this, name]() {
+                applyWorkspace(name);
+            });
+        }
+        const auto deleteMenu = mWorkspaceMenu->addMenu(tr("Delete Workspace"));
+        for (const auto &name : names) {
+            deleteMenu->addAction(name, this, [this, name]() {
+                deleteWorkspace(name);
+            });
+        }
+    }
+
+    mWorkspaceMenu->addSeparator();
+    const auto panelsMenu = mWorkspaceMenu->addMenu(tr("Panels"));
+    panelsMenu->addAction(mTimelineDock->toggleViewAction());
+    panelsMenu->addAction(mFillStrokeDock->toggleViewAction());
+    panelsMenu->addAction(mPropertiesDock->toggleViewAction());
+    panelsMenu->addAction(mEasingDock->toggleViewAction());
+    if (mScriptManager && mScriptManager->console()) {
+        panelsMenu->addAction(mScriptManager->console()->toggleViewAction());
+    }
 }
 
 void MainWindow::setupMainWidgets()
@@ -953,13 +1475,16 @@ void MainWindow::setupPropertiesWidgets()
     propertiesLayout->addWidget(alignWidget);
 
     mTabPropertiesIndex = mTabProperties->addTab(propertiesWidget,
-                                                 QIcon::fromTheme("drawPathAutoChecked"),
+                                                 ThemeSupport::themedToolIcon("drawPathAutoChecked",
+                                                                              ThemeSupport::getThemeColorBlue(), 64),
                                                  tr("Properties"));
     mTabAssetsIndex = mTabProperties->addTab(assets,
-                                             QIcon::fromTheme("asset_manager"),
+                                             ThemeSupport::themedToolIcon("asset_manager",
+                                                                          ThemeSupport::getThemeColorGreen(), 64),
                                              tr("Assets"));
     mTabQueueIndex = mTabProperties->addTab(mRenderWidget,
-                                            QIcon::fromTheme("render_animation"),
+                                            ThemeSupport::themedToolIcon("render_animation",
+                                                                         ThemeSupport::getThemeColorRed(), 64),
                                             tr("Queue"));
 
     connect(mObjectSettingsScrollArea->verticalScrollBar(),
@@ -973,38 +1498,85 @@ void MainWindow::setupPropertiesWidgets()
 
 void MainWindow::setupLayout()
 {
-    mUI = new UILayout(this);
-    std::vector<UILayout::Item> docks;
-    docks.push_back({UIDock::Position::Up,
-                     -1,
-                     tr("Viewer"),
-                     mStackWidget,
-                     false,
-                     false,
-                     false});
-    docks.push_back({UIDock::Position::Down,
-                     -1,
-                     tr("Timeline"),
-                     mTimeline,
-                     false,
-                     false,
-                     false});
-    docks.push_back({UIDock::Position::Right,
-                     -1,
-                     tr("Fill and Stroke"),
-                     mFillStrokeSettings,
-                     false,
-                     true,
-                     false});
-    docks.push_back({UIDock::Position::Right,
-                     -1,
-                     tr("Properties"),
-                     mTabProperties,
-                     false,
-                     true,
-                     false});
-    mUI->addDocks(docks);
-    setCentralWidget(mUI);
+    // AE-like panel system: every side panel is a QDockWidget that can be
+    // popped out (floating), re-docked into any area or tabbed with
+    // other panels. The whole layout is serializable with saveState().
+    // The canvas stays the central widget so the dock areas always have
+    // an elastic neighbor and can be resized freely.
+    setDockNestingEnabled(true);
+    setDockOptions(QMainWindow::AnimatedDocks |
+                   QMainWindow::AllowNestedDocks |
+                   QMainWindow::AllowTabbedDocks);
+    setCorner(Qt::BottomLeftCorner, Qt::BottomDockWidgetArea);
+    setCorner(Qt::BottomRightCorner, Qt::BottomDockWidgetArea);
+
+    const auto makeDock = [this](const QString &title,
+                                 const QString &objectName,
+                                 QWidget *widget) {
+        const auto dock = new QDockWidget(title, this);
+        dock->setObjectName(objectName); // required by saveState()
+        dock->setWidget(widget);
+        dock->setFeatures(QDockWidget::DockWidgetClosable |
+                          QDockWidget::DockWidgetMovable |
+                          QDockWidget::DockWidgetFloatable);
+        return dock;
+    };
+
+    mTimelineDock = makeDock(tr("Timeline"), QStringLiteral("dockTimeline"),
+                             mTimeline);
+    mFillStrokeDock = makeDock(tr("Fill and Stroke"), QStringLiteral("dockFillStroke"),
+                               mFillStrokeSettings);
+    mPropertiesDock = makeDock(tr("Properties"), QStringLiteral("dockProperties"),
+                               mTabProperties);
+
+    // easing presets panel (AE-like curve picker)
+    const auto easingPresets = new EasingPresetsWidget(this);
+    easingPresets->setKeysViewGetter([this]() -> KeysView* {
+        if (!mLayoutHandler) { return nullptr; }
+        const auto timeline = mLayoutHandler->timelineLayout()->currentWidget();
+        return timeline ? timeline->findChild<KeysView*>() : nullptr;
+    });
+    mEasingDock = makeDock(tr("Easing Presets"), QStringLiteral("dockEasingPresets"),
+                           easingPresets);
+
+    setCentralWidget(mStackWidget);
+    addDockWidget(Qt::RightDockWidgetArea, mFillStrokeDock);
+    addDockWidget(Qt::RightDockWidgetArea, mPropertiesDock);
+    addDockWidget(Qt::RightDockWidgetArea, mEasingDock);
+    addDockWidget(Qt::BottomDockWidgetArea, mTimelineDock);
+
+    // hidden by default, can be opened from the Panels menu
+    mEasingDock->hide();
+
+    // JS plugin system: Scripts menu + script console dock
+    setupScripting();
+
+    // keep view menu actions in sync when docks are closed directly
+    connect(mTimelineDock, &QDockWidget::visibilityChanged,
+            this, [this](const bool visible) {
+        if (!mViewTimelineAct) { return; }
+        if (mTimelineWindowAct && mTimelineWindowAct->isChecked()) { return; }
+        mViewTimelineAct->blockSignals(true);
+        mViewTimelineAct->setChecked(visible);
+        mViewTimelineAct->blockSignals(false);
+    });
+    connect(mFillStrokeDock, &QDockWidget::visibilityChanged,
+            this, [this](const bool visible) {
+        if (!mViewFillStrokeAct) { return; }
+        mViewFillStrokeAct->blockSignals(true);
+        mViewFillStrokeAct->setChecked(visible);
+        mViewFillStrokeAct->blockSignals(false);
+    });
+}
+
+void MainWindow::setupScripting()
+{
+    // the manager creates the console dock and loads plugins from
+    // the user scripts folder
+    mScriptManager = new ScriptManager(this);
+    mMenuBar->addMenu(mScriptManager->menu());
+    addDockWidget(Qt::BottomDockWidgetArea, mScriptManager->console());
+    mScriptManager->console()->hide();
 }
 
 void MainWindow::clearAll()
@@ -1237,7 +1809,7 @@ void MainWindow::importFile()
 
     const QString title = tr("Import File(s)", "ImportDialog_Title");
     const QString fileType = tr("Files %1", "ImportDialog_FileTypes");
-    const QString fileTypes = "(*.friction *.svg " +
+    const QString fileTypes = "(*.friction *.svg *.psd *.psb " +
             FileExtensions::videoFilters() +
             FileExtensions::imageFilters() +
             FileExtensions::soundFilters() + ")";
@@ -1424,12 +1996,51 @@ void MainWindow::resizeEvent(QResizeEvent* e)
 {
     //if (statusBar()) { statusBar()->setMaximumWidth(width()); }
     QMainWindow::resizeEvent(e);
+    updateDebugLogButtonPos();
+    // restart the debounce timer: apply the saved dock layout only
+    // after the window size has settled
+    armPendingStateRestore();
 }
 
 void MainWindow::showEvent(QShowEvent *e)
 {
     //if (statusBar()) { statusBar()->setMaximumWidth(width()); }
     QMainWindow::showEvent(e);
+    updateDebugLogButtonPos();
+    armPendingStateRestore();
+}
+
+void MainWindow::armPendingStateRestore()
+{
+    if (mPendingStateRestore.isEmpty()) { return; }
+    if (!mStateRestoreTimer) {
+        mStateRestoreTimer = new QTimer(this);
+        mStateRestoreTimer->setSingleShot(true);
+        mStateRestoreTimer->setInterval(60);
+        connect(mStateRestoreTimer, &QTimer::timeout,
+                this, &MainWindow::applyPendingStateRestore);
+    }
+    // debounce: every show/resize restarts the countdown so the state
+    // is restored only once the final window geometry is in place
+    mStateRestoreTimer->start();
+}
+
+void MainWindow::applyPendingStateRestore()
+{
+    if (mPendingStateRestore.isEmpty()) { return; }
+    const QByteArray state = mPendingStateRestore;
+    mPendingStateRestore.clear();
+    const bool restored = restoreState(state);
+    qWarning() << "WORKSPACE: stable-geometry restoreState returned"
+               << restored << "window" << width() << "x" << height();
+
+    // keep view menu actions in sync with the restored docks
+    mViewTimelineAct->blockSignals(true);
+    mViewTimelineAct->setChecked(!mTimelineDock->isHidden());
+    mViewTimelineAct->blockSignals(false);
+    mViewFillStrokeAct->blockSignals(true);
+    mViewFillStrokeAct->setChecked(!mFillStrokeDock->isHidden());
+    mViewFillStrokeAct->blockSignals(false);
 }
 
 void MainWindow::updateRecentMenu()

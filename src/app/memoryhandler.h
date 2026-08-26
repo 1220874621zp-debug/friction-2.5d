@@ -37,6 +37,12 @@ public:
 
     void clearMemory();
 
+    // Pause/resume the periodic automatic memory check. Used to keep
+    // caches alive while a preview is being rendered/played back:
+    // evicting them mid-playback only forces an async reload and the
+    // canvas flickers with blank frames.
+    void setAutoCheckPaused(const bool paused);
+
     static MemoryHandler *sInstance;
     static MemoryState sMemoryState();
 signals:

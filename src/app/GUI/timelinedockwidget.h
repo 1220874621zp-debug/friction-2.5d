@@ -66,10 +66,18 @@ enum class CanvasMode : short;
 
 class TimelineDockWidget : public QWidget
 {
+    Q_OBJECT
 public:
     explicit TimelineDockWidget(Document &document,
                                 LayoutHandler* const layoutH,
                                 MainWindow * const parent);
+
+    // A sane fixed size hint keeps the dock at a reasonable initial
+    // height; the content-driven hint would otherwise claim most of
+    // the window. This does not limit manual resizing (only the
+    // minimum size hint does).
+    QSize sizeHint() const override { return QSize(600, 300); }
+
     bool processKeyPress(QKeyEvent *event);
     void previewFinished();
     void previewBeingPlayed();
@@ -95,7 +103,13 @@ private:
     void interruptPreview();
     void jumpToIntermediateFrame(bool forward);
 
-    void playPreview();
+    // AE-like property reveal shortcuts: expand the matching
+    // property row of every selected layer in the timeline tree
+    void showTransformProperty(const int which); // 0 pivot 1 pos 2 scale 3 rot 4 opacity
+    void showAnimatedProperties();               // U key behavior
+    void setupPropertyShortcuts();
+
+    bool playPreview();
     void renderPreview();
     void pausePreview();
     void resumePreview();

@@ -45,8 +45,8 @@ QrealPointValueDialog::QrealPointValueDialog(QrealPoint *point,
     }
     mValueSpinBox->setRange(-10000, 10000);
 
-    mOkButton = new QPushButton("Ok", this);
-    mCancelButton = new QPushButton("Cancel", this);
+    mOkButton = new QPushButton(tr("Ok"), this);
+    mCancelButton = new QPushButton(tr("Cancel"), this);
     mButtonsLayout = new QHBoxLayout();
     mButtonsLayout->addWidget(mOkButton);
     mButtonsLayout->addWidget(mCancelButton);

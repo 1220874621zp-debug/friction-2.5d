@@ -86,6 +86,10 @@ ContainerBox::ContainerBox(const eBoxType type) :
 
     mFlipBook = enve::make_shared<FlipBookProperty>("flip book");
     ca_addChild(mFlipBook);
+
+    // 2.5D billboard transform is not supported on containers
+    // (children are rendered individually, group 3D would not apply)
+    mTransformAnimator->set3DPropertiesVisible(false);
     mFlipBook->SWT_hide();
 }
 
@@ -974,6 +978,51 @@ void ContainerBox::updateIfUsesProgram(
     BoundingBox::updateIfUsesProgram(program);
 }
 
+// 2.5D depth sorting: when any direct child uses 3D transform,
+// paint order is sorted by Z (bigger Z = farther = painted first)
+static bool boxHas3DAtFrame(BoundingBox * const box, const qreal absFrame) {
+    const auto trans = box->getBoxTransformAnimator();
+    if(!trans) return false;
+    const qreal relFrame = box->prp_absFrameToRelFrameF(absFrame);
+    return trans->has3DTransformAtFrame(relFrame);
+}
+
+static qreal box3DZAtFrame(BoundingBox * const box, const qreal absFrame) {
+    const auto trans = box->getBoxTransformAnimator();
+    if(!trans) return 0.;
+    const qreal relFrame = box->prp_absFrameToRelFrameF(absFrame);
+    return trans->get3DZPosAtFrame(relFrame);
+}
+
+static QList<BoundingBox*> renderSortedBoxes(
+        const QList<BoundingBox*>& boxes,
+        const iValueRange& minMax, const qreal absFrame) {
+    QList<BoundingBox*> result;
+    if(minMax.fMin < 0 || minMax.fMax >= boxes.count()) return result;
+    bool any3D = false;
+    for(int i = minMax.fMin; i <= minMax.fMax; i++) {
+        if(boxHas3DAtFrame(boxes.at(i), absFrame)) { any3D = true; break; }
+    }
+    if(!any3D) {
+        for(int i = minMax.fMax; i >= minMax.fMin; i--) {
+            result << boxes.at(i);
+        }
+        return result;
+    }
+    QList<QPair<qreal, BoundingBox*>> items;
+    for(int i = minMax.fMax; i >= minMax.fMin; i--) {
+        auto* const b = boxes.at(i);
+        items << qMakePair(box3DZAtFrame(b, absFrame), b);
+    }
+    std::stable_sort(items.begin(), items.end(),
+                     [](const QPair<qreal, BoundingBox*>& a,
+                        const QPair<qreal, BoundingBox*>& b) {
+        return a.first > b.first; // far first
+    });
+    for(const auto& it : items) result << it.second;
+    return result;
+}
+
 void processChildData(BoundingBox * const child,
                       ContainerBoxRenderData * const parentData,
                       const qreal childRelFrame,
@@ -987,8 +1036,8 @@ void processChildData(BoundingBox * const child,
         const auto childM = childRelM*thisM;
         const auto& descs = childGroup->getContainedBoxes();
         const auto minMax = childGroup->getContainedMinMax();
-        for(int i = minMax.fMax; i >= minMax.fMin; i--) {
-            const auto& desc = descs.at(i);
+        const auto descList = renderSortedBoxes(descs, minMax, absFrame);
+        for(const auto& desc : descList) {
             const qreal descRelFrame = desc->prp_absFrameToRelFrameF(absFrame);
             processChildData(desc, parentData, descRelFrame,
                              childM, absFrame, delayed);
@@ -1025,8 +1074,8 @@ void ContainerBox::processChildrenData(const qreal relFrame,
     const qreal absFrame = prp_relFrameToAbsFrameF(relFrame);
     QList<ChildRenderData> delayed;
     const auto minMax = getContainedMinMax();
-    for(int i = minMax.fMax; i >= minMax.fMin; i--) {
-        const auto& box = mContainedBoxes.at(i);
+    const auto renderList = renderSortedBoxes(mContainedBoxes, minMax, absFrame);
+    for(const auto& box : renderList) {
         const qreal boxRelFrame = box->prp_absFrameToRelFrameF(absFrame);
         processChildData(box, groupData, boxRelFrame,
                          thisM, absFrame, delayed);
@@ -1524,6 +1573,7 @@ void ContainerBox::writeBoxOrSoundXEV(const stdsptr<XevZipFileSaver>& xevFileSav
 #include "customboxcreator.h"
 #include "svglinkbox.h"
 #include "nullobject.h"
+#include "Psd/psdimagebox.h"
 
 qsptr<BoundingBox> createBoxOfNonCustomType(const eBoxType type) {
     switch(type) {
@@ -1557,6 +1607,8 @@ qsptr<BoundingBox> createBoxOfNonCustomType(const eBoxType type) {
             return enve::make_shared<InternalLinkCanvas>(nullptr, false);
         case(eBoxType::nullObject):
             return enve::make_shared<NullObject>();
+        case(eBoxType::psdImage):
+            return enve::make_shared<PsdImageBox>();
         case(eBoxType::deprecated0): break;
         case(eBoxType::canvas) : break;
         case(eBoxType::count) : break;
@@ -1617,12 +1669,17 @@ void ContainerBox::readAllContainedXEV(
             const bool selected = selectedStr == "true";
             const bool visible = visibilityStr == "visible";
 
-            ebs->prp_setName(name);
             ebs->setLocked(locked);
             ebs->setVisible(visible);
             ebs->setSelected(selected);
 
             insertContained(mContained.count(), ebs);
+            // restore the saved name AFTER insertion: insertContained()
+            // runs the name through makeNameUniqueForDescendants() whose
+            // prp_sFixName() strips non-ASCII characters, replacing
+            // e.g. Chinese names with "Object N" (same workaround as
+            // in the PSD importer)
+            ebs->prp_setName(name);
         }
     });
     const QString childPath = path + "objects/%1/";
@@ -1665,11 +1722,19 @@ void ContainerBox::readContained(eReadStream& src) {
     if(isBox) {
         const auto box = readIdCreateBox(src);
         box->readBoundingBox(src);
+        // addContained->insertContained runs the name through
+        // makeNameUniqueForDescendants() whose prp_sFixName() strips
+        // non-ASCII characters, replacing e.g. Chinese names with
+        // "Object N" - restore the original name after insertion
+        const QString name = box->prp_getName();
         addContained(box);
+        box->prp_setName(name);
     } else {
         const auto sound = enve::make_shared<eIndependentSound>();
         sound->prp_readProperty_impl(src);
+        const QString name = sound->prp_getName();
         addContained(sound);
+        sound->prp_setName(name);
     }
     src.readCheckpoint("Error reading contained");
 }

@@ -55,13 +55,13 @@ TimelineSettingsWidget::TimelineSettingsWidget(QWidget *parent) :
     mSelectedKeyframeColor = new ColorAnimatorButton(
                                mSett.fSelectedKeyframeColor);
 
-    add2HWidgets(new QLabel("Object keyframe color"),
+    add2HWidgets(new QLabel(tr("Object keyframe color")),
                  mObjectKeyframeColor);
-    add2HWidgets(new QLabel("Property group keyframe color"),
+    add2HWidgets(new QLabel(tr("Property group keyframe color")),
                  mPropertyGroupKeyframeColor);
-    add2HWidgets(new QLabel("Property keyframe color"),
+    add2HWidgets(new QLabel(tr("Property keyframe color")),
                  mPropertyKeyframeColor);
-    add2HWidgets(new QLabel("Selected keyframe color"),
+    add2HWidgets(new QLabel(tr("Selected keyframe color")),
                  mSelectedKeyframeColor);
 
     /*addSeparator();

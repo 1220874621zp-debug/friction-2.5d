@@ -34,6 +34,7 @@
 
 class GeneralSettingsWidget : public SettingsWidget
 {
+    Q_OBJECT
 public:
     explicit GeneralSettingsWidget(QWidget *parent = nullptr);
     void applySettings();
@@ -46,6 +47,8 @@ private:
 
     QCheckBox *mDefaultInterfaceScaling;
     QSlider *mInterfaceScaling;
+
+    QComboBox *mTheme;
 
     QComboBox *mImportFileDir;
 };

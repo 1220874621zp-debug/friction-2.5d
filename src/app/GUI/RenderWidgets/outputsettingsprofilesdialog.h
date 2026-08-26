@@ -33,6 +33,7 @@
 #include "renderinstancesettings.h"
 class OutputSettingsDisplayWidget;
 class OutputProfilesDialog : public QDialog {
+    Q_OBJECT
 public:
     OutputProfilesDialog(const OutputSettings &currentSettings,
                                  QWidget *parent = nullptr);

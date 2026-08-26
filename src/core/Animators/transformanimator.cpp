@@ -1,4 +1,4 @@
-﻿/*
+/*
 #
 # Friction - https://friction.graphics
 #
@@ -32,6 +32,8 @@
 #include "matrixdecomposition.h"
 #include "svgexporter.h"
 #include "Boxes/boundingbox.h"
+
+#include <QtMath>
 
 BasicTransformAnimator::BasicTransformAnimator() :
     StaticComplexAnimator("transform") {
@@ -351,9 +353,31 @@ AdvancedTransformAnimator::AdvancedTransformAnimator() {
     mOpacityAnimator->setCurrentBaseValue(100);
     mOpacityAnimator->graphFixMinMaxValues();
 
+    // 2.5D billboard plane
+    mRotXAnimator = enve::make_shared<QrealAnimator>("3D rotation X");
+    mRotXAnimator->setCurrentBaseValue(0);
+    mRotXAnimator->setPrefferedValueStep(1);
+
+    mRotYAnimator = enve::make_shared<QrealAnimator>("3D rotation Y");
+    mRotYAnimator->setCurrentBaseValue(0);
+    mRotYAnimator->setPrefferedValueStep(1);
+
+    mZPosAnimator = enve::make_shared<QrealAnimator>("3D position Z");
+    mZPosAnimator->setCurrentBaseValue(0);
+    mZPosAnimator->setPrefferedValueStep(1);
+
+    mPerspectiveAnimator = enve::make_shared<QrealAnimator>("3D perspective");
+    mPerspectiveAnimator->setValueRange(1, 100000);
+    mPerspectiveAnimator->setCurrentBaseValue(800);
+    mPerspectiveAnimator->setPrefferedValueStep(10);
+
     ca_addChild(mShearAnimator);
     ca_addChild(mPivotAnimator);
     ca_addChild(mOpacityAnimator);
+    ca_addChild(mRotXAnimator);
+    ca_addChild(mRotYAnimator);
+    ca_addChild(mZPosAnimator);
+    ca_addChild(mPerspectiveAnimator);
 }
 
 void AdvancedTransformAnimator::resetShear() {
@@ -510,6 +534,104 @@ void AdvancedTransformAnimator::shearRelativeToSavedValue(const qreal shearXBy,
 
 qreal AdvancedTransformAnimator::getOpacity() {
     return mOpacityAnimator->getEffectiveValue();
+}
+
+bool AdvancedTransformAnimator::has3DTransformAtFrame(
+        const qreal relFrame) const {
+    if(!m3DEnabled) return false;
+    if(qAbs(mRotXAnimator->getEffectiveValue(relFrame)) > 0.001) return true;
+    if(qAbs(mRotYAnimator->getEffectiveValue(relFrame)) > 0.001) return true;
+    if(qAbs(mZPosAnimator->getEffectiveValue(relFrame)) > 0.001) return true;
+    return false;
+}
+
+qreal AdvancedTransformAnimator::get3DZPosAtFrame(
+        const qreal relFrame) const {
+    return mZPosAnimator->getEffectiveValue(relFrame);
+}
+
+SkMatrix AdvancedTransformAnimator::get3DTransformAtFrame(
+        const qreal relFrame) const {
+    SkMatrix result;
+    if(!has3DTransformAtFrame(relFrame)) return result;
+
+    const qreal persp = mPerspectiveAnimator->getEffectiveValue(relFrame);
+    const qreal f = persp > 1. ? persp : 800.;
+    const qreal rx = qDegreesToRadians(
+                mRotXAnimator->getEffectiveValue(relFrame));
+    const qreal ry = qDegreesToRadians(
+                mRotYAnimator->getEffectiveValue(relFrame));
+    const qreal zPos = mZPosAnimator->getEffectiveValue(relFrame);
+    const qreal pivotX = mPivotAnimator->getEffectiveXValue(relFrame);
+    const qreal pivotY = mPivotAnimator->getEffectiveYValue(relFrame);
+
+    const qreal cx = std::cos(rx); const qreal sx = std::sin(rx);
+    const qreal cy = std::cos(ry); const qreal sy = std::sin(ry);
+
+    // plane point (x, y, 0) rotated by Rx*Ry, then shifted by zPos:
+    //   vx = cy*x
+    //   vy = sx*sy*x + cx*y
+    //   vz = -cx*sy*x + sx*y + zPos
+    // perspective projection with focal length f:
+    //   x' = f*vx / (f + vz),  y' = f*vy / (f + vz)   (zPos > 0 = farther)
+    // expressed as a 3x3 homography (applied on pivot-centered coords):
+    SkMatrix h;
+    h.setAll(toSkScalar(f*cy),      toSkScalar(0.),        toSkScalar(0.),
+             toSkScalar(f*sx*sy),   toSkScalar(f*cx),      toSkScalar(0.),
+             toSkScalar(-cx*sy),    toSkScalar(sx),        toSkScalar(f + zPos));
+
+    SkMatrix pre;  pre.setTranslate(toSkScalar(-pivotX), toSkScalar(-pivotY));
+    SkMatrix post; post.setTranslate(toSkScalar(pivotX),  toSkScalar(pivotY));
+
+    // point order: translate(-pivot) -> project -> translate(+pivot)
+    // SkMatrix preConcat(m): this = this * m (m applied first)
+    result = post;
+    result.preConcat(h);
+    result.preConcat(pre);
+    return result;
+}
+
+SkMatrix AdvancedTransformAnimator::getTotalTransform3D() const {
+    const qreal relFrame = anim_getCurrentRelFrame();
+    // point order: 3D (around own pivot, layer space) -> rel -> inherited
+    // 3D must run BEFORE the 2D rel transform so the rotation is
+    // centered on the layer's own pivot (AE anchor semantics)
+    SkMatrix result = toSkMatrix(getInheritedTransform());
+    result.preConcat(toSkMatrix(getRelativeTransform()));
+    if(has3DTransformAtFrame(relFrame)) {
+        result.preConcat(get3DTransformAtFrame(relFrame));
+    }
+    return result;
+}
+
+void AdvancedTransformAnimator::reset3D() {
+    mRotXAnimator->prp_startTransform();
+    mRotXAnimator->setCurrentBaseValue(0);
+    mRotXAnimator->prp_finishTransform();
+
+    mRotYAnimator->prp_startTransform();
+    mRotYAnimator->setCurrentBaseValue(0);
+    mRotYAnimator->prp_finishTransform();
+
+    mZPosAnimator->prp_startTransform();
+    mZPosAnimator->setCurrentBaseValue(0);
+    mZPosAnimator->prp_finishTransform();
+}
+
+void AdvancedTransformAnimator::set3DPropertiesVisible(const bool visible) {
+    mRotXAnimator->SWT_setVisible(visible);
+    mRotYAnimator->SWT_setVisible(visible);
+    mZPosAnimator->SWT_setVisible(visible);
+    mPerspectiveAnimator->SWT_setVisible(visible);
+}
+
+void AdvancedTransformAnimator::set3DEnabled(const bool enabled) {
+    if(m3DEnabled == enabled) return;
+    m3DEnabled = enabled;
+    if(!enabled) reset3D();
+    set3DPropertiesVisible(enabled);
+    emit box3DChanged();
+    prp_afterWholeInfluenceRangeChanged();
 }
 
 void AdvancedTransformAnimator::startTransformSkipOpacity() {

@@ -23,6 +23,9 @@
         <file alias="down-arrow.png">pixmaps/down-arrow.png</file>
     </qresource>
     <qresource prefix="/config"/>
+    <qresource prefix="/translations">
+        <file alias="friction_zh_CN.qm">translations/friction_zh_CN.qm</file>
+    </qresource>
     <qresource prefix="/">
         <file>presets/render/008-friction-preset-exr.conf</file>
         <file>presets/render/007-friction-preset-webm.conf</file>

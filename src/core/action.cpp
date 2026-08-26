@@ -47,7 +47,8 @@ void Action::connect(QAction * const action) {
                      action, &QAction::setEnabled);
     QObject::connect(this, &Action::textChanged,
                      action, &QAction::setText);
-    action->setText(text());
+    // keep translated text from the menu action, if any
+    if (action->text().isEmpty()) { action->setText(text()); }
     action->setEnabled(canExecute());
 }
 

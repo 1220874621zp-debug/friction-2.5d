@@ -38,6 +38,7 @@
 
 class UI_EXPORT WelcomeDialog : public QWidget
 {
+    Q_OBJECT
 public:
     WelcomeDialog(QMenu *recentMenu,
                   const std::function<void()> &newFunc,

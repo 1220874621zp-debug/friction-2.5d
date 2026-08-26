@@ -33,6 +33,7 @@
 
 class UI_EXPORT PresetSettingsWidget : public SettingsWidget
 {
+    Q_OBJECT
 public:
     explicit PresetSettingsWidget(QWidget *parent = nullptr);
     void applySettings();

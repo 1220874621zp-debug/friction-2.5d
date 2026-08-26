@@ -35,7 +35,9 @@ PathBoxRenderData::PathBoxRenderData(BoundingBox * const parentBox)
 
 void PathBoxRenderData::setupRenderData()
 {
-    mDirectDraw = (!fForceRasterize && !hasEffects() && fBlendMode == SkBlendMode::kSrcOver);
+    // 2.5D: perspective requires rasterization (direct vector draw is 2D only)
+    mDirectDraw = (!fForceRasterize && !hasEffects() &&
+                   fBlendMode == SkBlendMode::kSrcOver && !fHasPerspective);
     if (mDirectDraw) { setupDirectDraw(); }
 }
 

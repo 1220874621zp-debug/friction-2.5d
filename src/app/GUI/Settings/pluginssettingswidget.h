@@ -32,6 +32,7 @@
 
 class PluginsSettingsWidget : public SettingsWidget
 {
+    Q_OBJECT
 public:
     explicit PluginsSettingsWidget(QWidget *parent = nullptr);
     void applySettings();

@@ -49,6 +49,10 @@ BoxScroller *BoxScrollWidget::getBoxScroller() {
     return static_cast<BoxScroller*>(visPartWidget);
 }
 
+int BoxScrollWidget::swtWidgetId() const {
+    return visiblePartWidget()->getId();
+}
+
 void BoxScrollWidget::setCurrentScene(Canvas * const scene) {
     getBoxScroller()->setCurrentScene(scene);
 }

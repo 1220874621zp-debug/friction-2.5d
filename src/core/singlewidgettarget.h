@@ -57,6 +57,7 @@ class PathBox;
 //class PaintBox;
 class SmartVectorPath;
 class BlendEffectBoxShadow;
+class PsdImageBox;
 // Sound
 class eSound;
 class eIndependentSound;
@@ -130,6 +131,21 @@ public:
     // Sound
     e_DECLARE_TYPE_FUNCTION(eSound)
     e_DECLARE_TYPE_FUNCTION(eIndependentSound)
+
+    // NOTE: keep new virtuals BELOW this line (after all existing
+    // virtuals) so the vtable slot order of pre-existing virtual
+    // functions never changes (modules are built incrementally and
+    // depend on stable slot layout across frictioncore/frictionui)
+    // called when any tree widget expands/collapses this target's
+    // content (the arrow next to the row); used e.g. by BoundingBox
+    // to restore solo-hidden property rows when re-expanded
+    virtual void SWT_contentVisibleChanged(const bool visible) {
+        Q_UNUSED(visible)
+    }
+
+    // new virtuals appended at the end, AFTER all pre-existing ones
+    // (see the vtable slot order note above)
+    e_DECLARE_TYPE_FUNCTION(PsdImageBox)
 
     void SWT_addChild(SingleWidgetTarget * const child);
     void SWT_addChildAt(SingleWidgetTarget * const child, const int id);

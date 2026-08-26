@@ -49,6 +49,7 @@ class BoxScroller;
 class eComboBox;
 
 class BoxSingleWidget : public SingleWidget {
+    Q_OBJECT
 public:
     explicit BoxSingleWidget(BoxScroller * const parent);
 
@@ -72,6 +73,9 @@ public:
     static QPixmap* CG_ICON;
     static QPixmap* GRAPH_PROPERTY_ICON;
     static QPixmap* PROMOTE_TO_LAYER_ICON;
+    static QPixmap* ICON_3D_ON;
+    static QPixmap* ICON_3D_OFF;
+    static QPixmap* ICON_RESET;
 
     static QPixmap* BOX_PATH;
     static QPixmap* BOX_CIRCLE;
@@ -141,6 +145,7 @@ private:
     void switchContentVisibleAction();
     void switchRecordingAction();
     void switchBoxLockedAction();
+    void resetPropertyAction();
 
     void switchBoxVisibleAction();
     void setCompositionMode(const int id);
@@ -164,6 +169,7 @@ private:
     PixmapActionButton *mContentButton;
     PixmapActionButton *mVisibleButton;
     PixmapActionButton *mLockedButton;
+    PixmapActionButton *m3DButton;
     PixmapActionButton *mHwSupportButton;
     ColorAnimatorButton *mColorButton;
     BoxTargetWidget *mBoxTargetWidget;
@@ -173,6 +179,7 @@ private:
     QHBoxLayout *mMainLayout;
     QrealAnimatorValueSlider *mValueSlider;
     QrealAnimatorValueSlider *mSecondValueSlider;
+    PixmapActionButton *mResetButton;
 
     PixmapActionButton *mPromoteToLayerButton;
     eComboBox *mPropertyComboBox;

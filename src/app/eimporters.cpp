@@ -28,6 +28,7 @@
 #include "GUI/mainwindow.h"
 #include "eimporters.h"
 #include "svgimporter.h"
+#include "Psd/psdimporter.h"
 //#include "Ora/oraimporter.h"
 
 qsptr<BoundingBox> eXevImporter::import(const QFileInfo &fileInfo, Canvas * const scene) const {
@@ -48,6 +49,11 @@ qsptr<BoundingBox> eSvgImporter::import(const QFileInfo &fileInfo, Canvas * cons
     };
     return ImportSVG::loadSVGFile(fileInfo.absoluteFilePath(),
                                   gradientCreator);
+}
+
+qsptr<BoundingBox> ePsdImporter::import(const QFileInfo &fileInfo, Canvas * const scene) const {
+    Q_UNUSED(scene);
+    return ImportPSD::loadPSDFile(fileInfo.absoluteFilePath());
 }
 
 /*qsptr<BoundingBox> eOraImporter::import(const QFileInfo &fileInfo, Canvas * const scene) const {

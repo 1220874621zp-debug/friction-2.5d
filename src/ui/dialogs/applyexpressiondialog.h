@@ -37,6 +37,7 @@
 
 class UI_EXPORT ApplyExpressionDialog : public Friction::Ui::Dialog
 {
+    Q_OBJECT
 public:
     ApplyExpressionDialog(QrealAnimator* const target,
                           QWidget * const parent = nullptr);

@@ -48,6 +48,7 @@ class ColorAnimatorButton;
 
 class UI_EXPORT SceneSettingsDialog : public Friction::Ui::Dialog
 {
+    Q_OBJECT
 public:
     SceneSettingsDialog(Canvas * const canvas,
                         QWidget * const parent = nullptr);

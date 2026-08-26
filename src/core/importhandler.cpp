@@ -27,6 +27,8 @@
 
 #include "exceptions.h"
 
+#include <QDebug>
+
 ImportHandler* ImportHandler::sInstance = nullptr;
 
 eImporter::~eImporter() {}
@@ -43,8 +45,10 @@ qsptr<BoundingBox> ImportHandler::import(const QString &path,
         if(!file.exists()) RuntimeThrow("File does not exist");
     }
     const QFileInfo info(path);
+    qWarning() << "IMPORTHANDLER: start" << path << "suffix" << info.suffix();
     for(const auto& importer : mImporters) {
         if(importer->supports(info)) {
+            qWarning() << "IMPORTHANDLER: matched importer";
             try {
                 return importer->import(info, scene);
             } catch(...) {

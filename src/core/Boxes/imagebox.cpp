@@ -40,7 +40,8 @@ ImageFileHandler* imageFileHandlerGetter(const QString& path) {
     return FilesHandler::sInstance->getFileHandler<ImageFileHandler>(path);
 }
 
-ImageBox::ImageBox() : BoundingBox("Image", eBoxType::image),
+ImageBox::ImageBox(const QString &name, const eBoxType type) :
+    BoundingBox(name, type),
     mFileHandler(this,
                  [](const QString& path) {
                      return imageFileHandlerGetter(path);
@@ -51,6 +52,9 @@ ImageBox::ImageBox() : BoundingBox("Image", eBoxType::image),
                  [this](ConnContext& conn, ImageFileHandler* obj) {
                      fileHandlerConnector(conn, obj);
                  }) {
+}
+
+ImageBox::ImageBox() : ImageBox(QStringLiteral("Image"), eBoxType::image) {
 }
 
 ImageBox::ImageBox(const QString &filePath) : ImageBox() {

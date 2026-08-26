@@ -20,6 +20,7 @@
 */
 
 #include "GUI/mainwindow.h"
+#include "GUI/hangwatchdog.h"
 
 #include <iostream>
 #include <QApplication>
@@ -45,6 +46,67 @@
 #endif
 
 #include <QJSEngine>
+#include <QTranslator>
+#include <QLocale>
+#include <QFile>
+#include <QTextStream>
+#include <QProxyStyle>
+#include <QStyleFactory>
+#include <QPainter>
+
+namespace {
+
+// Renders dock title-bar float/close buttons as single text glyphs:
+// U+1F5D7 (overlap) for "pop out / float", U+1F5D9 (cancellation x)
+// for "close". Everything else is forwarded to the base style.
+class DockGlyphStyle : public QProxyStyle
+{
+public:
+    explicit DockGlyphStyle(QStyle *base) : QProxyStyle(base) {}
+
+    QIcon standardIcon(const StandardPixmap standardIcon,
+                       const QStyleOption *option = nullptr,
+                       const QWidget *widget = nullptr) const override
+    {
+        if (standardIcon == SP_TitleBarNormalButton) {
+            return glyphIcon(0x1F5D7, true); // pop out (float)
+        }
+        if (standardIcon == SP_TitleBarCloseButton) {
+            return glyphIcon(0x1F5D9, false); // close
+        }
+        return QProxyStyle::standardIcon(standardIcon, option, widget);
+    }
+
+private:
+    static QIcon glyphIcon(const char32_t cp, const bool isFloat)
+    {
+        // intentionally leaked: avoids static QPixmap teardown issues
+        static QIcon *floatIcon = new QIcon;
+        static QIcon *closeIcon = new QIcon;
+        QIcon *cache = isFloat ? floatIcon : closeIcon;
+        if (!cache->isNull()) { return *cache; }
+
+        const int size = 16;
+        const qreal dpr = qApp ? qApp->devicePixelRatio() : 1.0;
+        QPixmap pm(QSize(size, size) * dpr);
+        pm.setDevicePixelRatio(dpr);
+        pm.fill(Qt::transparent);
+        QPainter p(&pm);
+        p.setRenderHint(QPainter::Antialiasing);
+        p.setRenderHint(QPainter::TextAntialiasing);
+        p.setPen(qApp->palette().color(QPalette::WindowText));
+        QFont f(QStringLiteral("Segoe UI Symbol"));
+        f.setPixelSize(13);
+        p.setFont(f);
+        const QString glyph = QString::fromUcs4(&cp, 1);
+        p.drawText(QRect(0, 0, size, size), Qt::AlignCenter, glyph);
+        p.end();
+        *cache = QIcon(pm);
+        return *cache;
+    }
+};
+
+} // namespace
 
 #define GPU_NOT_COMPATIBLE gPrintException("Your GPU drivers do not seem to be compatible.")
 
@@ -133,6 +195,9 @@ int main(int argc, char *argv[])
 {
     const bool isRenderer = false; // todo
 
+    // capture debug output from the very beginning
+    MainWindow::installDebugLogHandler();
+
     // get early settings
     bool hdpiPassThrough = true;
     earlySettings(argv, &hdpiPassThrough);
@@ -160,6 +225,46 @@ int main(int argc, char *argv[])
     // setup app
     QApplication app(argc, argv);
     setlocale(LC_NUMERIC, "C");
+
+    // load UI theme preference before any theme setup
+    ThemeSupport::setThemeFromId(AppSupport::getSettings("ui",
+                                                         "theme",
+                                                         "friction").toString());
+
+    // freeze watchdog: dumps all thread stacks to
+    // %TEMP%/friction_hang_stack.txt while the UI is frozen.
+    // Must run after QApplication so the heartbeat timer starts.
+    HangWatchdog::start();
+
+    // i18n: load Chinese translation if system locale is Chinese
+    static QTranslator appTranslator;
+    {
+        const auto locale = QLocale::system();
+        const bool isChinese = (locale.language() == QLocale::Chinese);
+        const bool loaded = appTranslator.load(":/translations/friction_zh_CN.qm");
+        if (isChinese && loaded) {
+            QCoreApplication::installTranslator(&appTranslator);
+        }
+        // runtime i18n debug dump
+        {
+            QFile dbg(QCoreApplication::applicationDirPath() + "/i18n_debug.txt");
+            if (dbg.open(QIODevice::WriteOnly | QIODevice::Text)) {
+                QTextStream s(&dbg);
+                s.setCodec("UTF-8");
+                s << "qt: " << qVersion() << "\n";
+                s << "locale: " << locale.name() << " chinese=" << isChinese
+                  << " loaded=" << loaded << "\n";
+                s << "Union+comment: [" << QCoreApplication::translate("MainWindow", "Union", "MenuBar_Path") << "]\n";
+                s << "Union-nocomment: [" << QCoreApplication::translate("MainWindow", "Union") << "]\n";
+                s << "Object+comment: [" << QCoreApplication::translate("MainWindow", "Object", "MenuBar") << "]\n";
+                s << "Object-nocomment: [" << QCoreApplication::translate("MainWindow", "Object") << "]\n";
+                s << "SceneProps: [" << QCoreApplication::translate("SceneSettingsDialog", "Scene Properties") << "]\n";
+                s << "transform: [" << QCoreApplication::translate("BoxSingleWidget", "transform") << "]\n";
+                s << "Loading: [" << QCoreApplication::translate("QObject", "Loading ...") << "]\n";
+                s << "CurrentScene: [" << QCoreApplication::translate("TimelineWidget", "Current Scene") << "]\n";
+            }
+        }
+    }
 
     // first run
     const bool firstRun = AppSupport::getSettings("settings",
@@ -268,6 +373,10 @@ int main(int argc, char *argv[])
     ALPHA_MESH_PIX = &alphaMesh;
 
     ThemeSupport::setupTheme(eSizesUI::widget);
+
+    // dock title-bar buttons use single glyphs (pop out / close)
+    qApp->setStyle(new DockGlyphStyle(
+        QStyleFactory::create(QStringLiteral("fusion"))));
 
     // check permissions
     AppSupport::checkPerms(isRenderer);

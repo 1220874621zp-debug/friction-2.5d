@@ -31,6 +31,9 @@
 #include "appsupport.h"
 #include "filesourcescache.h"
 
+#include <QFile>
+#include <QDebug>
+
 ImageFileDataHandler::ImageFileDataHandler() {}
 
 void ImageFileDataHandler::afterSourceChanged()
@@ -97,8 +100,20 @@ ImageLoader::ImageLoader(const QString &filePath,
 
 void ImageLoader::process()
 {
-    const sk_sp<SkData> data = SkData::MakeFromFileName(mFilePath.toUtf8().data());
-    mImage = SkImage::MakeFromEncoded(data);
+    // SkData::MakeFromFileName uses fopen() with the ANSI code page on
+    // Windows and fails for non-ASCII paths (e.g. Chinese file names).
+    // Load through QFile instead: Qt uses the wide-char WinAPI and
+    // handles Unicode paths correctly.
+    QFile file(mFilePath);
+    if (!file.open(QIODevice::ReadOnly)) {
+        qWarning() << "IMAGE LOAD: open failed" << mFilePath;
+        return;
+    }
+    const QByteArray bytes = file.readAll();
+    mImage = SkImage::MakeFromEncoded(SkData::MakeWithCopy(
+            bytes.constData(), bytes.size()));
+    qWarning() << "IMAGE LOAD: read" << bytes.size() << "bytes from"
+               << mFilePath << "decoded" << (mImage ? "OK" : "NULL");
 }
 
 void ImageLoader::afterProcessing()

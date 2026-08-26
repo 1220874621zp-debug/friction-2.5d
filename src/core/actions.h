@@ -44,6 +44,7 @@ class ContainerBox;
 class ExternalLinkBox;
 
 class CORE_EXPORT Actions : public QObject {
+    Q_OBJECT
 public:
     Actions(Document& document);
 

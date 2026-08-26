@@ -308,8 +308,13 @@ bool Property::prp_sValidateName(const QString &name,
     }
     const int nValid = name.count(QRegExp("[A-Za-z0-9_ ]"));
     if(nValid != name.count()) {
-        *error = "Invalid characters used";
-        return false;
+        // allow unicode letters (e.g. Chinese) on top of ASCII
+        for(const auto& c : name) {
+            if(!c.isLetterOrNumber() && c != '_' && c != ' ') {
+                *error = "Invalid characters used";
+                return false;
+            }
+        }
     }
     return true;
 }

@@ -53,7 +53,11 @@ bool KeysView::graphIsSelected(GraphAnimator * const anim) {
 
 void KeysView::graphEasingAction(const QString &easing)
 {
-    if (mSelectedKeysAnimators.isEmpty()) { return; }
+    if (mSelectedKeysAnimators.isEmpty()) {
+        emit statusMessage(tr("Select at least two keyframes to apply easing"));
+        return;
+    }
+    bool applied = false;
     if (mGraphViewed) {
         for (const auto& anim : mGraphAnimators) {
             const auto segments = anim->anim_getSelectedKeys();
@@ -64,6 +68,7 @@ void KeysView::graphEasingAction(const QString &easing)
                              {firstKey->getRelFrame(),
                               lastKey->getRelFrame()},
                              easing);
+            applied = true;
         }
     } else {
         for (const auto& anim : mSelectedKeysAnimators) {
@@ -75,7 +80,11 @@ void KeysView::graphEasingAction(const QString &easing)
                                  {firstKey->getRelFrame(),
                                   lastKey->getRelFrame()},
                                  easing);
+                applied = true;
         }
+    }
+    if (!applied) {
+        emit statusMessage(tr("Select at least two keyframes to apply easing"));
     }
 }
 

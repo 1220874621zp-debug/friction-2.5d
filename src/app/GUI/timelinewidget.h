@@ -67,6 +67,12 @@ public:
                             QWidget *parent);
 
     ~TimelineWidget();
+
+    // access for property-row reveal shortcuts (A/P/S/R/T/U)
+    class BoxScrollWidget *boxesListWidget() const
+    { return mBoxesListWidget; }
+    class KeysView *keysView() const
+    { return mKeysView; }
     Canvas* getCurrrentScene() const {
         return mCurrentScene;
     }

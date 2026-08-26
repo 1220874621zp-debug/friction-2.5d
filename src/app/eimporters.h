@@ -60,6 +60,17 @@ public:
                               Canvas* const scene) const;
 };
 
+class ePsdImporter : public eImporter {
+public:
+    bool supports(const QFileInfo& fileInfo) const {
+        const auto suffix = fileInfo.suffix().toLower();
+        return (suffix == "psd" || suffix == "psb");
+    }
+
+    qsptr<BoundingBox> import(const QFileInfo& fileInfo,
+                              Canvas* const scene) const;
+};
+
 /*class eOraImporter : public eImporter {
 public:
     bool supports(const QFileInfo& fileInfo) const {

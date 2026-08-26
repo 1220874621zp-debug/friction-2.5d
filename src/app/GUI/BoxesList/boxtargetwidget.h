@@ -33,6 +33,7 @@ class BoxTargetProperty;
 #include "conncontextptr.h"
 
 class BoxTargetWidget : public QWidget {
+    Q_OBJECT
 public:
     explicit BoxTargetWidget(QWidget *parent = nullptr);
 

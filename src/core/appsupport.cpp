@@ -36,6 +36,7 @@
 #include <QSettings>
 #include <QStandardPaths>
 #include <QDir>
+#include <QStorageInfo>
 #include <QMimeDatabase>
 #include <QMimeType>
 #include <QDomDocument>
@@ -47,11 +48,100 @@
 #include <QFontDatabase>
 #include <QDesktopServices>
 #include <QFileDialog>
+#include <QListView>
 #include <QProcess>
 #include <QInputDialog>
 
 #include <iostream>
 #include <ostream>
+
+namespace {
+// A stale "recent import dir" (folder renamed/removed/renamed drive)
+// makes the file dialog open in a broken state where the view can
+// spin fetching a non-existent directory. Resolve the requested path
+// to the nearest existing ancestor directory instead.
+QString existingDirOrAncestor(const QString &path)
+{
+    if (path.isEmpty()) { return QDir::homePath(); }
+    QString cur = QDir::fromNativeSeparators(path);
+    QFileInfo info(cur);
+    if (info.isDir()) { return cur; }
+    // if the path is a file, start from its folder; otherwise walk up
+    cur = info.absolutePath();
+    while (!cur.isEmpty()) {
+        QFileInfo fi(cur);
+        if (fi.isDir()) { return cur; }
+        const QString parent = fi.absolutePath();
+        if (parent == cur) { break; }
+        cur = parent;
+    }
+    return QDir::homePath();
+}
+
+// Save dialogs receive "dir/fileName" and use the name as prefill,
+// so keep the file name and only fix the directory part.
+QString existingPathOrAncestor(const QString &path)
+{
+    if (path.isEmpty()) { return QDir::homePath(); }
+    const QFileInfo info(path);
+    if (info.isDir()) { return path; }
+    const QString dir = existingDirOrAncestor(info.absolutePath());
+    const QString name = info.fileName();
+    if (name.isEmpty()) { return dir; }
+    return dir + QStringLiteral("/") + name;
+}
+
+// The non-native Qt file dialog sidebar is empty on Windows, so the
+// user has no Desktop shortcut. Add the standard user locations.
+// The empty-path QUrl("file:") is special-cased by Qt's sidebar
+// (QUrlModel::setUrl): it gets the "My Computer" label and the
+// computer icon, and clicking it navigates to the drives view.
+QList<QUrl> defaultSidebarUrls()
+{
+    QList<QUrl> urls;
+
+#if defined(Q_OS_WIN)
+    urls << QUrl(QStringLiteral("file:"));
+#endif
+
+    const auto locations = {QStandardPaths::DesktopLocation,
+                            QStandardPaths::HomeLocation,
+                            QStandardPaths::DocumentsLocation,
+                            QStandardPaths::DownloadLocation,
+                            QStandardPaths::PicturesLocation,
+                            QStandardPaths::MusicLocation,
+                            QStandardPaths::MoviesLocation};
+    for (const auto &location : locations) {
+        const QString path = QStandardPaths::writableLocation(location);
+        if (!path.isEmpty() && QDir(path).exists()) {
+            urls << QUrl::fromLocalFile(path);
+        }
+    }
+    return urls;
+}
+
+// Populate the dialog sidebar and relabel the computer entry: Qt shows
+// the untranslated "My Computer" (qtbase translations are not shipped).
+void applySidebar(QFileDialog &dialog)
+{
+    dialog.setSidebarUrls(defaultSidebarUrls());
+#if defined(Q_OS_WIN)
+    const auto sidebar = dialog.findChild<QListView*>(QStringLiteral("sidebar"));
+    if (sidebar && sidebar->model() && sidebar->model()->rowCount() > 0) {
+        const auto idx = sidebar->model()->index(0, 0);
+        // UrlRole = Qt::UserRole + 1 (QUrlModel private enum)
+        if (idx.data(Qt::UserRole + 1).toUrl() == QUrl(QStringLiteral("file:"))) {
+            const auto label = QLocale::system().language() == QLocale::Chinese
+                    ? QStringLiteral("\u6211\u7684\u7535\u8111") // My Computer
+                    : QStringLiteral("My Computer");
+            sidebar->model()->setData(idx, label, Qt::DisplayRole);
+        }
+    }
+#else
+    Q_UNUSED(dialog)
+#endif
+}
+}
 
 
 #if defined(Q_OS_WIN)
@@ -331,7 +421,8 @@ const QString AppSupport::getExistingDirectory(QWidget *parent,
                                                const QString &caption,
                                                const QString &path)
 {
-    return QFileDialog::getExistingDirectory(parent, caption, path,
+    return QFileDialog::getExistingDirectory(parent, caption,
+                                             existingDirOrAncestor(path),
                                              QFileDialog::ShowDirsOnly |
                                              QFileDialog::DontResolveSymlinks);
 }
@@ -344,12 +435,14 @@ const QString AppSupport::getSaveFile(QWidget *parent,
 {
     QString currentPath = path;
     while (true) {
-        QFileDialog dialog(parent, caption, currentPath);
+        QFileDialog dialog(parent, caption, existingPathOrAncestor(currentPath));
         dialog.setAcceptMode(QFileDialog::AcceptSave);
         if (!isFlatpak() &&
             !suffix.isEmpty()) { dialog.setDefaultSuffix(suffix); }
         dialog.setFileMode(QFileDialog::AnyFile);
         dialog.setNameFilter(filter);
+        dialog.setOption(QFileDialog::DontUseNativeDialog);
+        applySidebar(dialog);
 
         ThemeIconProvider iconProvider;
         dialog.setIconProvider(&iconProvider);
@@ -429,8 +522,13 @@ const QString AppSupport::getOpenFile(QWidget *parent,
                                       const QString &path,
                                       const QString &filter)
 {
-    QFileDialog dialog(parent, caption, path);
+    const QString dir = existingDirOrAncestor(path);
+    QFileDialog dialog(parent, caption, dir);
     dialog.setNameFilter(filter);
+    // avoid the native dialog: the Windows shell may hang while
+    // generating thumbnails for large image files (e.g. big PSDs)
+    dialog.setOption(QFileDialog::DontUseNativeDialog);
+    applySidebar(dialog);
 
     ThemeIconProvider iconProvider;
     dialog.setIconProvider(&iconProvider);
@@ -454,16 +552,25 @@ const QStringList AppSupport::getOpenFiles(QWidget *parent,
                                        const QString &path,
                                        const QString &filter)
 {
-    QFileDialog dialog(parent, caption, path);
+    const QString dir = existingDirOrAncestor(path);
+    QFileDialog dialog(parent, caption, dir);
     dialog.setFileMode(QFileDialog::ExistingFiles);
     dialog.setNameFilter(filter);
+    // avoid the native dialog: the Windows shell may hang while
+    // generating thumbnails for large image files (e.g. big PSDs)
+    dialog.setOption(QFileDialog::DontUseNativeDialog);
+    applySidebar(dialog);
 
     ThemeIconProvider iconProvider;
     dialog.setIconProvider(&iconProvider);
 
+    qWarning() << "DIALOG: opening file picker at" << dir
+               << "(requested" << path << ")";
     if (dialog.exec()) {
+        qWarning() << "DIALOG: closed, selected" << dialog.selectedFiles();
         return dialog.selectedFiles();
     }
+    qWarning() << "DIALOG: cancelled";
 
     return QStringList();
 }
@@ -472,9 +579,12 @@ const QString AppSupport::getOpenDirectory(QWidget *parent,
                                            const QString &caption,
                                            const QString &path)
 {
-    QFileDialog dialog(parent, caption, path);
+    const QString dir = existingDirOrAncestor(path);
+    QFileDialog dialog(parent, caption, dir);
     dialog.setFileMode(QFileDialog::Directory);
     dialog.setOption(QFileDialog::ShowDirsOnly);
+    dialog.setOption(QFileDialog::DontUseNativeDialog);
+    applySidebar(dialog);
 
     ThemeIconProvider iconProvider;
     dialog.setIconProvider(&iconProvider);
@@ -541,6 +651,14 @@ const QString AppSupport::getAppShaderEffectsPath(bool restore)
     QString path = restore ? def : getSettings("settings",
                                                "CustomShaderPath",
                                                def).toString();
+    QDir dir(path);
+    if (!dir.exists()) { dir.mkpath(path); }
+    return path;
+}
+
+const QString AppSupport::getAppScriptsPath()
+{
+    const QString path = QString::fromUtf8("%1/scripts").arg(getAppConfigPath());
     QDir dir(path);
     if (!dir.exists()) { dir.mkpath(path); }
     return path;

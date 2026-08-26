@@ -55,7 +55,7 @@ public:
     void interruptPreviewRendering();
     void interruptOutputRendering();
 
-    void playPreview();
+    bool playPreview();
     void stopPreview();
     void pausePreview();
     void resumePreview();

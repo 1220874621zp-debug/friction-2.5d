@@ -95,16 +95,16 @@ TimelineWidget::TimelineWidget(Document &document,
         return action;
     };
 
-    ruleActionAdder(SWT_BoxRule::all, "All")->setChecked(true);
-    ruleActionAdder(SWT_BoxRule::selected, "Selected");
-    ruleActionAdder(SWT_BoxRule::animated, "Animated");
-    ruleActionAdder(SWT_BoxRule::notAnimated, "Not Animated");
-    ruleActionAdder(SWT_BoxRule::visible, "Visible");
-    ruleActionAdder(SWT_BoxRule::hidden, "Hidden");
-    ruleActionAdder(SWT_BoxRule::unlocked, "Unlocked");
-    ruleActionAdder(SWT_BoxRule::locked, "Locked");
+    ruleActionAdder(SWT_BoxRule::all, tr("All"))->setChecked(true);
+    ruleActionAdder(SWT_BoxRule::selected, tr("Selected"));
+    ruleActionAdder(SWT_BoxRule::animated, tr("Animated"));
+    ruleActionAdder(SWT_BoxRule::notAnimated, tr("Not Animated"));
+    ruleActionAdder(SWT_BoxRule::visible, tr("Visible"));
+    ruleActionAdder(SWT_BoxRule::hidden, tr("Hidden"));
+    ruleActionAdder(SWT_BoxRule::unlocked, tr("Unlocked"));
+    ruleActionAdder(SWT_BoxRule::locked, tr("Locked"));
 
-    QMenu * const targetMenu = settingsMenu->addMenu(filterIcon, "Target");
+    QMenu * const targetMenu = settingsMenu->addMenu(filterIcon, tr("Target"));
 
     const auto targetActionAdder = [this, targetMenu](
             const SWT_Target target, const QString& text) {
@@ -118,11 +118,11 @@ TimelineWidget::TimelineWidget(Document &document,
         return action;
     };
 
-    //targetActionAdder(SWT_Target::all, "All");
-    targetActionAdder(SWT_Target::canvas, "Current Scene")->setChecked(true);
-    targetActionAdder(SWT_Target::group, "Current Group");
+    //targetActionAdder(SWT_Target::all, tr("All"));
+    targetActionAdder(SWT_Target::canvas, tr("Current Scene"))->setChecked(true);
+    targetActionAdder(SWT_Target::group, tr("Current Group"));
 
-    QMenu * const typeMenu = settingsMenu->addMenu(filterIcon, "Type");
+    QMenu * const typeMenu = settingsMenu->addMenu(filterIcon, tr("Type"));
 
     const auto typeActionAdder = [this, typeMenu](
             const SWT_Type type, const QString& text) {
@@ -136,9 +136,9 @@ TimelineWidget::TimelineWidget(Document &document,
         return action;
     };
 
-    typeActionAdder(SWT_Type::all, "All")->setChecked(true);
-    typeActionAdder(SWT_Type::sound, "Sound");
-    typeActionAdder(SWT_Type::graphics, "Graphics");
+    typeActionAdder(SWT_Type::all, tr("All"))->setChecked(true);
+    typeActionAdder(SWT_Type::sound, tr("Sound"));
+    typeActionAdder(SWT_Type::graphics, tr("Graphics"));
 
     settingsMenu->addSeparator();
 
@@ -148,7 +148,7 @@ TimelineWidget::TimelineWidget(Document &document,
             setTarget(SWT_Target::canvas);
             setType(SWT_Type::all);
         };
-        const auto act = settingsMenu->addAction("Reset", this, op);
+        const auto act = settingsMenu->addAction(tr("Reset"), this, op);
         const auto can = [this]() {
             const auto rules = mBoxesListWidget->getRulesCollection();
             return rules.fRule != SWT_BoxRule::all ||
@@ -163,7 +163,7 @@ TimelineWidget::TimelineWidget(Document &document,
 
     //QMenu *viewMenu = mBoxesListMenuBar->addMenu("View");
     mGraphAct = mCornerMenuBar->addAction(QIcon::fromTheme("graph"),
-                                          "Graph");
+                                          tr("Graph"));
     mGraphAct->setCheckable(true);
     connect(mGraphAct, &QAction::toggled,
             this, &TimelineWidget::setGraphEnabled);

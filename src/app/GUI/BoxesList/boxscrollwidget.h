@@ -47,6 +47,10 @@ public:
     void setCurrentScene(Canvas* const scene);
     void setSiblingKeysView(KeysView* const keysView);
     TimelineHighlightWidget *requestHighlighter();
+
+    // expose the timeline tree identity so property rows can be
+    // revealed programmatically (AE-like A/P/S/R/T/U keys)
+    int swtWidgetId() const;
 private:
     BoxScroller *getBoxScroller();
 

@@ -32,6 +32,7 @@
 #include "Boxes/animationbox.h"
 
 class AnimationToPaintDialog : public QDialog {
+    Q_OBJECT
 public:
     AnimationToPaintDialog(const QString& objName,
                            const FrameRange& range,

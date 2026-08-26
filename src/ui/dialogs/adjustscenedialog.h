@@ -34,6 +34,7 @@
 
 class UI_EXPORT AdjustSceneDialog : public Friction::Ui::Dialog
 {
+    Q_OBJECT
 public:
     AdjustSceneDialog(Canvas *scene,
                       const VideoBox::VideoSpecs &specs,

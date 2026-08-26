@@ -35,6 +35,7 @@
 
 #include <QMessageBox>
 #include <QStandardItemModel>
+#include <QDebug>
 
 Actions* Actions::sInstance = nullptr;
 
@@ -779,6 +780,9 @@ eBoxOrSound *Actions::importFile(const QString &path,
     }
 
     QFileInfo fInfo(path);
+    qWarning() << "IMPORT: start" << path
+               << "ext" << fInfo.suffix().toLower()
+               << "isDir" << fInfo.isDir();
 
     if (fInfo.dir().absolutePath() != QDir::homePath()) {
         AppSupport::setSettings("files",
@@ -797,10 +801,13 @@ eBoxOrSound *Actions::importFile(const QString &path,
         } else {
             try {
                 if (isImageExt(extension)) {
+                    qWarning() << "IMPORT: route=image";
                     result = createImageBox(path);
                 } else if (isVideoExt(extension)) {
+                    qWarning() << "IMPORT: route=video";
                     result = createVideoForPath(path);
                 } else {
+                    qWarning() << "IMPORT: route=importer";
                     result = ImportHandler::sInstance->import(path, scene);
                 }
             } catch(const std::exception& e) {
@@ -808,6 +815,7 @@ eBoxOrSound *Actions::importFile(const QString &path,
             }
         }
     }
+    qWarning() << "IMPORT: done" << path << "hasResult" << bool(result);
     if (result) {
         if (frame) { result->shiftAll(frame); }
         block.reset();

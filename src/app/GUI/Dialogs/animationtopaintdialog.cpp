@@ -64,9 +64,9 @@ AnimationToPaintDialog::AnimationToPaintDialog(
     connect(mLastFrame, qOverload<int>(&QSpinBox::valueChanged),
             mFirstFrame, &QSpinBox::setMaximum);
 
-    labelLayout->addWidget(new QLabel("First Frame:"));
-    labelLayout->addWidget(new QLabel("Last Frame:"));
-    labelLayout->addWidget(new QLabel("Increment:"));
+    labelLayout->addWidget(new QLabel(tr("First Frame:")));
+    labelLayout->addWidget(new QLabel(tr("Last Frame:")));
+    labelLayout->addWidget(new QLabel(tr("Increment:")));
 
     const auto buttons = new QDialogButtonBox(QDialogButtonBox::Ok |
                                               QDialogButtonBox::Cancel);

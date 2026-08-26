@@ -37,19 +37,19 @@ DurationRectSettingsDialog::DurationRectSettingsDialog(DurationRectangle* const 
     const auto mainLayout = new QVBoxLayout(this);
     const auto twoColumnLayout = new TwoColumnLayout();
 
-    const auto shiftLabel = new QLabel("Frame shift:");
+    const auto shiftLabel = new QLabel(tr("Frame shift:"));
     mShiftSpinBox = new QSpinBox(this);
     mShiftSpinBox->setRange(-99999, 99999);
     mShiftSpinBox->setValue(values.fShift);
     twoColumnLayout->addPair(shiftLabel, mShiftSpinBox);
 
-    const auto minFrameLabel = new QLabel("Min frame:");
+    const auto minFrameLabel = new QLabel(tr("Min frame:"));
     mMinFrameSpinBox = new QSpinBox(this);
     mMinFrameSpinBox->setRange(-99999, values.fMax);
     mMinFrameSpinBox->setValue(values.fMin);
     twoColumnLayout->addPair(minFrameLabel, mMinFrameSpinBox);
 
-    const auto maxFrameLabel = new QLabel("Max frame:");
+    const auto maxFrameLabel = new QLabel(tr("Max frame:"));
     mMaxFrameSpinBox = new QSpinBox(this);
     mMaxFrameSpinBox->setRange(values.fMin, 99999);
     mMaxFrameSpinBox->setValue(values.fMax);

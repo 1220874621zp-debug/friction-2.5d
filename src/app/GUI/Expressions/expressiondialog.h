@@ -50,6 +50,7 @@ class QsciAPIs;
 
 class ExpressionDialog : public Friction::Ui::Dialog
 {
+    Q_OBJECT
 public:
     ExpressionDialog(QrealAnimator* const target,
                      QWidget * const parent = nullptr);

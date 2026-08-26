@@ -117,6 +117,7 @@ public:
     static const QString getAppRasterEffectsPath();
     static const QString getAppShaderEffectsPath(bool restore = false);
     static const QString getAppShaderPresetsPath();
+    static const QString getAppScriptsPath();
     static const QString getAppExPresetsPath();
     static const QString getAppUserExPresetsPath();
     static const QString getFileMimeType(const QString &path);

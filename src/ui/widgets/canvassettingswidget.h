@@ -38,6 +38,7 @@ class ColorAnimatorButton;
 class QSlider;
 
 class UI_EXPORT CanvasSettingsWidget : public SettingsWidget {
+    Q_OBJECT
 public:
     explicit CanvasSettingsWidget(QWidget* const parent = nullptr);
 

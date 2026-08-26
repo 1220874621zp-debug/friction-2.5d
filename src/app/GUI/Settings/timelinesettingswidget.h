@@ -33,6 +33,7 @@
 class ColorAnimatorButton;
 
 class TimelineSettingsWidget : public SettingsWidget {
+    Q_OBJECT
 public:
     explicit TimelineSettingsWidget(QWidget *parent = nullptr);
 

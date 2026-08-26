@@ -23,6 +23,7 @@
 
 #include "generalsettingswidget.h"
 #include "appsupport.h"
+#include "themesupport.h"
 
 #include <QHBoxLayout>
 #include <QLabel>
@@ -42,6 +43,7 @@ GeneralSettingsWidget::GeneralSettingsWidget(QWidget *parent)
     , mAutoSaveTimer(nullptr)
     , mDefaultInterfaceScaling(nullptr)
     , mInterfaceScaling(nullptr)
+    , mTheme(nullptr)
     , mImportFileDir(nullptr)
 {
     const auto mGeneralWidget = new QWidget(this);
@@ -150,6 +152,31 @@ GeneralSettingsWidget::GeneralSettingsWidget(QWidget *parent)
 
     mGeneralLayout->addWidget(mScaleWidget);
 
+    const auto mThemeWidget = new QGroupBox(this);
+    mThemeWidget->setObjectName("BlueBox");
+    mThemeWidget->setTitle(tr("Theme"));
+    mThemeWidget->setContentsMargins(0, 0, 0, 0);
+    const auto mThemeLayout = new QVBoxLayout(mThemeWidget);
+
+    const auto mThemeContainer = new QWidget(this);
+    mThemeContainer->setContentsMargins(0, 0, 0, 0);
+    const auto mThemeContainerLayout = new QHBoxLayout(mThemeContainer);
+    mThemeContainerLayout->setContentsMargins(0, 0, 0, 0);
+    mThemeLayout->addWidget(mThemeContainer);
+
+    mTheme = new QComboBox(this);
+    for (const auto &id : ThemeSupport::availableThemeIds()) {
+        mTheme->addItem(ThemeSupport::themeDisplayName(id), id);
+    }
+    mThemeContainerLayout->addWidget(mTheme);
+    mThemeContainerLayout->addStretch();
+
+    const auto themeInfoLabel = new QLabel(this);
+    themeInfoLabel->setText(tr("Changing the theme requires a restart of Friction."));
+    mThemeLayout->addWidget(themeInfoLabel);
+
+    mGeneralLayout->addWidget(mThemeWidget);
+
     const auto mImportFileWidget = new QWidget(this);
     mImportFileWidget->setContentsMargins(0, 0, 0, 0);
     const auto mImportFileLayout = new QHBoxLayout(mImportFileWidget);
@@ -194,6 +221,10 @@ void GeneralSettingsWidget::applySettings()
     mSett.fInterfaceScaling = mInterfaceScaling->value() * 0.01;
     mSett.fImportFileDirOpt = mImportFileDir->currentData().toInt();
 
+    AppSupport::setSettings("ui",
+                            "theme",
+                            mTheme->currentData().toString());
+
     //eSizesUI::font.updateSize();
     //eSizesUI::widget.updateSize();
 }
@@ -218,6 +249,13 @@ void GeneralSettingsWidget::updateSettings(bool restore)
     mDefaultInterfaceScaling->setChecked(mSett.fDefaultInterfaceScaling);
     mInterfaceScaling->setEnabled(!mDefaultInterfaceScaling->isChecked());
     mInterfaceScaling->setValue(mDefaultInterfaceScaling->isChecked() ? 100 : 100 * mSett.fInterfaceScaling);
+
+    const QString themeId = restore ? QStringLiteral("friction") :
+                                      AppSupport::getSettings("ui",
+                                                              "theme",
+                                                              "friction").toString();
+    const int themeIndex = mTheme->findData(themeId);
+    mTheme->setCurrentIndex(themeIndex < 0 ? 0 : themeIndex);
 
     for (int i = 0; i < mImportFileDir->count(); i++) {
         if (mImportFileDir->itemData(i).toInt() == mSett.fImportFileDirOpt) {

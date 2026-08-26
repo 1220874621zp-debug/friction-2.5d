@@ -32,6 +32,9 @@ HddCachableCont::~HddCachableCont() {
 }
 
 int HddCachableCont::free_RAM_k() {
+    // Preserve the data in a tmp file before dropping it from memory,
+    // so it can be reloaded without re-decoding the source files.
+    if(!mTmpFile && !mTmpSaveTask) scheduleSaveToTmpFile();
     const int bytes = clearMemory();
     setDataInMemory(false);
     if(!mTmpFile && !mTmpSaveTask) noDataLeft_k();

@@ -47,6 +47,13 @@ class CORE_EXPORT ImageBox : public BoundingBox {
 protected:
     ImageBox();
     ImageBox(const QString &filePath);
+    // for subclasses with their own box type (e.g. PsdImageBox):
+    // the type tag is serialized by writeIdentifier() and must match
+    // the subclass, otherwise load creates the wrong class and the
+    // stream desyncs on the subclass' extra fields
+    ImageBox(const QString &name, const eBoxType type);
+
+    void setFilePathNoRename(const QString &path);
 
     void prp_readPropertyXEV_impl(const QDomElement& ele, const XevImporter& imp);
     QDomElement prp_writePropertyXEV_impl(const XevExporter& exp) const;
@@ -66,10 +73,10 @@ public:
     void changeSourceFile();
     void setFilePath(const QString &path);
 
+    const QString& filePath() const { return mPath; }
+
     void reload();
 private:
-    void setFilePathNoRename(const QString &path);
-
     void fileHandlerConnector(ConnContext& conn, ImageFileHandler* obj);
     void fileHandlerAfterAssigned(ImageFileHandler* obj);
 

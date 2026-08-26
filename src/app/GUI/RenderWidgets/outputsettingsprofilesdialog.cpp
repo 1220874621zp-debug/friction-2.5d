@@ -45,7 +45,7 @@ OutputProfilesDialog::OutputProfilesDialog(
     mInnerLayout = new QVBoxLayout();
 
     mProfileLayout = new QHBoxLayout();
-    mProfileLabel = new QLabel("Profile:", this);
+    mProfileLabel = new QLabel(tr("Profile:"), this);
     mProfilesComboBox = new EditableComboBox(this);
     mProfilesComboBox->setMinimumContentsLength(20);
     mProfileLayout->addWidget(mProfileLabel);
@@ -53,23 +53,23 @@ OutputProfilesDialog::OutputProfilesDialog(
     mProfileLayout->setAlignment(Qt::AlignHCenter);
 
     mProfileButtonsLayout = new QHBoxLayout();
-    mNewProfileButton = new QPushButton("New...", this);
+    mNewProfileButton = new QPushButton(tr("New..."), this);
     mNewProfileButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     connect(mNewProfileButton, &QPushButton::released,
             this, &OutputProfilesDialog::createAndEditNewProfile);
-    mDuplicateProfileButton = new QPushButton("Duplicate", this);
+    mDuplicateProfileButton = new QPushButton(tr("Duplicate"), this);
     mDuplicateProfileButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     connect(mDuplicateProfileButton, &QPushButton::released,
             this, &OutputProfilesDialog::duplicateCurrentProfile);
-    mEditProfileButton = new QPushButton("Edit...", this);
+    mEditProfileButton = new QPushButton(tr("Edit..."), this);
     mEditProfileButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     connect(mEditProfileButton, &QPushButton::released,
             this, &OutputProfilesDialog::editCurrentProfile);
-    mSaveProfileButton = new QPushButton("Save", this);
+    mSaveProfileButton = new QPushButton(tr("Save"), this);
     mSaveProfileButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     connect(mSaveProfileButton, &QPushButton::released,
             this, &OutputProfilesDialog::saveCurrentProfile);
-    mDeleteProfileButton = new QPushButton("Delete", this);
+    mDeleteProfileButton = new QPushButton(tr("Delete"), this);
     mDeleteProfileButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     connect(mDeleteProfileButton, &QPushButton::released,
             this, &OutputProfilesDialog::deleteCurrentProfile);
@@ -91,8 +91,8 @@ OutputProfilesDialog::OutputProfilesDialog(
     //mOutputSettingsDisplayWidget->setAlwaysShowAll(true);
 
     mButtonsLayout = new QHBoxLayout();
-    mOkButton = new QPushButton("Ok", this);
-    mCancelButton = new QPushButton("Cancel", this);
+    mOkButton = new QPushButton(tr("Ok"), this);
+    mCancelButton = new QPushButton(tr("Cancel"), this);
     mOkButton->setObjectName("dialogButton");
     mCancelButton->setObjectName("dialogButton");
 

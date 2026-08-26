@@ -864,7 +864,15 @@ void Canvas::setOutputRendering(const bool bT) {
 }
 
 void Canvas::setSceneFrame(const int relFrame) {
-    const auto cont = mSceneFramesHandler.atFrame(relFrame);
+    const auto cont = mSceneFramesHandler.atFrame<SceneFrameContainer>(relFrame);
+    if(cont && !cont->storesDataInMemory()) {
+        // The frame's pixels were swapped out to a tmp file. Keep the
+        // current frame on screen and reload asynchronously instead of
+        // assigning a container with a null image, which used to draw
+        // a blank transparent canvas (flickering during playback).
+        setLoadingSceneFrame(enve::shared<SceneFrameContainer>(cont));
+        return;
+    }
     setSceneFrame(enve::shared<SceneFrameContainer>(cont));
 }
 
@@ -872,6 +880,15 @@ void Canvas::setSceneFrame(const stdsptr<SceneFrameContainer>& cont) {
     setLoadingSceneFrame(nullptr);
     mSceneFrame = cont;
     emit requestUpdate();
+}
+
+void Canvas::scheduleLoadMissingSceneFrames(const int minRelFrame,
+                                            const int maxRelFrame) {
+    for(int relFrame = minRelFrame; relFrame <= maxRelFrame; relFrame++) {
+        const auto cont = mSceneFramesHandler.atFrame<SceneFrameContainer>(relFrame);
+        if(cont && !cont->storesDataInMemory())
+            cont->scheduleLoadFromTmpFile();
+    }
 }
 
 void Canvas::setLoadingSceneFrame(const stdsptr<SceneFrameContainer>& cont) {

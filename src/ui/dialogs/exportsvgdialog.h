@@ -37,6 +37,7 @@ class ComplexTask;
 
 class UI_EXPORT ExportSvgDialog : public Friction::Ui::Dialog
 {
+    Q_OBJECT
 public:
     ExportSvgDialog(QWidget* const parent = nullptr,
                     const QString &warnings = QString());

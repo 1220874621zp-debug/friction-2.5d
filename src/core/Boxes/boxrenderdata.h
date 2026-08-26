@@ -94,6 +94,13 @@ public:
     QMatrix fTotalTransform;
     QMatrix fRenderTransform;
 
+    // 2.5D perspective (billboard plane), identity when unused
+    SkMatrix fPerspectiveTransform;
+    bool fHasPerspective = false;
+
+    // full canvas transform: rel * 3D * inherited * resolution
+    SkMatrix getFullRenderTransform() const;
+
     bool fRelBoundingRectSet = false;
     QRectF fRelBoundingRect;
     QRect fGlobalRect;

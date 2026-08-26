@@ -82,6 +82,8 @@ set(
     Boxes/nullobject.cpp
     Expressions/expression.cpp
     Expressions/expressionpresets.cpp
+    Scripting/jsapi.cpp
+    Animators/motionpathhandler.cpp
     Expressions/framebinding.cpp
     Expressions/scenebinding.cpp
     Expressions/propertybinding.cpp
@@ -316,6 +318,10 @@ set(
     svgexporter.cpp
     svgexporthelpers.cpp
     svgimporter.cpp
+    Psd/psdfile.cpp
+    Psd/psdimporter.cpp
+    Psd/fpsdpackage.cpp
+    Psd/psdimagebox.cpp
     switchablecontext.cpp
     swt_abstraction.cpp
     swt_rulescollection.cpp
@@ -389,6 +395,8 @@ set(
     Boxes/nullobject.h
     Expressions/expression.h
     Expressions/expressionpresets.h
+    Scripting/jsapi.h
+    Animators/motionpathhandler.h
     Expressions/framebinding.h
     Expressions/scenebinding.h
     Expressions/propertybinding.h
@@ -651,6 +659,10 @@ set(
     svgexporter.h
     svgexporthelpers.h
     svgimporter.h
+    Psd/psdfile.h
+    Psd/psdimporter.h
+    Psd/fpsdpackage.h
+    Psd/psdimagebox.h
     switchablecontext.h
     swt_abstraction.h
     swt_rulescollection.h

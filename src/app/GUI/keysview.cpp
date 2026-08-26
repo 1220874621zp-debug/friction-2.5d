@@ -553,8 +553,10 @@ void KeysView::paintEvent(QPaintEvent *) {
 
     if(mPixelsPerFrame < 0.001) return;
     if(!mGraphViewed) {
+        // horizontal row separators only; thin dark lines
+        // (translucent black over the base color, works for all themes)
         int currY = eSizesUI::widget;
-        p.setPen(QPen(ThemeSupport::getThemeTimelineColor(), 2));
+        p.setPen(QPen(QColor(0, 0, 0, 80), 1));
         while(currY < height()) {
             p.drawLine(0, currY, width(), currY);
             currY += eSizesUI::widget;
@@ -562,7 +564,9 @@ void KeysView::paintEvent(QPaintEvent *) {
     }
     p.translate(eSizesUI::widget/2, 0);
 
-    p.setPen(QPen(ThemeSupport::getThemeTimelineColor(), 2));
+    // frame range used by the markers and the current-frame line
+    // below (the vertical frame grid lines were removed by request;
+    // the graph editor draws its own grid in graphPaint())
     qreal xT = mPixelsPerFrame*0.5;
     int iInc = 1;
     bool mult5 = true;
@@ -576,11 +580,6 @@ void KeysView::paintEvent(QPaintEvent *) {
     minFrame += qCeil((-xT)/mPixelsPerFrame);
     minFrame = minFrame - minFrame%iInc - 1;
     maxFrame += qFloor((width() - 40 - xT)/mPixelsPerFrame) - maxFrame%iInc;
-
-    for(int i = minFrame; i <= maxFrame; i += iInc) {
-        const qreal xTT = xT + (i - mMinViewedFrame + 1)*mPixelsPerFrame;
-        p.drawLine(QPointF(xTT, 0), QPointF(xTT, height()));
-    }
 
     // draw markers (and in/out)
     for (int i = minFrame; i <= maxFrame; i++) {

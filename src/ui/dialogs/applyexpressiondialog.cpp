@@ -68,10 +68,10 @@ ApplyExpressionDialog::ApplyExpressionDialog(QrealAnimator* const target,
     mAccuracy->setRange(0.1, 100);
     mAccuracy->setValue(10);
 
-    layout->addPair(new QLabel("First Frame:"), mFirstFrame);
-    layout->addPair(new QLabel("Last Frame:"), mLastFrame);
+    layout->addPair(new QLabel(tr("First Frame:")), mFirstFrame);
+    layout->addPair(new QLabel(tr("Last Frame:")), mLastFrame);
     eSizesUI::widget.addSpacing(layout);
-    layout->addPair(new QLabel("Accuracy:"), mAccuracy);
+    layout->addPair(new QLabel(tr("Accuracy:")), mAccuracy);
 
     const auto buttons = new QDialogButtonBox(QDialogButtonBox::Ok |
                                               QDialogButtonBox::Cancel);

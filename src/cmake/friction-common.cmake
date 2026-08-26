@@ -79,7 +79,14 @@ else()
 endif()
 
 if(MSVC)
-    add_definitions("/MP")
+    # /MP speeds up multi-file compilation under the Visual Studio
+    # generator. The Ninja generator's cmcldeps wrapper forwards
+    # global defines/flags to rc.exe, and rc rejects /MP with
+    # "RC1106: invalid option" -> only enable /MP for the VS
+    # generator (Ninja uses job pools for parallelism instead).
+    if(NOT CMAKE_GENERATOR MATCHES "Ninja")
+        add_definitions("/MP")
+    endif()
 endif()
 
 find_package(PkgConfig QUIET)

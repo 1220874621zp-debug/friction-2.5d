@@ -41,6 +41,7 @@ class TwoColumnLayout;
 
 class UI_EXPORT DurationRectSettingsDialog : public Friction::Ui::Dialog
 {
+    Q_OBJECT
 public:
     DurationRectSettingsDialog(DurationRectangle* const target,
                                QWidget *parent = nullptr);

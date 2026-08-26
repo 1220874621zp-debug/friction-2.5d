@@ -53,6 +53,12 @@
 
 #include "typemenu.h"
 #include "themesupport.h"
+#include "Animators/transformanimator.h"
+#include "Animators/qrealanimator.h"
+
+#include <QtMath>
+#include <cmath>
+#include <QDesktopWidget>
 
 #include <QMessageBox>
 
@@ -64,6 +70,136 @@
 #include "Boxes/imagesequencebox.h"
 
 QPixmap* BoxSingleWidget::VISIBLE_ICON;
+
+namespace {
+// Translate internal (lowercase) property names for display in the timeline.
+// lupdate extracts the tr() literals below.
+QString translatePropertyName(const QString& name) {
+    static const QHash<QString, QString> map = {
+        { QStringLiteral("transform"), BoxSingleWidget::tr("transform") },
+        { QStringLiteral("fill"), BoxSingleWidget::tr("fill") },
+        { QStringLiteral("outline"), BoxSingleWidget::tr("outline") },
+        { QStringLiteral("thickness"), BoxSingleWidget::tr("thickness") },
+        { QStringLiteral("color"), BoxSingleWidget::tr("color") },
+        { QStringLiteral("brush settings"), BoxSingleWidget::tr("brush settings") },
+        { QStringLiteral("width"), BoxSingleWidget::tr("width") },
+        { QStringLiteral("pressure"), BoxSingleWidget::tr("pressure") },
+        { QStringLiteral("time"), BoxSingleWidget::tr("time") },
+        { QStringLiteral("gradient points"), BoxSingleWidget::tr("gradient points") },
+        { QStringLiteral("translation"), BoxSingleWidget::tr("translation") },
+        { QStringLiteral("rotation"), BoxSingleWidget::tr("rotation") },
+        { QStringLiteral("rotate"), BoxSingleWidget::tr("rotate") },
+        { QStringLiteral("scale"), BoxSingleWidget::tr("scale") },
+        { QStringLiteral("shear"), BoxSingleWidget::tr("shear") },
+        { QStringLiteral("opacity"), BoxSingleWidget::tr("opacity") },
+        { QStringLiteral("alpha"), BoxSingleWidget::tr("alpha") },
+        { QStringLiteral("red"), BoxSingleWidget::tr("red") },
+        { QStringLiteral("green"), BoxSingleWidget::tr("green") },
+        { QStringLiteral("blue"), BoxSingleWidget::tr("blue") },
+        { QStringLiteral("hue"), BoxSingleWidget::tr("hue") },
+        { QStringLiteral("saturation"), BoxSingleWidget::tr("saturation") },
+        { QStringLiteral("lightness"), BoxSingleWidget::tr("lightness") },
+        { QStringLiteral("value"), BoxSingleWidget::tr("value") },
+        { QStringLiteral("pivot"), BoxSingleWidget::tr("pivot") },
+        { QStringLiteral("x"), BoxSingleWidget::tr("x") },
+        { QStringLiteral("y"), BoxSingleWidget::tr("y") },
+        { QStringLiteral("z-index"), BoxSingleWidget::tr("z-index") },
+        { QStringLiteral("size"), BoxSingleWidget::tr("size") },
+        { QStringLiteral("offset"), BoxSingleWidget::tr("offset") },
+        { QStringLiteral("text"), BoxSingleWidget::tr("text") },
+        { QStringLiteral("frame"), BoxSingleWidget::tr("frame") },
+        { QStringLiteral("frame step"), BoxSingleWidget::tr("frame step") },
+        { QStringLiteral("flip book"), BoxSingleWidget::tr("flip book") },
+        { QStringLiteral("seed"), BoxSingleWidget::tr("seed") },
+        { QStringLiteral("spacing"), BoxSingleWidget::tr("spacing") },
+        { QStringLiteral("smoothness"), BoxSingleWidget::tr("smoothness") },
+        { QStringLiteral("periodic"), BoxSingleWidget::tr("periodic") },
+        { QStringLiteral("displacement"), BoxSingleWidget::tr("displacement") },
+        { QStringLiteral("diminish"), BoxSingleWidget::tr("diminish") },
+        { QStringLiteral("blur radius"), BoxSingleWidget::tr("blur radius") },
+        { QStringLiteral("round radius"), BoxSingleWidget::tr("round radius") },
+        { QStringLiteral("horizontal radius"), BoxSingleWidget::tr("horizontal radius") },
+        { QStringLiteral("vertical radius"), BoxSingleWidget::tr("vertical radius") },
+        { QStringLiteral("top left"), BoxSingleWidget::tr("top left") },
+        { QStringLiteral("bottom right"), BoxSingleWidget::tr("bottom right") },
+        { QStringLiteral("center"), BoxSingleWidget::tr("center") },
+        { QStringLiteral("point 1"), BoxSingleWidget::tr("point 1") },
+        { QStringLiteral("point 2"), BoxSingleWidget::tr("point 2") },
+        { QStringLiteral("point 3"), BoxSingleWidget::tr("point 3") },
+        { QStringLiteral("point 4"), BoxSingleWidget::tr("point 4") },
+        { QStringLiteral("point1"), BoxSingleWidget::tr("point1") },
+        { QStringLiteral("point2"), BoxSingleWidget::tr("point2") },
+        { QStringLiteral("max deviation"), BoxSingleWidget::tr("max deviation") },
+        { QStringLiteral("max length"), BoxSingleWidget::tr("max length") },
+        { QStringLiteral("min length"), BoxSingleWidget::tr("min length") },
+        { QStringLiteral("length based"), BoxSingleWidget::tr("length based") },
+        { QStringLiteral("length inc"), BoxSingleWidget::tr("length inc") },
+        { QStringLiteral("path-wise"), BoxSingleWidget::tr("path-wise") },
+        { QStringLiteral("segment length"), BoxSingleWidget::tr("segment length") },
+        { QStringLiteral("samples count"), BoxSingleWidget::tr("samples count") },
+        { QStringLiteral("clip"), BoxSingleWidget::tr("clip") },
+        { QStringLiteral("clip path"), BoxSingleWidget::tr("clip path") },
+        { QStringLiteral("target"), BoxSingleWidget::tr("target") },
+        { QStringLiteral("link target"), BoxSingleWidget::tr("link target") },
+        { QStringLiteral("Empty Link"), BoxSingleWidget::tr("Empty Link") },
+        { QStringLiteral("fill effects"), BoxSingleWidget::tr("fill effects") },
+        { QStringLiteral("outline effects"), BoxSingleWidget::tr("outline effects") },
+        { QStringLiteral("outline base effects"), BoxSingleWidget::tr("outline base effects") },
+        { QStringLiteral("path base effects"), BoxSingleWidget::tr("path base effects") },
+        // 2.5D billboard properties
+        // NOTE: must use QStringLiteral (wide literal) for the Chinese text:
+        // tr() takes a narrow (char*) literal, MSVC encodes \uXXXX escapes to
+        // GBK, but tr() decodes as UTF-8 -> mojibake. QStringLiteral on MSVC
+        // uses L"" wide literals where \uXXXX is a correct wchar_t code unit.
+        { QStringLiteral("3D rotation X"),
+          QStringLiteral("3D \u65CB\u8F6C X") },
+        { QStringLiteral("3D rotation Y"),
+          QStringLiteral("3D \u65CB\u8F6C Y") },
+        { QStringLiteral("3D position Z"),
+          QStringLiteral("3D \u4F4D\u79FB Z") },
+        { QStringLiteral("3D perspective"),
+          QStringLiteral("3D \u900F\u89C6") },
+    };
+    return map.value(name, name);
+}
+
+// Translate Skia blend mode names for display.
+QString translateBlendModeName(const QString& name) {
+    static const QHash<QString, QString> map = {
+        { QStringLiteral("Clear"), BoxSingleWidget::tr("Clear") },
+        { QStringLiteral("Src"), BoxSingleWidget::tr("Src") },
+        { QStringLiteral("Dst"), BoxSingleWidget::tr("Dst") },
+        { QStringLiteral("SrcOver"), BoxSingleWidget::tr("SrcOver") },
+        { QStringLiteral("DstOver"), BoxSingleWidget::tr("DstOver") },
+        { QStringLiteral("SrcIn"), BoxSingleWidget::tr("SrcIn") },
+        { QStringLiteral("DstIn"), BoxSingleWidget::tr("DstIn") },
+        { QStringLiteral("SrcOut"), BoxSingleWidget::tr("SrcOut") },
+        { QStringLiteral("DstOut"), BoxSingleWidget::tr("DstOut") },
+        { QStringLiteral("SrcATop"), BoxSingleWidget::tr("SrcATop") },
+        { QStringLiteral("DstATop"), BoxSingleWidget::tr("DstATop") },
+        { QStringLiteral("Xor"), BoxSingleWidget::tr("Xor") },
+        { QStringLiteral("Plus"), BoxSingleWidget::tr("Plus") },
+        { QStringLiteral("Modulate"), BoxSingleWidget::tr("Modulate") },
+        { QStringLiteral("Screen"), BoxSingleWidget::tr("Screen") },
+        { QStringLiteral("Overlay"), BoxSingleWidget::tr("Overlay") },
+        { QStringLiteral("Darken"), BoxSingleWidget::tr("Darken") },
+        { QStringLiteral("Lighten"), BoxSingleWidget::tr("Lighten") },
+        { QStringLiteral("ColorDodge"), BoxSingleWidget::tr("ColorDodge") },
+        { QStringLiteral("ColorBurn"), BoxSingleWidget::tr("ColorBurn") },
+        { QStringLiteral("HardLight"), BoxSingleWidget::tr("HardLight") },
+        { QStringLiteral("SoftLight"), BoxSingleWidget::tr("SoftLight") },
+        { QStringLiteral("Difference"), BoxSingleWidget::tr("Difference") },
+        { QStringLiteral("Exclusion"), BoxSingleWidget::tr("Exclusion") },
+        { QStringLiteral("Multiply"), BoxSingleWidget::tr("Multiply") },
+        { QStringLiteral("Hue"), BoxSingleWidget::tr("Hue") },
+        { QStringLiteral("Saturation"), BoxSingleWidget::tr("Saturation") },
+        { QStringLiteral("Color"), BoxSingleWidget::tr("Color") },
+        { QStringLiteral("Luminosity"), BoxSingleWidget::tr("Luminosity") },
+    };
+    return map.value(name, name);
+}
+}
+
 QPixmap* BoxSingleWidget::INVISIBLE_ICON;
 QPixmap* BoxSingleWidget::BOX_CHILDREN_VISIBLE_ICON;
 QPixmap* BoxSingleWidget::BOX_CHILDREN_HIDDEN_ICON;
@@ -81,6 +217,9 @@ QPixmap* BoxSingleWidget::G_ICON;
 QPixmap* BoxSingleWidget::CG_ICON;
 QPixmap* BoxSingleWidget::GRAPH_PROPERTY_ICON;
 QPixmap* BoxSingleWidget::PROMOTE_TO_LAYER_ICON;
+QPixmap* BoxSingleWidget::ICON_3D_ON;
+QPixmap* BoxSingleWidget::ICON_3D_OFF;
+QPixmap* BoxSingleWidget::ICON_RESET;
 
 QPixmap* BoxSingleWidget::BOX_PATH;
 QPixmap* BoxSingleWidget::BOX_CIRCLE;
@@ -257,6 +396,33 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
     connect(mLockedButton, &BoxesListActionButton::pressed,
             this, &BoxSingleWidget::switchBoxLockedAction);
 
+    m3DButton = new PixmapActionButton(this);
+    m3DButton->setToolTip(tr("Toggle 3D layer (2.5D billboard: X/Y rotation, Z depth)"));
+    m3DButton->setPixmapChooser([this]() {
+        if (!mTarget) { return static_cast<QPixmap*>(nullptr); }
+        const auto target = mTarget->getTarget();
+        const auto box = enve_cast<BoundingBox*>(target);
+        if (!box || enve_cast<ContainerBox*>(target)) {
+            return static_cast<QPixmap*>(nullptr);
+        }
+        const auto trans = box->getBoxTransformAnimator();
+        if (!trans) { return static_cast<QPixmap*>(nullptr); }
+        return trans->is3DEnabled() ? BoxSingleWidget::ICON_3D_ON
+                                    : BoxSingleWidget::ICON_3D_OFF;
+    });
+
+    mMainLayout->addWidget(m3DButton);
+    connect(m3DButton, &BoxesListActionButton::pressed, this, [this]() {
+        if (!mTarget) { return; }
+        const auto target = mTarget->getTarget();
+        const auto box = enve_cast<BoundingBox*>(target);
+        if (!box || enve_cast<ContainerBox*>(target)) { return; }
+        const auto trans = box->getBoxTransformAnimator();
+        if (!trans) { return; }
+        trans->set3DEnabled(!trans->is3DEnabled());
+        Document::sInstance->actionFinished();
+    });
+
     mHwSupportButton = new PixmapActionButton(this);
     mHwSupportButton->setToolTip(tr("Adjust GPU/CPU Processing"));
     mHwSupportButton->setPixmapChooser([this]() {
@@ -314,6 +480,27 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
     mSecondValueSlider = new QrealAnimatorValueSlider(nullptr, this);
     mMainLayout->addWidget(mSecondValueSlider, Qt::AlignRight);
 
+    // reset-to-default button for layer transform parameters
+    mResetButton = new PixmapActionButton(this);
+    mResetButton->setToolTip(tr("Reset to default value"));
+    mResetButton->setPixmapChooser([this]() {
+        if (!mTarget) { return static_cast<QPixmap*>(nullptr); }
+        const auto target = mTarget->getTarget();
+        const auto prop = enve_cast<Property*>(target);
+        if (!prop) { return static_cast<QPixmap*>(nullptr); }
+        if (!enve_cast<QrealAnimator*>(prop) &&
+            !enve_cast<QPointFAnimator*>(prop)) {
+            return static_cast<QPixmap*>(nullptr);
+        }
+        if (!prop->getFirstAncestor<AdvancedTransformAnimator>()) {
+            return static_cast<QPixmap*>(nullptr);
+        }
+        return BoxSingleWidget::ICON_RESET;
+    });
+    mMainLayout->addWidget(mResetButton);
+    connect(mResetButton, &BoxesListActionButton::pressed,
+            this, &BoxSingleWidget::resetPropertyAction);
+
     mColorButton = new ColorAnimatorButton(nullptr, this);
     mMainLayout->addWidget(mColorButton, Qt::AlignRight);
     mColorButton->setFixedHeight(mColorButton->height() - 2);
@@ -329,7 +516,7 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
     for(int modeId = int(SkBlendMode::kSrcOver);
         modeId <= int(SkBlendMode::kLastMode); modeId++) {
         const auto mode = static_cast<SkBlendMode>(modeId);
-        mBlendModeCombo->addItem(SkBlendMode_Name(mode), modeId);
+        mBlendModeCombo->addItem(translateBlendModeName(SkBlendMode_Name(mode)), modeId);
     }
 
     mBlendModeCombo->insertSeparator(8);
@@ -342,16 +529,16 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
 
     mPathBlendModeCombo = createCombo(this);
     mMainLayout->addWidget(mPathBlendModeCombo);
-    mPathBlendModeCombo->addItems(QStringList() << "Normal" <<
-                                  "Add" << "Remove" << "Remove reverse" <<
-                                  "Intersect" << "Exclude" << "Divide");
+    mPathBlendModeCombo->addItems(QStringList() << tr("Normal") <<
+                                  tr("Add") << tr("Remove") << tr("Remove reverse") <<
+                                  tr("Intersect") << tr("Exclude") << tr("Divide"));
     connect(mPathBlendModeCombo, qOverload<int>(&QComboBox::activated),
             this, &BoxSingleWidget::setPathCompositionMode);
     mPathBlendModeCombo->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Minimum);
 
     mFillTypeCombo = createCombo(this);
     mMainLayout->addWidget(mFillTypeCombo);
-    mFillTypeCombo->addItems(QStringList() << "Winding" << "Even-odd");
+    mFillTypeCombo->addItems(QStringList() << tr("Winding") << tr("Even-odd"));
     connect(mFillTypeCombo, qOverload<int>(&QComboBox::activated),
             this, &BoxSingleWidget::setFillType);
     mFillTypeCombo->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Minimum);
@@ -502,6 +689,17 @@ void BoxSingleWidget::setTargetAbstraction(SWT_Abstraction *abs) {
     mRecordButton->setVisible(animator && !eboxOrSound);
     mVisibleButton->setVisible(eboxOrSound || eeffect || graphAnimator);
     mLockedButton->setVisible(boundingBox);
+    mResetButton->setVisible(
+                (enve_cast<QrealAnimator*>(prop) ||
+                 enve_cast<QPointFAnimator*>(prop)) &&
+                prop->getFirstAncestor<AdvancedTransformAnimator>());
+    m3DButton->setVisible(boundingBox && !enve_cast<ContainerBox*>(prop));
+    if(boundingBox && !enve_cast<ContainerBox*>(prop)) {
+        if(const auto trans = boundingBox->getBoxTransformAnimator()) {
+            mTargetConn << connect(trans, &AdvancedTransformAnimator::box3DChanged,
+                                   this, [this]() { m3DButton->update(); });
+        }
+    }
     mHwSupportButton->setVisible(rasterEffect);
     {
         const auto targetGroup = getPromoteTargetGroup();
@@ -675,6 +873,53 @@ void BoxSingleWidget::loadStaticPixmaps(int iconSize)
     GRAPH_PROPERTY_ICON = new QPixmap(QIcon::fromTheme("graph_property_2").pixmap(pixmapSize));
     PROMOTE_TO_LAYER_ICON = new QPixmap(QIcon::fromTheme("layer").pixmap(pixmapSize));
 
+    // 2.5D layer toggle icons: hexagon text glyphs (vector font shapes,
+    // rasterized at the actual device size -> always sharp, no scaling).
+    // on  = U+2B22 black hexagon (white),
+    // off = U+2B21 white hexagon  (dim outline)
+    {
+        const qreal dpr = qApp->desktop()->devicePixelRatioF();
+        const auto makeHexIcon = [&pixmapSize, dpr](const ushort glyph,
+                                                    const QColor& color) {
+            auto pm = new QPixmap(pixmapSize * dpr);
+            pm->setDevicePixelRatio(dpr);
+            pm->fill(Qt::transparent);
+            QPainter p(pm);
+            p.setRenderHint(QPainter::TextAntialiasing);
+            QFont f = qApp->font();
+            f.setPixelSize(qRound(pixmapSize.height() * 0.82));
+            f.setBold(true);
+            p.setFont(f);
+            p.setPen(color);
+            p.drawText(QRectF(QPointF(0, 0), pixmapSize),
+                       Qt::AlignCenter, QChar(glyph));
+            p.end();
+            return pm;
+        };
+        ICON_3D_ON = makeHexIcon(0x2B22, QColor(255, 255, 255));
+        ICON_3D_OFF = makeHexIcon(0x2B21, QColor(150, 150, 150));
+    }
+
+    // reset icon: clockwise open circle arrow glyph U+21BB (vector font
+    // shape, rasterized at the actual device size -> always sharp)
+    {
+        const qreal dpr = qApp->desktop()->devicePixelRatioF();
+        auto pm = new QPixmap(pixmapSize * dpr);
+        pm->setDevicePixelRatio(dpr);
+        pm->fill(Qt::transparent);
+        QPainter p(pm);
+        p.setRenderHint(QPainter::TextAntialiasing);
+        QFont f = qApp->font();
+        f.setPixelSize(qRound(pixmapSize.height() * 0.86));
+        f.setBold(true);
+        p.setFont(f);
+        p.setPen(QColor(255, 255, 255));
+        p.drawText(QRectF(QPointF(0, 0), pixmapSize),
+                   Qt::AlignCenter, QChar(0x21BB));
+        p.end();
+        ICON_RESET = pm;
+    }
+
     BOX_PATH = new QPixmap(QIcon::fromTheme("pathCreate").pixmap(pixmapSize));
     BOX_CIRCLE = new QPixmap(QIcon::fromTheme("circleCreate").pixmap(pixmapSize));
     BOX_RECT = new QPixmap(QIcon::fromTheme("rectCreate").pixmap(pixmapSize));
@@ -712,6 +957,9 @@ void BoxSingleWidget::clearStaticPixmaps()
     delete G_ICON;
     delete CG_ICON;
     delete GRAPH_PROPERTY_ICON;
+    delete ICON_3D_ON;
+    delete ICON_3D_OFF;
+    delete ICON_RESET;
 
     delete BOX_PATH;
     delete BOX_CIRCLE;
@@ -764,7 +1012,7 @@ void BoxSingleWidget::mouseMoveEvent(QMouseEvent *event) {
     const auto drag = new QDrag(this);
     {
         const auto prop = static_cast<Property*>(mTarget->getTarget());
-        const QString name = prop->prp_getName();
+        const QString name = translatePropertyName(prop->prp_getName());
         const int nameWidth = QApplication::fontMetrics().horizontalAdvance(name);
         QPixmap pixmap(mFillWidget->x() + nameWidth + eSizesUI::widget, height());
         render(&pixmap);
@@ -960,7 +1208,7 @@ void BoxSingleWidget::paintEvent(QPaintEvent *) {
     }
 
     const QRect textRect(nameX, 0, width() - nameX - eSizesUI::widget, eSizesUI::widget);
-    const QString& name = prop->prp_getName();
+    const QString name = translatePropertyName(prop->prp_getName());
     QTextOption opts(Qt::AlignVCenter);
     opts.setWrapMode(QTextOption::NoWrap);
     p.drawText(textRect, name, opts);
@@ -1017,6 +1265,37 @@ void BoxSingleWidget::switchBoxVisibleAction() {
 void BoxSingleWidget::switchBoxLockedAction() {
     if(!mTarget) return;
     static_cast<BoundingBox*>(mTarget->getTarget())->switchLocked();
+    Document::sInstance->actionFinished();
+    update();
+}
+
+void BoxSingleWidget::resetPropertyAction() {
+    if(!mTarget) return;
+    const auto target = mTarget->getTarget();
+    const auto prop = enve_cast<Property*>(target);
+    if(!prop) return;
+    const auto trans = prop->getFirstAncestor<AdvancedTransformAnimator>();
+    if(!trans) return;
+
+    if(const auto qpf = enve_cast<QPointFAnimator*>(prop)) {
+        // defaults: translation/shear/pivot (0,0), scale (1,1)
+        QPointF def(0, 0);
+        if(trans->getScaleAnimator() == qpf) def = QPointF(1, 1);
+        qpf->prp_startTransform();
+        qpf->setBaseValue(def);
+        qpf->prp_finishTransform();
+    } else if(const auto qra = enve_cast<QrealAnimator*>(prop)) {
+        // defaults: rot/rotX/rotY/zPos/pos x,y/shear/pivot = 0,
+        //           opacity = 100, perspective = 800, scale x,y = 1
+        qreal def = 0;
+        if(trans->getOpacityAnimator() == qra) def = 100;
+        else if(trans->getPerspectiveAnimator() == qra) def = 800;
+        else if(trans->getScaleAnimator()->getXAnimator() == qra ||
+                trans->getScaleAnimator()->getYAnimator() == qra) def = 1;
+        qra->prp_startTransform();
+        qra->setCurrentBaseValue(def);
+        qra->prp_finishTransform();
+    }
     Document::sInstance->actionFinished();
     update();
 }

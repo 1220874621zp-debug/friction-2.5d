@@ -210,7 +210,9 @@ void RenderHandler::interruptPreview() {
 
 void RenderHandler::outOfMemory() {
     if(mRenderingPreview) {
-        playPreview();
+        // Play what has been rendered so far; if nothing is playable yet,
+        // interrupt so the user does not get stuck in the rendering state.
+        if(!playPreview()) interruptPreviewRendering();
     }
 }
 
@@ -218,11 +220,17 @@ void RenderHandler::setRenderingPreview(const bool rendering) {
     mRenderingPreview = rendering;
     if(mCurrentScene) mCurrentScene->setRenderingPreview(rendering);
     TaskScheduler::instance()->setAlwaysQue(rendering);
+    // keep caches in memory while the preview is being rendered:
+    // evicting them now only forces an async reload and the canvas
+    // would flicker with blank frames
+    MemoryHandler::sInstance->setAutoCheckPaused(rendering || mPreviewing);
 }
 
 void RenderHandler::setPreviewing(const bool previewing) {
     mPreviewing = previewing;
     if(mCurrentScene) mCurrentScene->setPreviewing(previewing);
+    // keep caches in memory during playback for the same reason
+    MemoryHandler::sInstance->setAutoCheckPaused(previewing || mRenderingPreview);
 }
 
 void RenderHandler::interruptPreviewRendering() {
@@ -275,26 +283,32 @@ void RenderHandler::playPreviewAfterAllTasksCompleted() {
         TaskScheduler::sSetTaskUnderflowFunc(nullptr);
         Document::sInstance->actionFinished();
         if(TaskScheduler::sAllTasksFinished()) {
-            playPreview();
+            if(!playPreview()) interruptPreviewRendering();
         } else {
             TaskScheduler::sSetAllTasksFinishedFunc([this]() {
-                playPreview();
+                if(!playPreview()) interruptPreviewRendering();
             });
         }
     }
 }
 
-void RenderHandler::playPreview() {
-    if(!mCurrentScene) return;
+bool RenderHandler::playPreview() {
+    if(!mCurrentScene) return false;
     //setFrameAction(mSavedCurrentFrame);
     TaskScheduler::sClearAllFinishedFuncs();
     const auto fIn = mCurrentScene->getFrameIn();
     const auto fOut = mCurrentScene->getFrameOut();
     const int minPreviewFrame = fIn.enabled? (fIn.frame < mSavedCurrentFrame && mSavedCurrentFrame < mCurrentRenderFrame ? mSavedCurrentFrame : fIn.frame) : mSavedCurrentFrame;
     const int maxPreviewFrame = qMin(mMaxRenderFrame, mCurrentRenderFrame);
-    if(minPreviewFrame >= maxPreviewFrame) return;
+    if(minPreviewFrame >= maxPreviewFrame) return false;
     mMinPreviewFrame = mLoop ? (fIn.enabled? fIn.frame : mCurrentScene->getMinFrame()) : (fIn.enabled? (fIn.frame < minPreviewFrame && minPreviewFrame < mCurrentRenderFrame ? minPreviewFrame : fIn.frame) : minPreviewFrame);
     mMaxPreviewFrame = fOut.enabled ? fOut.frame : maxPreviewFrame;
+    // Reload cached frames that were swapped out to tmp files while the
+    // preview was stopped (memory pressure evicts them between runs);
+    // the tmp files hold raw RGBA so the reloads are fast and the frames
+    // are back in memory before the playhead reaches them.
+    mCurrentScene->scheduleLoadMissingSceneFrames(minPreviewFrame,
+                                                  maxPreviewFrame);
     mCurrentPreviewFrame = minPreviewFrame;
     mCurrentScene->setSceneFrame(mCurrentPreviewFrame);
 
@@ -307,6 +321,7 @@ void RenderHandler::playPreview() {
     mPreviewFPSTimer->start();
     emit previewBeingPlayed();
     emit mCurrentScene->requestUpdate();
+    return true;
 }
 
 void RenderHandler::nextPreviewRenderFrame() {

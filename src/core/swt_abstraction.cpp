@@ -148,6 +148,7 @@ void SWT_Abstraction::setContentVisible(const bool visible) {
     //if(bT == mContentVisible) return;
     mContentVisible = visible;
     afterContentVisibilityChanged();
+    mTarget_k->SWT_contentVisibleChanged(visible);
 }
 
 SingleWidgetTarget *SWT_Abstraction::getTarget() const {

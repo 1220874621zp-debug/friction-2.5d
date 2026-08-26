@@ -56,18 +56,20 @@ void GraphKey::changeFrameAndValueBy(const QPointF &frameValueChange) {
 void GraphKey::startCtrlPointsValueTransform() {
     mC0Clamped.saveYValue();
     mC1Clamped.saveYValue();
+    mSavedC0Enabled = mC0Enabled;
+    mSavedC1Enabled = mC1Enabled;
 }
 
 void GraphKey::finishCtrlPointsValueTransform() {
     UndoRedo ur;
 
     const bool oldC0 = mSavedC0Enabled;
-    const bool oldC1 = mSavedC0Enabled;
+    const bool oldC1 = mSavedC1Enabled;
     const qreal oldC0Value = c0Clamped().getRawSavedYValue();
     const qreal oldC1Value = c1Clamped().getRawSavedYValue();
 
     const bool newC0 = mC0Enabled;
-    const bool newC1 = mC0Enabled;
+    const bool newC1 = mC1Enabled;
     const qreal newC0Value = c0Clamped().getRawYValue();
     const qreal newC1Value = c1Clamped().getRawYValue();
 

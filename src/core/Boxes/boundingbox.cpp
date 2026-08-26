@@ -24,6 +24,7 @@
 // Fork of enve - Copyright (C) 2016-2020 Maurycy Liebner
 
 #include "Boxes/boundingbox.h"
+#include "Animators/motionpathhandler.h"
 #include "Boxes/containerbox.h"
 #include "TransformEffects/followpatheffect.h"
 #include "canvas.h"
@@ -36,6 +37,10 @@
 #include "Private/Tasks/taskscheduler.h"
 #include "RasterEffects/rastereffectcollection.h"
 #include "Animators/transformanimator.h"
+#include "Animators/complexanimator.h"
+#include "Animators/animator.h"
+
+#include <functional>
 #include "RasterEffects/rastereffect.h"
 #include "RasterEffects/customrastereffectcreator.h"
 #include "internallinkbox.h"
@@ -107,6 +112,84 @@ BoundingBox::BoundingBox(const QString& name, const eBoxType type) :
 
 BoundingBox::~BoundingBox() {
     sDocumentBoxes.removeOne(this);
+}
+
+namespace {
+
+// true if this property or any descendant has animation keys
+bool hasKeysRecursive(Property * const p) {
+    const auto anim = enve_cast<Animator*>(p);
+    if (anim && anim->anim_hasKeys()) return true;
+    const auto ca = enve_cast<ComplexAnimator*>(p);
+    if (ca) {
+        const int n = ca->ca_getNumberOfChildren();
+        for (int i = 0; i < n; i++) {
+            const auto child = ca->ca_getChildAt(i);
+            if (child && hasKeysRecursive(child)) return true;
+        }
+    }
+    return false;
+}
+
+} // namespace
+
+void BoundingBox::swtSoloHideAllExcept(Property * const keep) {
+    mSoloHiddenTargets.clear();
+    mSoloActiveProp = keep;
+    const auto trans = mTransformAnimator.get();
+    const int n = ca_getNumberOfChildren();
+    for (int i = 0; i < n; i++) {
+        const auto p = ca_getChildAt(i);
+        // keep the transform group itself (keep lives inside it)
+        if (!p || p == keep || p == trans) continue;
+        mSoloHiddenTargets.append(p);
+        p->SWT_hide();
+    }
+    if (trans && keep != trans) {
+        const int m = trans->ca_getNumberOfChildren();
+        for (int i = 0; i < m; i++) {
+            const auto p = trans->ca_getChildAt(i);
+            if (!p || p == keep) continue;
+            mSoloHiddenTargets.append(p);
+            p->SWT_hide();
+        }
+    }
+}
+
+void BoundingBox::swtRestoreSoloHidden() {
+    for (const auto t : mSoloHiddenTargets) {
+        if (t) t->SWT_show();
+    }
+    mSoloHiddenTargets.clear();
+    mSoloActiveProp = nullptr;
+}
+
+void BoundingBox::swtHideWithoutKeys() {
+    mSoloHiddenTargets.clear();
+    mSoloActiveProp = nullptr;
+    // hide top-level rows without keys; recurse into animated groups
+    // so e.g. the transform group keeps only animated sub-rows
+    std::function<void(ComplexAnimator * const)> recurse =
+            [&](ComplexAnimator * const ca) {
+        const int n = ca->ca_getNumberOfChildren();
+        for (int i = 0; i < n; i++) {
+            const auto p = ca->ca_getChildAt(i);
+            if (!p) continue;
+            if (hasKeysRecursive(p)) {
+                const auto complex = enve_cast<ComplexAnimator*>(p);
+                if (complex) recurse(complex);
+            } else {
+                mSoloHiddenTargets.append(p);
+                p->SWT_hide();
+            }
+        }
+    };
+    recurse(this);
+}
+
+void BoundingBox::SWT_contentVisibleChanged(const bool visible) {
+    // layer row collapsed and re-expanded: restore solo-hidden rows
+    if (visible) swtRestoreSoloHidden();
 }
 
 void BoundingBox::writeBoundingBox(eWriteStream& dst) const {
@@ -537,6 +620,13 @@ void BoundingBox::prp_updateCanvasProps() {
         if(prop->prp_drawsOnCanvas()) mCanvasProps.append(prop);
     });
     if(prp_drawsOnCanvas()) mCanvasProps.append(this);
+    // AE-style motion path overlay (position keyframes + handles);
+    // owned here, NOT part of the property tree (no serialization)
+    if (!mMotionPathHandler) {
+        mMotionPathHandler = enve::make_shared<MotionPathHandler>(
+                    getBoxTransformAnimator());
+    }
+    mCanvasProps.append(mMotionPathHandler.get());
     const auto parentScene = getParentScene();
     if(parentScene) parentScene->requestUpdate();
 }
@@ -735,7 +825,8 @@ void BoundingBox::applyPaintSetting(const PaintSettingsApplier &setting)
 void BoundingBox::drawBoundingRect(SkCanvas * const canvas,
                                    const float invScale) {
     SkiaHelpers::drawOutlineOverlay(canvas, mSkRelBoundingRectPath,
-                                    invScale, toSkMatrix(getTotalTransform()),
+                                    invScale,
+                                    mTransformAnimator->getTotalTransform3D(),
                                     true, eSizesUI::widget*0.25f);
 }
 
@@ -1099,6 +1190,15 @@ void BoundingBox::setupWithoutRasterEffects(const qreal relFrame,
     data->fRelTransform = thisRelM;
     data->fInheritedTransform = parentM;
     data->fTotalTransform = thisRelM*parentM;
+
+    // 2.5D billboard perspective
+    data->fPerspectiveTransform.reset();
+    data->fHasPerspective = false;
+    if(mTransformAnimator->has3DTransformAtFrame(relFrame)) {
+        data->fPerspectiveTransform =
+                mTransformAnimator->get3DTransformAtFrame(relFrame);
+        data->fHasPerspective = true;
+    }
 
     data->fResolution = scene->getResolution();
     data->fResolutionScale.reset();

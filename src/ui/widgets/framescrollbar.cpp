@@ -71,7 +71,7 @@ void FrameScrollBar::setCurrentCanvas(Canvas * const canvas)
 
 void FrameScrollBar::paintEvent(QPaintEvent *) {
     QPainter p(this);
-    p.fillRect(rect(), ThemeSupport::getThemeBaseDarkerColor());
+    p.fillRect(rect(), ThemeSupport::getThemeToolBarColor());
 
     const int dFrame = mFrameRange.fMax - mFrameRange.fMin + (mRange ? 0 : 1);
     if (dFrame <= 0) { return; }

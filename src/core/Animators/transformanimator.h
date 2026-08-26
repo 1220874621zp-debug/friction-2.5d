@@ -1,4 +1,4 @@
-﻿/*
+/*
 #
 # Friction - https://friction.graphics
 #
@@ -134,6 +134,7 @@ signals:
 
 class CORE_EXPORT AdvancedTransformAnimator : public BasicTransformAnimator {
     e_OBJECT
+    Q_OBJECT
 protected:
     AdvancedTransformAnimator();
 public:
@@ -202,10 +203,50 @@ public:
     QrealAnimator *getOpacityAnimator() const {
         return mOpacityAnimator.get();
     }
+
+    // 2.5D billboard transform
+    // returns identity when all 3D values are at defaults
+    SkMatrix get3DTransformAtFrame(const qreal relFrame) const;
+    bool has3DTransformAtFrame(const qreal relFrame) const;
+    qreal get3DZPosAtFrame(const qreal relFrame) const;
+    // total transform with 3D applied (rel * 3D * inherited)
+    SkMatrix getTotalTransform3D() const;
+    void reset3D();
+    void set3DPropertiesVisible(const bool visible);
+
+    // 2.5D layer toggle (timeline cube button, AE-style)
+    // disabling resets 3D values to defaults (undoable) and
+    // hides the 3D properties from the properties panel
+    bool is3DEnabled() const { return m3DEnabled; }
+    void set3DEnabled(const bool enabled);
+
+    QrealAnimator *getRotXAnimator() const {
+        return mRotXAnimator.get();
+    }
+
+    QrealAnimator *getRotYAnimator() const {
+        return mRotYAnimator.get();
+    }
+
+    QrealAnimator *getZPosAnimator() const {
+        return mZPosAnimator.get();
+    }
+
+    QrealAnimator *getPerspectiveAnimator() const {
+        return mPerspectiveAnimator.get();
+    }
+signals:
+    void box3DChanged();
 private:
     qsptr<QPointFAnimator> mPivotAnimator;
     qsptr<QPointFAnimator> mShearAnimator;
     qsptr<QrealAnimator> mOpacityAnimator;
+    // 2.5D
+    qsptr<QrealAnimator> mRotXAnimator;
+    qsptr<QrealAnimator> mRotYAnimator;
+    qsptr<QrealAnimator> mZPosAnimator;
+    qsptr<QrealAnimator> mPerspectiveAnimator;
+    bool m3DEnabled = true;
 };
 
 class CORE_EXPORT BoxTransformAnimator : public AdvancedTransformAnimator {

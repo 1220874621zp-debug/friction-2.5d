@@ -156,6 +156,12 @@ public:
     QPointF getSelectedBoxesAbsPivotPos();
     int getSelectedBoxesCount();
     bool isBoxSelectionEmpty() const;
+    // authoritative selection list (kept in sync with box isSelected)
+    QList<BoundingBox*> getSelectedBoxesList() const
+    { return mSelectedBoxes.getList(); }
+    // selected property rows (e.g. Position clicked in the timeline)
+    QList<Property*> getSelectedPropsList() const
+    { return mSelectedProps.getList(); }
 
     void ungroupSelectedBoxes();
     void scaleSelectedBy(const qreal scaleBy,
@@ -542,6 +548,11 @@ public:
     void setSceneFrame(const int relFrame);
     void setSceneFrame(const stdsptr<SceneFrameContainer> &cont);
     void setLoadingSceneFrame(const stdsptr<SceneFrameContainer> &cont);
+    // Schedule tmp-file reloads for cached frames in [minRelFrame, maxRelFrame]
+    // whose pixels are currently swapped out of memory. Called when preview
+    // playback starts so frames are back in memory by the time the playhead
+    // reaches them.
+    void scheduleLoadMissingSceneFrames(const int minRelFrame, const int maxRelFrame);
 
     void setRenderingPreview(const bool bT);
 

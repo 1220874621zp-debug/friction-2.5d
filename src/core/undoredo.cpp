@@ -119,13 +119,13 @@ void UndoRedoStack::addUndoRedo(const QString& name,
 }
 
 QString UndoRedoStack::undoText() const {
-    if(mUndoStack.isEmpty()) return "Undo";
-    return "Undo " + mUndoStack.last()->fName;
+    if(mUndoStack.isEmpty()) return tr("Undo");
+    return tr("Undo") + QStringLiteral(" ") + mUndoStack.last()->fName;
 }
 
 QString UndoRedoStack::redoText() const {
-    if(mRedoStack.isEmpty()) return "Redo";
-    return "Redo " + mRedoStack.last()->fName;
+    if(mRedoStack.isEmpty()) return tr("Redo");
+    return tr("Redo") + QStringLiteral(" ") + mRedoStack.last()->fName;
 }
 
 bool UndoRedoStack::canUndo() const {

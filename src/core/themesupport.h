@@ -31,6 +31,7 @@
 #include <QSize>
 #include <QToolBar>
 #include <QFileIconProvider>
+#include <QIcon>
 
 #include "include/core/SkColor.h"
 
@@ -38,6 +39,18 @@ class CORE_EXPORT ThemeSupport
 {
 
 public:
+    enum class Theme {
+        Friction,
+        Blender
+    };
+
+    static void setTheme(const Theme theme);
+    static Theme theme();
+    static const QString themeId();
+    static void setThemeFromId(const QString &id);
+    static const QStringList availableThemeIds();
+    static const QString themeDisplayName(const QString &id);
+
     static const QString getAppIconName(const bool alt = false);
     static const QColor getQColor(int r, int g, int b, int a = 255);
     static const QColor getThemeBaseColor(int alpha = 255);
@@ -52,8 +65,10 @@ public:
     static SkColor getThemeHighlightSkColor(int alpha = 255);
     static const QColor getThemeButtonBaseColor(int alpha = 255);
     static const QColor getThemeButtonBorderColor(int alpha = 255);
+    static const QColor getThemeButtonHoverColor(int alpha = 255);
     static const QColor getThemeComboBaseColor(int alpha = 255);
     static const QColor getThemeTimelineColor(int alpha = 255);
+    static const QColor getThemeToolBarColor(int alpha = 255);
     static const QColor getThemeRangeColor(int alpha = 255);
     static const QColor getThemeRangeSelectedColor(int alpha = 255);
     static const QColor getThemeFrameMarkerColor(int alpha = 255);
@@ -81,6 +96,16 @@ public:
                                       QAction *act);
     static const QColor getLightDarkColor(const QColor &color,
                                           const int &factor);
+    /** Tint a monochrome icon to the given color (alpha preserved,
+        used for Blender theme tool/panel icons). */
+    static const QIcon colorizeIcon(const QIcon &icon,
+                                    const QColor &color,
+                                    const int size = 64);
+    /** Tint a theme icon by name; returns the default icon when the
+        color is invalid (non-Blender themes keep the default white). */
+    static const QIcon themedToolIcon(const QString &name,
+                                      const QColor &color,
+                                      const int size = 64);
 };
 
 class CORE_EXPORT ThemeIconProvider : public QFileIconProvider

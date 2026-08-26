@@ -38,6 +38,7 @@ class SceneBoundGradient;
 
 class UI_EXPORT GLWidget : public QOpenGLWidget, protected QGL33
 {
+    Q_OBJECT
 public:
     GLWidget(QWidget *parent);
     ~GLWidget() {

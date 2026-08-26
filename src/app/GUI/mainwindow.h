@@ -56,8 +56,8 @@
 #include "widgets/colortoolbar.h"
 #include "widgets/canvastoolbar.h"
 #include "widgets/aboutwidget.h"
-#include "widgets/uilayout.h"
 #include "widgets/toolbox.h"
+#include <QDockWidget>
 
 #ifndef Q_OS_MAC
 #include "widgets/persistentmenu.h"
@@ -78,6 +78,7 @@ class MemoryHandler;
 class ObjectSettingsWidget;
 class BoxScrollWidget;
 class ScrollArea;
+class ScriptManager;
 
 class MainWindow : public QMainWindow
 {
@@ -186,6 +187,7 @@ public:
     void openMarkerEditor();
     void openExpressionDialog(QrealAnimator* const target);
     void openApplyExpressionDialog(QrealAnimator* const target);
+    static void installDebugLogHandler();
 
 protected:
     void lockFinished();
@@ -236,7 +238,22 @@ private:
     Friction::Ui::ToolBar *mToolbar;
     Friction::Ui::ToolBox *mToolBox;
 
-    UILayout *mUI;
+    QDockWidget *mTimelineDock = nullptr;
+    QDockWidget *mFillStrokeDock = nullptr;
+    QDockWidget *mPropertiesDock = nullptr;
+    QDockWidget *mEasingDock = nullptr;
+
+    // JS plugin system (Scripts menu + console dock)
+    ScriptManager *mScriptManager = nullptr;
+    void setupScripting();
+
+    QMenu *mWorkspaceMenu = nullptr;
+    void rebuildWorkspaceMenu();
+    void saveCurrentWorkspaceAs();
+    void applyWorkspace(const QString &name);
+    void deleteWorkspace(const QString &name);
+    void applyDefaultWorkspace();
+    QStringList savedWorkspaceNames() const;
 
     QAction *mSaveAct;
     QAction *mSaveAsAct;
@@ -376,8 +393,28 @@ private:
     void askRestoreDefaultUi();
     void askRunQuickSetup();
 
+    QPushButton *mDebugLogButton = nullptr;
+    class QPlainTextEdit *mDebugLogView = nullptr;
+    class QDialog *mDebugLogDialog = nullptr;
+    class QTimer *mDebugLogTimer = nullptr;
+    int mDebugLogShownLines = 0;
+    void setupDebugLog();
+    void openDebugLogDialog();
+    void updateDebugLogButtonPos();
+    void refreshDebugLogView();
+
     QAction *mToolBarMainAct;
     QAction *mToolBarColorAct;
+
+    // dock/toolbar layout saved in readSettings() and applied after the
+    // window geometry is stable: restoring before the final window size
+    // (the maximize resize arrives asynchronously) clamps docks to their
+    // minimums and loses the saved sizes. Every resize restarts the
+    // debounce timer; restoreState() runs once the size settles.
+    QByteArray mPendingStateRestore;
+    class QTimer *mStateRestoreTimer = nullptr;
+    void armPendingStateRestore();
+    void applyPendingStateRestore();
 
     intMB mMemoryUsed;
 

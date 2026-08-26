@@ -29,6 +29,45 @@
 #include <QDebug>
 #include <QDesktopWidget>
 #include <QToolButton>
+#include <QPixmap>
+#include <QPainter>
+
+namespace {
+ThemeSupport::Theme sTheme = ThemeSupport::Theme::Friction;
+}
+
+void ThemeSupport::setTheme(const Theme theme)
+{
+    sTheme = theme;
+}
+
+ThemeSupport::Theme ThemeSupport::theme()
+{
+    return sTheme;
+}
+
+const QString ThemeSupport::themeId()
+{
+    return sTheme == Theme::Blender ? QStringLiteral("blender")
+                                    : QStringLiteral("friction");
+}
+
+void ThemeSupport::setThemeFromId(const QString &id)
+{
+    sTheme = id == QStringLiteral("blender") ? Theme::Blender
+                                             : Theme::Friction;
+}
+
+const QStringList ThemeSupport::availableThemeIds()
+{
+    return {QStringLiteral("friction"), QStringLiteral("blender")};
+}
+
+const QString ThemeSupport::themeDisplayName(const QString &id)
+{
+    return id == QStringLiteral("blender") ? QStringLiteral("Blender")
+                                           : QStringLiteral("Friction");
+}
 
 const QString ThemeSupport::getAppIconName(const bool alt)
 {
@@ -46,81 +85,116 @@ const QColor ThemeSupport::getQColor(int r,
 
 const QColor ThemeSupport::getThemeBaseColor(int alpha)
 {
+    if (sTheme == Theme::Blender) { return getQColor(34, 34, 34, alpha); }
     return getQColor(26, 26, 30, alpha);
 }
 
 SkColor ThemeSupport::getThemeBaseSkColor(int alpha)
 {
+    if (sTheme == Theme::Blender) { return SkColorSetARGB(alpha, 34, 34, 34); }
     return SkColorSetARGB(alpha, 26, 26, 30);
 }
 
 const QColor ThemeSupport::getThemeBaseDarkColor(int alpha)
 {
+    if (sTheme == Theme::Blender) { return getQColor(26, 26, 26, alpha); }
     return getQColor(25, 25, 25, alpha);
 }
 
 const QColor ThemeSupport::getThemeBaseDarkerColor(int alpha)
 {
+    // Blender: #1D1D1D (menu bar / input base, qss %3)
+    if (sTheme == Theme::Blender) { return getQColor(29, 29, 29, alpha); }
     return getQColor(19, 19, 21, alpha);
 }
 
 const QColor ThemeSupport::getThemeAlternateColor(int alpha)
 {
+    if (sTheme == Theme::Blender) { return getQColor(43, 43, 43, alpha); }
     return getQColor(33, 33, 39, alpha);
 }
 
 const QColor ThemeSupport::getThemeHighlightColor(int alpha)
 {
+    // Blender: #4772B3 (selection highlight for menu/tool/property)
+    if (sTheme == Theme::Blender) { return getQColor(71, 114, 179, alpha); }
     return getQColor(104, 144, 206, alpha);
 }
 
 const QColor ThemeSupport::getThemeHighlightDarkerColor(int alpha)
 {
+    if (sTheme == Theme::Blender) { return getQColor(78, 126, 163, alpha); }
     return getQColor(53, 101, 176, alpha);
 }
 
 const QColor ThemeSupport::getThemeHighlightAlternativeColor(int alpha)
 {
+    if (sTheme == Theme::Blender) { return getQColor(111, 158, 195, alpha); }
     return getQColor(167, 185, 222, alpha);
 }
 
 const QColor ThemeSupport::getThemeHighlightSelectedColor(int alpha)
 {
+    // Blender: #4772B3 (timeline layer/box selection fill, same as highlight)
+    if (sTheme == Theme::Blender) { return getQColor(71, 114, 179, alpha); }
     return getQColor(150, 191, 255, alpha);
 }
 
 SkColor ThemeSupport::getThemeHighlightSkColor(int alpha)
 {
+    // Blender: #4772B3 (kept in sync with getThemeHighlightColor)
+    if (sTheme == Theme::Blender) { return SkColorSetARGB(alpha, 71, 114, 179); }
     return SkColorSetARGB(alpha, 104, 144, 206);
 }
 
 const QColor ThemeSupport::getThemeButtonBaseColor(int alpha)
 {
+    if (sTheme == Theme::Blender) { return getQColor(74, 74, 74, alpha); }
     return getQColor(49, 49, 59, alpha);
 }
 
 const QColor ThemeSupport::getThemeButtonBorderColor(int alpha)
 {
+    if (sTheme == Theme::Blender) { return getQColor(62, 62, 62, alpha); }
     return getQColor(65, 65, 80, alpha);
+}
+
+const QColor ThemeSupport::getThemeButtonHoverColor(int alpha)
+{
+    if (sTheme == Theme::Blender) { return getQColor(84, 84, 84, alpha); }
+    return getThemeBaseDarkerColor(alpha);
 }
 
 const QColor ThemeSupport::getThemeComboBaseColor(int alpha)
 {
+    // Blender: #1D1D1D (combo/input base)
+    if (sTheme == Theme::Blender) { return getQColor(29, 29, 29, alpha); }
     return getQColor(36, 36, 53, alpha);
 }
 
 const QColor ThemeSupport::getThemeTimelineColor(int alpha)
 {
+    // Blender: #1D1D1D (timeline ruler base)
+    if (sTheme == Theme::Blender) { return getQColor(29, 29, 29, alpha); }
     return getQColor(44, 44, 49, alpha);
+}
+
+const QColor ThemeSupport::getThemeToolBarColor(int alpha)
+{
+    // Blender: #1D1D1D toolbar / timeline ruler background
+    if (sTheme == Theme::Blender) { return getQColor(29, 29, 29, alpha); }
+    return getQColor(19, 19, 21, alpha);
 }
 
 const QColor ThemeSupport::getThemeRangeColor(int alpha)
 {
+    if (sTheme == Theme::Blender) { return getQColor(58, 74, 92, alpha); }
     return getQColor(56, 73, 101, alpha);
 }
 
 const QColor ThemeSupport::getThemeRangeSelectedColor(int alpha)
 {
+    if (sTheme == Theme::Blender) { return getQColor(94, 142, 179, alpha); }
     return getQColor(87, 120, 173, alpha);
 }
 
@@ -131,46 +205,58 @@ const QColor ThemeSupport::getThemeFrameMarkerColor(int alpha)
 
 const QColor ThemeSupport::getThemeObjectColor(int alpha)
 {
+    if (sTheme == Theme::Blender) { return getQColor(238, 158, 94, alpha); }
     return getQColor(0, 102, 255, alpha);
 }
 
 const QColor ThemeSupport::getThemeColorRed(int alpha)
 {
+    // Blender: #A9575F (tool icon red)
+    if (sTheme == Theme::Blender) { return getQColor(169, 87, 95, alpha); }
     return getQColor(199, 67, 72, alpha);
 }
 
 const QColor ThemeSupport::getThemeColorBlue(int alpha)
 {
+    // Blender: #6387D2 (tool icon blue)
+    if (sTheme == Theme::Blender) { return getQColor(99, 135, 210, alpha); }
     return getQColor(73, 142, 209, alpha);
 }
 
 const QColor ThemeSupport::getThemeColorYellow(int alpha)
 {
+    if (sTheme == Theme::Blender) { return getQColor(238, 205, 94, alpha); }
     return getQColor(209, 183, 73, alpha);
 }
 
 const QColor ThemeSupport::getThemeColorPink(int alpha)
 {
+    if (sTheme == Theme::Blender) { return getQColor(158, 94, 238, alpha); }
     return getQColor(169, 73, 209, alpha);
 }
 
 const QColor ThemeSupport::getThemeColorGreen(int alpha)
 {
+    // Blender: #08A581 (tool icon green)
+    if (sTheme == Theme::Blender) { return getQColor(8, 165, 129, alpha); }
     return getQColor(73, 209, 132, alpha);
 }
 
 const QColor ThemeSupport::getThemeColorGreenDark(int alpha)
 {
+    if (sTheme == Theme::Blender) { return getQColor(35, 60, 45, alpha); }
     return getQColor(27, 49, 39, alpha);
 }
 
 const QColor ThemeSupport::getThemeColorOrange(int alpha)
 {
+    if (sTheme == Theme::Blender) { return getQColor(238, 158, 94, alpha); }
     return getQColor(255, 123, 0, alpha);
 }
 
 const QColor ThemeSupport::getThemeColorTextDisabled(int alpha)
 {
+    if (sTheme == Theme::Blender) { return getQColor(136, 136, 136, alpha); }
     return getQColor(112, 112, 113, alpha);
 }
 
@@ -245,7 +331,9 @@ const QString ThemeSupport::getThemeStyle(int iconSize)
                    QString::number(getIconSize(qRound(iconPixelRatio)).width()),
                    QString::number(getIconSize(qRound(iconPixelRatio / 2)).width()),
                    getThemeColorTextDisabled().name(),
-                   QString::number(getIconSize(iconSize).width() / 4));
+                   QString::number(getIconSize(iconSize).width() / 4),
+                   getThemeButtonHoverColor().name(),
+                   getThemeToolBarColor().name());
 }
 
 void ThemeSupport::setupTheme(const int iconSize)
@@ -331,6 +419,40 @@ const QColor ThemeSupport::getLightDarkColor(const QColor &color,
     return col;
 }
 
+const QIcon ThemeSupport::colorizeIcon(const QIcon &icon,
+                                       const QColor &color,
+                                       const int size)
+{
+    if (icon.isNull() || !color.isValid()) { return icon; }
+    // Render at a single 'size': the SVG is rasterized sharply at this
+    // size, then Qt scales it to any button size (same scale path as the
+    // white fromTheme icons), so colored icons match the white ones.
+    const QPixmap src = icon.pixmap(QSize(size, size));
+    if (src.isNull()) { return icon; }
+    // Tint the source pixmap in place (implicit copy) so it keeps its
+    // devicePixelRatio. With AA_UseHighDpiPixmaps icon.pixmap() returns
+    // size*dpr physical pixels with the ratio set; drawing it onto a
+    // fresh dpr=1.0 canvas would only cover its top-left corner and the
+    // icon would render at 1/dpr of the intended size (half size at 200%).
+    QPixmap pix = src;
+    QPainter p(&pix);
+    // Keep the original alpha, tint the pixels to the target color.
+    p.setCompositionMode(QPainter::CompositionMode_SourceIn);
+    p.fillRect(pix.rect(), color);
+    p.end();
+    return QIcon(pix);
+}
+
+const QIcon ThemeSupport::themedToolIcon(const QString &name,
+                                         const QColor &color,
+                                         const int size)
+{
+    const QIcon icon = QIcon::fromTheme(name);
+    // Tint only for the Blender theme; other themes keep the default icon.
+    if (sTheme != Theme::Blender || !color.isValid()) { return icon; }
+    return colorizeIcon(icon, color, size);
+}
+
 ThemeIconProvider::ThemeIconProvider()
 {
     mIcon = QIcon::fromTheme(ThemeSupport::getAppIconName(true));
@@ -340,5 +462,15 @@ QIcon ThemeIconProvider::icon(const QFileInfo &info) const
 {
     const QString name = info.fileName().toLower();
     if (name.endsWith(".friction")) { return mIcon; }
-    return QFileIconProvider::icon(info);
+    // Never query the Windows shell for per-file icons: shell
+    // extensions (e.g. the Photoshop PSD handler) may hang on large
+    // files. Generic icons are used for files instead. Directories
+    // are safe (no per-file icon handlers are involved) and use the
+    // real system icon, so known folders (Desktop/Music/Pictures)
+    // and drives keep their distinct icons in the file dialog
+    // sidebar and the folder list.
+    if (info.isDir()) {
+        return QFileIconProvider::icon(info);
+    }
+    return QFileIconProvider::icon(QFileIconProvider::File);
 }

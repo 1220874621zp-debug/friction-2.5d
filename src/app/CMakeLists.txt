@@ -187,6 +187,7 @@ set(
     GUI/RenderWidgets/rendersettingsdisplaywidget.cpp
     GUI/Settings/generalsettingswidget.cpp
     GUI/Settings/settingsdialog.cpp
+    GUI/Settings/shortcutsettingswidget.cpp
     GUI/Settings/timelinesettingswidget.cpp
     GUI/Settings/pluginssettingswidget.cpp
     GUI/canvasbasewrappernode.cpp
@@ -218,10 +219,14 @@ set(
     GUI/RenderWidgets/outputsettingsprofilesdialog.cpp
     GUI/RenderWidgets/outputsettingsdisplaywidget.cpp
     GUI/animationdockwidget.cpp
+    GUI/easingpresetspanel.cpp
+    GUI/scriptmanager.cpp
+    GUI/scriptconsole.cpp
     GUI/canvaswindow.cpp
     GUI/graphboxeslist.cpp
     GUI/keysview.cpp
     GUI/mainwindow.cpp
+    GUI/hangwatchdog.cpp
     GUI/extraactions.cpp
     GUI/effectactions.cpp
     GUI/menu.cpp
@@ -239,6 +244,7 @@ set(
     GUI/RenderWidgets/rendersettingsdisplaywidget.h
     GUI/Settings/generalsettingswidget.h
     GUI/Settings/settingsdialog.h
+    GUI/Settings/shortcutsettingswidget.h
     GUI/Settings/timelinesettingswidget.h
     GUI/Settings/pluginssettingswidget.h
     GUI/canvasbasewrappernode.h
@@ -267,9 +273,13 @@ set(
     GUI/RenderWidgets/outputsettingsprofilesdialog.h
     GUI/RenderWidgets/outputsettingsdisplaywidget.h
     GUI/animationdockwidget.h
+    GUI/easingpresetspanel.h
+    GUI/scriptmanager.h
+    GUI/scriptconsole.h
     GUI/canvaswindow.h
     GUI/keysview.h
     GUI/mainwindow.h
+    GUI/hangwatchdog.h
     GUI/window.h
 )
 
@@ -350,6 +360,14 @@ target_link_libraries(
     ${FFMPEG_LIBRARIES}
     ${SKIA_LIBRARIES}
 )
+
+if(MSVC)
+    # generate PDB so the hang watchdog stack dump
+    # can resolve function names
+    target_compile_options(${PROJECT_NAME} PRIVATE /Zi)
+    set_target_properties(${PROJECT_NAME} PROPERTIES
+                          LINK_FLAGS "/DEBUG /OPT:REF /OPT:ICF")
+endif()
 
 if(${SKIA_USE_SYSTEM_LIBS} AND UNIX)
     target_link_libraries(

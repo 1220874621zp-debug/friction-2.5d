@@ -25,7 +25,9 @@
 
 #include "memoryhandler.h"
 #include "Boxes/boxrendercontainer.h"
+#include "CacheHandlers/cachecontainer.h"
 #include "GUI/mainwindow.h"
+#include <QDebug>
 #include <QMetaType>
 
 #ifdef Q_OS_MAC
@@ -72,6 +74,14 @@ void MemoryHandler::clearMemory() {
     freeMemory(NORMAL_MEMORY_STATE, longB(std::numeric_limits<qint64>::max()));
 }
 
+void MemoryHandler::setAutoCheckPaused(const bool paused) {
+    if(paused) {
+        mTimer->stop();
+    } else {
+        mTimer->start(1000);
+    }
+}
+
 MemoryState MemoryHandler::sMemoryState() {
     return sInstance->mMemoryState;
 }
@@ -98,12 +108,25 @@ void MemoryHandler::freeMemory(const MemoryState newState,
 
     if(minFreeBytes.fValue <= 0) return;
     qint64 memToFree = minFreeBytes.fValue;
+    qWarning() << "MEMH: freeMemory state" << int(newState)
+               << "want" << memToFree << "bytes,"
+               << mDataHandler.count() << "container(s)";
     while(memToFree > 0 && !mDataHandler.isEmpty()) {
-        const auto cont = mDataHandler.takeFirst();
+        const auto contRaw = mDataHandler.takeFirst();
+        // hold a strong reference while evicting: free_RAM_k() may
+        // release the last owner of the container (e.g. noDataLeft_k
+        // resetting the owning data handler), destroying it mid-call
+        // and leaving the loop with a dangling pointer (crash inside
+        // StdSelfRef::ref() / heap corruption)
+        const auto cont = contRaw->ref<CacheContainer>();
         memToFree -= cont->free_RAM_k();
     }
-    if(newState == CRITICAL_MEMORY_STATE ||
-       memToFree > 0) {
+    // Only a real critical memory state (as reported by the memory checker)
+    // escalates to critical. Failing to free enough from our own caches
+    // (e.g. system memory is consumed by other applications) must not
+    // trigger allMemoryUsed in a loop, which used to break the preview
+    // state machine (playback became unresponsive).
+    if(newState == CRITICAL_MEMORY_STATE) {
         mMemoryState = CRITICAL_MEMORY_STATE;
         emit enteredCriticalState();
         emit allMemoryUsed();

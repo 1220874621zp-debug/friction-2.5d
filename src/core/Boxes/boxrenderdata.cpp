@@ -36,10 +36,22 @@ BoxRenderData::BoxRenderData(BoundingBox * const parent) :
     fBlendEffectIdentifier = parent;
 }
 
+SkMatrix BoxRenderData::getFullRenderTransform() const {
+    if(!fHasPerspective) return toSkMatrix(fScaledTransform);
+    // point order: 3D perspective (layer space, around own pivot)
+    //              -> rel -> inherited -> resolution
+    // SkMatrix preConcat(m): this = this * m (m applied first)
+    SkMatrix result = toSkMatrix(fResolutionScale);
+    result.preConcat(toSkMatrix(fInheritedTransform));
+    result.preConcat(toSkMatrix(fRelTransform));
+    result.preConcat(fPerspectiveTransform);
+    return result;
+}
+
 void BoxRenderData::transformRenderCanvas(SkCanvas &canvas) const {
     canvas.translate(toSkScalar(-fGlobalRect.x()),
                      toSkScalar(-fGlobalRect.y()));
-    canvas.concat(toSkMatrix(fScaledTransform));
+    canvas.concat(getFullRenderTransform());
 }
 
 void BoxRenderData::copyFrom(BoxRenderData *src) {
@@ -48,6 +60,8 @@ void BoxRenderData::copyFrom(BoxRenderData *src) {
     fInheritedTransform = src->fInheritedTransform;
     fTotalTransform = src->fTotalTransform;
     fScaledTransform = src->fScaledTransform;
+    fPerspectiveTransform = src->fPerspectiveTransform;
+    fHasPerspective = src->fHasPerspective;
     fRelFrame = src->fRelFrame;
     fRelBoundingRect = src->fRelBoundingRect;
     fRenderTransform = src->fRenderTransform;
@@ -241,7 +255,31 @@ void BoxRenderData::dataSet() {
 #include "Boxes/textboxrenderdata.h"
 void BoxRenderData::updateGlobalRect() {
     fScaledTransform = fTotalTransform*fResolutionScale;
-    QRectF baseRectF = fScaledTransform.mapRect(fRelBoundingRect);
+    QRectF baseRectF;
+    if(fHasPerspective) {
+        // perspective: map bounding rect corners and take the AABB
+        const auto full = getFullRenderTransform();
+        const auto& r = fRelBoundingRect;
+        const SkPoint corners[4] = {
+            {toSkScalar(r.left()),  toSkScalar(r.top())},
+            {toSkScalar(r.right()), toSkScalar(r.top())},
+            {toSkScalar(r.right()), toSkScalar(r.bottom())},
+            {toSkScalar(r.left()),  toSkScalar(r.bottom())}
+        };
+        SkPoint mapped[4];
+        full.mapPoints(mapped, corners, 4);
+        qreal minX = mapped[0].x(); qreal minY = mapped[0].y();
+        qreal maxX = minX; qreal maxY = minY;
+        for(int i = 1; i < 4; i++) {
+            minX = qMin(minX, qreal(mapped[i].x()));
+            minY = qMin(minY, qreal(mapped[i].y()));
+            maxX = qMax(maxX, qreal(mapped[i].x()));
+            maxY = qMax(maxY, qreal(mapped[i].y()));
+        }
+        baseRectF = QRectF(minX, minY, maxX - minX, maxY - minY);
+    } else {
+        baseRectF = fScaledTransform.mapRect(fRelBoundingRect);
+    }
     for(const QRectF &rectT : fOtherGlobalRects) {
         baseRectF = baseRectF.united(rectT);
     }

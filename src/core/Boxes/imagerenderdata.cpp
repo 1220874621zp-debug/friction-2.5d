@@ -1,4 +1,4 @@
-﻿/*
+/*
 #
 # Friction - https://friction.graphics
 #
@@ -24,6 +24,9 @@
 // Fork of enve - Copyright (C) 2016-2020 Maurycy Liebner
 
 #include "imagerenderdata.h"
+#include "Boxes/boundingbox.h"
+
+#include <QDebug>
 
 ImageRenderData::ImageRenderData(BoundingBox * const parentBoxT) :
     BoxRenderData(parentBoxT) {
@@ -38,13 +41,23 @@ void ImageRenderData::updateRelBoundingRect() {
 
 void ImageRenderData::setupRenderData() {
     if(!fImage) loadImageFromHandler();
-    if(!fForceRasterize && !hasEffects()) setupDirectDraw();
+    if(!fImage) {
+        qWarning() << "IMGDRAW: no image after load attempt for"
+                   << fParentBox->prp_getName();
+    }
+    // 2.5D: perspective requires rasterization (direct draw is 2D only)
+    if(!fForceRasterize && !hasEffects() && !fHasPerspective) setupDirectDraw();
 }
 
 void ImageRenderData::setupDirectDraw() {
     fBaseMargin = QMargins();
     dataSet();
     updateGlobalRect();
+    qWarning() << "IMGDRAW:" << fParentBox->prp_getName()
+               << "img" << (fImage ? QStringLiteral("%1x%2").arg(fImage->width()).arg(fImage->height()) : QStringLiteral("NULL"))
+               << "rel" << fRelBoundingRect
+               << "global" << fGlobalRect
+               << "opacity" << fOpacity;
     fRenderTransform.reset();
     fRenderTransform.translate(fRelBoundingRect.x(), fRelBoundingRect.y());
     fRenderTransform *= fScaledTransform;

@@ -38,6 +38,7 @@
 
 class UI_EXPORT PerformanceSettingsWidget : public SettingsWidget
 {
+    Q_OBJECT
 public:
     explicit PerformanceSettingsWidget(QWidget *parent = nullptr);
 

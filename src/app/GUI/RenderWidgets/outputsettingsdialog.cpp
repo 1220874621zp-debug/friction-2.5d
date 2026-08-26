@@ -785,7 +785,7 @@ void OutputSettingsDialog::updateAvailableAudioBitrates() {
     }
     if(!currentCodec) return;
     if(currentCodec->capabilities & AV_CODEC_PROP_LOSSLESS) {
-        mAudioBitrateComboBox->addItem("Loseless", QVariant(384000));
+        mAudioBitrateComboBox->addItem(tr("Loseless"), QVariant(384000));
     } else {
         QList<int> rates = { 24, 32, 48, 64, 128, 160, 192, 320, 384 };
         for(const int rate : rates) {
@@ -856,8 +856,8 @@ void OutputSettingsDialog::updateAvailableAudioChannelLayouts() {
     if(!layouts) {
         mAudioChannelLayoutsList << AV_CH_LAYOUT_MONO;
         mAudioChannelLayoutsList << AV_CH_LAYOUT_STEREO;
-        mAudioChannelLayoutsComboBox->addItem("Mono");
-        mAudioChannelLayoutsComboBox->addItem("Stereo");
+        mAudioChannelLayoutsComboBox->addItem(tr("Mono"));
+        mAudioChannelLayoutsComboBox->addItem(tr("Stereo"));
     } else {
         uint64_t layout = *layouts;
         while(layout != 0) {

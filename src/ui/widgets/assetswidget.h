@@ -41,6 +41,7 @@
 
 class UI_EXPORT AssetsTreeWidget : public QTreeWidget
 {
+    Q_OBJECT
 public:
     explicit AssetsTreeWidget(QWidget *parent);
     void addAssets(const QList<QUrl> &urls);

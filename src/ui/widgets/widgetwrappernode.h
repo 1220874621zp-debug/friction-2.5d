@@ -65,6 +65,7 @@ private:
 };
 
 class UI_EXPORT WidgetWrapperCornerMenu : public FakeMenuBar {
+    Q_OBJECT
 public:
     WidgetWrapperCornerMenu(WidgetWrapperNode* const target)
     {

@@ -118,6 +118,11 @@ public:
     void graphRemoveViewedAnimator(GraphAnimator * const animator);
     void clearHoveredMovable();
     bool KFT_keyPressEvent(QKeyEvent *event);
+    // true while the mouse is over the keys view and some keys are
+    // selected; used to give key-move shortcuts (S/G) priority over
+    // the AE-style property reveal shortcuts on the same keys
+    bool hasSelectedKeysForShortcut() const
+    { return !mSelectedKeysAnimators.isEmpty(); }
     void keyframeZoomHorizontalAction();
 protected:
     ValueInput mValueInput;

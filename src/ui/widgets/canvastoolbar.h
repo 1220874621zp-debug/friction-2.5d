@@ -41,6 +41,7 @@ namespace Friction
     {
         class UI_EXPORT CanvasToolBar : public QToolBar
         {
+            Q_OBJECT
         public:
             explicit CanvasToolBar(QWidget *parent = nullptr);
             void setCurrentCanvas(Canvas * const target);

@@ -601,7 +601,7 @@ void MainWindow::setupMenuBar()
     mLowQuality = filteringMenu->addAction(
         tr("Low", "MenuBar_View_Filtering"), [this]() {
             eFilterSettings::sSetDisplayFilter(kLow_SkFilterQuality);
-            centralWidget()->update();
+            mStackWidget->widget(mStackIndexScene)->update();
 
             mNoneQuality->setChecked(false);
             mMediumQuality->setChecked(false);
@@ -615,7 +615,7 @@ void MainWindow::setupMenuBar()
     mMediumQuality = filteringMenu->addAction(
         tr("Medium", "MenuBar_View_Filtering"), [this]() {
             eFilterSettings::sSetDisplayFilter(kMedium_SkFilterQuality);
-            centralWidget()->update();
+            mStackWidget->widget(mStackIndexScene)->update();
 
             mNoneQuality->setChecked(false);
             mLowQuality->setChecked(false);
@@ -629,7 +629,7 @@ void MainWindow::setupMenuBar()
     mHighQuality = filteringMenu->addAction(
         tr("High", "MenuBar_View_Filtering"), [this]() {
             eFilterSettings::sSetDisplayFilter(kHigh_SkFilterQuality);
-            centralWidget()->update();
+            mStackWidget->widget(mStackIndexScene)->update();
 
             mNoneQuality->setChecked(false);
             mLowQuality->setChecked(false);
@@ -643,7 +643,7 @@ void MainWindow::setupMenuBar()
     mDynamicQuality = filteringMenu->addAction(
         tr("Dynamic", "MenuBar_View_Filtering"), [this]() {
             eFilterSettings::sSetSmartDisplay(true);
-            centralWidget()->update();
+            mStackWidget->widget(mStackIndexScene)->update();
 
             mLowQuality->setChecked(false);
             mMediumQuality->setChecked(false);
@@ -714,13 +714,18 @@ void MainWindow::setupMenuBar()
     mViewTimelineAct = mViewMenu->addAction(tr("View Timeline"));
     mViewTimelineAct->setCheckable(true);
     mViewTimelineAct->setChecked(true);
-    mViewTimelineAct->setShortcut(QKeySequence(Qt::Key_T));
+    // default T conflicts with the user-configurable "show opacity"
+    // shortcut (AE preset); skip the hardcoded one when configured
+    if (AppSupport::getSettings("shortcuts", "showOpacity", "")
+            .toString().isEmpty()) {
+        mViewTimelineAct->setShortcut(QKeySequence(Qt::Key_T));
+    }
     connect(mViewTimelineAct, &QAction::triggered,
             this, [this](bool triggered) {
                 if (mTimelineWindowAct->isChecked()) {
                     mViewTimelineAct->setChecked(true); // ignore if window
-                } else {
-                    mUI->setDockVisible(tr("Timeline"), triggered);
+                } else if (mTimelineDock) {
+                    mTimelineDock->setVisible(triggered);
                 }
             });
 
@@ -730,7 +735,7 @@ void MainWindow::setupMenuBar()
     mViewFillStrokeAct->setShortcut(QKeySequence(Qt::Key_F));
     connect(mViewFillStrokeAct, &QAction::triggered,
             this, [this](bool triggered) {
-                mUI->setDockVisible("Fill and Stroke", triggered);
+                if (mFillStrokeDock) { mFillStrokeDock->setVisible(triggered); }
                 AppSupport::setSettings("ui", "FillStrokeVisible", triggered);
             });
 
@@ -828,6 +833,12 @@ void MainWindow::setupMenuBar()
     help->addAction(QIcon::fromTheme("window"),
                     tr("Run Quick Setup on startup"),
                     this, &MainWindow::askRunQuickSetup);
+
+    // workspace menu: save/apply/delete panel layouts (AE-like),
+    // placed to the right of the help menu
+    mWorkspaceMenu = mMenuBar->addMenu(tr("Workspace", "MenuBar"));
+    connect(mWorkspaceMenu, &QMenu::aboutToShow,
+            this, &MainWindow::rebuildWorkspaceMenu);
 
     // toolbar actions
     mToolbar->addAction(newAct);

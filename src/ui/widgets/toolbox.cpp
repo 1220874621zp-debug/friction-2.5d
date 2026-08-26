@@ -184,7 +184,9 @@ void ToolBox::setupMainAction(const QIcon &icon,
 
 void ToolBox::setupMainActions()
 {
-    setupMainAction(QIcon::fromTheme("boxTransform"),
+    setupMainAction(ThemeSupport::themedToolIcon("boxTransform",
+                                                 ThemeSupport::getThemeColorBlue(),
+                                                 64),
                     tr("Object Mode"),
                     QKeySequence(AppSupport::getSettings("shortcuts",
                                                          "boxTransform",
@@ -240,7 +242,9 @@ void ToolBox::setupMainActions()
                                                          "F8").toString()),
                     {CanvasMode::nullCreate},
                     false);
-    setupMainAction(QIcon::fromTheme("pick"),
+    setupMainAction(ThemeSupport::themedToolIcon("pick",
+                                                 ThemeSupport::getThemeColorRed(),
+                                                 64),
                     tr("Color Pick Mode"),
                     QKeySequence(AppSupport::getSettings("shortcuts",
                                                          "pickMode",

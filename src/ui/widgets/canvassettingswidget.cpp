@@ -47,7 +47,7 @@ CanvasSettingsWidget::CanvasSettingsWidget(QWidget* const parent) :
     nodeLayout->addWidget(mPathNodeColor);
     mPathNodeSelectedColor = new ColorAnimatorButton(mSett.fPathNodeSelectedColor, this);
     nodeLayout->addWidget(mPathNodeSelectedColor);
-    pathColorsLay->addPair(new QLabel("Node size"), nodeLayout);
+    pathColorsLay->addPair(new QLabel(tr("Node size")), nodeLayout);
 
     const auto dissolvedNodeLayout = new LabeledSlider("%");
     mPathDissolvedNodeSize = dissolvedNodeLayout->slider();
@@ -57,7 +57,7 @@ CanvasSettingsWidget::CanvasSettingsWidget(QWidget* const parent) :
     dissolvedNodeLayout->addWidget(mPathDissolvedNodeColor);
     mPathDissolvedNodeSelectedColor = new ColorAnimatorButton(mSett.fPathDissolvedNodeSelectedColor, this);
     dissolvedNodeLayout->addWidget(mPathDissolvedNodeSelectedColor);
-    pathColorsLay->addPair(new QLabel("Dissolved node size"), dissolvedNodeLayout);
+    pathColorsLay->addPair(new QLabel(tr("Dissolved node size")), dissolvedNodeLayout);
 
     const auto controlLayout = new LabeledSlider("%");
     mPathControlSize = controlLayout->slider();
@@ -67,13 +67,13 @@ CanvasSettingsWidget::CanvasSettingsWidget(QWidget* const parent) :
     controlLayout->addWidget(mPathControlColor);
     mPathControlSelectedColor = new ColorAnimatorButton(mSett.fPathControlSelectedColor, this);
     controlLayout->addWidget(mPathControlSelectedColor);
-    pathColorsLay->addPair(new QLabel("Control size"), controlLayout);
+    pathColorsLay->addPair(new QLabel(tr("Control size")), controlLayout);
 
     addLayout(pathColorsLay);
 
     addSeparator();
 
-    mRtlSupport = new QCheckBox("RTL language support", this);
+    mRtlSupport = new QCheckBox(tr("RTL language support"), this);
     addWidget(mRtlSupport);
 
     const auto mAdjustSceneWidget = new QWidget(this);

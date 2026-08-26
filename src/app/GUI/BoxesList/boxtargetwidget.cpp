@@ -86,7 +86,7 @@ void BoxTargetWidget::mousePressEvent(QMouseEvent *event) {
 
         const auto currentTarget = mProperty->getTarget();
         {
-            const auto act = menu.addAction("-none-");
+            const auto act = menu.addAction(tr("-none-"));
             connect(act, &QAction::triggered, this, [this]() {
                 mProperty->setTargetAction(nullptr);
                 Document::sInstance->actionFinished();

@@ -36,6 +36,8 @@ Colors and icon size from 'src/core/themesupport.cpp'.
 %12 = half icon pixel ratio
 %13 = getThemeColorTextDisabled
 %14 = quarter icon size
+%15 = getThemeButtonHoverColor
+%16 = getThemeToolBarColor
 
 */
 
@@ -113,7 +115,7 @@ QTabBar::tab:selected {
     background-color: %5;
 }
 QTabBar::tab:hover {
-    background-color: %3;
+    background-color: %15;
 }
 QTabBar::tab:bottom:hover {
     border-top-color: transparent;
@@ -192,13 +194,19 @@ QTabBar QToolButton::left-arrow {
 
 QMenuBar::item:selected,
 QMenu::item:selected {
-    background-color: %1;
+    background-color: %4;
 }
 
 QStatusBar::item,
 QToolBar
 {
     border: 0;
+}
+
+/* Toolbar background (Blender theme: #1D1D1D, %16) */
+QToolBar,
+Friction--Ui--ToolBar {
+    background-color: %16;
 }
 
 QSpinBox#ComboSpinBox,
@@ -234,13 +242,21 @@ QSpinBox#ComboSpinBox:hover,
 QComboBox:hover,
 QPushButton:hover,
 QToolButton:hover,
-QPushButton:checked,
-QToolButton:checked,
-QAction:checked,
 #ToolBoxButton:hover,
 #ToolBoxGizmo:hover
 {
-    background-color: %3;
+    background-color: %15;
+    border-color: %4;
+}
+
+/* 选中态：底框填充用主题高亮色 #4772B3 */
+QPushButton:checked,
+QToolButton:checked,
+QAction:checked,
+#ToolBoxButton:checked,
+#ToolBoxGizmo:checked
+{
+    background-color: %4;
     border-color: %4;
 }
 
@@ -279,7 +295,7 @@ QWidget#menuBarWidget QPushButton {
 QToolBar#animationDockWidget,
 #darkWidget
 {
-    background-color: rgb(33, 33, 38);
+    background-color: %6;
 }
 
 QToolBar::separator {
@@ -358,8 +374,8 @@ QPushButton#NoButton {
 
 QPushButton#FlatButton:hover,
 QToolButton#FlatButton:hover {
-    background-color: rgb(19, 19, 21);
-    border-color: rgb(104, 144, 206);
+    background-color: %15;
+    border-color: %4;
 }
 
 QPushButton#NoButton:hover {
@@ -402,7 +418,7 @@ QTabWidget#TabWidgetWide QTabBar::tab:!selected {
     background-color: transparent;
 }
 QTabWidget#TabWidgetWide QTabBar::tab:hover {
-    background-color: %3;
+    background-color: %15;
 }
 
 QSpinBox#LeftSpinBox::up-button {
@@ -499,9 +515,13 @@ AlignWidget QPushButton:disabled {
     background: transparent;
 }
 
-QWidget#DarkWidget,
+QWidget#DarkWidget {
+    background-color: %3;
+}
+
+/* Left toolbox toolbar background (Blender theme: #1D1D1D, %16) */
 Friction--Ui--ToolBar#ToolBox {
-    background-color: %5;
+    background-color: %16;
 }
 
 QGroupBox#BlueBox,

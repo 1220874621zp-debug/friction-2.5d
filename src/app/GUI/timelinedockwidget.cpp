@@ -27,11 +27,21 @@
 
 #include <QKeyEvent>
 #include <QScrollBar>
+#include <QShortcut>
+
+#include <functional>
 
 #include "Private/document.h"
 #include "GUI/global.h"
 #include "GUI/BoxesList/boxscrollwidget.h"
 #include "GUI/BoxesList/boxsinglewidget.h"
+#include "GUI/keysview.h"
+#include "Boxes/boundingbox.h"
+#include "Animators/transformanimator.h"
+#include "Animators/complexanimator.h"
+#include "Animators/animator.h"
+#include "Properties/property.h"
+#include "swt_abstraction.h"
 
 #include "mainwindow.h"
 #include "canvaswindow.h"
@@ -312,6 +322,7 @@ TimelineDockWidget::TimelineDockWidget(Document& document,
     connect(mStepPreviewTimer, &QTimer::timeout,
             this, &TimelineDockWidget::stepPreview);
 
+    setupPropertyShortcuts();
 }
 
 void TimelineDockWidget::updateFrameRange(const FrameRange &range)
@@ -385,11 +396,19 @@ bool TimelineDockWidget::processKeyPress(QKeyEvent *event)
             else { playPreview(); }
         } else {
             switch (state) {
-                case PreviewState::stopped: renderPreview(); break;
-                case PreviewState::rendering: playPreview(); break;
-                case PreviewState::playing: pausePreview(); break;
-                case PreviewState::paused: resumePreview(); break;
-            }
+            case PreviewState::stopped: renderPreview(); break;
+            // play what has been rendered so far; if nothing is playable
+            // yet, interrupt the rendering so space is never a dead key
+            case PreviewState::rendering:
+                if (!playPreview()) { interruptPreview(); }
+                break;
+            // stop preview directly so the canvas becomes editable
+            // right after space is released (no extra pause state)
+            case PreviewState::playing: interruptPreview(); break;
+            // stop preview so the user returns to edit state
+            // (preview mode blocks canvas editing)
+            case PreviewState::paused: interruptPreview(); break;
+        }
         }
     } else if (key == Qt::Key_K && mods == Qt::NoModifier) { // split clip
         splitClip();
@@ -608,11 +627,13 @@ void TimelineDockWidget::pausePreview()
     } else { setStepPreviewStop(); }
 }
 
-void TimelineDockWidget::playPreview()
+bool TimelineDockWidget::playPreview()
 {
     if (eSettings::instance().fPreviewCache) {
-        RenderHandler::sInstance->playPreview();
-    } else { setStepPreviewStart(); }
+        return RenderHandler::sInstance->playPreview();
+    }
+    setStepPreviewStart();
+    return true;
 }
 
 void TimelineDockWidget::renderPreview()
@@ -792,4 +813,157 @@ void TimelineDockWidget::stepPreview()
     }
     scene->anim_setAbsFrame(nextFrame);
     mDocument.actionFinished();
+}
+
+namespace {
+
+// map which -> the transform sub-property (AE: A anchor/pivot,
+// P position, S scale, R rotation, T opacity)
+Property *transformSubProp(BoundingBox * const box, const int which)
+{
+    const auto trans = box->getBoxTransformAnimator();
+    if (!trans) { return nullptr; }
+    switch (which) {
+    case 0: return trans->getPivotAnimator();
+    case 1: return trans->getPosAnimator();
+    case 2: return trans->getScaleAnimator();
+    case 3: return trans->getRotAnimator();
+    case 4: return trans->getOpacityAnimator();
+    default: return nullptr;
+    }
+}
+
+// make the property row visible in the timeline layer tree and
+// expand every collapsed ancestor (transform group, box, groups)
+void revealPropertyRow(TimelineWidget * const tw, Property * const prop)
+{
+    if (!tw || !prop) { return; }
+    const auto list = tw->boxesListWidget();
+    if (!list) { return; }
+    const int widId = list->swtWidgetId();
+    prop->SWT_show();
+    const auto abs = prop->SWT_getAbstractionForWidget(widId);
+    if (!abs) { return; }
+    for (auto p = abs->getParent(); p; p = p->getParent()) {
+        if (!p->contentVisible()) { p->setContentVisible(true); }
+    }
+}
+
+// fold the transform group row so the solo property row hides
+// inside it (second shortcut press = fold back)
+void collapsePropertyRow(TimelineWidget * const tw, Property * const prop)
+{
+    if (!tw || !prop) { return; }
+    const auto list = tw->boxesListWidget();
+    if (!list) { return; }
+    const auto abs = prop->SWT_getAbstractionForWidget(list->swtWidgetId());
+    if (!abs) { return; }
+    const auto parent = abs->getParent();
+    if (parent) { parent->setContentVisible(false); }
+}
+
+// recursively collect properties that have animation keys
+void collectAnimatedProps(ComplexAnimator * const ca,
+                          QList<Property*> &out)
+{
+    const int n = ca->ca_getNumberOfChildren();
+    for (int i = 0; i < n; i++) {
+        const auto child = ca->ca_getChildAt(i);
+        if (!child) { continue; }
+        const auto anim = enve_cast<Animator*>(child);
+        if (anim && anim->anim_hasKeys()) { out.append(child); }
+        const auto complex = enve_cast<ComplexAnimator*>(child);
+        if (complex) { collectAnimatedProps(complex, out); }
+    }
+}
+
+} // namespace
+
+void TimelineDockWidget::showTransformProperty(const int which)
+{
+    const auto scene = *mDocument.fActiveScene;
+    // the stack holds one TimelineWrapperNode per scene; the actual
+    // TimelineWidget is its central widget
+    const auto tw = mTimelineLayout->currentWidget() ?
+                mTimelineLayout->currentWidget()->findChild<TimelineWidget*>() :
+                nullptr;
+    if (!scene || !tw) { return; }
+    // when keys are selected and the cursor is over the keys view,
+    // S/G mean "move keys" in KeysView; let that win
+    const auto kv = tw->keysView();
+    if (kv && kv->hasSelectedKeysForShortcut() &&
+            kv->underMouse()) { return; }
+    const auto boxes = scene->getSelectedBoxesList();
+    if (boxes.isEmpty()) { return; }
+    for (const auto box : boxes) {
+        const auto prop = transformSubProp(box, which);
+        if (!prop) continue;
+        if (box->swtSoloActiveProp() == prop) {
+            // second press on the same key: fold back and restore
+            // all rows hidden by the solo display
+            box->swtRestoreSoloHidden();
+            collapsePropertyRow(tw, prop);
+        } else {
+            // expand first (may trigger solo restore), then solo-hide
+            revealPropertyRow(tw, prop);
+            box->swtSoloHideAllExcept(prop);
+        }
+    }
+    mDocument.actionFinished();
+}
+
+void TimelineDockWidget::showAnimatedProperties()
+{
+    const auto scene = *mDocument.fActiveScene;
+    if (!scene || !mTimelineLayout->currentWidget()) { return; }
+    const auto tw = mTimelineLayout->currentWidget()
+            ->findChild<TimelineWidget*>();
+    if (!tw) { return; }
+    const auto kv = tw->keysView();
+    if (kv && kv->hasSelectedKeysForShortcut() &&
+            kv->underMouse()) { return; }
+    const auto boxes = scene->getSelectedBoxesList();
+    if (boxes.isEmpty()) { return; }
+    for (const auto box : boxes) {
+        // AE U behavior: show only properties with keyframes;
+        // expand first (may trigger solo restore), then hide rest
+        QList<Property*> animated;
+        collectAnimatedProps(box, animated);
+        for (const auto prop : animated) {
+            revealPropertyRow(tw, prop);
+        }
+        box->swtHideWithoutKeys();
+    }
+    mDocument.actionFinished();
+}
+
+void TimelineDockWidget::setupPropertyShortcuts()
+{
+    const auto makeShortcut = [this](const QString &id,
+                                     const std::function<void()> &fn) {
+        const auto seq = AppSupport::getSettings("shortcuts",
+                                                 id, "").toString();
+        if (seq.isEmpty()) { return; }
+        const auto keySeq = QKeySequence(seq);
+        // user-configured property shortcuts take priority over
+        // hardcoded action shortcuts (e.g. View->Timeline uses T);
+        // with two identical shortcuts Qt treats them as ambiguous
+        // and neither fires, so clear the conflicting one
+        if (mMainWindow) {
+            const auto acts = mMainWindow->findChildren<QAction*>();
+            for (const auto a : acts) {
+                if (a && a->shortcut() == keySeq) {
+                    a->setShortcut(QKeySequence());
+                }
+            }
+        }
+        const auto sc = new QShortcut(keySeq, this);
+        connect(sc, &QShortcut::activated, this, fn);
+    };
+    makeShortcut("showAnchor",   [this]() { showTransformProperty(0); });
+    makeShortcut("showPosition", [this]() { showTransformProperty(1); });
+    makeShortcut("showScale",    [this]() { showTransformProperty(2); });
+    makeShortcut("showRotation", [this]() { showTransformProperty(3); });
+    makeShortcut("showOpacity",  [this]() { showTransformProperty(4); });
+    makeShortcut("showAnimated", [this]() { showAnimatedProperties(); });
 }

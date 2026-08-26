@@ -40,7 +40,15 @@ SceneFrameContainer::SceneFrameContainer(
 stdsptr<eHddTask> SceneFrameContainer::createTmpFileDataLoader() {
     const ImgLoader::Func func = [this](sk_sp<SkImage> img) {
         setDataLoadedFromTmpFile(img);
-        if(mScene) mScene->setSceneFrame(ref<SceneFrameContainer>());
+        // Refresh the canvas only if this frame is still the current one.
+        // During playback the playhead may have moved past this frame by
+        // the time the load finishes; assigning it then would make the
+        // canvas jump backwards (visible as flickering).
+        if(mScene) {
+            const int curRelFrame = mScene->anim_getCurrentRelFrame();
+            if(getRange().inRange(curRelFrame))
+                mScene->setSceneFrame(ref<SceneFrameContainer>());
+        }
     };
     return enve::make_shared<ImgLoader>(mTmpFile, this, func);
 }

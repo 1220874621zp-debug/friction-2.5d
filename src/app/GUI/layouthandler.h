@@ -91,6 +91,7 @@ struct LayoutData {
 };
 
 class LayoutHandler : public QObject {
+    Q_OBJECT
 public:
     LayoutHandler(Document &document, AudioHandler &audioHandler,
                   QWidget* const parent);

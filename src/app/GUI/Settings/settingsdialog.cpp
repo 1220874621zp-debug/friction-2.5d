@@ -8,6 +8,7 @@
 
 #include "generalsettingswidget.h"
 #include "timelinesettingswidget.h"
+#include "shortcutsettingswidget.h"
 
 #ifndef USE_GLES
 #include "pluginssettingswidget.h"
@@ -43,6 +44,9 @@ SettingsDialog::SettingsDialog(QWidget * const parent)
 
     const auto timeline = new TimelineSettingsWidget(this);
     addSettingsWidget(timeline, tr("Timeline"));
+
+    const auto shortcuts = new ShortcutSettingsWidget(this);
+    addSettingsWidget(shortcuts, tr("Shortcuts"));
 
 #ifndef USE_GLES
     const auto plugins = new PluginsSettingsWidget(this);
