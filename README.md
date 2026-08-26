@@ -21,10 +21,6 @@ It's always preferred to submit pull requests against the `main` branch.
 - 添加3D开关按钮及重置按钮
 - 修复3D属性名乱码
 - 修复图标模糊问题
-- 按用户要求优先使用文字字符做UI图标
-
-用户现在只是给出了一个总结，没有提出新的需求。我应该确认当前状态，并询问用户是否需要进一步的帮助或有新的需求。
-根据之前的工作记录，Friction 2.5D图层功能的所有需求已全部完成并部署：
 
 **已完成的功能：**
 
@@ -44,8 +40,15 @@ It's always preferred to submit pull requests against the `main` branch.
    - 3D 位移 Z
    - 3D 透视
    （根因：`tr()`窄字符串在MSVC GBK编码下转义错误，改用`QStringLiteral`宽字符串解决）
+5. ✅ **psd分层导入**
+6. ✅ **快捷键面板** 
+7. ✅ **主题模块**
+8. ✅ **优化时间轴**
+9. ✅ **脚本引擎系统**- 兼容ae脚本只需简单移植代码：
+10. ✅ **i18n汉化架构**
+11. ✅ **运动曲线快捷面板**
+12. ✅ **多个脚本内置**
 
-5. ✅ **图标清晰度优化** - 所有图标采用Unicode矢量字符渲染，配合HiDPI适配（按设备像素比渲染），避免缩放模糊
 
 **部署位置：** `friction/build/output/friction-cn-test/friction.exe`
 
