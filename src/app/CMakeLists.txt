@@ -88,9 +88,24 @@ if(WIN32)
     set(QSCINTILLA_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/sdk/include)
     add_definitions(-DQSCINTILLA_DLL)
 else()
-    set(QSCINTILLA_LIBRARIES_DIRS "/usr/lib" CACHE STRING "qscintilla library path")
-    set(QSCINTILLA_LIBRARIES "qscintilla2_qt5" CACHE STRING "qscintilla library")
-    set(QSCINTILLA_INCLUDE_DIRS "/usr/include/x86_64-linux-gnu/qt5" CACHE STRING "qscintilla includes path")
+    find_library(QSCINTILLA_LIB NAMES qscintilla2_qt5 qscintilla2-qt5 qscintilla2)
+    if(QSCINTILLA_LIB)
+        get_filename_component(QSCINTILLA_LIBRARIES_DIRS ${QSCINTILLA_LIB} DIRECTORY)
+        get_filename_component(QSCINTILLA_LIBRARIES ${QSCINTILLA_LIB} NAME)
+    else()
+        set(QSCINTILLA_LIBRARIES_DIRS "/usr/lib" CACHE STRING "qscintilla library path")
+        set(QSCINTILLA_LIBRARIES "qscintilla2_qt5" CACHE STRING "qscintilla library")
+    endif()
+
+    find_path(QSCINTILLA_INCLUDE_DIRS
+        NAMES Qsci/qsciscintilla.h
+        PATHS
+        /usr/include/qt
+        /usr/include/qt5
+        /usr/include/x86_64-linux-gnu/qt5
+        /usr/local/include/qt5
+        /usr/include
+    )
 endif()
 
 message("-- qscintilla include: ${QSCINTILLA_INCLUDE_DIRS}")
