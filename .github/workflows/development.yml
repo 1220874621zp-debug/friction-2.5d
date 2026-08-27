@@ -1,0 +1,133 @@
+name: Development Build
+
+on:
+  push:
+    branches: [ "main", "master", "develop" ]
+  pull_request:
+    branches: [ "main", "master", "develop" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # ----------------- Linux AppImage 构建 -----------------
+  build-linux-appimage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Set Head Repo URL Environment Variable
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "HEAD_REPO_URL=${{ github.event.pull_request.head.repo.clone_url }}" >> $GITHUB_ENV
+          echo "COMMIT=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
+          echo "BRANCH=NONE" >> $GITHUB_ENV
+      - name: Build AppImage
+        run: ./src/scripts/build.sh
+      - name: Prepare Artifact
+        run: |
+          mkdir -p ci-artifacts
+          cp distfiles/builds/*/*.AppImage ci-artifacts/
+      - name: Upload Linux AppImage Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: friction-Linux-AppImage
+          path: ci-artifacts/*.AppImage
+          if-no-files-found: error
+
+  # ----------------- Linux DEB 构建 -----------------
+  build-linux-deb:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Build DEB Package
+        run: APT=1 CI=1 MKJOBS=2 ./src/scripts/ci.sh
+      - name: Prepare Artifact
+        run: |
+          mkdir -p ci-artifacts
+          cp build-ci/*.deb ci-artifacts/
+      - name: Upload Linux DEB Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: friction-Linux-DEB
+          path: ci-artifacts/*.deb
+          if-no-files-found: error
+
+  # ----------------- Windows 构建 -----------------
+  build-windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Build Windows Package
+        shell: cmd
+        run: .\src\scripts\build.bat ci
+      - name: Prepare Artifacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path ci-artifacts
+          Copy-Item build\output\friction-*.7z ci-artifacts\
+          Copy-Item build\output\friction-*-setup-win64.exe ci-artifacts\
+      - name: Upload Windows Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: friction-Windows-x64
+          path: |
+            ci-artifacts/*.7z
+            ci-artifacts/*.exe
+          if-no-files-found: error
+
+  # ----------------- macOS 构建 -----------------
+  build-macos:
+    runs-on: macos-15
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Build macOS DMG
+        run: ./src/scripts/build_mac_ci.sh
+      - name: Prepare Artifact
+        run: |
+          mkdir -p ci-artifacts
+          cp build-release-universal/*.dmg ci-artifacts/ 2>/dev/null || true
+      - name: Upload macOS Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: friction-macOS-Universal
+          path: ci-artifacts/*.dmg
+          if-no-files-found: ignore
+
+  # ----------------- Development 自动发布 -----------------
+  development-release:
+    needs: [build-linux-appimage, build-linux-deb, build-windows, build-macos]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          merge-multiple: true
+      - name: Update Development Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: development
+          name: "Development Build (${{ github.sha }})"
+          body: |
+            Automated development snapshot build for commit `${{ github.sha }}`.
+            
+            Branch: `${{ github.ref_name }}`
+          prerelease: true
+          make_latest: false
+          files: release-artifacts/**/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -27,15 +27,19 @@
 #define SKIADEFINES_H
 #include <QtGlobal>
 
-#ifdef QT_DEBUG
+#if defined(QT_DEBUG) || !defined(NDEBUG)
     #define GR_GL_CHECK_ERROR true
     #define GR_GL_LOG_CALLS true
-    #define SK_DEBUG
+    #ifndef SK_DEBUG
+        #define SK_DEBUG
+    #endif
     #undef SK_RELEASE
 #else
     #define GR_GL_CHECK_ERROR false
     #define GR_GL_LOG_CALLS false
-    #define SK_RELEASE
+    #ifndef SK_RELEASE
+        #define SK_RELEASE
+    #endif
     #undef SK_DEBUG
 #endif
 
