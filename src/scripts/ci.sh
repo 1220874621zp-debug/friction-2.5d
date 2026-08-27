@@ -60,7 +60,10 @@ libpng-dev \
 libwebp-dev \
 zlib1g-dev \
 libicu-dev \
-libharfbuzz-dev
+libharfbuzz-dev \
+libegl-dev \
+libgles-dev \
+libgl-dev
 fi
 
 if [ "${CI}" = 1 ]; then
