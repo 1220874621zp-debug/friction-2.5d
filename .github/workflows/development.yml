@@ -103,31 +103,4 @@ jobs:
           path: ci-artifacts/*.dmg
           if-no-files-found: ignore
 
-  # ----------------- Development 自动发布 -----------------
-  development-release:
-    needs: [build-linux-appimage, build-linux-deb, build-windows, build-macos]
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Download All Artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: release-artifacts
-          merge-multiple: true
-      - name: Update Development Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: development
-          name: "Development Build (${{ github.sha }})"
-          body: |
-            Automated development snapshot build for commit `${{ github.sha }}`.
-            
-            Branch: `${{ github.ref_name }}`
-          prerelease: true
-          make_latest: false
-          files: release-artifacts/**/*
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
