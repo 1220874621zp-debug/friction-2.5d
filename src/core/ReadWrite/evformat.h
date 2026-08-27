@@ -48,6 +48,18 @@ namespace EvFormat {
         avStretch = 33,
         grid = 34,
         v100 = 35,
+        boxLayerSwitches = 36,
+        layerLabelColor = 37,
+        // trackIds and trackRows deliberately share the value 38: v38
+        // files write mTrackId TWICE (see eBoxOrSound::prp_writeProperty_
+        // impl). Never bump one without the other - the readers are gated
+        // on these two separately, so a lone bump shifts the whole stream
+        trackIds = 38,
+        trackRows = 38,
+        // per-layer motion blur switch (eBoxOrSound) - shared with the
+        // track matte fields written by BoundingBox in the same version
+        layerFxColumns = 39,
+        trackMatte = 39,
 
         nextVersion
     };

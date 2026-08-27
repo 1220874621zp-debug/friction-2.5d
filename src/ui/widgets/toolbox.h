@@ -97,6 +97,7 @@ namespace Friction
             QDoubleSlider *mDrawPathSmooth;
 
             QAction *mLocalPivot;
+            QAction *mMaskPen;
 
             QToolButton *mColorPickerButton;
             QLabel *mColorPickerLabel;

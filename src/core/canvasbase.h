@@ -114,6 +114,10 @@ public:
             removeFromSelectedProps(prop);
         }
     }
+public:
+    // the active layer: last one added to the selection
+    BoundingBox* getLastSelectedBox() const
+    { return mLastSelectedBox.data(); }
 protected:
     QList<MovablePoint*> mSelectedPoints_d;
     stdptr<MovablePoint> mPressedPoint;

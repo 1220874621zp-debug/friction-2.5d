@@ -24,6 +24,8 @@
 #include "themesupport.h"
 
 #include <QToolButton>
+#include <QPainter>
+#include <QApplication>
 
 using namespace Friction::Ui;
 
@@ -273,7 +275,40 @@ void ToolBox::setupMainActions()
     });
     mGroupMain->addAction(mLocalPivot);
 
+    // mask pen: draw DstIn mask shapes right above bitmap layers
+    // (AE-style clipping); glyph U+29EA for the icon
+    {
+        QPixmap pm(64, 64);
+        pm.fill(Qt::transparent);
+        QPainter p(&pm);
+        p.setRenderHint(QPainter::TextAntialiasing);
+        QFont f = qApp->font();
+        f.setPixelSize(46);
+        f.setBold(true);
+        p.setFont(f);
+        p.setPen(qApp->palette().color(QPalette::WindowText));
+        p.drawText(QRect(0, 0, 64, 64), Qt::AlignCenter, QChar(0x29EA));
+        p.end();
+
+        mMaskPen = new QAction(QIcon(pm),
+                               tr("Mask Pen (draw shapes that clip layers below)"),
+                               mMain);
+        mMaskPen->setCheckable(true);
+        connect(mMaskPen, &QAction::toggled,
+                this, [this](const bool checked) {
+            mDocument.fMaskPenActive = checked;
+            if (checked) { mActions.setAddPointMode(); }
+        });
+        connect(&mDocument, &Document::canvasModeSet,
+                this, [this](const CanvasMode mode) {
+            if (mode != CanvasMode::pathCreate && mMaskPen->isChecked()) {
+                mMaskPen->setChecked(false);
+            }
+        });
+    }
+
     mMain->addActions(mGroupMain->actions());
+    if (mMaskPen) { mMain->addAction(mMaskPen); }
 }
 
 void ToolBox::setupNodesAction(const QIcon &icon,

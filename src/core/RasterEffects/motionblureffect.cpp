@@ -28,6 +28,7 @@
 #include "Boxes/boxrenderdata.h"
 #include "Animators/qrealanimator.h"
 #include "Boxes/boundingbox.h"
+#include "canvas.h"
 #include "appsupport.h"
 
 class MotionBlurCaller : public RasterEffectCaller {
@@ -108,6 +109,13 @@ stdsptr<RasterEffectCaller> MotionBlurEffect::getEffectCaller(
     Q_UNUSED(resolution)
     if(mBlocked) return nullptr;
     const MotionBlurEffectBlock block(mBlocked);
+    // per-layer switch and scene-wide master: short-circuit BEFORE any
+    // external sample render gets queued (the expensive part)
+    if(mParentBox && !mParentBox->isMbEnabled()) return nullptr;
+    if(const auto scene = mParentBox ?
+                mParentBox->getParentScene() : nullptr) {
+        if(!scene->getMotionBlurEnabled()) return nullptr;
+    }
     const auto idRange = mParentBox->prp_getIdenticalRelRange(relFrame);
     qreal sampleCount = mNumberSamples->getEffectiveValue(relFrame)*influence;
     const qreal opacity = mOpacity->getEffectiveValue(relFrame)*0.01*influence;

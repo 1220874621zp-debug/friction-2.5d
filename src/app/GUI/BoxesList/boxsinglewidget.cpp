@@ -28,6 +28,7 @@
 #include "singlewidgettarget.h"
 #include "optimalscrollarena/scrollwidgetvisiblepart.h"
 #include "widgets/colorsettingswidget.h"
+#include <QPointer>
 
 #include "Boxes/containerbox.h"
 #include "widgets/qrealanimatorvalueslider.h"
@@ -55,6 +56,13 @@
 #include "themesupport.h"
 #include "Animators/transformanimator.h"
 #include "Animators/qrealanimator.h"
+#include "GUI/global.h"
+#include "TransformEffects/parenteffect.h"
+#include <functional>
+#include "TransformEffects/transformeffectcollection.h"
+
+#include <QApplication>
+#include <QPainter>
 
 #include <QtMath>
 #include <cmath>
@@ -159,8 +167,41 @@ QString translatePropertyName(const QString& name) {
           QStringLiteral("3D \u4F4D\u79FB Z") },
         { QStringLiteral("3D perspective"),
           QStringLiteral("3D \u900F\u89C6") },
+        // mask pen / raster effect names
+        { QStringLiteral("blur"),
+          QStringLiteral("\u6A21\u7CCA") },            // 模糊
+        { QStringLiteral("radius"),
+          QStringLiteral("\u534A\u5F84") },            // 半径
+        { QStringLiteral("effects"),
+          QStringLiteral("\u7279\u6548") },            // 特效
     };
+    if(name.startsWith(QStringLiteral("Mask: "))) {
+        return QStringLiteral("\u8499\u7248: ") + name.mid(6);
+    }
     return map.value(name, name);
+}
+
+// AE-style layer label color swatch shown in place of the type icon
+QPixmap* labelColorPixmap(const QColor& color) {
+    static QHash<QString, QPixmap*> cache;
+    const QString key = color.name();
+    const auto it = cache.find(key);
+    if(it != cache.end()) return it.value();
+    const qreal dpr = qApp ? qApp->devicePixelRatio() : 1.0;
+    const int logical = eSizesUI::widget;
+    auto pm = new QPixmap(QSize(logical, logical) * dpr);
+    pm->setDevicePixelRatio(dpr);
+    pm->fill(Qt::transparent);
+    QPainter p(pm);
+    p.setRenderHint(QPainter::Antialiasing);
+    const qreal m = logical * 0.14;
+    QRectF r(m, m, logical - 2*m, logical - 2*m);
+    p.setPen(QPen(QColor(0, 0, 0, 110), 1));
+    p.setBrush(color);
+    p.drawRoundedRect(r, logical * 0.18, logical * 0.18);
+    p.end();
+    cache.insert(key, pm);
+    return pm;
 }
 
 // Translate Skia blend mode names for display.
@@ -220,6 +261,23 @@ QPixmap* BoxSingleWidget::PROMOTE_TO_LAYER_ICON;
 QPixmap* BoxSingleWidget::ICON_3D_ON;
 QPixmap* BoxSingleWidget::ICON_3D_OFF;
 QPixmap* BoxSingleWidget::ICON_RESET;
+QPixmap* BoxSingleWidget::ICON_SOLO_ON;
+QPixmap* BoxSingleWidget::ICON_SOLO_OFF;
+QPixmap* BoxSingleWidget::ICON_SHY_ON;
+QPixmap* BoxSingleWidget::ICON_SHY_OFF;
+QPixmap* BoxSingleWidget::ICON_FX_ON;
+QPixmap* BoxSingleWidget::ICON_FX_OFF;
+QPixmap* BoxSingleWidget::ICON_MB_ON;
+QPixmap* BoxSingleWidget::ICON_MB_OFF;
+QPixmap* BoxSingleWidget::ICON_T_ON;
+QPixmap* BoxSingleWidget::ICON_T_OFF;
+QPixmap* BoxSingleWidget::ICON_LINKNODE_ON;
+QPixmap* BoxSingleWidget::ICON_LINKNODE_OFF;
+QPixmap* BoxSingleWidget::ICON_TM_ALPHA;
+QPixmap* BoxSingleWidget::ICON_TM_ALPHAINV;
+QPixmap* BoxSingleWidget::ICON_TM_LUMA;
+QPixmap* BoxSingleWidget::ICON_TM_LUMAINV;
+QPixmap* BoxSingleWidget::ICON_TM_OFF;
 
 QPixmap* BoxSingleWidget::BOX_PATH;
 QPixmap* BoxSingleWidget::BOX_CIRCLE;
@@ -248,9 +306,11 @@ bool BoxSingleWidget::sStaticPixmapsLoaded = false;
 #include "widgets/ecombobox.h"
 
 #include <QApplication>
+#include <QCursor>
 #include <QDrag>
 #include <QMenu>
 #include <QInputDialog>
+#include <QPainter>
 
 eComboBox* createCombo(QWidget* const parent)
 {
@@ -259,6 +319,75 @@ eComboBox* createCombo(QWidget* const parent)
     result->setFocusPolicy(Qt::NoFocus);
     return result;
 }
+
+// button that separates a simple click from a press-and-drag gesture:
+// click emits clicked(), moving past the drag threshold emits dragStarted()
+class ParentLinkButton : public PixmapActionButton {
+    Q_OBJECT
+public:
+    explicit ParentLinkButton(QWidget* const parent)
+        : PixmapActionButton(parent) {}
+signals:
+    void clicked();
+    void dragStarted();
+protected:
+    void mousePressEvent(QMouseEvent* e) override {
+        mStartPos = e->pos();
+        mDragging = false;
+        PixmapActionButton::mousePressEvent(e);
+    }
+    void mouseMoveEvent(QMouseEvent* e) override {
+        if(!mDragging && (e->pos() - mStartPos).manhattanLength()
+                       > QApplication::startDragDistance()) {
+            mDragging = true;
+            emit dragStarted();
+        }
+    }
+    void mouseReleaseEvent(QMouseEvent* e) override {
+        if(!mDragging) emit clicked();
+        mDragging = false;
+    }
+private:
+    QPoint mStartPos;
+    bool mDragging = false;
+};
+
+// does the box have a ParentEffect with a bound target?
+static bool boxHasParentLink(BoundingBox* const box) {
+    const auto coll = box->getTransformEffectCollection();
+    if(!coll) return false;
+    const int n = coll->ca_getNumberOfChildren();
+    for(int i = 0; i < n; i++) {
+        const auto eff = enve_cast<ParentEffect*>(coll->getChild(i));
+        if(eff && eff->parentTargetProperty()->getTarget()) return true;
+    }
+    return false;
+}
+
+// topmost selection highlight: a transparent-for-input child raised
+// above every widget in the row, painting the blue wash + border on
+// top of the combos/buttons instead of underneath them
+class RowHighlightOverlay : public QWidget {
+public:
+    explicit RowHighlightOverlay(BoxSingleWidget * const owner) :
+        QWidget(owner), mOwner(owner) {
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+        setAttribute(Qt::WA_NoSystemBackground);
+        setAttribute(Qt::WA_TranslucentBackground);
+    }
+protected:
+    void paintEvent(QPaintEvent *) override {
+        if(!mOwner->isSelectedRow()) return;
+        QPainter p(this);
+        p.fillRect(rect(), QColor(70, 130, 220, 60));
+        p.setPen(QPen(QColor(120, 170, 255), 2));
+        p.setBrush(Qt::NoBrush);
+        p.drawRect(rect().adjusted(1, 1, -2, -2));
+        p.end();
+    }
+private:
+    BoxSingleWidget * const mOwner;
+};
 
 BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
     : SingleWidget(parent)
@@ -271,9 +400,15 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
     mMainLayout->setAlignment(Qt::AlignLeft);
 
     mBoxButton = new PixmapActionButton(this);
+    mBoxButton->setToolTip(tr("Set layer label color"));
     mBoxButton->setPixmapChooser([this]() {
         if (!mTarget) { return static_cast<QPixmap*>(nullptr); }
         const auto target = mTarget->getTarget();
+        // AE-style label color replaces the type icon when set
+        if(const auto ebs0 = enve_cast<eBoxOrSound*>(target)) {
+            const QColor lc = ebs0->getLabelColor();
+            if(lc.isValid()) return labelColorPixmap(lc);
+        }
         if (enve_cast<Circle*>(target)) {
             return BoxSingleWidget::BOX_CIRCLE;
         } else if (enve_cast<RectangleBox*>(target)) {
@@ -302,6 +437,50 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
     });
 
     mMainLayout->addWidget(mBoxButton);
+    // click the swatch/icon to pick a label color (AE label palette)
+    connect(mBoxButton, &BoxesListActionButton::pressed, this, [this]() {
+        if (!mTarget) { return; }
+        const auto ebs = enve_cast<eBoxOrSound*>(mTarget->getTarget());
+        if (!ebs) { return; }
+        // guarded: the nested menu loop may outlive the layer
+        const QPointer<eBoxOrSound> ebsGuard = ebs;
+        QMenu menu(this);
+        const QColor colors[] = {
+            QColor(232, 32, 45),    // red
+            QColor(240, 140, 30),   // orange
+            QColor(232, 215, 32),   // yellow
+            QColor(60, 180, 75),    // green
+            QColor(0, 170, 180),    // cyan
+            QColor(32, 100, 230),   // blue
+            QColor(150, 60, 220),   // purple
+            QColor(130, 130, 130),  // gray
+        };
+        const QString names[] = {
+            QStringLiteral("\u7EA2"),  // red
+            QStringLiteral("\u6A59"),  // orange
+            QStringLiteral("\u9EC4"),  // yellow
+            QStringLiteral("\u7EFF"),  // green
+            QStringLiteral("\u9752"),  // cyan
+            QStringLiteral("\u84DD"),  // blue
+            QStringLiteral("\u7D2B"),  // purple
+            QStringLiteral("\u7070"),  // gray
+        };
+        for(int i = 0; i < 8; i++) {
+            const QColor c = colors[i];
+            menu.addAction(QIcon(*labelColorPixmap(c)), names[i],
+                           this, [ebsGuard, c]() {
+                if(ebsGuard) ebsGuard->setLabelColor(c);
+                Document::sInstance->actionFinished();
+            });
+        }
+        menu.addSeparator();
+        menu.addAction(QStringLiteral("\u65E0\u989C\u8272"), // no color
+                       this, [ebsGuard]() {
+            if(ebsGuard) ebsGuard->setLabelColor(QColor());
+            Document::sInstance->actionFinished();
+        });
+        menu.exec(QCursor::pos());
+    });
 
     mRecordButton = new PixmapActionButton(this);
     mRecordButton->setPixmapChooser([this]() {
@@ -396,15 +575,52 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
     connect(mLockedButton, &BoxesListActionButton::pressed,
             this, &BoxSingleWidget::switchBoxLockedAction);
 
+    // AE-style A/V column switches: solo (S) and shy (H)
+    mSoloButton = new PixmapActionButton(this);
+    mSoloButton->setToolTip(tr("Solo (show only soloed layers/sounds)"));
+    mSoloButton->setPixmapChooser([this]() {
+        if (!mTarget) { return static_cast<QPixmap*>(nullptr); }
+        const auto target = mTarget->getTarget();
+        const auto ebs = enve_cast<eBoxOrSound*>(target);
+        if (!ebs) { return static_cast<QPixmap*>(nullptr); }
+        return ebs->isSolo() ? BoxSingleWidget::ICON_SOLO_ON
+                             : BoxSingleWidget::ICON_SOLO_OFF;
+    });
+    mMainLayout->addWidget(mSoloButton);
+    connect(mSoloButton, &BoxesListActionButton::pressed, this, [this]() {
+        if (!mTarget) { return; }
+        const auto ebs = enve_cast<eBoxOrSound*>(mTarget->getTarget());
+        if (!ebs) { return; }
+        ebs->switchSolo();
+        Document::sInstance->actionFinished();
+    });
+
+    mShyButton = new PixmapActionButton(this);
+    mShyButton->setToolTip(tr("Shy (hide this row when 'Hide Shy Layers' is enabled in Filters)"));
+    mShyButton->setPixmapChooser([this]() {
+        if (!mTarget) { return static_cast<QPixmap*>(nullptr); }
+        const auto target = mTarget->getTarget();
+        const auto ebs = enve_cast<eBoxOrSound*>(target);
+        if (!ebs) { return static_cast<QPixmap*>(nullptr); }
+        return ebs->isShy() ? BoxSingleWidget::ICON_SHY_ON
+                            : BoxSingleWidget::ICON_SHY_OFF;
+    });
+    mMainLayout->addWidget(mShyButton);
+    connect(mShyButton, &BoxesListActionButton::pressed, this, [this]() {
+        if (!mTarget) { return; }
+        const auto ebs = enve_cast<eBoxOrSound*>(mTarget->getTarget());
+        if (!ebs) { return; }
+        ebs->switchShy();
+        Document::sInstance->actionFinished();
+    });
+
     m3DButton = new PixmapActionButton(this);
     m3DButton->setToolTip(tr("Toggle 3D layer (2.5D billboard: X/Y rotation, Z depth)"));
     m3DButton->setPixmapChooser([this]() {
         if (!mTarget) { return static_cast<QPixmap*>(nullptr); }
         const auto target = mTarget->getTarget();
         const auto box = enve_cast<BoundingBox*>(target);
-        if (!box || enve_cast<ContainerBox*>(target)) {
-            return static_cast<QPixmap*>(nullptr);
-        }
+        if (!box) { return static_cast<QPixmap*>(nullptr); }
         const auto trans = box->getBoxTransformAnimator();
         if (!trans) { return static_cast<QPixmap*>(nullptr); }
         return trans->is3DEnabled() ? BoxSingleWidget::ICON_3D_ON
@@ -416,12 +632,88 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
         if (!mTarget) { return; }
         const auto target = mTarget->getTarget();
         const auto box = enve_cast<BoundingBox*>(target);
-        if (!box || enve_cast<ContainerBox*>(target)) { return; }
+        if (!box) { return; }
         const auto trans = box->getBoxTransformAnimator();
         if (!trans) { return; }
         trans->set3DEnabled(!trans->is3DEnabled());
         Document::sInstance->actionFinished();
     });
+
+    // AE-style switches column: master FX toggle (fx) and preserve
+    // underlying transparency (T)
+    mFxButton = new PixmapActionButton(this);
+    mFxButton->setToolTip(tr("Toggle all effects on this layer"));
+    mFxButton->setPixmapChooser([this]() {
+        if (!mTarget) { return static_cast<QPixmap*>(nullptr); }
+        const auto box = enve_cast<BoundingBox*>(mTarget->getTarget());
+        if (!box) { return static_cast<QPixmap*>(nullptr); }
+        return box->getEffectsEnabled() ? BoxSingleWidget::ICON_FX_ON
+                                        : BoxSingleWidget::ICON_FX_OFF;
+    });
+    mMainLayout->addWidget(mFxButton);
+    connect(mFxButton, &BoxesListActionButton::pressed, this, [this]() {
+        if (!mTarget) { return; }
+        const auto box = enve_cast<BoundingBox*>(mTarget->getTarget());
+        if (!box) { return; }
+        box->switchEffectsEnabled();
+        Document::sInstance->actionFinished();
+    });
+
+    // per-layer motion blur switch (gates the MotionBlur raster effect
+    // sampling; the scene-wide master lives in the View menu)
+    mMbButton = new PixmapActionButton(this);
+    mMbButton->setToolTip(tr("Motion blur on this layer"));
+    mMbButton->setPixmapChooser([this]() {
+        if (!mTarget) { return static_cast<QPixmap*>(nullptr); }
+        const auto box = enve_cast<BoundingBox*>(mTarget->getTarget());
+        if (!box) { return static_cast<QPixmap*>(nullptr); }
+        return box->isMbEnabled() ? BoxSingleWidget::ICON_MB_ON
+                                  : BoxSingleWidget::ICON_MB_OFF;
+    });
+    mMainLayout->addWidget(mMbButton);
+    connect(mMbButton, &BoxesListActionButton::pressed, this, [this]() {
+        if (!mTarget) { return; }
+        const auto box = enve_cast<BoundingBox*>(mTarget->getTarget());
+        if (!box) { return; }
+        box->switchMbEnabled();
+        Document::sInstance->actionFinished();
+        mMbButton->update();
+    });
+
+    mTButton = new PixmapActionButton(this);
+    mTButton->setToolTip(tr("Preserve underlying transparency (paint only where layers below are opaque)"));
+    mTButton->setPixmapChooser([this]() {
+        if (!mTarget) { return static_cast<QPixmap*>(nullptr); }
+        const auto box = enve_cast<BoundingBox*>(mTarget->getTarget());
+        if (!box) { return static_cast<QPixmap*>(nullptr); }
+        return box->getPreserveAlpha() ? BoxSingleWidget::ICON_T_ON
+                                       : BoxSingleWidget::ICON_T_OFF;
+    });
+    mMainLayout->addWidget(mTButton);
+    connect(mTButton, &BoxesListActionButton::pressed, this, [this]() {
+        if (!mTarget) { return; }
+        const auto box = enve_cast<BoundingBox*>(mTarget->getTarget());
+        if (!box) { return; }
+        box->switchPreserveAlpha();
+        Document::sInstance->actionFinished();
+    });
+
+    // node-link parenting: click to pick the parent from a menu,
+    // press-and-drag onto another layer row to link directly
+    mParentLinkButton = new ParentLinkButton(this);
+    mParentLinkButton->setToolTip(tr("Parent link (click to pick, drag onto a layer row)"));
+    mParentLinkButton->setPixmapChooser([this]() {
+        if (!mTarget) { return static_cast<QPixmap*>(nullptr); }
+        const auto box = enve_cast<BoundingBox*>(mTarget->getTarget());
+        if (!box) { return static_cast<QPixmap*>(nullptr); }
+        return boxHasParentLink(box) ? BoxSingleWidget::ICON_LINKNODE_ON
+                                     : BoxSingleWidget::ICON_LINKNODE_OFF;
+    });
+    mMainLayout->addWidget(mParentLinkButton);
+    connect(mParentLinkButton, &ParentLinkButton::clicked,
+            this, &BoxSingleWidget::showParentLinkMenu);
+    connect(mParentLinkButton, &ParentLinkButton::dragStarted,
+            this, &BoxSingleWidget::startParentLinkDrag);
 
     mHwSupportButton = new PixmapActionButton(this);
     mHwSupportButton->setToolTip(tr("Adjust GPU/CPU Processing"));
@@ -453,6 +745,10 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
     mFillWidget = new QWidget(this);
     mMainLayout->addWidget(mFillWidget);
     mFillWidget->setObjectName("transparentWidget");
+    // fixed-width name column: names start at the same x on every row
+    // and the widgets behind it line up in consistent columns (short
+    // names leave the column blank instead of shifting everything)
+    mFillWidget->setFixedWidth(eSizesUI::widget*8);
 
     mPromoteToLayerButton = new PixmapActionButton(this);
     mPromoteToLayerButton->setToolTip(tr("Promote to Layer"));
@@ -527,6 +823,112 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
             this, &BoxSingleWidget::setCompositionMode);
     mBlendModeCombo->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Minimum);
 
+    // parent link combo: sits behind the blend mode ("覆盖") dropdown and
+    // mirrors the node-link parent of this layer; opening the popup
+    // rebuilds the candidate list, picking an entry re-links
+    mParentLinkCombo = createCombo(this);
+    mMainLayout->addWidget(mParentLinkCombo);
+    mParentLinkCombo->setObjectName("parentLinkCombo");
+    mParentLinkCombo->setToolTip(tr(
+        "Parent link (click to pick, drag onto a layer row)"));
+    mParentLinkCombo->addItem(QStringLiteral("\u65E0\u7236\u7EA7")); // 无父级
+    mParentLinkCombo->setVisible(false);
+    // NOTE: showPopup is NOT a signal in Qt5 (it is a protected virtual
+    // method) - connecting to it logs "signal not found" at runtime and
+    // never fires; the eventFilter refreshes candidates on press instead
+    mParentLinkCombo->installEventFilter(this);
+    connect(mParentLinkCombo, qOverload<int>(&QComboBox::activated),
+            this, [this](const int index) {
+        if(mParentLinkComboBuilding) return;
+        const auto scene = mParent ? mParent->currentScene() : nullptr;
+        const auto box = currentLinkedBox();
+        if(!scene || !box) return;
+        BoundingBox* picked = nullptr;
+        if(index > 0) {
+            const quintptr raw =
+                mParentLinkCombo->itemData(index).value<quintptr>();
+            picked = reinterpret_cast<BoundingBox*>(raw);
+        }
+        if(picked == box) return;
+        if(!picked && !boxHasParentLink(box)) return;
+        scene->linkParentLevel(box, picked);
+        Document::sInstance->actionFinished();
+        refreshParentLinkCombo();
+    });
+    mParentLinkCombo->setSizePolicy(QSizePolicy::Maximum,
+                                    QSizePolicy::Minimum);
+    // constant width so the column lines up across all rows regardless
+    // of the longest candidate name
+    mParentLinkCombo->setFixedWidth(eSizesUI::widget*5);
+
+    // AE-style track matte: ONE dropdown picks the matte layer, and a
+    // glyph button next to it cycles the matte mode (alpha / inverted /
+    // luma / inverted luma)
+    mTrkMatLayerCombo = createCombo(this);
+    mMainLayout->addWidget(mTrkMatLayerCombo);
+    mTrkMatLayerCombo->setObjectName("trackMatteLayerCombo");
+    mTrkMatLayerCombo->setToolTip(tr("Track matte layer"));
+    mTrkMatLayerCombo->addItem(QStringLiteral("\u65E0"));
+    mTrkMatLayerCombo->setVisible(false);
+    mTrkMatLayerCombo->installEventFilter(this);
+    connect(mTrkMatLayerCombo, qOverload<int>(&QComboBox::activated),
+            this, [this](const int index) {
+        if(mTrkMatBuilding) return;
+        const auto scene = mParent ? mParent->currentScene() : nullptr;
+        const auto box = currentLinkedBox();
+        if(!scene || !box) return;
+        BoundingBox* picked = nullptr;
+        if(index > 0) {
+            const quintptr raw =
+                mTrkMatLayerCombo->itemData(index).value<quintptr>();
+            picked = reinterpret_cast<BoundingBox*>(raw);
+        }
+        if(picked == box) return;
+        box->trackMatteTarget()->setTargetAction(picked);
+        if(picked && box->getTrackMatteMode() <= 0) {
+            box->setTrackMatteMode(1); // default: alpha matte
+        }
+        box->prp_afterWholeInfluenceRangeChanged();
+        Document::sInstance->actionFinished();
+        mTrkMatModeButton->update();
+    });
+    mTrkMatLayerCombo->setSizePolicy(QSizePolicy::Maximum,
+                                     QSizePolicy::Minimum);
+    mTrkMatLayerCombo->setFixedWidth(eSizesUI::widget*5);
+
+    mTrkMatModeButton = new PixmapActionButton(this);
+    mTrkMatModeButton->setToolTip(tr("Track matte mode"));
+    mTrkMatModeButton->setPixmapChooser([this]() {
+        if(!mTarget) { return static_cast<QPixmap*>(nullptr); }
+        const auto box = currentLinkedBox();
+        if(!box) { return static_cast<QPixmap*>(nullptr); }
+        const bool hasMatte = box->trackMatteTarget() &&
+                box->trackMatteTarget()->getTarget();
+        if(!hasMatte) return BoxSingleWidget::ICON_TM_OFF;
+        switch(box->getTrackMatteMode()) {
+        case 2: return BoxSingleWidget::ICON_TM_ALPHAINV;
+        case 3: return BoxSingleWidget::ICON_TM_LUMA;
+        case 4: return BoxSingleWidget::ICON_TM_LUMAINV;
+        default: return BoxSingleWidget::ICON_TM_ALPHA;
+        }
+    });
+    mMainLayout->addWidget(mTrkMatModeButton);
+    connect(mTrkMatModeButton, &BoxesListActionButton::pressed,
+            this, [this]() {
+        const auto scene = mParent ? mParent->currentScene() : nullptr;
+        const auto box = currentLinkedBox();
+        if(!scene || !box) return;
+        if(!box->trackMatteTarget() ||
+           !box->trackMatteTarget()->getTarget()) {
+            return; // no matte layer picked yet - nothing to switch
+        }
+        const int next = box->getTrackMatteMode() % 4 + 1; // cycle 1..4
+        box->setTrackMatteMode(next);
+        Document::sInstance->actionFinished();
+        mTrkMatModeButton->update();
+    });
+    mTrkMatModeButton->setVisible(false);
+
     mPathBlendModeCombo = createCombo(this);
     mMainLayout->addWidget(mPathBlendModeCombo);
     mPathBlendModeCombo->addItems(QStringList() << tr("Normal") <<
@@ -551,6 +953,11 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
     mMainLayout->addWidget(mCheckBox);
 
     //eSizesUI::widget.addHalfSpacing(mMainLayout);
+
+    // selection highlight above every row child (see the class at the
+    // bottom of this file); must be created last and raised
+    mSelOverlay = new RowHighlightOverlay(this);
+    mSelOverlay->raise();
 
     hide();
     connectAppFont(this);
@@ -689,12 +1096,16 @@ void BoxSingleWidget::setTargetAbstraction(SWT_Abstraction *abs) {
     mRecordButton->setVisible(animator && !eboxOrSound);
     mVisibleButton->setVisible(eboxOrSound || eeffect || graphAnimator);
     mLockedButton->setVisible(boundingBox);
+    mSoloButton->setVisible(eboxOrSound);
+    mShyButton->setVisible(eboxOrSound);
+    mFxButton->setVisible(boundingBox);
+    mTButton->setVisible(boundingBox);
     mResetButton->setVisible(
                 (enve_cast<QrealAnimator*>(prop) ||
                  enve_cast<QPointFAnimator*>(prop)) &&
                 prop->getFirstAncestor<AdvancedTransformAnimator>());
-    m3DButton->setVisible(boundingBox && !enve_cast<ContainerBox*>(prop));
-    if(boundingBox && !enve_cast<ContainerBox*>(prop)) {
+    m3DButton->setVisible(boundingBox);
+    if(boundingBox) {
         if(const auto trans = boundingBox->getBoxTransformAnimator()) {
             mTargetConn << connect(trans, &AdvancedTransformAnimator::box3DChanged,
                                    this, [this]() { m3DButton->update(); });
@@ -723,10 +1134,20 @@ void BoxSingleWidget::setTargetAbstraction(SWT_Abstraction *abs) {
 
     mPropertyComboBox->setVisible(comboBoxProperty);
 
+    mParentLinkCombo->setVisible(false);
+    mMbButton->setVisible(false);
+    mTrkMatLayerCombo->setVisible(false);
+    mTrkMatModeButton->setVisible(false);
+
     mPathBlendModeVisible = false;
     mBlendModeVisible = false;
     mFillTypeVisible = false;
+    // sync highlight with the layer's current selection state (the row
+    // may be (re)assigned to a layer that is already selected)
     mSelected = false;
+    if(const auto ebs = enve_cast<eBoxOrSound*>(prop)) {
+        mSelected = ebs->isSelected();
+    }
 
     mColorButton->setColorTarget(nullptr);
     mValueSlider->setTarget(nullptr);
@@ -745,6 +1166,24 @@ void BoxSingleWidget::setTargetAbstraction(SWT_Abstraction *abs) {
                                this, [this](const SkBlendMode mode) {
             mBlendModeCombo->setCurrentText(SkBlendMode_Name(mode));
         });
+
+        // parent-link combo: visible on every layer row; shows the
+        // current node-link parent and allows switching it directly
+        const auto ebsBox = enve_cast<eBoxOrSound*>(boundingBox);
+        if(ebsBox) {
+            mParentLinkCombo->setVisible(true);
+            mMbButton->setVisible(true);
+            mTrkMatLayerCombo->setVisible(true);
+            // the mode button stays put on every layer row (dimmed when
+            // no matte layer is picked) so the row layout never shifts
+            mTrkMatModeButton->setVisible(true);
+            rebuildTrkMatLayerCandidates();
+            rebuildParentLinkCandidates();
+            mTargetConn << connect(ebsBox, &eBoxOrSound::parentChanged,
+                                   this, [this](ContainerBox*) {
+                rebuildParentLinkCandidates();
+            });
+        }
     } else if(enve_cast<eSoundObjectBase*>(prop)) {
     } else if(boolProperty) {
         mCheckBox->setTarget(boolProperty);
@@ -822,9 +1261,27 @@ void BoxSingleWidget::setTargetAbstraction(SWT_Abstraction *abs) {
         mTargetConn << connect(ptr, &eBoxOrSound::visibilityChanged,
                                this, [this]() { mVisibleButton->update(); });
         mTargetConn << connect(ptr, &eBoxOrSound::selectionChanged,
-                               this, qOverload<>(&QWidget::update));
+                               this, [this](const bool selected) {
+            mSelected = selected;
+            update();
+        });
         mTargetConn << connect(ptr, &eBoxOrSound::lockedChanged,
                                this, [this]() { mLockedButton->update(); });
+        mTargetConn << connect(ptr, &eBoxOrSound::soloChanged,
+                               this, [this]() { mSoloButton->update(); });
+        mTargetConn << connect(ptr, &eBoxOrSound::shyChanged,
+                               this, [this]() { mShyButton->update(); });
+        mTargetConn << connect(ptr, &eBoxOrSound::labelColorChanged,
+                               this, [this](const QColor&) {
+            mBoxButton->update();
+            update(); // full row (label color wash)
+        });
+    }
+    if(boundingBox) {
+        mTargetConn << connect(boundingBox, &BoundingBox::effectsEnabledChanged,
+                               this, [this]() { mFxButton->update(); });
+        mTargetConn << connect(boundingBox, &BoundingBox::preserveAlphaChanged,
+                               this, [this]() { mTButton->update(); });
     }
     if(!boundingBox && !eindependentSound) {
         mTargetConn << connect(prop, &Property::prp_selectionChanged,
@@ -920,6 +1377,50 @@ void BoxSingleWidget::loadStaticPixmaps(int iconSize)
         ICON_RESET = pm;
     }
 
+    // AE-style layer switch glyphs: plain text characters rasterized at
+    // the actual device size (S = solo, H = shy, fx = effects, T = preserve
+    // underlying transparency); bright = active, dim = inactive
+    {
+        const qreal dpr = qApp->desktop()->devicePixelRatioF();
+        const auto makeTextIcon = [&pixmapSize, dpr](const QString& text,
+                                                     const QColor& color,
+                                                     const qreal sizeFactor) {
+            auto pm = new QPixmap(pixmapSize * dpr);
+            pm->setDevicePixelRatio(dpr);
+            pm->fill(Qt::transparent);
+            QPainter p(pm);
+            p.setRenderHint(QPainter::TextAntialiasing);
+            QFont f = qApp->font();
+            f.setPixelSize(qRound(pixmapSize.height() * sizeFactor));
+            f.setBold(true);
+            p.setFont(f);
+            p.setPen(color);
+            p.drawText(QRectF(QPointF(0, 0), pixmapSize),
+                       Qt::AlignCenter, text);
+            p.end();
+            return pm;
+        };
+        const QColor active(255, 255, 255);
+        const QColor inactive(150, 150, 150);
+        ICON_SOLO_ON = makeTextIcon("S", active, 0.78);
+        ICON_SOLO_OFF = makeTextIcon("S", inactive, 0.78);
+        ICON_SHY_ON = makeTextIcon("H", active, 0.78);
+        ICON_SHY_OFF = makeTextIcon("H", inactive, 0.78);
+        ICON_FX_ON = makeTextIcon("fx", active, 0.62);
+        ICON_FX_OFF = makeTextIcon("fx", inactive, 0.62);
+        ICON_MB_ON = makeTextIcon("MB", active, 0.52);
+        ICON_MB_OFF = makeTextIcon("MB", inactive, 0.52);
+        ICON_T_ON = makeTextIcon("T", active, 0.78);
+        ICON_T_OFF = makeTextIcon("T", inactive, 0.78);
+        ICON_LINKNODE_ON = makeTextIcon(QChar(0x25CE), active, 0.86);
+        ICON_LINKNODE_OFF = makeTextIcon(QChar(0x25CE), inactive, 0.86);
+        ICON_TM_ALPHA = makeTextIcon(QChar(0x25CF), active, 0.82);    // ●
+        ICON_TM_ALPHAINV = makeTextIcon(QChar(0x25CB), active, 0.82); // ○
+        ICON_TM_LUMA = makeTextIcon(QChar(0x25D0), active, 0.82);     // ◐
+        ICON_TM_LUMAINV = makeTextIcon(QChar(0x25D1), active, 0.82);  // ◑
+        ICON_TM_OFF = makeTextIcon(QChar(0x25CF), inactive, 0.82);    // dim ●
+    }
+
     BOX_PATH = new QPixmap(QIcon::fromTheme("pathCreate").pixmap(pixmapSize));
     BOX_CIRCLE = new QPixmap(QIcon::fromTheme("circleCreate").pixmap(pixmapSize));
     BOX_RECT = new QPixmap(QIcon::fromTheme("rectCreate").pixmap(pixmapSize));
@@ -960,6 +1461,16 @@ void BoxSingleWidget::clearStaticPixmaps()
     delete ICON_3D_ON;
     delete ICON_3D_OFF;
     delete ICON_RESET;
+    delete ICON_SOLO_ON;
+    delete ICON_SOLO_OFF;
+    delete ICON_SHY_ON;
+    delete ICON_SHY_OFF;
+    delete ICON_FX_ON;
+    delete ICON_FX_OFF;
+    delete ICON_T_ON;
+    delete ICON_T_OFF;
+    delete ICON_LINKNODE_ON;
+    delete ICON_LINKNODE_OFF;
 
     delete BOX_PATH;
     delete BOX_CIRCLE;
@@ -993,6 +1504,71 @@ void BoxSingleWidget::mousePressEvent(QMouseEvent *event) {
             }
             PropertyMenu pMenu(&menu, mParent->currentScene(), MainWindow::sGetInstance());
             pTarget->prp_setupTreeViewMenu(&pMenu);
+        }
+        // timeline tracks: sounds carry no BoundingBox context menu (the
+        // regular Merge into Track action lives there), so selected
+        // same-kind sibling sound rows can merge right from this menu.
+        // Captures are guarded - the nested menu loop may outlive them
+        if(const auto bos = enve_cast<eBoxOrSound*>(target)) {
+            if(bos->isAudioKind() && bos->isSelected()) {
+                const auto parent = bos->getParentGroup();
+                if(parent) {
+                    QList<QPointer<eBoxOrSound>> mates;
+                    for(const auto& c : parent->getContained()) {
+                        if(c && c != bos && c->isSelected() &&
+                           c->isAudioKind()) {
+                            mates << c.data();
+                        }
+                    }
+                    if(!mates.isEmpty() && mParent->currentScene()) {
+                        const QPointer<Canvas> sceneGuard =
+                                mParent->currentScene();
+                        const QPointer<eBoxOrSound> bosGuard = bos;
+                        menu.addSeparator();
+                        menu.addAction(tr("Merge into Track"), this,
+                                       [sceneGuard, bosGuard, mates]() {
+                            if(!sceneGuard || !bosGuard) return;
+                            QList<eBoxOrSound*> live;
+                            for(const auto& m : mates) {
+                                if(m) live << m.data();
+                            }
+                            sceneGuard->combineIntoTrack(bosGuard, live);
+                        });
+                    }
+                }
+            }
+        }
+        // timeline track: allow a member to leave its track. The new
+        // active row of the remaining members is revealed synchronously
+        // here; without that it only pops up when the queued
+        // enforceTrack runs one event-loop tick later, visibly flashing
+        // the row list through a second rebuild pass
+        if(const auto bos2 = enve_cast<eBoxOrSound*>(target)) {
+            if(bos2->isInTrack()) {
+                const int tid = bos2->trackId();
+                eBoxOrSound* nextActive = nullptr;
+                if(const auto parent = bos2->getParentGroup()) {
+                    for(const auto& c : parent->getContained()) {
+                        if(c && c != bos2 && c->trackId() == tid) {
+                            nextActive = c.data();
+                            break;
+                        }
+                    }
+                }
+                menu.addSeparator();
+                menu.addAction(tr("Detach from Track"), this,
+                               [bos2Q = QPointer<eBoxOrSound>(bos2),
+                                nextQ = QPointer<eBoxOrSound>(nextActive)]() {
+                    if(!bos2Q) return;
+                    bos2Q->setTrackId(-1);
+                    // same visual end-state the queued enforcement will
+                    // settle into, but applied within the same pass
+                    if(nextQ && nextQ->isHiddenByTrack()) {
+                        nextQ->setHiddenByTrack(false);
+                    }
+                    Document::sInstance->actionFinished();
+                });
+            }
         }
         menu.exec(event->globalPos());
         setSelected(false);
@@ -1126,6 +1702,16 @@ TimelineMovable* BoxSingleWidget::getRectangleMovableAtPos(
     return nullptr;
 }
 
+eBoxOrSound* BoxSingleWidget::getTrackClipAtPos(
+                            const int pressX,
+                            const qreal pixelsPerFrame,
+                            const int minViewedFrame) {
+    if(isHidden() || !mTarget) return nullptr;
+    const auto bos = enve_cast<eBoxOrSound*>(mTarget->getTarget());
+    if(!bos || !bos->isInTrack()) return nullptr;
+    return bos->trackMemberAtX(pressX, minViewedFrame, pixelsPerFrame);
+}
+
 void BoxSingleWidget::getKeysInRect(const QRectF &selectionRect,
                                     const qreal pixelsPerFrame,
                                     QList<Key*>& listKeys) {
@@ -1148,6 +1734,17 @@ void BoxSingleWidget::paintEvent(QPaintEvent *) {
     int nameX = mFillWidget->x();
 
     if (mHover) { p.fillRect(rect(), ThemeSupport::getThemeHighlightColor(40)); }
+
+    // AE-style label color wash on the layer name area
+    const auto bsLabel = enve_cast<eBoxOrSound*>(prop);
+    if (bsLabel) {
+        const QColor lc = bsLabel->getLabelColor();
+        if (lc.isValid()) {
+            QColor wash = lc;
+            wash.setAlpha(40);
+            p.fillRect(mFillWidget->geometry(), wash);
+        }
+    }
 
     const auto bsTarget = enve_cast<eBoxOrSound*>(prop);
     if (!bsTarget && prop->prp_isSelected()) {
@@ -1207,17 +1804,230 @@ void BoxSingleWidget::paintEvent(QPaintEvent *) {
         p.setPen(Qt::white);
     }
 
+    // track membership chip: glyph + member count, shifts the name right
+    if (bsTarget && bsTarget->isInTrack()) {
+        const int members = bsTarget->trackMembers().count();
+        const QString badge = QStringLiteral("T") +
+                              QString::number(members);
+        const int chipW = p.fontMetrics().horizontalAdvance(badge) + 8;
+        const int chipH = qRound(eSizesUI::widget*0.62);
+        const QRect chip(nameX, (eSizesUI::widget - chipH)/2, chipW, chipH);
+        p.setRenderHint(QPainter::Antialiasing);
+        QColor chipCol = bsTarget->getLabelColor();
+        if (!chipCol.isValid()) { chipCol = QColor(70, 130, 220); }
+        chipCol.setAlpha(150);
+        p.setPen(Qt::NoPen);
+        p.setBrush(chipCol);
+        p.drawRoundedRect(chip, 4, 4);
+        p.setPen(Qt::white);
+        p.drawText(chip, Qt::AlignCenter, badge);
+        p.setRenderHint(QPainter::Antialiasing, false);
+        nameX += chipW + 4;
+    }
+
     const QRect textRect(nameX, 0, width() - nameX - eSizesUI::widget, eSizesUI::widget);
     const QString name = translatePropertyName(prop->prp_getName());
     QTextOption opts(Qt::AlignVCenter);
     opts.setWrapMode(QTextOption::NoWrap);
+    // keep long names inside the fixed name column - they must never
+    // draw under the widgets that follow it
+    p.setClipRect(mFillWidget->geometry());
     p.drawText(textRect, name, opts);
-    if(mSelected) {
-        p.setBrush(Qt::NoBrush);
-        p.setPen(QPen(Qt::lightGray));
-        p.drawRect(rect().adjusted(0, 0, -1, -1));
-    }
+    p.setClipRect(rect());
+    // selection highlight lives on the topmost overlay (mSelOverlay)
     p.end();
+}
+
+// the layer row this widget represents, as a linkable box
+BoundingBox *BoxSingleWidget::currentLinkedBox() {
+    if(!mTarget) return nullptr;
+    return enve_cast<BoundingBox*>(mTarget->getTarget());
+}
+
+// first existing ParentEffect of this box (the node-link carrier)
+static ParentEffect* findParentEffect(BoundingBox* const box) {
+    const auto coll = box->getTransformEffectCollection();
+    if(!coll) return nullptr;
+    const int n = coll->ca_getNumberOfChildren();
+    for(int i = 0; i < n; i++) {
+        if(const auto pe = enve_cast<ParentEffect*>(coll->getChild(i)))
+            return pe;
+    }
+    return nullptr;
+}
+
+// rebuild the dropdown entries: "无父级" plus every scene box that is
+// neither this box nor inside its subtree (those would form a cycle);
+// preselects the currently linked parent, if any
+void BoxSingleWidget::rebuildParentLinkCandidates() {
+    mParentLinkComboBuilding = true;
+    const QSignalBlocker blocker(mParentLinkCombo);
+    const auto scene = mParent ? mParent->currentScene() : nullptr;
+    const auto box = currentLinkedBox();
+    mParentLinkCombo->clear();
+    mParentLinkCombo->addItem(QStringLiteral("\u65E0\u7236\u7EA7"));
+    int match = 0;
+    if(box && scene) {
+        BoundingBox* cur = nullptr;
+        if(const auto pe = findParentEffect(box)) {
+            cur = enve_cast<BoundingBox*>(
+                        pe->parentTargetProperty()->getTarget());
+        }
+        std::function<void(ContainerBox*)> walk =
+                [this, &walk, &match, box, &cur](ContainerBox* const cont) {
+            for(const auto b : cont->getContainedBoxes()) {
+                if(!b || b == box || box->isAncestor(b)) continue;
+                // exclude boxes whose link chain already reaches this
+                // box - picking one would close a link-graph cycle
+                if(b->hasInParentLinkChain(box)) continue;
+                mParentLinkCombo->addItem(
+                            b->prp_getName(),
+                            QVariant::fromValue(reinterpret_cast<quintptr>(b)));
+                if(b == cur) match = mParentLinkCombo->count() - 1;
+                if(const auto g = enve_cast<ContainerBox*>(b)) walk(g);
+            }
+        };
+        walk(scene);
+    }
+    mParentLinkCombo->setCurrentIndex(match);
+    mParentLinkComboBuilding = false;
+}
+
+// matte layer candidates: every scene box except this one and its own
+// subtree (those would matte with themselves / their dependents)
+void BoxSingleWidget::rebuildTrkMatLayerCandidates() {
+    mTrkMatBuilding = true;
+    const QSignalBlocker blocker(mTrkMatLayerCombo);
+    const auto scene = mParent ? mParent->currentScene() : nullptr;
+    const auto box = currentLinkedBox();
+    mTrkMatLayerCombo->clear();
+    mTrkMatLayerCombo->addItem(QStringLiteral("\u65E0"));
+    int match = 0;
+    if(box && scene) {
+        BoundingBox* cur = box->trackMatteTarget() ?
+                    box->trackMatteTarget()->getTarget() : nullptr;
+        std::function<void(ContainerBox*)> walk =
+                [this, &walk, &match, box, &cur](ContainerBox* const cont) {
+            for(const auto b : cont->getContainedBoxes()) {
+                if(!b || b == box || box->isAncestor(b)) continue;
+                // exclude boxes whose matte chain already reaches this
+                // box - picking one would close a matte cycle
+                if(b->matteChainReaches(box)) continue;
+                mTrkMatLayerCombo->addItem(
+                            b->prp_getName(),
+                            QVariant::fromValue(reinterpret_cast<quintptr>(b)));
+                if(b == cur) match = mTrkMatLayerCombo->count() - 1;
+                if(const auto g = enve_cast<ContainerBox*>(b)) walk(g);
+            }
+        };
+        walk(scene);
+    }
+    mTrkMatLayerCombo->setCurrentIndex(match);
+    mTrkMatBuilding = false;
+}
+
+// lightweight text sync between popups: relabels/creates the single
+// "current parent" entry without walking the whole scene tree; full
+// candidate list refreshes on the next popup open or row re-assign
+void BoxSingleWidget::refreshParentLinkCombo() {
+    const auto combo = mParentLinkCombo;
+    const auto box = currentLinkedBox();
+    QString txt = QStringLiteral("\u65E0\u7236\u7EA7");
+    quintptr curRaw = 0;
+    if(box && mTarget) {
+        if(const auto pe = findParentEffect(box)) {
+            if(const auto par = enve_cast<BoundingBox*>(
+                       pe->parentTargetProperty()->getTarget())) {
+                txt = par->prp_getName();
+                curRaw = reinterpret_cast<quintptr>(par);
+            }
+        }
+    }
+    // find an entry carrying the current parent pointer
+    int idx = -1;
+    for(int i = 0; i < combo->count(); i++) {
+        if(combo->itemData(i).value<quintptr>() == curRaw &&
+           curRaw != 0) { idx = i; break; }
+    }
+    if(idx < 0 && !combo->itemText(0).isEmpty() &&
+       combo->itemData(0).isNull()) {
+        // reuse slot 0 when it is the placeholder
+        combo->setItemText(0, txt);
+        combo->setItemData(0, QVariant::fromValue(curRaw));
+        idx = 0;
+    } else if(idx >= 0) {
+        combo->setItemText(idx, txt);
+    } else {
+        combo->insertItem(0, txt, QVariant::fromValue(curRaw));
+        idx = 0;
+    }
+    const QSignalBlocker blocker(combo);
+    combo->setCurrentIndex(idx);
+}
+
+void BoxSingleWidget::showParentLinkMenu() {
+    if (!mTarget) { return; }
+    const auto box = enve_cast<BoundingBox*>(mTarget->getTarget());
+    if (!box) { return; }
+    const auto scene = mParent->currentScene();
+    if (!scene) { return; }
+    // guarded: the nested menu loop may outlive scene/box
+    const QPointer<Canvas> sceneGuard = scene;
+    const QPointer<BoundingBox> boxGuard = box;
+    QMenu menu(this);
+    {
+        const auto act = menu.addAction(
+                    QStringLiteral("\u65E0\u7236\u7EA7")); // 无父级
+        connect(act, &QAction::triggered, this,
+                [sceneGuard, boxGuard]() {
+            if(sceneGuard && boxGuard) {
+                sceneGuard->linkParentLevel(boxGuard, nullptr);
+            }
+        });
+        act->setDisabled(!boxHasParentLink(box));
+    }
+    const auto addBoxes = [&](ContainerBox* const cont, const auto& self) -> void {
+        for(const auto& b : cont->getContainedBoxes()) {
+            if(b == box) continue;
+            if(box->isAncestor(b)) continue; // not own descendants
+            if(b->hasInParentLinkChain(box)) continue; // link cycles
+            const auto act = menu.addAction(b->prp_getName());
+            connect(act, &QAction::triggered, this,
+                    [sceneGuard, boxGuard, bQ = QPointer<BoundingBox>(b)]() {
+                if(sceneGuard && boxGuard && bQ) {
+                    sceneGuard->linkParentLevel(boxGuard, bQ);
+                }
+            });
+            if(const auto g = enve_cast<ContainerBox*>(b)) {
+                self(g, self);
+            }
+        }
+    };
+    addBoxes(scene, addBoxes);
+    menu.exec(QCursor::pos());
+}
+
+void BoxSingleWidget::startParentLinkDrag() {
+    if (!mTarget) { return; }
+    const auto box = enve_cast<BoundingBox*>(mTarget->getTarget());
+    if (!box) { return; }
+    // anchor for the AE-style connector line drawn by BoxScroller
+    const QPoint srcCenter =
+            mParentLinkButton->mapToGlobal(
+                mParentLinkButton->rect().center());
+    BoxScroller::plDragStarted(srcCenter);
+    const auto drag = new QDrag(this);
+    auto mime = new QMimeData();
+    QByteArray raw;
+    QDataStream ds(&raw, QIODevice::WriteOnly);
+    ds << quintptr(box);
+    mime->setData(parentLinkMimeType(), raw);
+    drag->setMimeData(mime);
+    QPixmap pm(24, 24);
+    pm.fill(QColor(120, 170, 255));
+    drag->setPixmap(pm);
+    drag->exec(Qt::CopyAction);
+    BoxScroller::plDragEnded();
 }
 
 void BoxSingleWidget::switchContentVisibleAction() {
@@ -1343,4 +2153,21 @@ void BoxSingleWidget::resizeEvent(QResizeEvent *) {
     updatePathCompositionBoxVisible();
     updateFillTypeBoxVisible();
     updateValueSlidersForQPointFAnimator();
+    if(mSelOverlay) mSelOverlay->setGeometry(rect());
 }
+
+// refresh popup candidates right before the combo opens (showPopup is
+// not a signal in Qt5, so an event filter on the press is used instead)
+bool BoxSingleWidget::eventFilter(QObject *obj, QEvent *event) {
+    if(event->type() == QEvent::MouseButtonPress) {
+        if(obj == mParentLinkCombo) rebuildParentLinkCandidates();
+        else if(obj == mTrkMatLayerCombo) rebuildTrkMatLayerCandidates();
+    }
+    return QWidget::eventFilter(obj, event);
+}
+
+void BoxSingleWidget::selOverlayUpdate() {
+    if(mSelOverlay) mSelOverlay->update();
+}
+
+#include "boxsinglewidget.moc"

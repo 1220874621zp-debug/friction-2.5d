@@ -37,6 +37,7 @@ class Key;
 class KeysView;
 class Canvas;
 class TimelineHighlightWidget;
+class eBoxOrSound;
 
 class BoxScroller : public ScrollWidgetVisiblePart {
 public:
@@ -63,6 +64,13 @@ public:
     { mKeysView = keysView; }
 
     TimelineHighlightWidget* requestHighlighter();
+
+    // parent-link drag visual state, shared with BoxSingleWidget:
+    // while a link drag is alive BoxScroller paints an AE-style
+    // connector line from the source row's link button to the cursor
+    static void plDragStarted(const QPoint& srcGlobalCenter);
+    static void plDragEnded();
+    static bool plDragActive() { return sPlActive; }
 protected:
     void paintEvent(QPaintEvent *);
     void resizeEvent(QResizeEvent *e);
@@ -95,6 +103,14 @@ private:
     bool tryDropIntoAbs(SWT_Abstraction * const abs,
                         const int idInAbs, DropTarget &dropTarget);
 
+    // can the currently dragged rows merge onto 'target'? plain rows
+    // (not groups) whose track kind matches the dragged batch
+    bool dragCombineTarget(const SingleWidgetTarget *target) const;
+    // Alt held during the drag: releasing detaches members from their
+    // track instead of combining/gathering
+    bool altDetachActive() const
+    { return mDragModifiers & Qt::AltModifier; }
+
     TimelineHighlightWidget* mHighlighter = nullptr;
     Canvas* mCurrentScene = nullptr;
 
@@ -105,8 +121,16 @@ private:
     KeysView *mKeysView = nullptr;
 
     const QMimeData* mCurrentMimeData = nullptr;
+    Qt::KeyboardModifiers mDragModifiers = Qt::NoModifier;
+    // true while the hovered drop target means "combine into track"
+    // (drawn as a filled row) vs a plain reorder insert line
+    bool mDropIsCombine = false;
 
     DropTarget mDropTarget{nullptr, 0, DropType::none};
+
+    // parent-link drag visual state
+    static bool  sPlActive;
+    static QPoint sPlSrcGlobal;
 };
 
 #endif // BOXSCROLLWIDGETVISIBLEPART_H

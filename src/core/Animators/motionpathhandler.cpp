@@ -208,8 +208,13 @@ MotionPathHandler::MotionPathHandler(BoxTransformAnimator * const target)
     : Property("motion path")
     , mTarget(target)
 {
-    setPointsHandler(enve::make_shared<PointsHandler>());
-    mPoints.reset(getPointsHandler());
+    // share ONE control block with the Property base: wrapping the raw
+    // getter in a second stdsptr would give two independent owners and
+    // double-free the handler at destruction (heap corruption when a
+    // project is closed/switched)
+    const auto points = enve::make_shared<PointsHandler>();
+    mPoints = points;
+    setPointsHandler(points);
     prp_setName(QStringLiteral("motion path"));
     prp_enabledDrawingOnCanvas();
 }

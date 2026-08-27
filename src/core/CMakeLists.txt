@@ -224,6 +224,8 @@ set(
     RasterEffects/colorizeeffect.cpp
     RasterEffects/customrastereffect.cpp
     RasterEffects/motionblureffect.cpp
+    RasterEffects/trackmattecaller.cpp
+    Boxes/adjustmentlayer.cpp
     RasterEffects/noisefadeeffect.cpp
     RasterEffects/openglrastereffectcaller.cpp
     RasterEffects/rastereffect.cpp
@@ -754,6 +756,12 @@ set_target_properties(
     VERSION
     ${PROJECT_VERSION}
 )
+
+if(MSVC AND WIN32)
+    # development aid: linker map so crash reporter output can be
+    # symbolized without a debugger
+    target_link_options(${PROJECT_NAME} PRIVATE "/DEBUG" "/MAP")
+endif()
 
 set_target_properties(
     ${PROJECT_NAME}

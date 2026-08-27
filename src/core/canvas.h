@@ -25,6 +25,7 @@
 #include "Boxes/containerbox.h"
 #include "colorhelpers.h"
 #include <QThread>
+#include <functional>
 #include "CacheHandlers/hddcachablecachehandler.h"
 #include "skia/skiaincludes.h"
 #include "GUI/valueinput.h"
@@ -125,10 +126,32 @@ public:
     //
     void finishSelectedPointsTransform();
     void finishSelectedBoxesTransform();
+    void setSelectedBoxesInPoint();
+    void setSelectedBoxesOutPoint();
+    void trimSelectedSounds(const bool inPoint, const int absFrame);
     void moveSelectedPointsByAbs(const QPointF &by,
                                  const bool startTransform);
     void moveSelectedBoxesByAbs(const QPointF &by,
                                 const bool startTransform);
+    void moveSelectedBoxes3DZ(const qreal by,
+                              const bool startTransform);
+    void rotateSelectedBoxes3DX(const qreal by,
+                                const bool startTransform);
+    void rotateSelectedBoxes3DY(const qreal by,
+                                const bool startTransform);
+
+    // node-link parenting: reuse or create a ParentEffect on the child
+    // and bind it to the given parent (nullptr clears); returns success
+    bool linkParentLevel(BoundingBox* const child,
+                         BoundingBox* const parent);
+
+    // drop one or more sibling rows onto a plain layer/sound row: move
+    // the dragged rows next to the anchor and put them all on the same
+    // timeline track (UI-level grouping, see eBoxOrSound::setTrackId);
+    // kinds must match - audio rows only join audio tracks, visual rows
+    // only visual tracks; returns false when combining is not allowed
+    bool combineIntoTrack(eBoxOrSound* const anchor,
+                          const QList<eBoxOrSound*>& layers);
     void groupSelectedBoxes();
 
     //void selectAllBoxes();
@@ -247,6 +270,16 @@ public:
     void removeBoxFromSelection(BoundingBox* const box);
     void clearBoxesSelection();
     void clearBoxesSelectionList();
+
+    // timeline tracks (UI-level grouping of sibling boxes sharing
+    // one timeline row, see eBoxOrSound::setTrackId):
+    // re-resolve which member of the track is the active (visible) one
+    void enforceTrack(ContainerBox* const parent, const int trackId);
+    // allocate a track id unused among the parent's direct children
+    int newTrackId(ContainerBox* const parent) const;
+    // stack the other members of the anchor's track directly below
+    // it, keeping the whole track contiguous after a reorder drop
+    void gatherTrack(eBoxOrSound* const anchor);
     const QString checkForUnsupportedBoxSVG(BoundingBox* const box);
     const QString checkForUnsupportedBoxesSVG(const QList<BoundingBox*> boxes);
     const QString checkForUnsupportedSVG();
@@ -446,6 +479,16 @@ public:
     void setRasterEffectsVisible(const bool bT)
     {
         mRasterEffectsVisible = bT;
+    }
+    // scene-wide motion blur master (View menu); per-layer switches in
+    // the timeline gate on top of this
+    void setMotionBlurEnabled(const bool bT)
+    {
+        mMotionBlurEnabled = bT;
+    }
+    bool getMotionBlurEnabled() const
+    {
+        return mMotionBlurEnabled;
     }
     void setPathEffectsVisible(const bool bT)
     {
@@ -668,6 +711,10 @@ public:
 
     void anim_setAbsFrame(const int frame);
 
+    // run func on every selected sound (sounds live outside the canvas
+    // box selection but join the "all selected" timeline operations)
+    void forEachSelectedSound(const std::function<void(eBoxOrSound*)>& func);
+
     void moveDurationRectForAllSelected(const int dFrame);
     void startDurationRectPosTransformForAllSelected();
     void finishDurationRectPosTransformForAllSelected();
@@ -770,6 +817,11 @@ public:
     void removeNullObject(NullObject* const obj);
 
 private:
+    // set first thing in the destructor: while true the track/selection
+    // bookkeeping (enforceTrack, forEachSelectedSound) stays inert so
+    // the teardown never performs active cross-object updates
+    bool mDestructing = false;
+
     void addGradient(const qsptr<SceneBoundGradient> &grad);
 
     void readGradients(eReadStream &src);
@@ -782,6 +834,8 @@ private:
     void scaleSelected(const eMouseEvent &e);
     void shearSelected(const eMouseEvent &e);
     void rotateSelected(const eMouseEvent &e);
+    void rotate3DXSelected(const eMouseEvent &e);
+    void rotate3DYSelected(const eMouseEvent &e);
 
     bool prepareRotation(const QPointF &startPos,
                          bool fromHandle = false);
@@ -791,14 +845,23 @@ private:
     bool pointOnRotateGizmo(const QPointF &pos,
                             qreal invScale) const;
     void setRotateHandleHover(bool hovered);
+    bool pointOnRot3DXGizmo(const QPointF &pos,
+                            qreal invScale) const;
+    bool pointOnRot3DYGizmo(const QPointF &pos,
+                            qreal invScale) const;
+    void setRot3DXGizmoHover(const bool hovered);
+    void setRot3DYGizmoHover(const bool hovered);
     bool shouldShowXLineGizmo() const;
     bool shouldShowYLineGizmo() const;
+    bool shouldShowZLineGizmo() const;
     bool updateLineGizmoVisibility();
 
     void updateRotateHandleGeometry(qreal invScale);
 
     bool tryStartRotateWithGizmo(const eMouseEvent &e,
                                  qreal invScale);
+    bool startRot3DConstrainedMove(const eMouseEvent &e,
+                                   Friction::Core::Gizmos::Rot3DHandle handle);
     bool tryStartScaleGizmo(const eMouseEvent &e,
                             qreal invScale);
     bool tryStartShearGizmo(const eMouseEvent &e,
@@ -931,6 +994,7 @@ protected:
 
     bool mClipToCanvasSize = false;
     bool mRasterEffectsVisible = true;
+    bool mMotionBlurEnabled = true;
     bool mPathEffectsVisible = true;
 
     bool mDoubleClick = false;
@@ -972,6 +1036,7 @@ protected:
 
     void updateTransformation(const eKeyEvent &e);
     QPointF getMoveByValueForEvent(const eMouseEvent &e);
+    qreal getMoveZValueForEvent(const eMouseEvent &e);
     void cancelCurrentTransform();
     void cancelCurrentTransformGimzos();
 

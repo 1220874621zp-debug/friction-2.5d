@@ -74,6 +74,9 @@ public:
     }
 
     bool hasAnySounds() const { return !mSounds.isEmpty(); }
+
+    const ConnContextObjList<qsptr<eSound>>& getSounds() const
+    { return mSounds; }
 private:
     SoundMerger * scheduleSecond(const int secondId);
 

@@ -42,6 +42,8 @@
 #include "animationdockwidget.h"
 #include "GUI/global.h"
 #include "canvas.h"
+#include "appsupport.h"
+#include "singlewidgettarget.h"
 #include "widgets/scenechooser.h"
 #include "widgets/changewidthwidget.h"
 #include "timelinehighlightwidget.h"
@@ -139,6 +141,35 @@ TimelineWidget::TimelineWidget(Document &document,
     typeActionAdder(SWT_Type::all, tr("All"))->setChecked(true);
     typeActionAdder(SWT_Type::sound, tr("Sound"));
     typeActionAdder(SWT_Type::graphics, tr("Graphics"));
+
+    // AE-style shy layers: master switch hiding shy rows in the timeline
+    {
+        struct ShyUpdater {
+            static void recursive(ContainerBox * const cont) {
+                for(const auto& ebs : cont->getContained()) {
+                    ebs->updateRowVisibility();
+                    if(const auto group = enve_cast<ContainerBox*>(ebs.data())) {
+                        recursive(group);
+                    }
+                }
+            }
+        };
+        const auto shyAct = settingsMenu->addAction(tr("Hide Shy Layers"));
+        shyAct->setCheckable(true);
+        const bool hideShy = AppSupport::getSettings("timeline",
+                                                     "hideShyLayers",
+                                                     false).toBool();
+        SingleWidgetTarget::sHideShyLayers = hideShy;
+        shyAct->setChecked(hideShy);
+        connect(shyAct, &QAction::toggled, this, [this](const bool checked) {
+            AppSupport::setSettings("timeline", "hideShyLayers", checked);
+            SingleWidgetTarget::sHideShyLayers = checked;
+            // refresh row visibility of every layer/sound in the document
+            for(const auto& scene : mDocument.fScenes) {
+                ShyUpdater::recursive(scene.data());
+            }
+        });
+    }
 
     settingsMenu->addSeparator();
 

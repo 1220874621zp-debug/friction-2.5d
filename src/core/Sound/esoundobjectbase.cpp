@@ -30,6 +30,8 @@
 #include "Timeline/fixedlenanimationrect.h"
 
 eSoundObjectBase::eSoundObjectBase(const qsptr<FixedLenAnimationRect>& durRect) {
+    // AE-style label color default: sound layers are green
+    setLabelColor(QColor(60, 180, 75));
     connect(this, &eBoxOrSound::prp_ancestorChanged, this, [this]() {
         if(!getParentScene()) return;
         updateDurationRectLength();

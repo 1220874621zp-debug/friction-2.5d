@@ -33,6 +33,7 @@
 class eVideoSound;
 
 class CORE_EXPORT VideoBox : public AnimationBox {
+    Q_OBJECT
     e_OBJECT
 protected:
     VideoBox();

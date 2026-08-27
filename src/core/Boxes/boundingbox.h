@@ -28,6 +28,7 @@
 
 #include "Animators/eboxorsound.h"
 #include "boxrendercontainer.h"
+#include "conncontextptr.h"
 #include "skia/skiaincludes.h"
 #include "renderdatahandler.h"
 #include "smartPointers/ememory.h"
@@ -39,6 +40,7 @@
 #include "Tasks/domeletask.h"
 
 class Canvas;
+class BoxTargetProperty;
 
 enum class AlignRelativeTo;
 
@@ -89,6 +91,7 @@ enum class eBoxType {
     deprecated0, // sculptPath,
     nullObject,
     psdImage,
+    adjustmentLayer,
 
     count
 };
@@ -248,6 +251,22 @@ public:
     virtual SkBlendMode getBlendMode() const
     { return mBlendMode; }
 
+    // AE-style solo: true when this box participates in drawing
+    // while any sibling in the same container is soloed
+    // (ContainerBox overrides to include soloed descendants)
+    virtual bool soloAffectsDraw() const;
+
+    // AE-style switches: master FX toggle + preserve underlying
+    // transparency (paints with kSrcATop)
+    void setEffectsEnabled(const bool enable);
+    void switchEffectsEnabled() { setEffectsEnabled(!mEffectsEnabled); }
+    bool getEffectsEnabled() const { return mEffectsEnabled; }
+
+    void setPreserveAlpha(const bool preserve);
+    void switchPreserveAlpha() { setPreserveAlpha(!mPreserveAlpha); }
+    bool getPreserveAlpha() const { return mPreserveAlpha; }
+    virtual SkBlendMode getPaintBlendMode() const;
+
     virtual qreal getOpacity(const qreal relFrame) const;
 
     virtual void saveSVG(SvgExporter& exp, DomEleTask* const task) const {
@@ -265,6 +284,13 @@ public:
 
     bool SWT_dropSupport(const QMimeData* const data);
     bool SWT_drop(const QMimeData* const data);
+
+    // node-link parenting: whether walking UP the parent-link chain
+    // from this box reaches 'candidate' (i.e., candidate is already a
+    // link ancestor); used to reject links that would form a cycle in
+    // the effect graph - the scene-tree check (isAncestor) does NOT
+    // cover these because link parenting never re-parents the tree
+    bool hasInParentLinkChain(const BoundingBox* const candidate) const;
 protected:
     void prp_updateCanvasProps();
 public:
@@ -300,6 +326,9 @@ public:
 
     void moveByRel(const QPointF &trans);
     void moveByAbs(const QPointF &trans);
+    void move3DZBy(const qreal dZ);
+    void rotate3DXBy(const qreal deg);
+    void rotate3DYBy(const qreal deg);
     void rotateBy(const qreal rot);
     void scale(const qreal scaleBy);
     void scale(const qreal scaleXBy,
@@ -311,6 +340,9 @@ public:
     void saveTransformPivotAbsPos(const QPointF &absPivot);
 
     void startPosTransform();
+    void start3DZTransform();
+    void startRotXTransform();
+    void startRotYTransform();
     void startRotTransform();
     void startScaleTransform();
     void startShearTransform();
@@ -400,6 +432,28 @@ public:
     void addBlendEffect(const qsptr<BlendEffect> &blendEffect);
     void addTransformEffect(const qsptr<TransformEffect> &transformEffect);
 
+    // node-link parenting UI: iterate/find transform effects
+    TransformEffectCollection* getTransformEffectCollection() const
+    { return mTransformEffectCollection.data(); }
+
+    // AE-style track matte: mask this layer with the rendered image of
+    // another layer (mode 0 = off, 1 alpha, 2 alphaInv, 3 luma, 4 lumaInv)
+    int getTrackMatteMode() const { return mTrackMatteMode; }
+    void setTrackMatteMode(const int mode) {
+        if(mTrackMatteMode == mode) return;
+        mTrackMatteMode = mode;
+        prp_afterWholeInfluenceRangeChanged();
+    }
+    BoxTargetProperty* trackMatteTarget() const
+    { return mTrackMatteTarget.get(); }
+    // re-arm the live-follow connections for a new matte layer
+    void setTrackMatteSource(BoundingBox * const matte);
+    // whether walking the track-matte chain from this box reaches
+    // 'candidate' - used to reject picks that would close a matte
+    // cycle (A masks with B while B already masks with A: the render
+    // tasks would wait on each other forever, black canvas)
+    bool matteChainReaches(const BoundingBox* const candidate) const;
+
     void setBlendModeSk(const SkBlendMode blendMode);
 
     QPointF mapRelPosToAbs(const QPointF &relPos) const;
@@ -480,6 +534,8 @@ signals:
     void blendModeChanged(SkBlendMode);
     void brushChanged(SimpleBrushWrapper* brush);
     void blendEffectChanged();
+    void effectsEnabledChanged(bool);
+    void preserveAlphaChanged(bool);
 protected:
     void setRelBoundingRect(const QRectF& relRect);
 
@@ -501,6 +557,17 @@ protected:
     const qsptr<TransformEffectCollection> mTransformEffectCollection;
     const qsptr<BoxTransformAnimator> mTransformAnimator;
     const qsptr<RasterEffectCollection> mRasterEffectsAnimators;
+    const qsptr<BoxTargetProperty> mTrackMatteTarget;
+    // live follow: any change of the matte layer invalidates this box's
+    // render cache (same mechanism InternalLinkBox uses to follow its
+    // target), otherwise the canvas shows a stale matte until something
+    // else triggers a re-render of this layer
+    ConnContextQPtr<BoundingBox> mTrackMatteSource;
+    int mTrackMatteMode = 0; // 0 none, 1 alpha, 2 alphaInv, 3 luma, 4 lumaInv
+
+    // AE-style layer switches
+    bool mEffectsEnabled = true;
+    bool mPreserveAlpha = false;
 private:
     void alignGeometry(const QRectF& geometry,
                        const Qt::Alignment align,
@@ -535,6 +602,10 @@ private:
     qsptr<class MotionPathHandler> mMotionPathHandler;
 
     RenderContainer mDrawRenderContainer;
+public:
+    const RenderContainer& drawRenderContainer() const
+    { return mDrawRenderContainer; }
+protected:
 };
 
 #include "clipboardcontainer.h"

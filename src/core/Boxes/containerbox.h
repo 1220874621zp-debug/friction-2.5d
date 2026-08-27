@@ -89,6 +89,10 @@ public:
     void updateAllBoxes(const UpdateReason reason);
 
     bool relPointInsidePath(const QPointF &relPos) const;
+    // AE-style solo: group draws when itself or any descendant is soloed
+    bool soloAffectsDraw() const;
+    // true when any direct child participates in solo drawing
+    bool childrenSoloActive() const;
     void SWT_setupAbstraction(SWT_Abstraction *abstraction,
                                      const UpdateFuncs &updateFuncs,
                                      const int visiblePartWidgetId);

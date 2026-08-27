@@ -550,6 +550,44 @@ qreal AdvancedTransformAnimator::get3DZPosAtFrame(
     return mZPosAnimator->getEffectiveValue(relFrame);
 }
 
+void AdvancedTransformAnimator::prp_readProperty_impl(eReadStream& src) {
+    BasicTransformAnimator::prp_readProperty_impl(src);
+    // layers default to 2D now; if the saved transform carries 3D values,
+    // re-enable 2.5D so the layer renders as it was saved
+    if(!m3DEnabled && has3DTransformAtFrame(anim_getCurrentRelFrame())) {
+        m3DEnabled = true;
+        set3DPropertiesVisible(true);
+        emit box3DChanged();
+    }
+}
+
+void AdvancedTransformAnimator::start3DZTransform() {
+    mZPosAnimator->prp_startTransform();
+}
+
+void AdvancedTransformAnimator::move3DZRelativeToSavedValue(
+        const qreal dZ) {
+    mZPosAnimator->incSavedValueToCurrentValue(dZ);
+}
+
+void AdvancedTransformAnimator::startRotXTransform() {
+    mRotXAnimator->prp_startTransform();
+}
+
+void AdvancedTransformAnimator::startRotYTransform() {
+    mRotYAnimator->prp_startTransform();
+}
+
+void AdvancedTransformAnimator::rotXRelativeToSavedValue(
+        const qreal deg) {
+    mRotXAnimator->incSavedValueToCurrentValue(deg);
+}
+
+void AdvancedTransformAnimator::rotYRelativeToSavedValue(
+        const qreal deg) {
+    mRotYAnimator->incSavedValueToCurrentValue(deg);
+}
+
 SkMatrix AdvancedTransformAnimator::get3DTransformAtFrame(
         const qreal relFrame) const {
     SkMatrix result;
@@ -627,8 +665,10 @@ void AdvancedTransformAnimator::set3DPropertiesVisible(const bool visible) {
 
 void AdvancedTransformAnimator::set3DEnabled(const bool enabled) {
     if(m3DEnabled == enabled) return;
+    // AE-style toggle: disabling keeps the 3D values (they are simply not
+    // applied while off) so re-enabling restores the user's adjustments;
+    // use reset3D() explicitly to zero the values
     m3DEnabled = enabled;
-    if(!enabled) reset3D();
     set3DPropertiesVisible(enabled);
     emit box3DChanged();
     prp_afterWholeInfluenceRangeChanged();

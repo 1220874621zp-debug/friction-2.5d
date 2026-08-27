@@ -26,6 +26,8 @@
 #include "singlewidgettarget.h"
 #include "swt_abstraction.h"
 
+bool SingleWidgetTarget::sHideShyLayers = false;
+
 SWT_Abstraction* SingleWidgetTarget::SWT_createAbstraction(
         const UpdateFuncs& updateFuncs,
         const int visiblePartWidgetId) {

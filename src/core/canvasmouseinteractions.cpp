@@ -24,6 +24,7 @@
 // Fork of enve - Copyright (C) 2016-2020 Maurycy Liebner
 
 #include "canvas.h"
+#include "Boxes/adjustmentlayer.h"
 
 #include "eevent.h"
 
@@ -74,6 +75,15 @@ void Canvas::handleMovePathMousePressEvent(const eMouseEvent& e)
 
 void Canvas::addActionsToMenu(QMenu *const menu)
 {
+    // new adjustment layer (applies its raster effects to the layers
+    // below inside the same parent)
+    menu->addAction(QStringLiteral("\u65B0\u5EFA\u8C03\u6574\u56FE\u5C42"), [this]() {
+        const auto adj = enve::make_shared<AdjustmentLayer>();
+        mCurrentContainer->addContained(adj);
+        adj->planUpdate(UpdateReason::userChange);
+        Document::sInstance->actionFinished();
+    });
+
     const auto clipboard = mDocument.getBoxesClipboard();
     if (clipboard) {
         QAction * const pasteAct = menu->addAction(tr("Paste"), this,

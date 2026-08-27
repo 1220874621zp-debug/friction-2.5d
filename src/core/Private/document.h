@@ -81,6 +81,10 @@ public:
 
     bool fLocalPivot = true;
 
+    // mask pen: while active the path tool draws DstIn mask shapes
+    // inserted right above the layer under the first drawn point
+    bool fMaskPenActive = false;
+
     bool fGizmoPositionVisibility = AppSupport::getSettings("gizmos",
                                                             "Position",
                                                             true).toBool();

@@ -66,6 +66,11 @@ class CORE_EXPORT SingleWidgetTarget : public SelfRef {
     Q_OBJECT
 public:
     SingleWidgetTarget() {}
+
+    // master switch for AE-style shy layers (timeline row hiding);
+    // toggled from the timeline Filters menu, persisted by the UI
+    static bool sHideShyLayers;
+
     virtual void SWT_setupAbstraction(SWT_Abstraction*,
                                       const UpdateFuncs &,
                                       const int) {}

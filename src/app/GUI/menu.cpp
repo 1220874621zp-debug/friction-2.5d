@@ -688,6 +688,13 @@ void MainWindow::setupMenuBar()
     connect(mRasterEffectsVisible, &QAction::triggered,
             &mActions, &Actions::setRasterEffectsVisible);
 
+    mMotionBlurEnabledAct = mViewMenu->addAction(
+        tr("Motion Blur", "MenuBar_View"));
+    mMotionBlurEnabledAct->setCheckable(true);
+    mMotionBlurEnabledAct->setChecked(true);
+    connect(mMotionBlurEnabledAct, &QAction::triggered,
+            &mActions, &Actions::setMotionBlurEnabled);
+
     mPathEffectsVisible = mViewMenu->addAction(
         tr("Path Effects", "MenuBar_View"));
     mPathEffectsVisible->setCheckable(true);

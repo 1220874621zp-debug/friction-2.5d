@@ -37,8 +37,8 @@ class QPainter;
 class SkCanvas;
 class QKeyEvent;
 
-enum class TransformMode { move, scale, rotate, shear, none };
-enum class DirectionMode { x, y, xy };
+enum class TransformMode { move, scale, rotate, rotateX, rotateY, shear, none };
+enum class DirectionMode { x, y, z, xy };
 
 class CORE_EXPORT ValueInput {
 public:
@@ -50,6 +50,8 @@ public:
     qreal getValue() const { return mInputValue; }
     QPointF getPtValue() const {
         if(mTransMode == TransformMode::rotate ||
+               mTransMode == TransformMode::rotateX ||
+               mTransMode == TransformMode::rotateY ||
                mXYMode == DirectionMode::xy)
             return {mInputValue, mInputValue};
         if(mTransMode == TransformMode::scale) {
@@ -61,6 +63,7 @@ public:
             else return {0, mInputValue};
         }
         if(mXYMode == DirectionMode::x) return {mInputValue, 0};
+        else if(mXYMode == DirectionMode::z) return {mInputValue, 0};
         else return {0, mInputValue};
     }
 
@@ -72,6 +75,16 @@ public:
 
     void setupRotate() {
         mTransMode = TransformMode::rotate;
+        setDisplayedValue(0);
+    }
+
+    void setupRotateX() {
+        mTransMode = TransformMode::rotateX;
+        setDisplayedValue(0);
+    }
+
+    void setupRotateY() {
+        mTransMode = TransformMode::rotateY;
         setDisplayedValue(0);
     }
 
@@ -98,6 +111,10 @@ public:
         mXYMode = DirectionMode::y;
     }
 
+    void setZOnlyMode() {
+        mXYMode = DirectionMode::z;
+    }
+
     void setXYMode() {
         mXYMode = DirectionMode::xy;
     }
@@ -112,12 +129,21 @@ public:
         else setYOnlyMode();
     }
 
+    void switchZOnlyMode() {
+        if(mXYMode == DirectionMode::z) setXYMode();
+        else setZOnlyMode();
+    }
+
     bool xOnlyMode() const {
         return mXYMode == DirectionMode::x;
     }
 
     bool yOnlyMode() const {
         return mXYMode == DirectionMode::y;
+    }
+
+    bool zOnlyMode() const {
+        return mXYMode == DirectionMode::z;
     }
 
     void setDisplayedValue(const qreal value) {
@@ -138,7 +164,9 @@ protected:
         QString transStr;
         if(mInputEnabled) {
             transStr = getNameWithXY() + ": " + mInputText + "|";
-        } else if(mTransMode == TransformMode::rotate) {
+        } else if(mTransMode == TransformMode::rotate ||
+                  mTransMode == TransformMode::rotateX ||
+                  mTransMode == TransformMode::rotateY) {
             const auto xVal = QLocale().toString(mDisplayValue.x(), 'f', 3);
             transStr = getName() + ": " + xVal;
         } else if(xOnlyMode()) {
@@ -147,6 +175,9 @@ protected:
         } else if(yOnlyMode()) {
             const auto yVal = QLocale().toString(mDisplayValue.y(), 'f', 3);
             transStr = getNameWithXY() + ": " + yVal;
+        } else if(zOnlyMode()) {
+            const auto zVal = QLocale().toString(mDisplayValue.x(), 'f', 3);
+            transStr = getNameWithXY() + ": " + zVal;
         } else { // xy mode
             const auto xVal = QLocale().toString(mDisplayValue.x(), 'f', 3);
             const auto yVal = QLocale().toString(mDisplayValue.y(), 'f', 3);
@@ -162,6 +193,10 @@ protected:
             return "scale";
         } else if(mTransMode == TransformMode::shear) {
             return "shear";
+        } else if(mTransMode == TransformMode::rotateX) {
+            return "rotate x";
+        } else if(mTransMode == TransformMode::rotateY) {
+            return "rotate y";
         } else {
             return "rotate";
         }
@@ -172,6 +207,7 @@ protected:
         if(mTransMode == TransformMode::move) {
             if(mXYMode == DirectionMode::xy) return "move x, y";
             else if(mXYMode == DirectionMode::x) return "move x";
+            else if(mXYMode == DirectionMode::z) return "move z";
             else return "move y";
         } else if(mTransMode == TransformMode::scale) {
             if(mXYMode == DirectionMode::xy) return "scale x, y";

@@ -38,13 +38,17 @@ void RasterEffectMenuCreator::forEveryEffect(const EffectAdder& add) {
 
 void RasterEffectMenuCreator::forEveryEffectCore(const EffectAdder &add)
 {
-    add("Blur", "", []() { return enve::make_shared<BlurEffect>(); });
-    add("Shadow", "", []() { return enve::make_shared<ShadowEffect>(); });
-    add("Motion Blur", "", []() { return enve::make_shared<MotionBlurEffect>(); });
-    add("Brightness-Contrast", "Color", []() { return enve::make_shared<BrightnessContrastEffect>(); });
-    add("Colorize", "Color", []() { return enve::make_shared<ColorizeEffect>(); });
-    add("Wipe", "Transitions", []() { return enve::make_shared<WipeEffect>(); });
-    add("Noise Fade", "Transitions", []() { return enve::make_shared<NoiseFadeEffect>(); });
+    add(QObject::tr("Blur"), "", []() { return enve::make_shared<BlurEffect>(); });
+    add(QObject::tr("Shadow"), "", []() { return enve::make_shared<ShadowEffect>(); });
+    add(QObject::tr("Motion Blur"), "", []() { return enve::make_shared<MotionBlurEffect>(); });
+    add(QObject::tr("Brightness-Contrast"), QObject::tr("Color"),
+        []() { return enve::make_shared<BrightnessContrastEffect>(); });
+    add(QObject::tr("Colorize"), QObject::tr("Color"),
+        []() { return enve::make_shared<ColorizeEffect>(); });
+    add(QObject::tr("Wipe"), QObject::tr("Transitions"),
+        []() { return enve::make_shared<WipeEffect>(); });
+    add(QObject::tr("Noise Fade"), QObject::tr("Transitions"),
+        []() { return enve::make_shared<NoiseFadeEffect>(); });
 }
 
 void RasterEffectMenuCreator::forEveryEffectCustom(const EffectAdder &add)

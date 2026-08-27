@@ -95,6 +95,7 @@ public:
     void setClipToCanvas(const bool clip);
 
     void setRasterEffectsVisible(const bool bT);
+    void setMotionBlurEnabled(const bool bT);
     void setPathEffectsVisible(const bool bT);
 
     eBoxOrSound* handleDropEvent(QDropEvent * const event,

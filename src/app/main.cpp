@@ -25,6 +25,46 @@
 #include <iostream>
 #include <QApplication>
 #include <QSurfaceFormat>
+
+#ifdef Q_OS_WIN
+// in-process crash minidump: no admin rights needed, writes next to the
+// portable exe so the faulting stack can be analyzed afterwards
+#define NOMINMAX
+#include <windows.h>
+#include <dbghelp.h>
+#include <psapi.h>
+#include <cstring>
+#pragma comment(lib, "dbghelp.lib")
+#pragma comment(lib, "psapi.lib")
+static LONG WINAPI writeCrashMiniDump(EXCEPTION_POINTERS* const pep) {
+    const QString dir = QCoreApplication::applicationDirPath() +
+                        QStringLiteral("/crash_dumps");
+    QDir().mkpath(dir);
+    const QString file = dir + QStringLiteral("/") +
+            QDateTime::currentDateTime().toString(
+                QStringLiteral("yyyyMMdd_hhmmss")) +
+            QStringLiteral(".dmp");
+    const HANDLE hFile = CreateFileW(
+                reinterpret_cast<const wchar_t*>(file.utf16()),
+                GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
+                FILE_ATTRIBUTE_NORMAL, nullptr);
+    if(hFile != INVALID_HANDLE_VALUE) {
+        MINIDUMP_EXCEPTION_INFORMATION mdei;
+        mdei.ThreadId = GetCurrentThreadId();
+        mdei.ExceptionPointers = pep;
+        mdei.ClientPointers = FALSE;
+        MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(),
+                          hFile,
+                          static_cast<MINIDUMP_TYPE>(
+                              MiniDumpNormal |
+                              MiniDumpWithIndirectlyReferencedMemory |
+                              MiniDumpScanMemory),
+                          &mdei, nullptr, nullptr);
+        CloseHandle(hFile);
+    }
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+#endif
 #include <QDesktopWidget>
 #include <QSplashScreen>
 
@@ -191,8 +231,103 @@ void earlySettings(char *argv[],
     *hdpiPassThrough = settings.value(key, true).toBool();
 }
 
+#ifdef Q_OS_WIN
+// in-process VEH crash reporter: heap failures (0xc0000374) that bypass
+// the unhandled-exception filter still raise a first-chance exception
+// first; print every stack value landing inside a known module as
+// "module+rva" so residual crashes can be symbolized against the map/pdb
+struct CrashModInfo { HMODULE base; SIZE_T size; char name[MAX_PATH]; };
+static CrashModInfo gCrashMods[256];
+static int gCrashModCount = 0;
+static void cacheCrashModules() {
+    HMODULE mods[256]; DWORD needed = 0;
+    const HANDLE proc = GetCurrentProcess();
+    if(!EnumProcessModules(proc, mods, sizeof(mods), &needed)) return;
+    const int n = static_cast<int>(needed/sizeof(HMODULE));
+    for(int i = 0; i < n && i < 256; i++) {
+        MODULEINFO mi;
+        if(!GetModuleInformation(proc, mods[i], &mi, sizeof(mi))) continue;
+        if(mi.SizeOfImage == 0) continue;
+        gCrashMods[gCrashModCount].base = mods[i];
+        gCrashMods[gCrashModCount].size = mi.SizeOfImage;
+        char path[MAX_PATH];
+        if(!GetModuleFileNameA(mods[i], path, MAX_PATH)) path[0] = 0;
+        const char* slash = strrchr(path, '\\');
+        lstrcpynA(gCrashMods[gCrashModCount].name,
+                  slash ? slash + 1 : path, MAX_PATH);
+        gCrashModCount++;
+    }
+}
+static void crashReportMod(HANDLE hFile, const void* addr,
+                           const SIZE_T* off) {
+    for(int i = 0; i < gCrashModCount; i++) {
+        const char* b = reinterpret_cast<const char*>(gCrashMods[i].base);
+        if(addr < b || addr >= b + gCrashMods[i].size) continue;
+        char line[MAX_PATH + 64];
+        const uintptr_t rva =
+                reinterpret_cast<uintptr_t>(addr)
+                - reinterpret_cast<uintptr_t>(gCrashMods[i].base);
+        if(off) {
+            wsprintfA(line, "  [rsp+0x%04IX] %s+0x%llX\r\n",
+                      reinterpret_cast<uintptr_t>(off),
+                      gCrashMods[i].name,
+                      static_cast<unsigned long long>(rva));
+        } else {
+            wsprintfA(line, "%s+0x%llX   <- RIP\r\n",
+                      gCrashMods[i].name,
+                      static_cast<unsigned long long>(rva));
+        }
+        DWORD written = 0;
+        WriteFile(hFile, line, lstrlenA(line), &written, nullptr);
+        return;
+    }
+}
+static LONG WINAPI firstChanceCrashReporter(
+        EXCEPTION_POINTERS* const pep) {
+    const DWORD code = pep->ExceptionRecord->ExceptionCode;
+    if(code != 0xC0000005 && code != 0xC0000374 && code != 0xC0000409) {
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
+    const QString dir = QCoreApplication::applicationDirPath() +
+                        QStringLiteral("/crash_dumps");
+    QDir().mkpath(dir);
+    const QString file = dir + QStringLiteral("/crash_report_") +
+            QDateTime::currentDateTime().toString(
+                QStringLiteral("yyyyMMdd_hhmmss")) +
+            QStringLiteral(".txt");
+    const HANDLE hFile = CreateFileW(
+                reinterpret_cast<const wchar_t*>(file.utf16()),
+                GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
+                FILE_ATTRIBUTE_NORMAL, nullptr);
+    if(hFile == INVALID_HANDLE_VALUE) return EXCEPTION_CONTINUE_SEARCH;
+    DWORD written = 0;
+    char header[96];
+    wsprintfA(header, "=== CRASH === code=0x%08lX\r\n", code);
+    WriteFile(hFile, header, lstrlenA(header), &written, nullptr);
+    const CONTEXT& ctx = *pep->ContextRecord;
+    crashReportMod(hFile, reinterpret_cast<const void*>(ctx.Rip),
+                   nullptr);
+    MEMORY_BASIC_INFORMATION mbi;
+    for(SIZE_T off = 0; off < 24 * 1024; off += sizeof(void*)) {
+        const void* sp = reinterpret_cast<const char*>(ctx.Rsp) + off;
+        if(VirtualQuery(sp, &mbi, sizeof(mbi)) != sizeof(mbi)) break;
+        if(mbi.State != MEM_COMMIT ||
+           (mbi.Protect & (PAGE_NOACCESS|PAGE_GUARD))) continue;
+        crashReportMod(hFile,
+                       *reinterpret_cast<const void* const*>(sp), &off);
+    }
+    CloseHandle(hFile);
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+#endif
+
 int main(int argc, char *argv[])
 {
+#ifdef Q_OS_WIN
+    SetUnhandledExceptionFilter(writeCrashMiniDump);
+    cacheCrashModules();
+    AddVectoredExceptionHandler(1, firstChanceCrashReporter);
+#endif
     const bool isRenderer = false; // todo
 
     // capture debug output from the very beginning

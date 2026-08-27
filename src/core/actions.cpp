@@ -682,6 +682,13 @@ void Actions::setRasterEffectsVisible(const bool bT) {
     afterAction();
 }
 
+void Actions::setMotionBlurEnabled(const bool bT) {
+    if(!mActiveScene) return;
+    mActiveScene->setMotionBlurEnabled(bT);
+    mActiveScene->updateAllBoxes(UpdateReason::userChange);
+    afterAction();
+}
+
 void Actions::setPathEffectsVisible(const bool bT) {
     if(!mActiveScene) return;
     mActiveScene->setPathEffectsVisible(bT);

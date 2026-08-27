@@ -35,6 +35,7 @@ enum class TextFragmentType : short {
 };
 
 class CORE_EXPORT TextBox : public PathBox {
+    Q_OBJECT
     e_OBJECT
 protected:
     TextBox();

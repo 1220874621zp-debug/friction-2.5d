@@ -123,6 +123,11 @@ void Canvas::setWorldToScreen(const QTransform& transform,
 
 Canvas::~Canvas()
 {
+    // from here on the track/selection bookkeeping must stay inert:
+    // signals emitted and SWT updates scheduled during the teardown
+    // would write into half-dead abstractions (heap corruption when
+    // another project is opened afterwards)
+    mDestructing = true;
     clearPointsSelection();
     clearBoxesSelection();
 }
@@ -411,6 +416,8 @@ void Canvas::renderSk(SkCanvas* const canvas,
     if (mCurrentMode == CanvasMode::boxTransform ||
        mCurrentMode == CanvasMode::pointTransform) {
         if (mTransMode == TransformMode::rotate ||
+           mTransMode == TransformMode::rotateX ||
+           mTransMode == TransformMode::rotateY ||
            mTransMode == TransformMode::scale ||
            mTransMode == TransformMode::shear) {
             mRotPivot->drawTransforming(canvas, mCurrentMode, invZoom,
@@ -992,6 +999,8 @@ qsptr<BoundingBox> Canvas::createLink(const bool inner)
 void Canvas::schedulePivotUpdate()
 {
     if (mTransMode == TransformMode::rotate ||
+        mTransMode == TransformMode::rotateX ||
+        mTransMode == TransformMode::rotateY ||
         mTransMode == TransformMode::scale ||
         mRotPivot->isSelected()) { return; }
     mPivotUpdateNeeded = true;
@@ -1108,6 +1117,8 @@ bool Canvas::handleTransormationInputKeyEvent(const eKeyEvent &e)
 {
     if (mValueInput.handleTransormationInputKeyEvent(e.fKey)) {
         if (mTransMode == TransformMode::rotate) { mValueInput.setupRotate(); }
+        else if (mTransMode == TransformMode::rotateX) { mValueInput.setupRotateX(); }
+        else if (mTransMode == TransformMode::rotateY) { mValueInput.setupRotateY(); }
         updateTransformation(e);
         mStartTransform = false;
     } else if (e.fKey == Qt::Key_Escape) {
@@ -1126,6 +1137,13 @@ bool Canvas::handleTransormationInputKeyEvent(const eKeyEvent &e)
     } else if (e.fKey == Qt::Key_Y) {
         if (e.fAutorepeat) { return false; }
         mValueInput.switchYOnlyMode();
+        const bool linesChanged = updateLineGizmoVisibility();
+        updateTransformation(e);
+        if (linesChanged) { emit requestUpdate(); }
+    } else if (e.fKey == Qt::Key_Z) {
+        if (e.fAutorepeat) { return false; }
+        if (mCurrentMode != CanvasMode::boxTransform) { return false; }
+        mValueInput.switchZOnlyMode();
         const bool linesChanged = updateLineGizmoVisibility();
         updateTransformation(e);
         if (linesChanged) { emit requestUpdate(); }
@@ -1446,11 +1464,27 @@ HddCachableCacheHandler &Canvas::getSoundCacheHandler()
     return mSoundComposition->getCacheHandler();
 }
 
+// selected sounds live outside the canvas box selection; run func on
+// each of them (keeps the "all selected" timeline operations complete)
+void Canvas::forEachSelectedSound(
+        const std::function<void(eBoxOrSound*)>& func) {
+    // inert during the teardown (see Canvas::~Canvas)
+    if(mDestructing) return;
+    const auto comp = mSoundComposition.data();
+    if(!comp) return;
+    for(const auto& sound : comp->getSounds()) {
+        if(sound->isSelected()) {
+            func(static_cast<eBoxOrSound*>(sound.data()));
+        }
+    }
+}
+
 void Canvas::startDurationRectPosTransformForAllSelected()
 {
     for (const auto &box : mSelectedBoxes) {
         box->startDurationRectPosTransform();
     }
+    forEachSelectedSound([](eBoxOrSound* s) { s->startDurationRectPosTransform(); });
 }
 
 void Canvas::finishDurationRectPosTransformForAllSelected()
@@ -1458,6 +1492,7 @@ void Canvas::finishDurationRectPosTransformForAllSelected()
     for (const auto &box : mSelectedBoxes) {
         box->finishDurationRectPosTransform();
     }
+    forEachSelectedSound([](eBoxOrSound* s) { s->finishDurationRectPosTransform(); });
 }
 
 void Canvas::cancelDurationRectPosTransformForAllSelected()
@@ -1465,6 +1500,7 @@ void Canvas::cancelDurationRectPosTransformForAllSelected()
     for (const auto &box : mSelectedBoxes) {
         box->cancelDurationRectPosTransform();
     }
+    forEachSelectedSound([](eBoxOrSound* s) { s->cancelDurationRectPosTransform(); });
 }
 
 void Canvas::moveDurationRectForAllSelected(const int dFrame)
@@ -1472,6 +1508,7 @@ void Canvas::moveDurationRectForAllSelected(const int dFrame)
     for (const auto& box : mSelectedBoxes) {
         box->moveDurationRect(dFrame);
     }
+    forEachSelectedSound([dFrame](eBoxOrSound* s) { s->moveDurationRect(dFrame); });
 }
 
 void Canvas::startMinFramePosTransformForAllSelected()
@@ -1479,6 +1516,7 @@ void Canvas::startMinFramePosTransformForAllSelected()
     for (const auto& box : mSelectedBoxes) {
         box->startMinFramePosTransform();
     }
+    forEachSelectedSound([](eBoxOrSound* s) { s->startMinFramePosTransform(); });
 }
 
 void Canvas::finishMinFramePosTransformForAllSelected()
@@ -1486,6 +1524,7 @@ void Canvas::finishMinFramePosTransformForAllSelected()
     for (const auto& box : mSelectedBoxes) {
         box->finishMinFramePosTransform();
     }
+    forEachSelectedSound([](eBoxOrSound* s) { s->finishMinFramePosTransform(); });
 }
 
 void Canvas::cancelMinFramePosTransformForAllSelected()
@@ -1493,6 +1532,7 @@ void Canvas::cancelMinFramePosTransformForAllSelected()
     for (const auto& box : mSelectedBoxes) {
         box->cancelMinFramePosTransform();
     }
+    forEachSelectedSound([](eBoxOrSound* s) { s->cancelMinFramePosTransform(); });
 }
 
 void Canvas::moveMinFrameForAllSelected(const int dFrame)
@@ -1500,6 +1540,7 @@ void Canvas::moveMinFrameForAllSelected(const int dFrame)
     for (const auto& box : mSelectedBoxes) {
         box->moveMinFrame(dFrame);
     }
+    forEachSelectedSound([dFrame](eBoxOrSound* s) { s->moveMinFrame(dFrame); });
 }
 
 void Canvas::startMaxFramePosTransformForAllSelected()
@@ -1507,6 +1548,7 @@ void Canvas::startMaxFramePosTransformForAllSelected()
     for (const auto& box : mSelectedBoxes) {
         box->startMaxFramePosTransform();
     }
+    forEachSelectedSound([](eBoxOrSound* s) { s->startMaxFramePosTransform(); });
 }
 
 void Canvas::finishMaxFramePosTransformForAllSelected()
@@ -1514,6 +1556,7 @@ void Canvas::finishMaxFramePosTransformForAllSelected()
     for (const auto& box : mSelectedBoxes) {
         box->finishMaxFramePosTransform();
     }
+    forEachSelectedSound([](eBoxOrSound* s) { s->finishMaxFramePosTransform(); });
 }
 
 
@@ -1522,6 +1565,7 @@ void Canvas::cancelMaxFramePosTransformForAllSelected()
     for (const auto& box : mSelectedBoxes) {
         box->cancelMaxFramePosTransform();
     }
+    forEachSelectedSound([](eBoxOrSound* s) { s->cancelMaxFramePosTransform(); });
 }
 
 void Canvas::moveMaxFrameForAllSelected(const int dFrame)
@@ -1529,6 +1573,7 @@ void Canvas::moveMaxFrameForAllSelected(const int dFrame)
     for (const auto& box : mSelectedBoxes) {
         box->moveMaxFrame(dFrame);
     }
+    forEachSelectedSound([dFrame](eBoxOrSound* s) { s->moveMaxFrame(dFrame); });
 }
 
 bool Canvas::newUndoRedoSet()

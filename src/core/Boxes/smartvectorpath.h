@@ -48,6 +48,12 @@ public:
 
     SkPath getRelativePath(const qreal relFrame) const;
 
+    // mask pen shapes: an open path does not clip (DstIn applies only
+    // once every sub-path is closed); evaluated live at render time
+    void setMaskMode(const bool mask) { mMaskMode = mask; }
+    bool getMaskMode() const { return mMaskMode; }
+    SkBlendMode getPaintBlendMode() const override;
+
     bool differenceInEditPathBetweenFrames(const int frame1,
                                            const int frame2) const;
 
@@ -63,6 +69,7 @@ public:
 protected:
     void getMotionBlurProperties(QList<Property*> &list) const;
     qsptr<SmartPathCollection> mPathAnimator;
+    bool mMaskMode = false;
 };
 
 #endif // SMARTSmartVectorPath_H

@@ -109,8 +109,14 @@ SoundMerger *SoundComposition::scheduleSecond(const int secondId) {
     const qreal fps = mParent->getFps();
 
     const auto task = enve::make_shared<SoundMerger>(secondId, sampleRange, this);
+    // AE-style solo: when any sound is soloed, only soloed sounds play
+    bool anySoundSolo = false;
+    for(const auto &sound : mSounds) {
+        if(sound->isSolo()) { anySoundSolo = true; break; }
+    }
     for(const auto &sound : mSounds) {
         if(!sound->isVisible()) continue;
+        if(anySoundSolo && !sound->isSolo()) continue;
         const auto enabledFrameRange = sound->prp_absInfluenceRange();
         const iValueRange enabledSecRange{qFloor(enabledFrameRange.fMin/fps),
                                           qFloor(enabledFrameRange.fMax/fps)};

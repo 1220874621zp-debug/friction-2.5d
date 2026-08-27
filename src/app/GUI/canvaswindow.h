@@ -154,6 +154,7 @@ private:
     bool handleCutCopyPasteKeyPress(QKeyEvent *event);
     bool handleTransformationKeyPress(QKeyEvent *event);
     bool handleZValueKeyPress(QKeyEvent *event);
+    bool handleInOutPointKeyPress(QKeyEvent *event);
     bool handleParentChangeKeyPress(QKeyEvent *event);
     bool handleGroupChangeKeyPress(QKeyEvent *event);
     bool handleResetTransformKeyPress(QKeyEvent *event);

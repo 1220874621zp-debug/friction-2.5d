@@ -89,6 +89,13 @@ public:
 
     QMatrix fResolutionScale;
     QMatrix fScaledTransform;
+
+
+    // track matte: matte layer's independent render + mode (see
+    // TrackMatteCaller); sample is guaranteed finished before EFFECTS
+    stdsptr<BoxRenderData> fTrackMatteSample;
+    int fTrackMatteMode = 0;
+    void setTrackMatte(stdsptr<BoxRenderData> sample, const int mode);
     QMatrix fInheritedTransform;
     QMatrix fRelTransform;
     QMatrix fTotalTransform;
@@ -131,7 +138,10 @@ public:
 
     void addEffect(const stdsptr<RasterEffectCaller>& effect) {
         mEffectsRenderer.add(effect);
+        fEffectCallers.append(effect);
     }
+    // direct access for special pipelines (adjustment layer backdrop)
+    QList<stdsptr<RasterEffectCaller>> fEffectCallers;
 protected:
     bool hasEffects() const { return !mEffectsRenderer.isEmpty(); }
 

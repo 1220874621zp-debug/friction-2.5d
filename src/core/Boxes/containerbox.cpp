@@ -31,6 +31,7 @@
 #include "PathEffects/patheffectcollection.h"
 #include "PathEffects/patheffect.h"
 #include "textbox.h"
+#include "Boxes/adjustmentlayer.h"
 #include "RasterEffects/rastereffectcollection.h"
 #include "Sound/eindependentsound.h"
 #include "actions.h"
@@ -481,7 +482,7 @@ void ContainerBox::prp_setupTreeViewMenu(PropertyMenu * const menu) {
     [](ContainerBox* const box, const bool checked) {
         box->mFlipBook->SWT_setVisible(checked);
     };
-    menu->addCheckableAction("Flip Book", mFlipBook->SWT_isVisible(), flipOp)
+    menu->addCheckableAction(tr("Flip Book"), mFlipBook->SWT_isVisible(), flipOp)
             ->setDisabled(mFlipBook->getValue());
 
     menu->addSeparator();
@@ -616,9 +617,11 @@ void ContainerBox::shiftAll(const int shift) {
 void ContainerBox::updateRelBoundingRect() {
     SkPath boundingPaths;
     const auto minMax = getContainedMinMax();
+    const bool soloActive = childrenSoloActive();
     for(int i = minMax.fMin; i <= minMax.fMax; i++) {
         const auto& child = mContainedBoxes.at(i);
-        if(child->isVisibleAndInVisibleDurationRect()) {
+        if(child->isVisibleAndInVisibleDurationRect() &&
+           (!soloActive || child->soloAffectsDraw())) {
             SkPath childPath;
             const auto childRel = child->getRelBoundingRect();
             childPath.addRect(toSkRect(childRel));
@@ -828,10 +831,12 @@ void ContainerBox::drawContained(SkCanvas * const canvas,
     handleDelayed(delayed, drawId, nullptr, mContainedBoxes.last());
 
     const auto minMax = getContainedMinMax();
+    const bool soloActive = childrenSoloActive();
     for(int i = minMax.fMax; i >= minMax.fMin; i--) {
         const auto& box = mContainedBoxes.at(i);
         const auto& nextBox = i == 0 ? nullptr : mContainedBoxes.at(i - 1);
-        if(box->isVisibleAndInVisibleDurationRect()) {
+        if(box->isVisibleAndInVisibleDurationRect() &&
+           (!soloActive || box->soloAffectsDraw())) {
             box->drawPixmapSk(canvas, filter, drawId, delayed);
             if(!box->isGroup()) drawId++;
         }
@@ -877,10 +882,12 @@ void ContainerBox::updateUIElementsForBlendEffects(
     clearBlendEffectUI();
     if(mContainedBoxes.isEmpty()) return;
     handleUIDelayed(delayed, drawId, nullptr, mContainedBoxes.last());
+    const bool soloActive = childrenSoloActive();
     for(int i = mContainedBoxes.count() - 1; i >= 0; i--) {
         const auto& box = mContainedBoxes.at(i);
         const auto& nextBox = i == 0 ? nullptr : mContainedBoxes.at(i - 1);
-        if(box->isVisibleAndInVisibleDurationRect()) {
+        if(box->isVisibleAndInVisibleDurationRect() &&
+           (!soloActive || box->soloAffectsDraw())) {
             if(box->isGroup()) {
                 const auto groupBox = static_cast<ContainerBox*>(box);
                 groupBox->updateUIElementsForBlendEffects(drawId, delayed);
@@ -892,9 +899,11 @@ void ContainerBox::updateUIElementsForBlendEffects(
 
 void ContainerBox::containedDetachedBlendUISetup(
         int& drawId, QList<BlendEffect::UIDelayed> &delayed) {
+    const bool soloActive = childrenSoloActive();
     for(int i = mContainedBoxes.count() - 1; i >= 0; i--) {
         const auto& box = mContainedBoxes.at(i);
-        if(box->isVisibleAndInVisibleDurationRect()) {
+        if(box->isVisibleAndInVisibleDurationRect() &&
+           (!soloActive || box->soloAffectsDraw())) {
             if(box->isGroup()) {
                 const auto cBox = static_cast<ContainerBox*>(box);
                 cBox->containedDetachedBlendUISetup(drawId, delayed);
@@ -924,9 +933,11 @@ void ContainerBox::containedDetachedBlendSetup(
         SkCanvas * const canvas,
         const SkFilterQuality filter, int& drawId,
         QList<BlendEffect::Delayed> &delayed) const {
+    const bool soloActive = childrenSoloActive();
     for(int i = mContainedBoxes.count() - 1; i >= 0; i--) {
         const auto& box = mContainedBoxes.at(i);
-        if(box->isVisibleAndInVisibleDurationRect()) {
+        if(box->isVisibleAndInVisibleDurationRect() &&
+           (!soloActive || box->soloAffectsDraw())) {
             if(box->isGroup()) {
                 const auto cBox = static_cast<ContainerBox*>(box);
                 cBox->containedDetachedBlendSetup(canvas, filter, drawId, delayed);
@@ -956,7 +967,7 @@ void ContainerBox::drawPixmapSk(SkCanvas * const canvas,
         SkPaint paint;
         const int intAlpha = qRound(mTransformAnimator->getOpacity()*2.55);
         paint.setAlpha(static_cast<U8CPU>(intAlpha));
-        paint.setBlendMode(getBlendMode());
+        paint.setBlendMode(getPaintBlendMode());
         canvas->saveLayer(nullptr, &paint);
         drawContained(canvas, filter);
         canvas->restore();
@@ -978,10 +989,26 @@ void ContainerBox::updateIfUsesProgram(
     BoundingBox::updateIfUsesProgram(program);
 }
 
+// AE-style solo: a group participates in solo drawing when itself
+// soloed or when any of its descendants is soloed
+bool ContainerBox::soloAffectsDraw() const {
+    if(isSolo()) return true;
+    for(const auto& box : mContainedBoxes) {
+        if(box->soloAffectsDraw()) return true;
+    }
+    return false;
+}
+
+bool ContainerBox::childrenSoloActive() const {
+    for(const auto& box : mContainedBoxes) {
+        if(box->soloAffectsDraw()) return true;
+    }
+    return false;
+}
+
 // 2.5D depth sorting: when any direct child uses 3D transform,
 // paint order is sorted by Z (bigger Z = farther = painted first)
-static bool boxHas3DAtFrame(BoundingBox * const box, const qreal absFrame) {
-    const auto trans = box->getBoxTransformAnimator();
+static bool boxHas3DAtFrame(BoundingBox * const box, const qreal absFrame) {    const auto trans = box->getBoxTransformAnimator();
     if(!trans) return false;
     const qreal relFrame = box->prp_absFrameToRelFrameF(absFrame);
     return trans->has3DTransformAtFrame(relFrame);
@@ -1028,8 +1055,10 @@ void processChildData(BoundingBox * const child,
                       const qreal childRelFrame,
                       const QMatrix& thisM,
                       const qreal absFrame,
-                      QList<ChildRenderData>& delayed) {
+                      QList<ChildRenderData>& delayed,
+                      const bool soloActive) {
     if(!child->isFrameFVisibleAndInDurationRect(childRelFrame)) return;
+    if(soloActive && !child->soloAffectsDraw()) return;
     if(child->isGroup()) {
         const auto childGroup = static_cast<ContainerBox*>(child);
         const auto childRelM = child->getRelativeTransformAtFrame(childRelFrame);
@@ -1037,10 +1066,11 @@ void processChildData(BoundingBox * const child,
         const auto& descs = childGroup->getContainedBoxes();
         const auto minMax = childGroup->getContainedMinMax();
         const auto descList = renderSortedBoxes(descs, minMax, absFrame);
+        const bool descSoloActive = childGroup->childrenSoloActive();
         for(const auto& desc : descList) {
             const qreal descRelFrame = desc->prp_absFrameToRelFrameF(absFrame);
             processChildData(desc, parentData, descRelFrame,
-                             childM, absFrame, delayed);
+                             childM, absFrame, delayed, descSoloActive);
         }
         return;
     }
@@ -1075,10 +1105,11 @@ void ContainerBox::processChildrenData(const qreal relFrame,
     QList<ChildRenderData> delayed;
     const auto minMax = getContainedMinMax();
     const auto renderList = renderSortedBoxes(mContainedBoxes, minMax, absFrame);
+    const bool soloActive = childrenSoloActive();
     for(const auto& box : renderList) {
         const qreal boxRelFrame = box->prp_absFrameToRelFrameF(absFrame);
         processChildData(box, groupData, boxRelFrame,
-                         thisM, absFrame, delayed);
+                         thisM, absFrame, delayed, soloActive);
     }
     for(auto& del : delayed) {
         auto& iClip = del.fClip;
@@ -1162,10 +1193,12 @@ bool ContainerBox::diffsAffectingContainedBoxes(
 BoundingBox *ContainerBox::getBoxAt(const QPointF &absPos) {
     BoundingBox* boxAtPos = nullptr;
     const auto minMax = getContainedMinMax();
+    const bool soloActive = childrenSoloActive();
     for(int i = minMax.fMin; i <= minMax.fMax; i++) {
         const auto& box = mContainedBoxes.at(i);
         if(box->isVisibleAndUnlocked() &&
-           box->isVisibleAndInVisibleDurationRect()) {
+           box->isVisibleAndInVisibleDurationRect() &&
+           (!soloActive || box->soloAffectsDraw())) {
             if(box->absPointInsidePath(absPos)) {
                 boxAtPos = box;
                 break;
@@ -1188,10 +1221,12 @@ void ContainerBox::anim_setAbsFrame(const int frame) {
 void ContainerBox::addContainedBoxesToSelection(const QRectF &rect) {
     const auto pScene = getParentScene();
     const auto minMax = getContainedMinMax();
+    const bool soloActive = childrenSoloActive();
     for(int i = minMax.fMin; i <= minMax.fMax; i++) {
         const auto& box = mContainedBoxes.at(i);
         if(box->isVisibleAndUnlocked() &&
-                box->isVisibleAndInVisibleDurationRect()) {
+                box->isVisibleAndInVisibleDurationRect() &&
+                (!soloActive || box->soloAffectsDraw())) {
             if(box->isContainedIn(rect)) {
                 pScene->addBoxToSelection(box);
             }

@@ -39,6 +39,7 @@
 #include "Animators/SmartPath/smartpathanimator.h"
 class QrealAnimatorValueSlider;
 class TimelineMovable;
+class eBoxOrSound;
 class Key;
 class BoxTargetWidget;
 class BoolPropertyWidget;
@@ -54,6 +55,10 @@ public:
     explicit BoxSingleWidget(BoxScroller * const parent);
 
     void setTargetAbstraction(SWT_Abstraction *abs);
+
+    // node-link parenting drag mime format (source layer pointer)
+    static const char* parentLinkMimeType()
+    { return "application/x-friction-parent-link"; }
 
     static QPixmap* VISIBLE_ICON;
     static QPixmap* INVISIBLE_ICON;
@@ -76,6 +81,26 @@ public:
     static QPixmap* ICON_3D_ON;
     static QPixmap* ICON_3D_OFF;
     static QPixmap* ICON_RESET;
+
+    // AE-style layer switch glyphs (text characters rasterized)
+    static QPixmap* ICON_SOLO_ON;
+    static QPixmap* ICON_SOLO_OFF;
+    static QPixmap* ICON_SHY_ON;
+    static QPixmap* ICON_SHY_OFF;
+    static QPixmap* ICON_FX_ON;
+    static QPixmap* ICON_FX_OFF;
+    static QPixmap* ICON_MB_ON;
+    static QPixmap* ICON_MB_OFF;
+    static QPixmap* ICON_T_ON;
+    static QPixmap* ICON_T_OFF;
+    static QPixmap* ICON_LINKNODE_ON;
+    static QPixmap* ICON_LINKNODE_OFF;
+    // track matte mode glyphs: alpha / alphaInv / luma / lumaInv
+    static QPixmap* ICON_TM_ALPHA;
+    static QPixmap* ICON_TM_ALPHAINV;
+    static QPixmap* ICON_TM_LUMA;
+    static QPixmap* ICON_TM_LUMAINV;
+    static QPixmap* ICON_TM_OFF;
 
     static QPixmap* BOX_PATH;
     static QPixmap* BOX_CIRCLE;
@@ -106,13 +131,21 @@ public:
                         const int pressX,
                         const qreal pixelsPerFrame,
                         const int minViewedFrame);
+    // the inactive track member whose clip contains the x position
+    eBoxOrSound *getTrackClipAtPos(
+                        const int pressX,
+                        const qreal pixelsPerFrame,
+                        const int minViewedFrame);
 
     void setSelected(const bool selected) {
         mSelected = selected;
         update();
+        selOverlayUpdate();
     }
+    void selOverlayUpdate();
 protected:
     bool mSelected = false;
+    bool eventFilter(QObject *obj, QEvent *event) override;
     void mousePressEvent(QMouseEvent *e);
     void mouseMoveEvent(QMouseEvent *event);
     void mouseReleaseEvent(QMouseEvent *event);
@@ -169,7 +202,13 @@ private:
     PixmapActionButton *mContentButton;
     PixmapActionButton *mVisibleButton;
     PixmapActionButton *mLockedButton;
+    PixmapActionButton *mSoloButton;
+    PixmapActionButton *mShyButton;
     PixmapActionButton *m3DButton;
+    PixmapActionButton *mFxButton;
+    PixmapActionButton *mMbButton;
+    PixmapActionButton *mTButton;
+    class ParentLinkButton* mParentLinkButton;
     PixmapActionButton *mHwSupportButton;
     ColorAnimatorButton *mColorButton;
     BoxTargetWidget *mBoxTargetWidget;
@@ -186,6 +225,28 @@ private:
     eComboBox *mBlendModeCombo;
     eComboBox *mPathBlendModeCombo;
     eComboBox *mFillTypeCombo;
+    // shows and switches the node-link parent of this layer
+    eComboBox *mParentLinkCombo;
+    bool mParentLinkComboBuilding = false;
+    // AE-style track matte: single matte-layer pick + mode cycle button
+    eComboBox *mTrkMatLayerCombo;
+    PixmapActionButton *mTrkMatModeButton;
+    bool mTrkMatBuilding = false;
+    void rebuildTrkMatLayerCandidates();
+
+    // topmost translucent overlay painting the selection highlight
+    // above every child widget of the row
+    class RowHighlightOverlay* mSelOverlay = nullptr;
+public:
+    bool isSelectedRow() const { return mSelected; }
+protected:
+
+    // node-link parenting UI
+    void showParentLinkMenu();
+    void startParentLinkDrag();
+    void refreshParentLinkCombo();
+    void rebuildParentLinkCandidates();
+    BoundingBox* currentLinkedBox();
 
     ConnContext mTargetConn;
 };

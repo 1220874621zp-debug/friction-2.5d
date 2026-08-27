@@ -284,6 +284,7 @@ private:
 
     QAction *mClipViewToCanvas;
     QAction *mRasterEffectsVisible;
+    QAction* mMotionBlurEnabledAct;
     QAction *mPathEffectsVisible;
 
     QAction *mAddToQueAct;

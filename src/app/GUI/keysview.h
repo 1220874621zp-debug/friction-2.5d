@@ -51,6 +51,7 @@ class MainWindow;
 class BoxScroller;
 class AnimationDockWidget;
 class TimelineMovable;
+class eBoxOrSound;
 class KeysClipboard;
 class Animator;
 class BoxScrollWidget;
@@ -203,6 +204,11 @@ private:
                      const qreal pixelsPerFrame,
                      const int minViewedFrame);
     TimelineMovable *getRectangleMovableAtPos(
+            const int pressX, const int pressY,
+            const qreal pixelsPerFrame,
+            const int minViewedFrame);
+    // the inactive track member whose clip was clicked, if any
+    eBoxOrSound *getTrackClipAtPos(
             const int pressX, const int pressY,
             const qreal pixelsPerFrame,
             const int minViewedFrame);

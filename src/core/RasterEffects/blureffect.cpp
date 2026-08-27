@@ -141,3 +141,7 @@ void BlurEffectCaller::processCpu(CpuRenderTools &renderTools,
         canvas.drawBitmap(packedTile, drawX, drawY, &paint);
     }
 }
+
+void BlurEffect::setRadius(const qreal radius) {
+    mRadius->setCurrentBaseValue(radius);
+}

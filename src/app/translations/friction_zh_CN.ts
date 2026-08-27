@@ -428,6 +428,22 @@
         <translation>设置混合模式</translation>
     </message>
     <message>
+        <source>Enable FX</source>
+        <translation>启用特效</translation>
+    </message>
+    <message>
+        <source>Disable FX</source>
+        <translation>禁用特效</translation>
+    </message>
+    <message>
+        <source>Preserve Underlying Transparency</source>
+        <translation>保留底层透明度</translation>
+    </message>
+    <message>
+        <source>Stop Preserving Underlying Transparency</source>
+        <translation>取消保留底层透明度</translation>
+    </message>
+    <message>
         <location filename="../../core/Boxes/boundingbox.cpp" line="819" />
         <source>Create Link</source>
         <translation>创建链接</translation>
@@ -474,6 +490,26 @@
         <translation>栅格效果</translation>
     </message>
     <message>
+        <source>Merge into Track</source>
+        <translation>合并到轨道</translation>
+    </message>
+    <message>
+        <source>Split Track</source>
+        <translation>拆分轨道</translation>
+    </message>
+    <message>
+        <source>Track Members</source>
+        <translation>轨道成员</translation>
+    </message>
+    <message>
+        <source>Delete?</source>
+        <translation>删除？</translation>
+    </message>
+    <message>
+        <source>Are you sure you want to delete selected item(s)?</source>
+        <translation>确定要删除所选项目吗？</translation>
+    </message>
+    <message>
         <location filename="../../core/Boxes/boundingbox.cpp" line="1255" />
         <location filename="../../core/Boxes/boundingbox.cpp" line="1351" />
         <source>Custom Properties</source>
@@ -517,6 +553,54 @@
         <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="73" />
         <source>transform</source>
         <translation>变换</translation>
+    </message>
+    <message>
+        <source>Set layer label color</source>
+        <translation>设置图层标签颜色</translation>
+    </message>
+    <message>
+        <source>Parent link (click to pick, drag onto a layer row)</source>
+        <translation>父级链接（单击选择父级，或拖到目标图层行）</translation>
+    </message>
+    <message>
+        <source>Toggle 3D layer (2.5D billboard: X/Y rotation, Z depth)</source>
+        <translation>3D 图层开关（2.5D：X/Y 旋转、Z 深度）</translation>
+    </message>
+    <message>
+        <source>Solo (show only soloed layers/sounds)</source>
+        <translation>独奏（只显示开了独奏的图层/声音）</translation>
+    </message>
+    <message>
+        <source>Shy (hide this row when 'Hide Shy Layers' is enabled in Filters)</source>
+        <translation>隐藏条目（在筛选菜单开启“隐藏 Shy 图层”后，此行从时间轴消失）</translation>
+    </message>
+    <message>
+        <source>Toggle all effects on this layer</source>
+        <translation>开关此图层的全部特效</translation>
+    </message>
+    <message>
+        <source>Preserve underlying transparency (paint only where layers below are opaque)</source>
+        <translation>保留底层透明度（只画在下方图层的不透明区域）</translation>
+    </message>
+    <message>
+        <source>Merge into Track</source>
+        <translation>合并到轨道</translation>
+    </message>
+    <message>
+        <source>Detach from Track</source>
+        <translation>从轨道分离</translation>
+    </message>
+    <message>
+        <source>Motion blur on this layer</source>
+        <translation>此图层的运动模糊开关</translation>
+    </message>
+    <message>
+        <source>Track matte layer</source>
+        <translation>轨道遮罩层</translation>
+    </message>
+    <message>
+        <source>Track matte mode</source>
+        <translation>轨道遮罩模式（点击切换）</translation>
     </message>
     <message>
         <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="74" />
@@ -1016,7 +1100,7 @@
     <message>
         <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="400" />
         <source>Promote to Layer</source>
-        <translation>升级为图层</translation>
+        <translation>切换为隔离轨道（整轨预合成，启用轨道混合模式）</translation>
     </message>
     <message>
         <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="453" />
@@ -1096,6 +1180,14 @@
         <location filename="../../core/canvas.cpp" line="534" />
         <source>Scene Dimension Changed</source>
         <translation>场景尺寸已更改</translation>
+    </message>
+    <message>
+        <source>Set In Point</source>
+        <translation>设置入点</translation>
+    </message>
+    <message>
+        <source>Set Out Point</source>
+        <translation>设置出点</translation>
     </message>
     <message>
         <location filename="../../core/canvas.cpp" line="559" />
@@ -1417,6 +1509,45 @@
         <location filename="../../core/Boxes/containerbox.cpp" line="1389" />
         <source>Change Z-Index</source>
         <translation>更改层级顺序</translation>
+    </message>
+    <message>
+        <source>Flip Book</source>
+        <translation>翻页预览</translation>
+    </message>
+</context>
+<context>
+    <name>BoxWithPathEffects</name>
+    <message>
+        <source>Path Effects</source>
+        <translation>路径特效</translation>
+    </message>
+    <message>
+        <source>Fill Effects</source>
+        <translation>填充特效</translation>
+    </message>
+    <message>
+        <source>Outline Base Effects</source>
+        <translation>描边基础特效</translation>
+    </message>
+    <message>
+        <source>Outline Effects</source>
+        <translation>描边特效</translation>
+    </message>
+    <message>
+        <source>Path Effects</source>
+        <translation>路径效果</translation>
+    </message>
+    <message>
+        <source>Fill Effects</source>
+        <translation>填充效果</translation>
+    </message>
+    <message>
+        <source>Outline Base Effects</source>
+        <translation>描边基础效果</translation>
+    </message>
+    <message>
+        <source>Outline Effects</source>
+        <translation>描边效果</translation>
     </message>
 </context>
 <context>
@@ -2615,6 +2746,10 @@ you can create a new one by clicking on the '+' button.</source>
         <location filename="../../ui/widgets/toolbox.cpp" line="90" />
         <source>ToolBox</source>
         <translation>工具箱</translation>
+    </message>
+    <message>
+        <source>Mask Pen (draw shapes that clip layers below)</source>
+        <translation>蒙版钢笔（绘制裁剪下方图层的形状）</translation>
     </message>
     <message>
         <location filename="../../ui/widgets/toolbox.cpp" line="188" />
@@ -4279,6 +4414,11 @@ Are you sure you want to save this project file?</source>
         <translation>缩放</translation>
     </message>
     <message>
+        <source>Motion Blur</source>
+        <comment>MenuBar_View</comment>
+        <translation>运动模糊</translation>
+    </message>
+    <message>
         <location filename="../GUI/menu.cpp" line="520" />
         <source>Zoom In</source>
         <comment>MenuBar_View_Zoom</comment>
@@ -5231,6 +5371,62 @@ Are you sure you want to save this project file?</source>
 </context>
 <context>
     <name>QObject</name>
+    <message>
+        <source>Path Effects</source>
+        <translation>路径特效</translation>
+    </message>
+    <message>
+        <source>Fill Effects</source>
+        <translation>填充特效</translation>
+    </message>
+    <message>
+        <source>Outline Base Effects</source>
+        <translation>描边基础特效</translation>
+    </message>
+    <message>
+        <source>Outline Effects</source>
+        <translation>描边特效</translation>
+    </message>
+    <message>
+        <source>Add Effect</source>
+        <translation>添加特效</translation>
+    </message>
+    <message>
+        <source>Blur</source>
+        <translation>模糊</translation>
+    </message>
+    <message>
+        <source>Shadow</source>
+        <translation>阴影</translation>
+    </message>
+    <message>
+        <source>Motion Blur</source>
+        <translation>运动模糊</translation>
+    </message>
+    <message>
+        <source>Brightness-Contrast</source>
+        <translation>亮度-对比度</translation>
+    </message>
+    <message>
+        <source>Colorize</source>
+        <translation>颜色替换</translation>
+    </message>
+    <message>
+        <source>Wipe</source>
+        <translation>擦除</translation>
+    </message>
+    <message>
+        <source>Noise Fade</source>
+        <translation>噪波渐变</translation>
+    </message>
+    <message>
+        <source>Color</source>
+        <translation>颜色</translation>
+    </message>
+    <message>
+        <source>Transitions</source>
+        <translation>过渡</translation>
+    </message>
     <message>
         <location filename="../main.cpp" line="218" />
         <source>Loading ...</source>
@@ -6292,6 +6488,10 @@ Are you sure you want to save this project file?</source>
         <translation>筛选</translation>
     </message>
     <message>
+        <source>Hide Shy Layers</source>
+        <translation>隐藏 Shy 图层</translation>
+    </message>
+    <message>
         <location filename="../GUI/timelinewidget.cpp" line="84" />
         <source>State</source>
         <translation>状态</translation>
@@ -6528,6 +6728,14 @@ Are you sure you want to save this project file?</source>
         <location filename="../../core/Animators/eboxorsound.cpp" line="414" />
         <source>Mute</source>
         <translation>静音</translation>
+    </message>
+    <message>
+        <source>Solo</source>
+        <translation>独奏</translation>
+    </message>
+    <message>
+        <source>Unsolo</source>
+        <translation>取消独奏</translation>
     </message>
     <message>
         <location filename="../../core/Animators/eboxorsound.cpp" line="414" />

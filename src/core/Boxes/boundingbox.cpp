@@ -27,6 +27,7 @@
 #include "Animators/motionpathhandler.h"
 #include "Boxes/containerbox.h"
 #include "TransformEffects/followpatheffect.h"
+#include "TransformEffects/parenteffect.h"
 #include "canvas.h"
 #include "swt_abstraction.h"
 #include "Timeline/durationrectangle.h"
@@ -52,6 +53,8 @@
 #include "RasterEffects/rastereffectmenucreator.h"
 #include "matrixdecomposition.h"
 #include "paintsettingsapplier.h"
+#include "ReadWrite/evformat.h"
+#include "Private/document.h"
 #include "Animators/customproperties.h"
 #include "GUI/propertynamedialog.h"
 #include "BlendEffects/blendeffectcollection.h"
@@ -76,8 +79,16 @@ BoundingBox::BoundingBox(const QString& name, const eBoxType type) :
     mBlendEffectCollection(enve::make_shared<BlendEffectCollection>()),
     mTransformEffectCollection(enve::make_shared<TransformEffectCollection>()),
     mTransformAnimator(enve::make_shared<BoxTransformAnimator>()),
-    mRasterEffectsAnimators(enve::make_shared<RasterEffectCollection>()) {
+    mRasterEffectsAnimators(enve::make_shared<RasterEffectCollection>()),
+    mTrackMatteTarget(enve::make_shared<BoxTargetProperty>("track matte")) {
     sDocumentBoxes << this;
+
+    // live follow: whenever the matte target changes (pick, unpick,
+    // file load resolving the stored id) re-arm the follow connections
+    connect(mTrackMatteTarget.data(), &BoxTargetProperty::targetSet,
+            this, [this](BoundingBox * const matte) {
+        setTrackMatteSource(matte);
+    });
 
     ca_addChild(mCustomProperties);
     mCustomProperties->SWT_setVisible(false);
@@ -197,6 +208,11 @@ void BoundingBox::writeBoundingBox(eWriteStream& dst) const {
     eBoxOrSound::prp_writeProperty_impl(dst);
     dst << mWriteId;
     dst.write(&mBlendMode, sizeof(SkBlendMode));
+    dst << mEffectsEnabled;
+    dst << mPreserveAlpha;
+    // track matte (files written today are v39+; gated read below)
+    dst << mTrackMatteMode;
+    mTrackMatteTarget->prp_writeProperty_impl(dst);
 }
 
 void BoundingBox::readBoundingBox(eReadStream& src) {
@@ -207,6 +223,19 @@ void BoundingBox::readBoundingBox(eReadStream& src) {
     }
     int readId; src >> readId;
     src.read(&mBlendMode, sizeof(SkBlendMode));
+    // ORDER MUST MATCH writeBoundingBox: effects switches FIRST, then
+    // the matte mode + target. Reading them the other way round swaps
+    // the four values (matteMode picks up effectsEnabled, the target
+    // ids become garbage and can resolve to a random layer, stalling
+    // the whole frame's render tasks -> black canvas on open)
+    if(src.evFileVersion() >= EvFormat::boxLayerSwitches) {
+        src >> mEffectsEnabled;
+        src >> mPreserveAlpha;
+    }
+    if(src.evFileVersion() >= EvFormat::trackMatte) {
+        src >> mTrackMatteMode;
+        mTrackMatteTarget->prp_readProperty_impl(src);
+    }
 
     src.addReadBox(readId, this);
 }
@@ -509,6 +538,48 @@ void BoundingBox::setBlendModeSk(const SkBlendMode blendMode)
     mBlendMode = blendMode;
     prp_afterWholeInfluenceRangeChanged();
     emit blendModeChanged(blendMode);
+}
+
+bool BoundingBox::soloAffectsDraw() const {
+    return isSolo();
+}
+
+void BoundingBox::setEffectsEnabled(const bool enable) {
+    if(mEffectsEnabled == enable) return;
+    {
+        prp_pushUndoRedoName(enable ? tr("Enable FX") : tr("Disable FX"));
+        UndoRedo ur;
+        const auto oldValue = mEffectsEnabled;
+        const auto newValue = enable;
+        ur.fUndo = [this, oldValue]() { setEffectsEnabled(oldValue); };
+        ur.fRedo = [this, newValue]() { setEffectsEnabled(newValue); };
+        prp_addUndoRedo(ur);
+    }
+    mEffectsEnabled = enable;
+    prp_afterWholeInfluenceRangeChanged();
+    emit effectsEnabledChanged(enable);
+}
+
+void BoundingBox::setPreserveAlpha(const bool preserve) {
+    if(mPreserveAlpha == preserve) return;
+    {
+        prp_pushUndoRedoName(preserve ? tr("Preserve Underlying Transparency")
+                                      : tr("Stop Preserving Underlying Transparency"));
+        UndoRedo ur;
+        const auto oldValue = mPreserveAlpha;
+        const auto newValue = preserve;
+        ur.fUndo = [this, oldValue]() { setPreserveAlpha(oldValue); };
+        ur.fRedo = [this, newValue]() { setPreserveAlpha(newValue); };
+        prp_addUndoRedo(ur);
+    }
+    mPreserveAlpha = preserve;
+    prp_afterWholeInfluenceRangeChanged();
+    emit preserveAlphaChanged(preserve);
+}
+
+SkBlendMode BoundingBox::getPaintBlendMode() const {
+    if(mPreserveAlpha) return SkBlendMode::kSrcATop;
+    return mBlendMode;
 }
 
 void BoundingBox::resetScale() {
@@ -1124,6 +1195,18 @@ void BoundingBox::moveByRel(const QPointF &trans) {
     mTransformAnimator->moveRelativeToSavedValue(trans.x(), trans.y());
 }
 
+void BoundingBox::move3DZBy(const qreal dZ) {
+    mTransformAnimator->move3DZRelativeToSavedValue(dZ);
+}
+
+void BoundingBox::rotate3DXBy(const qreal deg) {
+    mTransformAnimator->rotXRelativeToSavedValue(deg);
+}
+
+void BoundingBox::rotate3DYBy(const qreal deg) {
+    mTransformAnimator->rotYRelativeToSavedValue(deg);
+}
+
 void BoundingBox::setAbsolutePos(const QPointF &pos) {
     setRelativePos(mParentTransform->mapAbsPosToRel(pos));
 }
@@ -1143,6 +1226,18 @@ void BoundingBox::saveTransformPivotAbsPos(const QPointF &absPivot) {
 
 void BoundingBox::startPosTransform() {
     mTransformAnimator->startPosTransform();
+}
+
+void BoundingBox::start3DZTransform() {
+    mTransformAnimator->start3DZTransform();
+}
+
+void BoundingBox::startRotXTransform() {
+    mTransformAnimator->startRotXTransform();
+}
+
+void BoundingBox::startRotYTransform() {
+    mTransformAnimator->startRotYTransform();
 }
 
 void BoundingBox::startRotTransform() {
@@ -1174,6 +1269,21 @@ void BoundingBox::setupRenderData(const qreal relFrame,
                                   Canvas* const scene) {
     setupWithoutRasterEffects(relFrame, parentM, data, scene);
     setupRasterEffects(relFrame, data, scene);
+    // track matte: queue the matte layer's independent render (main
+    // thread) and mask this layer's final image with it in the effects
+    // phase - matte runs LAST, after the layer's own effects/blur
+    if(mTrackMatteMode != 0 && data) {
+        const auto matte = mTrackMatteTarget ?
+                    mTrackMatteTarget->getTarget() : nullptr;
+        // cycle guard: if the matte chain leads back here the two
+        // renders would wait on each other forever (black canvas)
+        if(matte && matte != this && !matte->matteChainReaches(this)) {
+            if(const auto sample = matte->queExternalRender(relFrame, true)) {
+                sample->addDependent(data);
+                data->setTrackMatte(sample, mTrackMatteMode);
+            }
+        }
+    }
 }
 
 void BoundingBox::setupWithoutRasterEffects(const qreal relFrame,
@@ -1205,7 +1315,7 @@ void BoundingBox::setupWithoutRasterEffects(const qreal relFrame,
     data->fResolutionScale.scale(data->fResolution, data->fResolution);
     data->fOpacity = getOpacity(relFrame);
     data->fBaseMargin = QMargins() + 2;
-    data->fBlendMode = getBlendMode();
+    data->fBlendMode = getPaintBlendMode();
 
     {
         const auto parent = getParentGroup();
@@ -1223,7 +1333,7 @@ void BoundingBox::setupRasterEffects(const qreal relFrame,
     //Q_ASSERT(scene);
     if(!scene) return;
     const bool effectsVisible = scene->getRasterEffectsVisible();
-    if(data->fOpacity > 0.001 && effectsVisible) {
+    if(data->fOpacity > 0.001 && effectsVisible && mEffectsEnabled) {
         mRasterEffectsAnimators->addEffects(relFrame, data);
     }
 }
@@ -1431,6 +1541,46 @@ void BoundingBox::prp_setupTreeViewMenu(PropertyMenu * const menu)
             if (ask != QMessageBox::Yes) { return; }*/
             pScene->removeSelectedBoxesAndClearList();
         })->setShortcut(Qt::Key_Delete);
+
+        // merge every selected layer into one timeline track anchored
+        // at the last selected layer (UI-level grouping, not a group)
+        menu->addPlainAction(QIcon::fromTheme("group"), tr("Merge into Track"), [this, pScene]() {
+            const auto& sel = pScene->getSelectedBoxesList();
+            if(sel.count() < 2) return;
+            const auto anchor = pScene->getLastSelectedBox();
+            if(!anchor) return;
+            const auto parent = anchor->getParentGroup();
+            if(!parent) return;
+            const int tid = anchor->isInTrack() ?
+                        anchor->trackId() : pScene->newTrackId(parent);
+            for(const auto box : sel) {
+                if(!box || box->getParentGroup() != parent) continue;
+                box->setTrackId(tid);
+            }
+            pScene->gatherTrack(anchor);
+        });
+
+        // track membership tools (shown on the row-owning member)
+        if(isInTrack()) {
+            menu->addPlainAction(QIcon::fromTheme("group"), tr("Split Track"), [this, pScene]() {
+                const auto members = trackMembers();
+                for(const auto& m : members) m->setTrackId(-1);
+                Document::sInstance->actionFinished();
+            });
+            const auto membersMenu = menu->addMenu(
+                        QIcon::fromTheme("group"), tr("Track Members"));
+            for(const auto& m : trackMembers()) {
+                const auto mBox = static_cast<BoundingBox*>(m);
+                membersMenu->addPlainAction(QIcon::fromTheme("group"),
+                                            m->prp_getName(),
+                                            [mBox]() {
+                    const auto scene = mBox->getParentScene();
+                    if(!scene) return;
+                    scene->clearBoxesSelection();
+                    scene->addBoxToSelection(mBox);
+                });
+            }
+        }
     }
 
     menu->addSeparator();
@@ -1620,6 +1770,16 @@ bool BoundingBox::SWT_shouldBeVisible(const SWT_RulesCollection &rules,
             satisfies = parentSatisfies;
         } else if(rule == SWT_BoxRule::selected) {
             satisfies = isSelected();
+            // properties panel (rule=selected) shows only the active
+            // (last-selected) layer; the timeline uses rule=all and is
+            // not affected
+            if(satisfies) {
+                const auto scene = getParentScene();
+                if(scene) {
+                    const auto last = scene->getLastSelectedBox();
+                    if(last && this != last) satisfies = false;
+                }
+            }
         } else if(rule == SWT_BoxRule::animated) {
             satisfies = isAnimated();
         } else if(rule == SWT_BoxRule::notAnimated) {
@@ -1646,6 +1806,69 @@ bool BoundingBox::SWT_shouldBeVisible(const SWT_RulesCollection &rules,
 
 bool BoundingBox::SWT_dropSupport(const QMimeData * const data) {
     return mRasterEffectsAnimators->SWT_dropSupport(data);
+}
+
+// live follow of the matte layer: mirror the InternalLinkBox pattern -
+// forward the matte's abs-frame-range changes as our own so our render
+// cache (and the scene frame cache) is invalidated whenever the matte
+// layer moves, animates or changes shape
+void BoundingBox::setTrackMatteSource(BoundingBox * const matte) {
+    auto& conn = mTrackMatteSource.assign(matte);
+    // follow only when it cannot loop back: with a matte cycle the
+    // change forwarding would ping-pong between the two boxes forever
+    // (render cache never settles -> black canvas)
+    if(matte && !matte->matteChainReaches(this)) {
+        conn << connect(matte, &BoundingBox::prp_absFrameRangeChanged,
+                        this, [this, matte](const FrameRange& targetAbs) {
+            const auto relRange = matte->prp_absRangeToRelRange(targetAbs);
+            prp_afterChangedRelRange(relRange);
+        });
+    }
+    planUpdate(UpdateReason::userChange);
+}
+
+// walk the matte chain from here; report whether 'candidate' is on it.
+// Bounded so a (buggy) pre-existing cycle cannot hang the caller.
+bool BoundingBox::matteChainReaches(
+        const BoundingBox* const candidate) const {
+    if(!candidate) return false;
+    const BoundingBox* cur = this;
+    for(int hop = 0; hop < 64; hop++) {
+        const auto next = cur->trackMatteTarget() ?
+                    cur->trackMatteTarget()->getTarget() : nullptr;
+        if(!next) return false;
+        if(next == candidate) return true;
+        if(next == cur) return false; // self-loop guard
+        cur = next;
+    }
+    return false;
+}
+
+// walk UP the node-link chain (first ParentEffect target of each box)
+// from here; report whether 'candidate' is part of that chain. Bounded
+// hop count so a (buggy) pre-existing cycle cannot hang the caller.
+bool BoundingBox::hasInParentLinkChain(
+        const BoundingBox* const candidate) const {
+    if(!candidate) return false;
+    const BoundingBox* up = this;
+    for(int hop = 0; hop < 1024; hop++) {
+        const auto coll = up->getTransformEffectCollection();
+        if(!coll) return false;
+        const BoundingBox* next = nullptr;
+        const int n = coll->ca_getNumberOfChildren();
+        for(int i = 0; i < n; i++) {
+            const auto pe = enve_cast<ParentEffect*>(coll->getChild(i));
+            if(!pe) continue;
+            next = enve_cast<BoundingBox*>(
+                        pe->parentTargetProperty()->getTarget());
+            break;
+        }
+        if(!next) return false;
+        if(next == candidate) return true;
+        if(next == up) return false; // self-loop guard
+        up = next;
+    }
+    return false; // runaway chain - treat as no cycle but stop walking
 }
 
 bool BoundingBox::SWT_drop(const QMimeData * const data) {

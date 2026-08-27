@@ -484,11 +484,31 @@ bool CanvasWindow::handleZValueKeyPress(QKeyEvent *event)
     if (event->key() == Qt::Key_PageUp) {
        mCurrentCanvas->raiseSelectedBoxes();
     } else if (event->key() == Qt::Key_PageDown) {
-       mCurrentCanvas->lowerSelectedBoxes();
+        mCurrentCanvas->lowerSelectedBoxes();
     } else if (event->key() == Qt::Key_End) {
-       mCurrentCanvas->lowerSelectedBoxesToBottom();
+        mCurrentCanvas->lowerSelectedBoxesToBottom();
     } else if (event->key() == Qt::Key_Home) {
-       mCurrentCanvas->raiseSelectedBoxesToTop();
+        mCurrentCanvas->raiseSelectedBoxesToTop();
+    } else { return false; }
+    return true;
+}
+
+// AE-style layer in/out points: Alt+[ (or Alt+{ on shifted layouts) trims
+// the layer start to the playhead, Alt+] / Alt+} trims the layer end
+bool CanvasWindow::handleInOutPointKeyPress(QKeyEvent *event)
+{
+    if (!mCurrentCanvas) { return false; }
+    if (event->modifiers() & Qt::AltModifier) {
+        const int key = event->key();
+        const bool setIn = (key == Qt::Key_BraceLeft ||
+                            key == Qt::Key_BracketLeft);
+        const bool setOut = (key == Qt::Key_BraceRight ||
+                             key == Qt::Key_BracketRight);
+        if (setIn) {
+            mCurrentCanvas->setSelectedBoxesInPoint();
+        } else if (setOut) {
+            mCurrentCanvas->setSelectedBoxesOutPoint();
+        } else { return false; }
     } else { return false; }
     return true;
 }
@@ -659,6 +679,7 @@ bool CanvasWindow::KFT_keyPressEvent(QKeyEvent *event)
     if (handleCutCopyPasteKeyPress(event)) { return true; }
     if (handleTransformationKeyPress(event)) { return true; }
     if (handleZValueKeyPress(event)) { return true; }
+    if (handleInOutPointKeyPress(event)) { return true; }
     if (handleParentChangeKeyPress(event)) { return true; }
     if (handleGroupChangeKeyPress(event)) { return true; }
     if (handleResetTransformKeyPress(event)) { return true; }

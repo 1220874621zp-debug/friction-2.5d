@@ -30,7 +30,13 @@
 #include "boxscrollwidget.h"
 #include <QTimer>
 #include <QMimeData>
+#include <QDataStream>
+#include <QCursor>
+#include <QStatusBar>
 #include "Boxes/boundingbox.h"
+#include "canvas.h"
+#include "Properties/emimedata.h"
+#include "Private/document.h"
 #include "Boxes/containerbox.h"
 #include "GUI/mainwindow.h"
 #include "GUI/global.h"
@@ -38,6 +44,15 @@
 #include "GUI/keysview.h"
 #include "RasterEffects/rastereffectcollection.h"
 #include "GUI/timelinehighlightwidget.h"
+
+// the layer/sound rows carried by a layer drag&drop
+static QList<eBoxOrSound *> draggedLayers(const QMimeData * const mime) {
+    if(!mime || !eMimeData::sHasType<eBoxOrSound>(mime)) return QList<eBoxOrSound*>();
+    return static_cast<const eMimeData*>(mime)->getObjects<eBoxOrSound>();
+}
+
+bool  BoxScroller::sPlActive = false;
+QPoint BoxScroller::sPlSrcGlobal;
 
 BoxScroller::BoxScroller(ScrollWidget * const parent) :
     ScrollWidgetVisiblePart(parent) {
@@ -47,6 +62,15 @@ BoxScroller::BoxScroller(ScrollWidget * const parent) :
 
 QWidget *BoxScroller::createNewSingleWidget() {
     return new BoxSingleWidget(this);
+}
+
+void BoxScroller::plDragStarted(const QPoint& srcGlobalCenter) {
+    sPlActive = true;
+    sPlSrcGlobal = srcGlobalCenter;
+}
+
+void BoxScroller::plDragEnded() {
+    sPlActive = false;
 }
 
 void BoxScroller::paintEvent(QPaintEvent *) {
@@ -61,9 +85,32 @@ void BoxScroller::paintEvent(QPaintEvent *) {
         currY += eSizesUI::widget;
     }
 
+    // AE-style connector line during a parent-link drag: the line runs
+    // from the source row's link button to the live cursor position
+    if(sPlActive) {
+        p.setRenderHint(QPainter::Antialiasing, true);
+        const QColor link(120, 170, 255);
+        const QPoint src = mapFromGlobal(sPlSrcGlobal);
+        const QPoint dst = mapFromGlobal(QCursor::pos());
+        p.setPen(QPen(link, 2));
+        p.drawLine(src, dst);
+        p.setPen(Qt::NoPen);
+        p.setBrush(link);
+        p.drawEllipse(src, 4, 4);
+        p.drawEllipse(dst, 5, 5);
+        p.setBrush(Qt::NoBrush);
+        p.setRenderHint(QPainter::Antialiasing, false);
+    }
+
     if(mDropTarget.isValid()) {
         p.setPen(QPen(Qt::white, 2));
+        if(mDropIsCombine) {
+            // track-combine preview: translucent fill over the whole row,
+            // clearly distinct from the thin reorder insert line
+            p.setBrush(QColor(255, 255, 255, 35));
+        }
         p.drawRect(mCurrentDragRect);
+        if(mDropIsCombine) p.setBrush(Qt::NoBrush);
     }
 
     p.end();
@@ -93,11 +140,29 @@ bool BoxScroller::tryDropIntoAbs(SWT_Abstraction* const abs,
     return true;
 }
 
+// editing-app rule: audio rows only merge onto audio rows, visual rows
+// (graphics/bitmap/video/text - every BoundingBox kind) only onto other
+// visual rows; group rows keep their existing drop-into behavior
+bool BoxScroller::dragCombineTarget(const SingleWidgetTarget *target) const {
+    const auto dragged = draggedLayers(mCurrentMimeData);
+    if(dragged.isEmpty() || !target) return false;
+    if(enve_cast<const ContainerBox*>(target)) return false;
+    const auto bos = enve_cast<const eBoxOrSound*>(target);
+    if(!bos) return false;
+    const bool audio = bos->isAudioKind();
+    // the whole batch has to match, so mixed selections never merge
+    for(const auto obj : dragged) {
+        if(!obj || obj->isAudioKind() != audio) return false;
+    }
+    return true;
+}
+
 BoxScroller::DropTarget BoxScroller::getClosestDropTarget(const int yPos) {
     const auto mainAbs = getMainAbstration();
     if(!mainAbs) return DropTarget();
     const int idAtPos = yPos / eSizesUI::widget;
     DropTarget target;
+    mDropIsCombine = false;
     const auto& wids = widgets();
     const int nWidgets = wids.count();
     if(idAtPos >= 0 && idAtPos < nWidgets) {
@@ -117,11 +182,27 @@ BoxScroller::DropTarget BoxScroller::getClosestDropTarget(const int yPos) {
                 if(qAbs(qRound(posFrac) - posFrac) > 0.333) dropOn = true;
                 if(!above && abs->contentVisible() &&
                    abs->childrenCount() > 0) dropOn = true;
+                // wider drop-onto zone for track combining: the middle
+                // 60% of a plain same-kind row accepts layer drops
+                // (mismatched kinds keep showing a reorder line)
+                if(!dropOn && !altDetachActive() &&
+                   dragCombineTarget(abs->getTarget())) {
+                    dropOn = qAbs(qRound(posFrac) - posFrac) > 0.2;
+                }
             }
             for(const bool iDropOn : {dropOn, !dropOn}) {
                 if(iDropOn) {
-                    if(abs->getTarget()->SWT_dropSupport(mCurrentMimeData)) {
+                    const auto dropTarget = abs->getTarget();
+                    // dropping a layer row onto a plain row of the same
+                    // kind combines both into one track; group rows keep
+                    // their gather-inside behavior via SWT_dropSupport
+                    const bool combineOnLayer =
+                            !altDetachActive() &&
+                            dragCombineTarget(dropTarget);
+                    if(combineOnLayer ||
+                       dropTarget->SWT_dropSupport(mCurrentMimeData)) {
                         mCurrentDragRect = bsw->rect().translated(bsw->pos());
+                        mDropIsCombine = combineOnLayer;
                         return {abs, 0, DropType::on};
                     }
                 } else {
@@ -184,26 +265,115 @@ void BoxScroller::dropEvent(QDropEvent *event) {
     stopScrolling();
     mCurrentMimeData = event->mimeData();
     mLastDragMoveY = event->pos().y();
+    mDragModifiers = event->keyboardModifiers();
+    // node-link parenting drag: link the source layer to the layer row
+    // under the cursor (handled before the reorder/reparent logic)
+    if(event->mimeData()->hasFormat(BoxSingleWidget::parentLinkMimeType())) {
+        plDragEnded();
+        quintptr srcPtr = 0;
+        QDataStream ds(event->mimeData()->data(
+                           BoxSingleWidget::parentLinkMimeType()));
+        ds >> srcPtr;
+        auto source = reinterpret_cast<BoundingBox*>(srcPtr);
+        const auto& wids = widgets();
+        const int idAtPos = event->pos().y() / eSizesUI::widget;
+        if(source && idAtPos >= 0 && idAtPos < wids.count()) {
+            const auto bsw = static_cast<BoxSingleWidget*>(wids.at(idAtPos));
+            // the row may have lost its target while dragging
+            const auto dropAbs = bsw->getTargetAbstraction();
+            const auto targetBox = dropAbs ?
+                        enve_cast<BoundingBox*>(dropAbs->getTarget()) :
+                        nullptr;
+            const auto scene = source->getParentScene();
+            if(targetBox && scene) {
+                scene->linkParentLevel(source, targetBox);
+                event->accept();
+            }
+        }
+        mCurrentMimeData = nullptr;
+        mDropTarget.reset();
+        return;
+    }
     updateDropTarget();
     if(mDropTarget.isValid()) {
         const auto targetAbs = mDropTarget.fTargetParent;
         const auto target = targetAbs->getTarget();
-        if(mDropTarget.fDropType == DropType::on) {
-            target->SWT_drop(mCurrentMimeData);
+        const auto draggedBos = draggedLayers(mCurrentMimeData);
+        if(altDetachActive() && !draggedBos.isEmpty() &&
+           mDropTarget.fDropType == DropType::on) {
+            // Alt+release over a plain row: detach every dragged track
+            // member instead of combining (no reorder takes place)
+            for(const auto obj : draggedBos) {
+                if(obj && obj->isInTrack()) obj->setTrackId(-1);
+            }
+        } else if(mDropTarget.fDropType == DropType::on) {
+            // layer rows dropped onto a plain same-kind row combine into
+            // one timeline track; mismatched kinds never reach this spot
+            // - while hovering they only ever show a reorder line. Other
+            // targets keep their old behavior (effect drops, groups)
+            if(!draggedBos.isEmpty()) {
+                bool combined = false;
+                if(dragCombineTarget(target)) {
+                    combined = currentScene()->combineIntoTrack(
+                                enve_cast<eBoxOrSound*>(target), draggedBos);
+                }
+                if(!combined) {
+                    MainWindow::sGetInstance()->statusBar()->showMessage(
+                        QStringLiteral("\u65e0\u6cd5\u5408\u5e76\u5230\u8be5\u8f68\u9053"), 4000);
+                }
+            } else {
+                target->SWT_drop(mCurrentMimeData);
+            }
         } else if(mDropTarget.fDropType == DropType::into) {
             target->SWT_dropInto(mDropTarget.fTargetId, mCurrentMimeData);
+            // dropping a track member between rows: when either new
+            // neighbor belongs to the same track it is an in-track
+            // reorder (the whole track follows); otherwise the member
+            // LEAVES the track and becomes an independent layer again.
+            // Holding Alt forces the leave regardless of neighbors
+            for(const auto obj : draggedBos) {
+                if(!obj || !obj->isInTrack()) continue;
+                if(altDetachActive()) {
+                    obj->setTrackId(-1); // forced by the user
+                    continue;
+                }
+                const auto scene = obj->getParentScene();
+                if(!scene) continue;
+                const auto parent = obj->getParentGroup();
+                bool neighborInTrack = false;
+                if(parent) {
+                    const int idx = parent->getContainedIndex(obj);
+                    const auto& cs = parent->getContained();
+                    if(idx > 0 && cs.at(idx - 1) &&
+                       cs.at(idx - 1)->trackId() == obj->trackId()) {
+                        neighborInTrack = true;
+                    }
+                    if(idx >= 0 && idx + 1 < cs.count() && cs.at(idx + 1) &&
+                       cs.at(idx + 1)->trackId() == obj->trackId()) {
+                        neighborInTrack = true;
+                    }
+                }
+                if(neighborInTrack) {
+                    scene->gatherTrack(obj);
+                } else {
+                    obj->setTrackId(-1); // left the track
+                }
+            }
         }
         planScheduleUpdateVisibleWidgetsContent();
         Document::sInstance->actionFinished();
     }
     mCurrentMimeData = nullptr;
     mDropTarget.reset();
+    mDragModifiers = Qt::NoModifier;
+    mDropIsCombine = false;
 }
 
 void BoxScroller::dragEnterEvent(QDragEnterEvent *event) {
     const auto mimeData = event->mimeData();
     mLastDragMoveY = event->pos().y();
     mCurrentMimeData = mimeData;
+    mDragModifiers = event->keyboardModifiers();
     updateDropTarget();
     //mDragging = true;
     if(mCurrentMimeData) event->acceptProposedAction();
@@ -213,6 +383,9 @@ void BoxScroller::dragEnterEvent(QDragEnterEvent *event) {
 void BoxScroller::dragLeaveEvent(QDragLeaveEvent *event) {
     mCurrentMimeData = nullptr;
     mDropTarget.reset();
+    mDragModifiers = Qt::NoModifier;
+    mDropIsCombine = false;
+    plDragEnded();
     stopScrolling();
     event->accept();
     update();
@@ -221,6 +394,7 @@ void BoxScroller::dragLeaveEvent(QDragLeaveEvent *event) {
 void BoxScroller::dragMoveEvent(QDragMoveEvent *event) {
     event->acceptProposedAction();
     const int yPos = event->pos().y();
+    mDragModifiers = event->keyboardModifiers();
 
     if(yPos < 30) {
         if(!mScrollTimer->isActive()) {

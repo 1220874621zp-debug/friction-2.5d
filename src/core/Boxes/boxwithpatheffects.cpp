@@ -63,7 +63,7 @@ void BoxWithPathEffects::prp_setupTreeViewMenu(PropertyMenu * const menu) {
     [](BoxWithPathEffects* const box, const bool checked) {
         box->setPathEffectsEnabled(checked);
     };
-    menu->addCheckableAction("Path Effects",
+    menu->addCheckableAction(tr("Path Effects"),
                              getPathEffectsVisible(), pathOp)->
             setDisabled(mPathEffectsAnimators->ca_hasChildren());
 
@@ -71,7 +71,7 @@ void BoxWithPathEffects::prp_setupTreeViewMenu(PropertyMenu * const menu) {
     [](BoxWithPathEffects* const box, const bool checked) {
         box->setFillEffectsEnabled(checked);
     };
-    menu->addCheckableAction("Fill Effects",
+    menu->addCheckableAction(tr("Fill Effects"),
                              getFillEffectsVisible(), fillOp)->
             setDisabled(mFillPathEffectsAnimators->ca_hasChildren());
 
@@ -79,7 +79,7 @@ void BoxWithPathEffects::prp_setupTreeViewMenu(PropertyMenu * const menu) {
     [](BoxWithPathEffects* const box, const bool checked) {
         box->setOutlineBaseEffectsEnabled(checked);
     };
-    menu->addCheckableAction("Outline Base Effects",
+    menu->addCheckableAction(tr("Outline Base Effects"),
                              getOutlineBaseEffectsVisible(), outBaseOp)->
             setDisabled(mOutlineBasePathEffectsAnimators->ca_hasChildren());
 
@@ -87,7 +87,7 @@ void BoxWithPathEffects::prp_setupTreeViewMenu(PropertyMenu * const menu) {
     [](BoxWithPathEffects* const box, const bool checked) {
         box->setOutlineEffectsEnabled(checked);
     };
-    menu->addCheckableAction("Outline Effects",
+    menu->addCheckableAction(tr("Outline Effects"),
                              getOutlineEffectsVisible(), outOp)->
             setDisabled(mOutlinePathEffectsAnimators->ca_hasChildren());
 

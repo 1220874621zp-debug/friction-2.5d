@@ -42,6 +42,8 @@
 TextBox::TextBox()
     : PathBox("Text", eBoxType::text)
 {
+    // AE-style label color default: text layers are gray
+    setLabelColor(QColor(130, 130, 130));
     mFillSettings->setPaintType(PaintType::FLATPAINT);
     mStrokeSettings->setPaintType(PaintType::NOPAINT);
 

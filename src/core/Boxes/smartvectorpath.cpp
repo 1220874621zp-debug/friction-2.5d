@@ -41,6 +41,8 @@
 
 SmartVectorPath::SmartVectorPath() :
     PathBox("Path", eBoxType::vectorPath) {
+    // AE-style label color default: shape layers are blue
+    setLabelColor(QColor(32, 100, 230));
     mPathAnimator = enve::make_shared<SmartPathCollection>();
     connect(mPathAnimator.get(), &Property::prp_currentFrameChanged,
             this, [this](const UpdateReason reason) {
@@ -52,6 +54,25 @@ SmartVectorPath::SmartVectorPath() :
 bool SmartVectorPath::differenceInEditPathBetweenFrames(
         const int frame1, const int frame2) const {
     return mPathAnimator->prp_differencesBetweenRelFrames(frame1, frame2);
+}
+
+SkBlendMode SmartVectorPath::getPaintBlendMode() const {
+    if(mMaskMode) {
+        // while any sub-path is open the mask shape draws normally
+        // (SrcOver) instead of clipping the layers below with DstIn
+        const int n = mPathAnimator->ca_getNumberOfChildren();
+        bool allClosed = n > 0;
+        for(int i = 0; i < n; i++) {
+            const auto asAnim = enve_cast<SmartPathAnimator*>(
+                        mPathAnimator->getChild(i));
+            if(!asAnim) continue;
+            SmartPath sp;
+            asAnim->deepCopyValue(asAnim->anim_getCurrentRelFrame(), sp);
+            if(!sp.isClosed()) { allClosed = false; break; }
+        }
+        if(!allClosed) return SkBlendMode::kSrcOver;
+    }
+    return PathBox::getPaintBlendMode();
 }
 
 void SmartVectorPath::saveSVG(SvgExporter& exp, DomEleTask* const task) const {

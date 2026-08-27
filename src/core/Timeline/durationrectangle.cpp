@@ -27,6 +27,7 @@
 #include "CacheHandlers/hddcachablecachehandler.h"
 #include "GUI/global.h"
 #include "Boxes/boundingbox.h"
+#include "Animators/eboxorsound.h"
 #include "Private/esettings.h"
 #include "appsupport.h"
 
@@ -245,6 +246,13 @@ void DurationRectangle::draw(QPainter * const p,
     const auto& sett = eSettings::instance();
     if (isSelected()) { fillColor = sett.fSelectedVisibilityRangeColor; }
     else { fillColor = sett.fVisibilityRangeColor; }
+    // AE-style label color tints the layer bar
+    if (const auto ebs = enve_cast<eBoxOrSound*>(&mParentProperty)) {
+        const QColor lc = ebs->getLabelColor();
+        if (lc.isValid()) {
+            fillColor = isSelected() ? lc.lighter(135) : lc;
+        }
+    }
 
     p->fillRect(durRect.adjusted(0, 1, 0, -1), fillColor);
     if (mHovered) {

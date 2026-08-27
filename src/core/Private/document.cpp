@@ -143,6 +143,8 @@ QString Document::projectDirectory() const
 void Document::setCanvasMode(const CanvasMode mode)
 {
     fCanvasMode = mode;
+    // leaving the path tool also ends mask pen drawing
+    if (mode != CanvasMode::pathCreate) { fMaskPenActive = false; }
     emit canvasModeSet(mode);
     actionFinished();
 }

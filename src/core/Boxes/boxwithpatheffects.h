@@ -32,6 +32,7 @@ class PathEffectsTask;
 class PathEffectCaller;
 
 class CORE_EXPORT BoxWithPathEffects : public BoundingBox {
+    Q_OBJECT
 public:
     BoxWithPathEffects(const QString &name, const eBoxType type);
 

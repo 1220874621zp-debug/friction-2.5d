@@ -34,6 +34,7 @@
 class FixedLenAnimationRect;
 
 class CORE_EXPORT eSoundObjectBase : public eSound {
+    Q_OBJECT
 protected:
     eSoundObjectBase(const qsptr<FixedLenAnimationRect> &durRect);
 

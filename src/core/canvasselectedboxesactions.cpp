@@ -31,6 +31,9 @@
 #include "Boxes/smartvectorpath.h"
 #include "Animators/SmartPath/smartpathcollection.h"
 #include "Private/document.h"
+#include "Sound/soundcomposition.h"
+#include "TransformEffects/parenteffect.h"
+#include "TransformEffects/transformeffectcollection.h"
 #include "eevent.h"
 #include "Boxes/textbox.h"
 
@@ -519,6 +522,11 @@ void Canvas::addBoxToSelection(BoundingBox * const box)
     });
 
     box->setSelected(true);
+    // selecting a track member makes it the active owner of the
+    // track's single timeline row
+    if(box->isInTrack()) {
+        enforceTrack(box->getParentGroup(), box->trackId());
+    }
     schedulePivotUpdate();
 
     sortSelectedBoxesDesc();
@@ -547,10 +555,23 @@ void Canvas::removeBoxFromSelection(BoundingBox * const box) {
 }
 
 void Canvas::clearBoxesSelection() {
-    for(const auto &box : mSelectedBoxes) box->setSelected(false);
+    // remember affected tracks so their visible row can fall back to
+    // the topmost member once nothing is selected
+    QList<QPair<ContainerBox*, int>> tracks;
+    for(const auto &box : mSelectedBoxes) {
+        if(box->isInTrack()) {
+            const auto tp = qMakePair(box->getParentGroup(),
+                                      box->trackId());
+            if(!tracks.contains(tp)) tracks << tp;
+        }
+        box->setSelected(false);
+    }
+    // AE-like: selecting anything else also clears selected sounds
+    forEachSelectedSound([](eBoxOrSound* s) { s->setSelected(false); });
     clearBoxesSelectionList();
     schedulePivotUpdate();
     setCurrentBox(nullptr);
+    for(const auto& tp : tracks) enforceTrack(tp.first, tp.second);
 //    if(mLastPressedBox) {
 //        mLastPressedBox->setSelected(false);
 //        mLastPressedBox = nullptr;
@@ -563,6 +584,59 @@ void Canvas::clearBoxesSelectionList() {
     mSelectedBoxes.clear();
     emit selectedPaintSettingsChanged();
     emit objectSelectionChanged();
+}
+
+void Canvas::enforceTrack(ContainerBox* const parent, const int trackId) {
+    if(!parent || trackId < 0) return;
+    // teardown phase and stale queued calls from another scene must
+    // never trigger active row re-resolution (heap-corruption guard)
+    if(mDestructing || parent->getParentScene() != this) return;
+    // mContained is ordered topmost-first
+    QList<eBoxOrSound*> members;
+    for(const auto& c : parent->getContained()) {
+        if(c && c->trackId() == trackId) members << c.data();
+    }
+    if(members.isEmpty()) return;
+    // the selected member owns the row; with multiple selected members
+    // the topmost one wins; without any selection the topmost member
+    // stays active
+    eBoxOrSound* active = nullptr;
+    for(const auto m : members) {
+        if(m->isSelected()) { active = m; break; }
+    }
+    if(!active) active = members.first();
+    for(const auto m : members) m->setHiddenByTrack(m != active);
+    emit requestUpdate();
+}
+
+int Canvas::newTrackId(ContainerBox* const parent) const {
+    int maxId = -1;
+    if(parent) {
+        for(const auto& c : parent->getContained()) {
+            if(c) maxId = qMax(maxId, c->trackId());
+        }
+    }
+    return maxId + 1;
+}
+
+void Canvas::gatherTrack(eBoxOrSound* const anchor) {
+    if(!anchor || !anchor->isInTrack()) return;
+    const auto parent = anchor->getParentGroup();
+    if(!parent) return;
+    const int tid = anchor->trackId();
+    // other members, topmost-first, keeping their relative order
+    QList<eBoxOrSound*> others;
+    for(const auto& c : parent->getContained()) {
+        if(c && c.data() != anchor && c->trackId() == tid) {
+            others << c.data();
+        }
+    }
+    // stack them directly below the anchor
+    eBoxOrSound* below = anchor;
+    for(const auto m : others) {
+        parent->moveContainedBelow(m, below);
+        below = m;
+    }
 }
 
 const QString Canvas::checkForUnsupportedBoxSVG(BoundingBox * const box)
@@ -714,6 +788,58 @@ void Canvas::finishSelectedBoxesTransform() {
     }
 }
 
+// AE-style in/out point shortcuts (Alt+[ / Alt+]):
+// trim the duration range of every selected layer to the current frame
+void Canvas::setSelectedBoxesInPoint() {
+    const int absFrame = anim_getCurrentAbsFrame();
+    pushUndoRedoName(tr("Set In Point"));
+    for(const auto &box : mSelectedBoxes) {
+        if(!box->hasDurationRectangle()) box->createDurationRectangle();
+        const auto dur = box->getDurationRectangle();
+        if(!dur) continue;
+        box->startMinFramePosTransform();
+        dur->setMinAbsFrame(qMin(absFrame, dur->getMaxAbsFrame() - 1));
+        box->finishMinFramePosTransform();
+    }
+    trimSelectedSounds(true, absFrame);
+}
+
+void Canvas::setSelectedBoxesOutPoint() {
+    const int absFrame = anim_getCurrentAbsFrame();
+    pushUndoRedoName(tr("Set Out Point"));
+    for(const auto &box : mSelectedBoxes) {
+        if(!box->hasDurationRectangle()) box->createDurationRectangle();
+        const auto dur = box->getDurationRectangle();
+        if(!dur) continue;
+        box->startMaxFramePosTransform();
+        dur->setMaxAbsFrame(qMax(absFrame, dur->getMinAbsFrame() + 1));
+        box->finishMaxFramePosTransform();
+    }
+    trimSelectedSounds(false, absFrame);
+}
+
+// selected sounds live outside the canvas box selection; apply the
+// same in/out trim to them
+void Canvas::trimSelectedSounds(const bool inPoint, const int absFrame) {
+    const auto comp = getSoundComposition();
+    if(!comp) return;
+    for(const auto& sound : comp->getSounds()) {
+        if(!sound->isSelected()) continue;
+        if(!sound->hasDurationRectangle()) sound->createDurationRectangle();
+        const auto dur = sound->getDurationRectangle();
+        if(!dur) continue;
+        if(inPoint) {
+            sound->startMinFramePosTransform();
+            dur->setMinAbsFrame(qMin(absFrame, dur->getMaxAbsFrame() - 1));
+            sound->finishMinFramePosTransform();
+        } else {
+            sound->startMaxFramePosTransform();
+            dur->setMaxAbsFrame(qMax(absFrame, dur->getMinAbsFrame() + 1));
+            sound->finishMaxFramePosTransform();
+        }
+    }
+}
+
 void Canvas::cancelSelectedBoxesTransform() {
     for(const auto &box : mSelectedBoxes) {
         box->cancelTransform();
@@ -732,6 +858,147 @@ void Canvas::moveSelectedBoxesByAbs(const QPointF &by,
             box->moveByAbs(by);
         }
     }
+}
+
+void Canvas::moveSelectedBoxes3DZ(const qreal by,
+                                  const bool startTransform) {
+    if(startTransform) {
+        for(const auto &box : mSelectedBoxes) {
+            box->start3DZTransform();
+            box->move3DZBy(by);
+        }
+    } else {
+        for(const auto &box : mSelectedBoxes) {
+            box->move3DZBy(by);
+        }
+    }
+}
+
+void Canvas::rotateSelectedBoxes3DX(const qreal by,
+                                    const bool startTransform) {
+    if(startTransform) {
+        for(const auto &box : mSelectedBoxes) {
+            box->startRotXTransform();
+            box->rotate3DXBy(by);
+        }
+    } else {
+        for(const auto &box : mSelectedBoxes) {
+            box->rotate3DXBy(by);
+        }
+    }
+}
+
+void Canvas::rotateSelectedBoxes3DY(const qreal by,
+                                    const bool startTransform) {
+    if(startTransform) {
+        for(const auto &box : mSelectedBoxes) {
+            box->startRotYTransform();
+            box->rotate3DYBy(by);
+        }
+    } else {
+        for(const auto &box : mSelectedBoxes) {
+            box->rotate3DYBy(by);
+        }
+    }
+}
+
+// drop one or more sibling rows onto a plain layer/sound row: move the
+// dragged rows next to the anchor and put them all on the same timeline
+// track (creating one if the anchor has none); the rows stay siblings -
+// the track is a UI-level grouping only (see eBoxOrSound::setTrackId).
+// kinds must match: audio rows may only join audio tracks, visual rows
+// only visual tracks; returns false when the drop cannot be combined
+bool Canvas::combineIntoTrack(eBoxOrSound* const anchor,
+                              const QList<eBoxOrSound*>& layers) {
+    if(!anchor || layers.isEmpty()) return false;
+    const auto targetParent = anchor->getParentGroup();
+    if(!targetParent) return false;
+    const bool audioAnchor = anchor->isAudioKind();
+    for(const auto layer : layers) {
+        if(!layer || layer == anchor) return false;
+        // kinds must match, and only visual rows could form a cycle
+        if(!layer->getParentGroup()) return false;
+        if(layer->isAudioKind() != audioAnchor) return false;
+        if(const auto bb = enve_cast<BoundingBox*>(layer)) {
+            if(anchor->isAncestor(bb)) return false;
+        }
+    }
+
+    // 1. bring every dragged row into the anchor's group first
+    for(const auto layer : layers) {
+        if(layer->getParentGroup() == targetParent) continue;
+        layer->removeFromParent_k();
+        targetParent->insertContained(
+                    qMax(0, targetParent->getContainedIndex(anchor)),
+                    layer->ref<eBoxOrSound>());
+    }
+
+    // 2. stack them right above the anchor, keeping their given order
+    for(auto it = layers.end(); it != layers.begin();) {
+        --it;
+        targetParent->moveContainedAbove(*it, anchor);
+    }
+
+    // 3. join (or create) the anchor's track; the bottom-most dropped
+    //    row becomes the selected (and thus active) member
+    const int trackId = anchor->isInTrack() ? anchor->trackId()
+                                            : newTrackId(targetParent);
+    anchor->setTrackId(trackId);
+    for(const auto layer : layers) layer->setTrackId(trackId);
+
+    // visual rows go through the canvas box selection; sound rows keep
+    // their own row-selection state (mirrors selectionChangeTriggered)
+    clearBoxesSelection();
+    const auto newActive = layers.last();
+    if(const auto comp = getSoundComposition()) {
+        for(const auto& sound : comp->getSounds()) {
+            const auto sPtr = static_cast<eBoxOrSound*>(sound.data());
+            if(sPtr && sPtr != newActive) sPtr->setSelected(false);
+        }
+    }
+    if(const auto bb = enve_cast<BoundingBox*>(newActive)) {
+        addBoxToSelection(bb);
+    } else {
+        newActive->setSelected(true);
+    }
+    Document::sInstance->actionFinished();
+    return true;
+}
+
+// node-link parenting: reuse the child's first ParentEffect (or create
+// one) and bind/clear its target; undoable via the effect's target action
+bool Canvas::linkParentLevel(BoundingBox* const child,
+                             BoundingBox* const parent) {
+    if(!child) return false;
+    if(parent) {
+        if(parent == child) return false;
+        // structural (scene tree) cycles…
+        if(child->isAncestor(parent)) return false;
+        // …and effect-graph cycles: reject when the NEW PARENT already
+        // (transitively) follows this child - A linked to B, then
+        // linking B to A would recurse forever during evaluation.
+        // NOTE the direction: walk UP from the parent looking for the
+        // child; walking from the child would miss exactly this case
+        if(parent->hasInParentLinkChain(child)) return false;
+    }
+    const auto coll = child->getTransformEffectCollection();
+    if(!coll) return false;
+    // find an existing ParentEffect
+    ParentEffect* effect = nullptr;
+    const int n = coll->ca_getNumberOfChildren();
+    for(int i = 0; i < n; i++) {
+        const auto asParent =
+                enve_cast<ParentEffect*>(coll->getChild(i));
+        if(asParent) { effect = asParent; break; }
+    }
+    if(!effect) {
+        const auto newEffect = enve::make_shared<ParentEffect>();
+        child->addTransformEffect(newEffect);
+        effect = newEffect.get();
+    }
+    effect->parentTargetProperty()->setTargetAction(parent);
+    Document::sInstance->actionFinished();
+    return true;
 }
 
 //QPointF BoxesGroup::getRelCenterPosition() {

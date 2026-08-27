@@ -26,6 +26,8 @@
 #include "canvas.h"
 #include "MovablePoints/smartnodepoint.h"
 #include "Boxes/smartvectorpath.h"
+#include "Boxes/containerbox.h"
+#include "RasterEffects/blureffect.h"
 #include "eevent.h"
 #include "Private/document.h"
 
@@ -57,7 +59,45 @@ void Canvas::handleAddSmartPointMousePress(const eMouseEvent &e) {
     if(!mLastEndPoint && !nodePointUnderMouse) {
         const auto newPath = enve::make_shared<SmartVectorPath>();
         newPath->planCenterPivotPosition();
-        mCurrentContainer->addContained(newPath);
+        // mask pen: wrap the layer under the first point into its own
+        // group and add a DstIn mask right above it, so the mask clips
+        // ONLY that layer (Friction masks affect their container); the
+        // attached Blur effect is the mask feather (animate its radius)
+        if(mDocument.fMaskPenActive) {
+            const auto maskTarget = getBoxAtFromAllDescendents(e.fPos);
+            if(maskTarget) {
+                const auto parentGroup = maskTarget->getParentGroup();
+                if(parentGroup) {
+                    const auto& contained = parentGroup->getContained();
+                    const int tId = contained.indexOf(
+                                maskTarget->ref<eBoxOrSound>());
+                    if(tId >= 0) {
+                        const auto group = enve::make_shared<ContainerBox>(
+                                    eBoxType::group);
+                        group->prp_setName(maskTarget->prp_getName());
+                        parentGroup->insertContained(tId, group);
+                        group->addContained(maskTarget->ref<eBoxOrSound>());
+
+                        newPath->setBlendModeSk(SkBlendMode::kDstIn);
+                        newPath->setMaskMode(true);
+                        newPath->prp_setName(
+                                    QStringLiteral("Mask: %1")
+                                    .arg(maskTarget->prp_getName()));
+                        newPath->getFillSettings()->setPaintType(
+                                    PaintType::FLATPAINT);
+                        newPath->getStrokeSettings()->setPaintType(
+                                    PaintType::NOPAINT);
+                        const auto blur = enve::make_shared<BlurEffect>();
+                        blur->setRadius(0); // feather, hard edge by default
+                        newPath->addRasterEffect(blur);
+                        group->addContained(newPath);
+                    }
+                }
+            }
+        }
+        if(!newPath->getParentGroup()) {
+            mCurrentContainer->addContained(newPath);
+        }
         clearBoxesSelection();
         addBoxToSelection(newPath.get());
         const QPointF snappedPos = snapEventPos(e, false);

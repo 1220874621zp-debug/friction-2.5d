@@ -37,52 +37,58 @@ void addPathEffectActionToMenu(const QString& text, PropertyMenu * const menu,
 template <typename U>
 void addPathEffectsActionToMenu(PropertyMenu * const menu, const U &adder) {
     addPathEffectActionToMenu<DisplacePathEffect>(
-                "Displace", menu, adder);
+                QObject::tr("Displace"), menu, adder);
     addPathEffectActionToMenu<SpatialDisplacePathEffect>(
-                "Spatial Displace", menu, adder);
+                QObject::tr("Spatial Displace"), menu, adder);
     addPathEffectActionToMenu<DashPathEffect>(
-                "Dash", menu, adder);
+                QObject::tr("Dash"), menu, adder);
     addPathEffectActionToMenu<DuplicatePathEffect>(
-                "Duplicate", menu, adder);
+                QObject::tr("Duplicate"), menu, adder);
     addPathEffectActionToMenu<SubPathEffect>(
-                "Sub-Path", menu, adder);
+                QObject::tr("Sub-Path"), menu, adder);
     addPathEffectActionToMenu<SolidifyPathEffect>(
-                "Solidify", menu, adder);
+                QObject::tr("Solidify"), menu, adder);
     addPathEffectActionToMenu<SumPathEffect>(
-                "Sum", menu, adder);
+                QObject::tr("Sum"), menu, adder);
     addPathEffectActionToMenu<LinesPathEffect>(
-                "Lines", menu, adder);
+                QObject::tr("Lines"), menu, adder);
     addPathEffectActionToMenu<ZigZagPathEffect>(
-                "ZigZag", menu, adder);
+                QObject::tr("ZigZag"), menu, adder);
     addPathEffectActionToMenu<SubdividePathEffect>(
-                "Subdivide", menu, adder);
+                QObject::tr("Subdivide"), menu, adder);
     CustomPathEffectCreator::sAddToMenu(menu, adder);
 }
 
 void PathEffectsMenu::addPathEffectsToBoxActionMenu(PropertyMenu * const menu) {
+    // NOTE: the hasSharedMenu/addSharedMenu argument is an internal ID
+    // and must stay the raw untranslated string
     if(menu->hasSharedMenu("Path Effects")) return;
     menu->addSharedMenu("Path Effects");
-    menu->addSection("Path Effects");
+    menu->addSection(QObject::tr("Path Effects"));
 
-    const auto pathEffectsMenu = menu->addMenu(QIcon::fromTheme("effect"), "Path Effects");
+    const auto pathEffectsMenu = menu->addMenu(QIcon::fromTheme("effect"),
+                                               QObject::tr("Path Effects"));
     addPathEffectsActionToMenu(pathEffectsMenu,
                                &BoundingBox::addPathEffect);
 
-    const auto fillPathEffectsMenu = menu->addMenu(QIcon::fromTheme("effect"), "Fill Effects");
+    const auto fillPathEffectsMenu = menu->addMenu(QIcon::fromTheme("effect"),
+                                                   QObject::tr("Fill Effects"));
     addPathEffectsActionToMenu(fillPathEffectsMenu,
                                &BoundingBox::addFillPathEffect);
 
-    const auto outlineBasePathEffectsMenu = menu->addMenu(QIcon::fromTheme("effect"), "Outline Base Effects");
+    const auto outlineBasePathEffectsMenu = menu->addMenu(QIcon::fromTheme("effect"),
+                                                          QObject::tr("Outline Base Effects"));
     addPathEffectsActionToMenu(outlineBasePathEffectsMenu,
                                &BoundingBox::addOutlineBasePathEffect);
 
-    const auto outlinePathEffectsMenu = menu->addMenu(QIcon::fromTheme("effect"), "Outline Effects");
+    const auto outlinePathEffectsMenu = menu->addMenu(QIcon::fromTheme("effect"),
+                                                      QObject::tr("Outline Effects"));
     addPathEffectsActionToMenu(outlinePathEffectsMenu,
                                &BoundingBox::addOutlinePathEffect);
 }
 
 #include "PathEffects/patheffectcollection.h"
 void PathEffectsMenu::addPathEffectsToCollectionActionMenu(PropertyMenu * const menu) {
-    const auto addEffectMenu = menu->addMenu(QIcon::fromTheme("effect"), "Add Effect");
+    const auto addEffectMenu = menu->addMenu(QIcon::fromTheme("effect"), QObject::tr("Add Effect"));
     addPathEffectsActionToMenu(addEffectMenu, &PathEffectCollection::addChild);
 }

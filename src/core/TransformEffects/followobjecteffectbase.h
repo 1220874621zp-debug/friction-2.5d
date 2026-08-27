@@ -30,7 +30,7 @@
 
 #include "Animators/qpointfanimator.h"
 
-class FollowObjectEffectBase : public TargetTransformEffect {
+class CORE_EXPORT FollowObjectEffectBase : public TargetTransformEffect {
 public:
     FollowObjectEffectBase(const QString& name,
                            const TransformEffectType type);

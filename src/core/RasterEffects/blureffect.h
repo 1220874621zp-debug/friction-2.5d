@@ -17,6 +17,9 @@ public:
     QDomElement saveBlurSVG(SvgExporter& exp,
                             const FrameRange& visRange,
                             const QDomElement& child) const;
+
+    // programmatic base-value setter (used by the mask pen feather)
+    void setRadius(const qreal radius);
 private:
     qsptr<QrealAnimator> mRadius;
 };

@@ -34,7 +34,7 @@ enum class TransformEffectType {
     parent
 };
 
-class TransformEffect : public eEffect {
+class CORE_EXPORT TransformEffect : public eEffect {
     Q_OBJECT
     e_OBJECT
 protected:

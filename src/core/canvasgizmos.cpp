@@ -23,6 +23,7 @@
 #include "canvas.h"
 
 #include "MovablePoints/pathpivot.h"
+#include "Animators/transformanimator.h"
 #include "eevent.h"
 #include "Private/document.h"
 
@@ -38,7 +39,7 @@ void Canvas::renderGizmos(SkCanvas * const canvas,
                              const QColor &baseColor,
                              Gizmos::AxisConstraint axis,
                              bool hovered,
-                             bool horizontal) {
+                             const QPointF &dir) {
         if (!geom.visible || geom.strokeWidth <= 0.0) { return; }
 
         const bool active = (mGizmos.fState.axisConstraint == axis);
@@ -65,16 +66,29 @@ void Canvas::renderGizmos(SkCanvas * const canvas,
             SkMatrix invMatrix;
             if (canvas->getTotalMatrix().invert(&invMatrix)) {
                 SkRect worldRect = invMatrix.mapRect(deviceRect);
-                if (horizontal) {
-                    startPoint.setX(worldRect.left());
-                    startPoint.setY(geom.start.y());
-                    endPoint.setX(worldRect.right());
-                    endPoint.setY(geom.start.y());
-                } else {
-                    startPoint.setY(worldRect.top());
-                    endPoint.setY(worldRect.bottom());
-                    startPoint.setX(geom.start.x());
-                    endPoint.setX(geom.start.x());
+                // extend the segment along dir until it leaves the
+                // visible world rect (works for any direction)
+                const qreal dirLen = std::hypot(dir.x(), dir.y());
+                if (dirLen > 0.0) {
+                    const QPointF u(dir.x() / dirLen, dir.y() / dirLen);
+                    qreal tMin = -1e12;
+                    qreal tMax = 1e12;
+                    if (std::abs(u.x()) > 0.0) {
+                        const qreal t1 = (worldRect.left() - geom.start.x()) / u.x();
+                        const qreal t2 = (worldRect.right() - geom.start.x()) / u.x();
+                        tMin = std::max(tMin, std::min(t1, t2));
+                        tMax = std::min(tMax, std::max(t1, t2));
+                    }
+                    if (std::abs(u.y()) > 0.0) {
+                        const qreal t1 = (worldRect.top() - geom.start.y()) / u.y();
+                        const qreal t2 = (worldRect.bottom() - geom.start.y()) / u.y();
+                        tMin = std::max(tMin, std::min(t1, t2));
+                        tMax = std::min(tMax, std::max(t1, t2));
+                    }
+                    if (tMin < tMax) {
+                        startPoint = geom.start + u * tMin;
+                        endPoint = geom.start + u * tMax;
+                    }
                 }
             }
         }
@@ -127,6 +141,56 @@ void Canvas::renderGizmos(SkCanvas * const canvas,
                 canvas->drawPath(path, fillPaint);
                 canvas->drawPath(path, borderPaint);
             }
+
+            // 3D rotation rings: RotX (red, vertical, left of pivot) and
+            // RotY (green, horizontal, below pivot), billboard tilt
+            auto drawRingBand = [&](const QVector<QPointF> &poly,
+                                    const QColor &baseColor,
+                                    const bool hovered) {
+                if (poly.size() < 3) { return; }
+                QColor fillColor = baseColor;
+                fillColor.setAlpha(hovered ? static_cast<int>(mGizmos.fTheme.colorAlphaFillHover)
+                                           : static_cast<int>(mGizmos.fTheme.colorAlphaFillNormal));
+
+                SkPaint fillPaint;
+                fillPaint.setAntiAlias(true);
+                fillPaint.setStyle(SkPaint::kFill_Style);
+                fillPaint.setColor(toSkColor(fillColor));
+
+                SkPaint borderPaint;
+                borderPaint.setAntiAlias(true);
+                borderPaint.setStyle(SkPaint::kStroke_Style);
+                borderPaint.setStrokeJoin(SkPaint::kRound_Join);
+                borderPaint.setStrokeCap(SkPaint::kRound_Cap);
+                borderPaint.setStrokeWidth(toSkScalar(mGizmos.fConfig.rotateStrokePx * qInvZoom * 0.2f));
+                const int lighten = hovered ? mGizmos.fTheme.colorLightenHover : mGizmos.fTheme.colorLightenNormal;
+                QColor strokeColor = baseColor.darker(lighten);
+                strokeColor.setAlpha(hovered ? static_cast<int>(mGizmos.fTheme.colorAlphaStrokeHover)
+                                             : static_cast<int>(mGizmos.fTheme.colorAlphaStrokeNormal));
+                borderPaint.setColor(toSkColor(strokeColor));
+
+                SkPath path;
+                bool first = true;
+                for (const QPointF &pt : poly) {
+                    const SkPoint skPt = SkPoint::Make(toSkScalar(pt.x()), toSkScalar(pt.y()));
+                    if (first) {
+                        path.moveTo(skPt);
+                        first = false;
+                    } else {
+                        path.lineTo(skPt);
+                    }
+                }
+                path.close();
+
+                canvas->drawPath(path, fillPaint);
+                canvas->drawPath(path, borderPaint);
+            };
+            drawRingBand(mGizmos.fState.rot3DXHandlePolygon,
+                         mGizmos.fTheme.colorX,
+                         mGizmos.fState.rot3DXHandleHovered);
+            drawRingBand(mGizmos.fState.rot3DYHandlePolygon,
+                         mGizmos.fTheme.colorY,
+                         mGizmos.fState.rot3DYHandleHovered);
         }
 
         auto drawAxisRect = [&](Gizmos::AxisConstraint handle,
@@ -137,6 +201,7 @@ void Canvas::renderGizmos(SkCanvas * const canvas,
             switch (handle) {
             case Gizmos::AxisConstraint::X: hovered = mGizmos.fState.axisXHovered; break;
             case Gizmos::AxisConstraint::Y: hovered = mGizmos.fState.axisYHovered; break;
+            case Gizmos::AxisConstraint::Z: hovered = mGizmos.fState.axisZHovered; break;
             case Gizmos::AxisConstraint::Uniform: hovered = mGizmos.fState.axisUniformHovered; break;
             case Gizmos::AxisConstraint::None: default: hovered = false; break;
             }
@@ -318,6 +383,10 @@ void Canvas::renderGizmos(SkCanvas * const canvas,
                      mGizmos.fState.axisXGeom,
                      QColor(mGizmos.fTheme.colorX.red(), mGizmos.fTheme.colorX.green(), mGizmos.fTheme.colorX.blue(),
                             mGizmos.fState.axisXHovered ? mGizmos.fTheme.colorAlphaFillHover : mGizmos.fTheme.colorAlphaFillNormal));
+        drawAxisRect(Gizmos::AxisConstraint::Z,
+                     mGizmos.fState.axisZGeom,
+                     QColor(mGizmos.fTheme.colorZ.red(), mGizmos.fTheme.colorZ.green(), mGizmos.fTheme.colorZ.blue(),
+                            mGizmos.fState.axisZHovered ? mGizmos.fTheme.colorAlphaFillHover : mGizmos.fTheme.colorAlphaFillNormal));
         drawAxisRect(Gizmos::AxisConstraint::Uniform,
                      mGizmos.fState.axisUniformGeom,
                      QColor(mGizmos.fTheme.colorZ.red(), mGizmos.fTheme.colorZ.green(), mGizmos.fTheme.colorZ.blue(),
@@ -348,12 +417,18 @@ void Canvas::renderGizmos(SkCanvas * const canvas,
                  mGizmos.fTheme.colorX,
                  Gizmos::AxisConstraint::X,
                  mGizmos.fState.axisXHovered,
-                 true);
+                 QPointF(1.0, 0.0));
     drawAxisLine(mGizmos.fState.yLineGeom,
                  mGizmos.fTheme.colorY,
                  Gizmos::AxisConstraint::Y,
                  mGizmos.fState.axisYHovered,
-                 false);
+                 QPointF(0.0, 1.0));
+    const qreal zLineAngleRad = qDegreesToRadians(mGizmos.fConfig.axisZAngleDeg);
+    drawAxisLine(mGizmos.fState.zLineGeom,
+                 mGizmos.fTheme.colorZ,
+                 Gizmos::AxisConstraint::Z,
+                 mGizmos.fState.axisZHovered,
+                 QPointF(std::cos(zLineAngleRad), std::sin(zLineAngleRad)));
 }
 
 void Canvas::setGizmoVisibility(const Gizmos::Interact &ti,
@@ -368,6 +443,7 @@ void Canvas::setGizmoVisibility(const Gizmos::Interact &ti,
             mGizmos.fState.axisConstraint = Gizmos::AxisConstraint::None;
             setAxisGizmoHover(Gizmos::AxisConstraint::X, false);
             setAxisGizmoHover(Gizmos::AxisConstraint::Y, false);
+            setAxisGizmoHover(Gizmos::AxisConstraint::Z, false);
             setAxisGizmoHover(Gizmos::AxisConstraint::Uniform, false);
         }
         break;
@@ -434,11 +510,16 @@ void Canvas::updateRotateHandleHover(const QPointF &pos,
 {
     updateRotateHandleGeometry(invScale);
     setRotateHandleHover(pointOnRotateGizmo(pos, invScale));
+    setRot3DXGizmoHover(pointOnRot3DXGizmo(pos, invScale));
+    setRot3DYGizmoHover(pointOnRot3DYGizmo(pos, invScale));
     setAxisGizmoHover(Gizmos::AxisConstraint::X,
                       pointOnAxisGizmo(Gizmos::AxisConstraint::X,
                                        pos, invScale));
     setAxisGizmoHover(Gizmos::AxisConstraint::Y,
                       pointOnAxisGizmo(Gizmos::AxisConstraint::Y,
+                                       pos, invScale));
+    setAxisGizmoHover(Gizmos::AxisConstraint::Z,
+                      pointOnAxisGizmo(Gizmos::AxisConstraint::Z,
                                        pos, invScale));
     setAxisGizmoHover(Gizmos::AxisConstraint::Uniform,
                       pointOnAxisGizmo(Gizmos::AxisConstraint::Uniform,
@@ -504,6 +585,42 @@ void Canvas::setRotateHandleHover(bool hovered)
     emit requestUpdate();
 }
 
+bool Canvas::pointOnRot3DXGizmo(const QPointF &pos,
+                                qreal invScale) const
+{
+    Q_UNUSED(invScale);
+    if (mCurrentMode != CanvasMode::boxTransform) { return false; }
+    if (!mGizmos.fState.rotateHandleVisible || !mGizmos.fState.showRotate) { return false; }
+    if (mGizmos.fState.rot3DXHandleHitPolygon.size() < 3) { return false; }
+    QPolygonF poly(mGizmos.fState.rot3DXHandleHitPolygon);
+    return poly.containsPoint(pos, Qt::OddEvenFill);
+}
+
+bool Canvas::pointOnRot3DYGizmo(const QPointF &pos,
+                                qreal invScale) const
+{
+    Q_UNUSED(invScale);
+    if (mCurrentMode != CanvasMode::boxTransform) { return false; }
+    if (!mGizmos.fState.rotateHandleVisible || !mGizmos.fState.showRotate) { return false; }
+    if (mGizmos.fState.rot3DYHandleHitPolygon.size() < 3) { return false; }
+    QPolygonF poly(mGizmos.fState.rot3DYHandleHitPolygon);
+    return poly.containsPoint(pos, Qt::OddEvenFill);
+}
+
+void Canvas::setRot3DXGizmoHover(const bool hovered)
+{
+    if (mGizmos.fState.rot3DXHandleHovered == hovered) { return; }
+    mGizmos.fState.rot3DXHandleHovered = hovered;
+    emit requestUpdate();
+}
+
+void Canvas::setRot3DYGizmoHover(const bool hovered)
+{
+    if (mGizmos.fState.rot3DYHandleHovered == hovered) { return; }
+    mGizmos.fState.rot3DYHandleHovered = hovered;
+    emit requestUpdate();
+}
+
 bool Canvas::shouldShowXLineGizmo() const
 {
     if (mValueInput.xOnlyMode()) {
@@ -524,10 +641,21 @@ bool Canvas::shouldShowYLineGizmo() const
            mGizmos.fState.axisConstraint == Gizmos::AxisConstraint::Y;
 }
 
+bool Canvas::shouldShowZLineGizmo() const
+{
+    if (mValueInput.zOnlyMode()) {
+        return true;
+    }
+    return mGizmos.fState.gizmosSuppressed &&
+           mGizmos.fState.axisHandleActive &&
+           mGizmos.fState.axisConstraint == Gizmos::AxisConstraint::Z;
+}
+
 bool Canvas::updateLineGizmoVisibility()
 {
     const bool desiredX = shouldShowXLineGizmo();
     const bool desiredY = shouldShowYLineGizmo();
+    const bool desiredZ = shouldShowZLineGizmo();
 
     bool changed = false;
     if (mGizmos.fState.xLineGeom.visible != desiredX) {
@@ -536,6 +664,10 @@ bool Canvas::updateLineGizmoVisibility()
     }
     if (mGizmos.fState.yLineGeom.visible != desiredY) {
         mGizmos.fState.yLineGeom.visible = desiredY;
+        changed = true;
+    }
+    if (mGizmos.fState.zLineGeom.visible != desiredZ) {
+        mGizmos.fState.zLineGeom.visible = desiredZ;
         changed = true;
     }
     return changed;
@@ -555,8 +687,11 @@ void Canvas::setGizmosSuppressed(bool suppressed)
 
     if (suppressed) {
         mGizmos.fState.rotateHandleHovered = false;
+        mGizmos.fState.rot3DXHandleHovered = false;
+        mGizmos.fState.rot3DYHandleHovered = false;
         mGizmos.fState.axisXHovered = false;
         mGizmos.fState.axisYHovered = false;
+        mGizmos.fState.axisZHovered = false;
         mGizmos.fState.axisUniformHovered = false;
         mGizmos.fState.scaleXHovered = false;
         mGizmos.fState.scaleYHovered = false;
@@ -574,19 +709,27 @@ void Canvas::updateRotateHandleGeometry(qreal invScale)
     mGizmos.fState.rotateHandleRadius = 0;
     mGizmos.fState.rotateHandlePolygon.clear();
     mGizmos.fState.rotateHandleHitPolygon.clear();
+    mGizmos.fState.rot3DXHandlePolygon.clear();
+    mGizmos.fState.rot3DXHandleHitPolygon.clear();
+    mGizmos.fState.rot3DYHandlePolygon.clear();
+    mGizmos.fState.rot3DYHandleHitPolygon.clear();
 
     auto resetAllGizmos = [&]() {
         setAxisGizmoHover(Gizmos::AxisConstraint::X, false);
         setAxisGizmoHover(Gizmos::AxisConstraint::Y, false);
+        setAxisGizmoHover(Gizmos::AxisConstraint::Z, false);
         setAxisGizmoHover(Gizmos::AxisConstraint::Uniform, false);
         setScaleGizmoHover(Gizmos::ScaleHandle::X, false);
         setScaleGizmoHover(Gizmos::ScaleHandle::Y, false);
         setScaleGizmoHover(Gizmos::ScaleHandle::Uniform, false);
         setShearGizmoHover(Gizmos::ShearHandle::X, false);
         setShearGizmoHover(Gizmos::ShearHandle::Y, false);
+        setRot3DXGizmoHover(false);
+        setRot3DYGizmoHover(false);
 
         mGizmos.fState.axisXGeom = Gizmos::AxisGeometry();
         mGizmos.fState.axisYGeom = Gizmos::AxisGeometry();
+        mGizmos.fState.axisZGeom = Gizmos::AxisGeometry();
         mGizmos.fState.axisUniformGeom = Gizmos::AxisGeometry();
         mGizmos.fState.scaleXGeom = Gizmos::ScaleGeometry();
         mGizmos.fState.scaleYGeom = Gizmos::ScaleGeometry();
@@ -595,6 +738,7 @@ void Canvas::updateRotateHandleGeometry(qreal invScale)
         mGizmos.fState.shearYGeom = Gizmos::ShearGeometry();
         mGizmos.fState.xLineGeom = Gizmos::LineGeometry();
         mGizmos.fState.yLineGeom = Gizmos::LineGeometry();
+        mGizmos.fState.zLineGeom = Gizmos::LineGeometry();
 
         const bool hadConstraint =
                 mGizmos.fState.axisConstraint != Gizmos::AxisConstraint::None ||
@@ -636,6 +780,14 @@ void Canvas::updateRotateHandleGeometry(qreal invScale)
     }
 
     mGizmos.fState.rotateHandleAngleDeg = 0.0; // keep gizmo orientation screen-aligned
+
+    // 3D-only handles (Z arrow + RotX/RotY rings) show while any selected
+    // layer has its 3D switch enabled; otherwise the gizmo stays 2D
+    bool anySelected3D = false;
+    for(const auto &box : mSelectedBoxes) {
+        const auto trans = box->getBoxTransformAnimator();
+        if(trans && trans->is3DEnabled()) { anySelected3D = true; break; }
+    }
 
     QPointF pivot;
     if (mDocument.fPivotPosForGizmosValid) { pivot = mDocument.fPivotPosForGizmos; }
@@ -703,6 +855,57 @@ void Canvas::updateRotateHandleGeometry(qreal invScale)
         buildArcPolygon(hitHalfThickness, mGizmos.fState.rotateHandleHitPolygon);
     }
 
+    // 3D rotation rings (billboard tilt): RotX = left half of a vertical
+    // ellipse, RotY = bottom half of a horizontal ellipse, both centered
+    // on the pivot (skia y-down angles: 0=right, 90=down, 180=left, 270=up)
+    if (mGizmos.fState.showRotate && anySelected3D) {
+        auto buildEllipseBand = [&](const qreal rx, const qreal ry,
+                                    const qreal startDeg, const qreal sweepTotal,
+                                    const qreal halfThickness,
+                                    QVector<QPointF> &storage) {
+            storage.clear();
+            const qreal outX = rx + halfThickness;
+            const qreal outY = ry + halfThickness;
+            const qreal inX = std::max(rx - halfThickness, 0.0);
+            const qreal inY = std::max(ry - halfThickness, 0.0);
+            const int segs = 24;
+            // rx/ry/halfThickness are already in world units (px * invScale),
+            // do NOT scale them again here
+            for (int i = 0; i <= segs; i++) {
+                const qreal a = qDegreesToRadians(startDeg + sweepTotal * i / segs);
+                storage.append(pivot + QPointF(outX * std::cos(a),
+                                               outY * std::sin(a)));
+            }
+            if (inX > 0.0 && inY > 0.0) {
+                for (int i = 0; i <= segs; i++) {
+                    const qreal a = qDegreesToRadians(startDeg + sweepTotal - sweepTotal * i / segs);
+                    storage.append(pivot + QPointF(inX * std::cos(a),
+                                                   inY * std::sin(a)));
+                }
+            } else {
+                storage.append(pivot);
+            }
+        };
+        const qreal ringStrokeHalf = (mGizmos.fConfig.rotateStrokePx * invScale) * 0.5;
+        const qreal ringHitHalf = (mGizmos.fConfig.rotateHitWidthPx * invScale) * 0.5;
+        buildEllipseBand(mGizmos.fConfig.rot3DXRadiusXPx * invScale,
+                         mGizmos.fConfig.rot3DXRadiusYPx * invScale,
+                         90.0, 180.0, ringStrokeHalf,
+                         mGizmos.fState.rot3DXHandlePolygon);
+        buildEllipseBand(mGizmos.fConfig.rot3DXRadiusXPx * invScale,
+                         mGizmos.fConfig.rot3DXRadiusYPx * invScale,
+                         90.0, 180.0, ringHitHalf,
+                         mGizmos.fState.rot3DXHandleHitPolygon);
+        buildEllipseBand(mGizmos.fConfig.rot3DYRadiusXPx * invScale,
+                         mGizmos.fConfig.rot3DYRadiusYPx * invScale,
+                         0.0, 180.0, ringStrokeHalf,
+                         mGizmos.fState.rot3DYHandlePolygon);
+        buildEllipseBand(mGizmos.fConfig.rot3DYRadiusXPx * invScale,
+                         mGizmos.fConfig.rot3DYRadiusYPx * invScale,
+                         0.0, 180.0, ringHitHalf,
+                         mGizmos.fState.rot3DYHandleHitPolygon);
+    }
+
     mGizmos.fState.axisYGeom.center = pivot + QPointF(0.0, -axisGapYWorld);
     mGizmos.fState.axisYGeom.size = QSizeF(axisWidthWorld, axisHeightWorld);
     mGizmos.fState.axisYGeom.angleDeg = 0.0;
@@ -757,6 +960,40 @@ void Canvas::updateRotateHandleGeometry(qreal invScale)
     mGizmos.fState.yLineGeom.start = pivot;
     mGizmos.fState.yLineGeom.end = pivot + QPointF(0.0, yLineLengthWorld);
     mGizmos.fState.yLineGeom.strokeWidth = yLineStrokeWorld;
+
+    // Z gizmo: arrow along the diagonal screen direction (2.5D depth)
+    {
+        const qreal zAngleRad = qDegreesToRadians(mGizmos.fConfig.axisZAngleDeg);
+        const qreal zCos = std::cos(zAngleRad);
+        const qreal zSin = std::sin(zAngleRad);
+        const qreal zLengthWorld = mGizmos.fConfig.axisZLengthPx * invScale;
+        auto zPoint = [&](const qreal x, const qreal y) {
+            return pivot + QPointF((x*zCos - y*zSin) * invScale,
+                                   (x*zSin + y*zCos) * invScale);
+        };
+        // same arrow profile as the X gizmo, rotated onto the Z direction
+        mGizmos.fState.axisZGeom.center = pivot + QPointF(zLengthWorld * 0.5 * zCos,
+                                                          zLengthWorld * 0.5 * zSin);
+        mGizmos.fState.axisZGeom.size = QSizeF(zLengthWorld, axisWidthWorld);
+        mGizmos.fState.axisZGeom.angleDeg = mGizmos.fConfig.axisZAngleDeg;
+        mGizmos.fState.axisZGeom.visible = mGizmos.fState.showPosition && anySelected3D;
+        mGizmos.fState.axisZGeom.usePolygon = true;
+        mGizmos.fState.axisZGeom.polygonPoints = {
+            zPoint(10.0, 0.0),
+            zPoint(11.0, -2.0),
+            zPoint(55.0, -2.0),
+            zPoint(56.5, -6.0),
+            zPoint(70.0, 0.0),
+            zPoint(56.5, 6.0),
+            zPoint(55.0, 2.0),
+            zPoint(11.0, 2.0)
+        };
+
+        mGizmos.fState.zLineGeom.start = pivot;
+        mGizmos.fState.zLineGeom.end = pivot + QPointF(xLineLengthWorld * zCos,
+                                                       xLineLengthWorld * zSin);
+        mGizmos.fState.zLineGeom.strokeWidth = xLineStrokeWorld;
+    }
 
     updateLineGizmoVisibility();
     const qreal rotateOffsetWorld = mGizmos.fState.axisYGeom.size.width() * 0.5;
@@ -853,6 +1090,12 @@ bool Canvas::tryStartRotateWithGizmo(const eMouseEvent &e,
                                      qreal invScale)
 {
     updateRotateHandleGeometry(invScale);
+    if (pointOnRot3DYGizmo(e.fPos, invScale)) {
+        return startRot3DConstrainedMove(e, Gizmos::Rot3DHandle::Y);
+    }
+    if (pointOnRot3DXGizmo(e.fPos, invScale)) {
+        return startRot3DConstrainedMove(e, Gizmos::Rot3DHandle::X);
+    }
     const bool hovered = pointOnRotateGizmo(e.fPos, invScale);
     setRotateHandleHover(hovered);
     if (!hovered) { return false; }
@@ -861,6 +1104,34 @@ bool Canvas::tryStartRotateWithGizmo(const eMouseEvent &e,
         setRotateHandleHover(false);
         return false;
     }
+    e.fGrabMouse();
+    return true;
+}
+
+bool Canvas::startRot3DConstrainedMove(const eMouseEvent &e,
+                                       Gizmos::Rot3DHandle handle)
+{
+    if (mCurrentMode != CanvasMode::boxTransform) { return false; }
+    if (mSelectedBoxes.isEmpty()) { return false; }
+
+    mValueInput.clearAndDisableInput();
+    mValueInput.setForce1D(true);
+    if (handle == Gizmos::Rot3DHandle::X) {
+        mValueInput.setupRotateX();
+        mTransMode = TransformMode::rotateX;
+    } else {
+        mValueInput.setupRotateY();
+        mTransMode = TransformMode::rotateY;
+    }
+
+    mDoubleClick = false;
+    mStartTransform = true;
+    mGizmos.fState.rotatingFromHandle = true;
+    if (handle == Gizmos::Rot3DHandle::X) { setRot3DXGizmoHover(true); }
+    else { setRot3DYGizmoHover(true); }
+    setGizmosSuppressed(true);
+    mRotPivot->setMousePos(e.fPos);
+
     e.fGrabMouse();
     return true;
 }
@@ -906,6 +1177,11 @@ bool Canvas::tryStartAxisGizmo(const eMouseEvent &e,
 
     if (pointOnAxisGizmo(Gizmos::AxisConstraint::Uniform, e.fPos, invScale)) {
         return startAxisConstrainedMove(e, Gizmos::AxisConstraint::Uniform);
+    }
+    // Z depth gizmo only applies to layers (box transform mode)
+    if (mCurrentMode == CanvasMode::boxTransform &&
+        pointOnAxisGizmo(Gizmos::AxisConstraint::Z, e.fPos, invScale)) {
+        return startAxisConstrainedMove(e, Gizmos::AxisConstraint::Z);
     }
     if (pointOnAxisGizmo(Gizmos::AxisConstraint::Y, e.fPos, invScale)) {
         return startAxisConstrainedMove(e, Gizmos::AxisConstraint::Y);
@@ -982,15 +1258,22 @@ bool Canvas::startAxisConstrainedMove(const eMouseEvent &e,
     if (mCurrentMode != CanvasMode::boxTransform &&
         mCurrentMode != CanvasMode::pointTransform) { return false; }
     if (mSelectedBoxes.isEmpty() && mSelectedPoints_d.isEmpty()) { return false; }
+    if (axis == Gizmos::AxisConstraint::Z &&
+        (mCurrentMode != CanvasMode::boxTransform || mSelectedBoxes.isEmpty())) {
+        return false;
+    }
 
     mValueInput.clearAndDisableInput();
     mValueInput.setupMove();
     mValueInput.setForce1D(true);
     if (axis == Gizmos::AxisConstraint::X) {
         mValueInput.setXOnlyMode();
+    } else if (axis == Gizmos::AxisConstraint::Y) {
+        mValueInput.setYOnlyMode();
+    } else if (axis == Gizmos::AxisConstraint::Z) {
+        mValueInput.setZOnlyMode();
     } else {
-        if (axis == Gizmos::AxisConstraint::Y) { mValueInput.setYOnlyMode(); }
-        else { mValueInput.setXYMode(); }
+        mValueInput.setXYMode();
     }
 
     mTransMode = TransformMode::move;
@@ -1088,6 +1371,9 @@ bool Canvas::pointOnAxisGizmo(Gizmos::AxisConstraint axis,
     case Gizmos::AxisConstraint::Y:
         geomPtr = &mGizmos.fState.axisYGeom;
         break;
+    case Gizmos::AxisConstraint::Z:
+        geomPtr = &mGizmos.fState.axisZGeom;
+        break;
     case Gizmos::AxisConstraint::Uniform:
         geomPtr = &mGizmos.fState.axisUniformGeom;
         break;
@@ -1170,6 +1456,9 @@ void Canvas::setAxisGizmoHover(Gizmos::AxisConstraint axis,
     case Gizmos::AxisConstraint::Y:
         target = &mGizmos.fState.axisYHovered;
         break;
+    case Gizmos::AxisConstraint::Z:
+        target = &mGizmos.fState.axisZHovered;
+        break;
     case Gizmos::AxisConstraint::Uniform:
         target = &mGizmos.fState.axisUniformHovered;
         break;
@@ -1198,6 +1487,7 @@ void Canvas::handleLeftMouseGizmos()
         mValueInput.setXYMode();
         setAxisGizmoHover(Gizmos::AxisConstraint::X, false);
         setAxisGizmoHover(Gizmos::AxisConstraint::Y, false);
+        setAxisGizmoHover(Gizmos::AxisConstraint::Z, false);
     }
     if (mGizmos.fState.scaleConstraint != Gizmos::ScaleHandle::None) {
         mGizmos.fState.scaleConstraint = Gizmos::ScaleHandle::None;
@@ -1229,6 +1519,7 @@ void Canvas::cancelCurrentTransformGimzos()
         mValueInput.setXYMode();
         setAxisGizmoHover(Gizmos::AxisConstraint::X, false);
         setAxisGizmoHover(Gizmos::AxisConstraint::Y, false);
+        setAxisGizmoHover(Gizmos::AxisConstraint::Z, false);
     }
     if (mGizmos.fState.scaleConstraint != Gizmos::ScaleHandle::None) {
         mGizmos.fState.scaleConstraint = Gizmos::ScaleHandle::None;

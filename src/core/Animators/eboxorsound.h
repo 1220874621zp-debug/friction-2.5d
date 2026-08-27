@@ -128,6 +128,54 @@ public:
     void switchLocked();
     bool isLocked() const;
 
+    // AE-style layer switches
+    void setSolo(const bool solo);
+    void switchSolo();
+    bool isSolo() const { return mSolo; }
+
+    void setShy(const bool shy);
+    void switchShy();
+    bool isShy() const { return mShy; }
+
+    // per-layer motion blur switch: gates the MotionBlur raster effect
+    // sampling for this layer (scene-wide master in the View menu)
+    void setMbEnabled(const bool enabled);
+    void switchMbEnabled();
+    bool isMbEnabled() const { return mMbEnabled; }
+    // update timeline row visibility from shy state + track membership
+    void updateRowVisibility();
+
+    // timeline tracks: sibling boxes sharing a non-negative trackId
+    // collapse into a single timeline row (UI-level grouping only,
+    // the scene graph and rendering are not affected)
+    int trackId() const { return mTrackId; }
+    bool isInTrack() const { return mTrackId >= 0; }
+    void setTrackId(const int id);
+    // audio layers may only share a track with other audio layers,
+    // visual layers (BoundingBox subclasses) only with visual ones
+    bool isAudioKind() const;
+    // row hidden because another member of the track is active
+    void setHiddenByTrack(const bool hidden);
+    bool isHiddenByTrack() const { return mHiddenByTrack; }
+    // all sibling members of this box's track (incl. itself, z-order)
+    QList<eBoxOrSound*> trackMembers() const;
+    // the track sibling whose duration rect interior contains the x
+    // position (pixels), excluding this box and the resize handles
+    eBoxOrSound *trackMemberAtX(const int pressX, const int minViewedFrame,
+                                const qreal pixelsPerFrame) const;
+    // draw duration rectangles of all track members except 'active'
+    void drawTrackClips(QPainter * const p, const qreal pixelsPerFrame,
+                        const FrameRange &absFrameRange, const int rowHeight,
+                        eBoxOrSound* const active) const;
+    // draw this box's name over its own duration rectangle
+    void drawClipLabel(QPainter * const p, const qreal pixelsPerFrame,
+                       const FrameRange &absFrameRange,
+                       const int rowHeight) const;
+
+    // AE-style layer label color (shown instead of the type icon)
+    void setLabelColor(const QColor& color);
+    QColor getLabelColor() const { return mLabelColor; }
+
     bool isVisibleAndUnlocked() const;
 
     void moveUp();
@@ -145,11 +193,23 @@ signals:
     void selectionChanged(bool);
     void visibilityChanged(bool);
     void lockedChanged(bool);
+    void soloChanged(bool);
+    void shyChanged(bool);
+    void labelColorChanged(const QColor&);
 private:
+    void applyTrackId(const int id);
+    void scheduleTrackEnforce() const;
+
     bool mSelected = false;
     bool mVisible = true;
     bool mLocked = false;
+    bool mSolo = false;
+    bool mShy = false;
+    bool mMbEnabled = true;
+    QColor mLabelColor; // invalid = no label color (type icon shown)
     int mZListIndex = 0;
+    int mTrackId = -1; // -1 = own timeline row, >= 0 shared with siblings
+    bool mHiddenByTrack = false;
 
     bool mDurationRectangleLocked = false;
     ConnContextQSPtr<DurationRectangle> mDurationRectangle;

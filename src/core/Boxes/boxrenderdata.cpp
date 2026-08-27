@@ -24,6 +24,7 @@
 // Fork of enve - Copyright (C) 2016-2020 Maurycy Liebner
 
 #include "boxrenderdata.h"
+#include "RasterEffects/trackmattecaller.h"
 #include "boundingbox.h"
 #include "skia/skiahelpers.h"
 #include "efiltersettings.h"
@@ -304,4 +305,17 @@ void BoxRenderData::setBaseGlobalRect(const QRectF& baseRectF)
         mEffectsRenderer.setBaseGlobalRect(currRect, skMaxBounds);
     }
     fGlobalRect = toQRect(currRect);
+}
+
+
+void BoxRenderData::setTrackMatte(stdsptr<BoxRenderData> sample,
+                                  const int mode) {
+    if(!sample || mode <= 0) return;
+    fTrackMatteSample = sample;
+    fTrackMatteMode = mode;
+    // appended after the layer's own effects: the matte masks the
+    // final image (blur etc. applied first)
+    addEffect(enve::make_shared<TrackMatteCaller>(
+                  fTrackMatteSample,
+                  static_cast<TrackMatteCaller::Mode>(fTrackMatteMode)));
 }

@@ -30,7 +30,7 @@
 
 #include "Properties/boxtargetproperty.h"
 
-class TargetTransformEffect : public TransformEffect {
+class CORE_EXPORT TargetTransformEffect : public TransformEffect {
 public:
     TargetTransformEffect(const QString& name,
                           const TransformEffectType type);

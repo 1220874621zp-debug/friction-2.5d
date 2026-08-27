@@ -43,6 +43,7 @@ struct CORE_EXPORT ImageBoxRenderData : public ImageContainerRenderData {
 };
 
 class CORE_EXPORT ImageBox : public BoundingBox {
+    Q_OBJECT
     e_OBJECT
 protected:
     ImageBox();

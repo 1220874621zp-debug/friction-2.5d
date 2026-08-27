@@ -312,6 +312,22 @@ TimelineMovable *KeysView::getRectangleMovableAtPos(
     return nullptr;
 }
 
+eBoxOrSound *KeysView::getTrackClipAtPos(
+        const int pressX, const int pressY,
+        const qreal pixelsPerFrame,
+        const int minViewedFrame) {
+    const auto& wids = mBoxesListWidget->visibleWidgets();
+    for(const auto& container : wids) {
+        const int containerTop = container->y();
+        const int containerBottom = containerTop + container->height();
+        if(containerTop > pressY || containerBottom < pressY) continue;
+        const auto bsw = static_cast<BoxSingleWidget*>(container);
+        return bsw->getTrackClipAtPos(pressX, pixelsPerFrame,
+                                      minViewedFrame);
+    }
+    return nullptr;
+}
+
 void KeysView::mousePressEvent(QMouseEvent *e) {
     KFT_setFocus();
     const QPoint posU = e->pos() + QPoint(-eSizesUI::widget/2, 0);
@@ -334,11 +350,20 @@ void KeysView::mousePressEvent(QMouseEvent *e) {
                                             mPixelsPerFrame,
                                             mMinViewedFrame);
                 if(!mLastPressedMovable) {
-                    mSelecting = true;
-                    const qreal posUXFrame = xToFrame(posU.x());
-                    const QPointF xFramePos(posUXFrame, posU.y() + mViewedTop);
-                    mSelectionRect.setTopLeft(xFramePos);
-                    mSelectionRect.setBottomRight(xFramePos);
+                    // a click on a dimmed track clip makes its layer the
+                    // active member of the track (its row and keys appear)
+                    const auto trackClip = getTrackClipAtPos(
+                                posU.x(), posU.y(),
+                                mPixelsPerFrame, mMinViewedFrame);
+                    if(trackClip) {
+                        trackClip->selectionChangeTriggered(shiftPressed);
+                    } else {
+                        mSelecting = true;
+                        const qreal posUXFrame = xToFrame(posU.x());
+                        const QPointF xFramePos(posUXFrame, posU.y() + mViewedTop);
+                        mSelectionRect.setTopLeft(xFramePos);
+                        mSelectionRect.setBottomRight(xFramePos);
+                    }
                 } else {
                     mLastPressedMovable->pressed(shiftPressed);
                     mMovingRect = true;

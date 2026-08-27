@@ -51,6 +51,7 @@ namespace Friction
                 None,
                 X,
                 Y,
+                Z,
                 Uniform
             };
 
@@ -63,6 +64,13 @@ namespace Friction
             };
 
             enum class ShearHandle
+            {
+                None,
+                X,
+                Y
+            };
+
+            enum class Rot3DHandle
             {
                 None,
                 X,
@@ -112,6 +120,10 @@ namespace Friction
                 qreal rotateRadiusPx = 45.0; // gizmo radius in screen pixels
                 qreal rotateStrokePx = 4.0; // arc stroke thickness in screen pixels
                 qreal rotateHitWidthPx = rotateStrokePx + 1.0; // hit area thickness in screen pixels
+                qreal rot3DXRadiusXPx = 10.0; // RotX ring horizontal semi-axis in screen pixels
+                qreal rot3DXRadiusYPx = 30.0; // RotX ring vertical semi-axis in screen pixels
+                qreal rot3DYRadiusXPx = 30.0; // RotY ring horizontal semi-axis in screen pixels
+                qreal rot3DYRadiusYPx = 10.0; // RotY ring vertical semi-axis in screen pixels
                 qreal axisWidthPx = 5.0; // axis gizmo rectangle width in screen pixels
                 qreal axisHeightPx = 60.0; // axis gizmo rectangle height in screen pixels
                 qreal axisYOffsetPx = 40.0; // vertical distance of Y gizmo from pivot in pixels
@@ -119,6 +131,8 @@ namespace Friction
                 qreal axisUniformWidthPx = 24.0; // XY square width for Uniform position gizmo in pixels
                 qreal axisUniformChamferPx = 1.0; // XY square chamfer for Uniform position gizmo in pixels
                 qreal axisXOffsetPx = 40.0; // horizontal distance of X gizmo from pivot in pixels
+                qreal axisZAngleDeg = 45.0; // screen angle of the Z gizmo (down-right diagonal)
+                qreal axisZLengthPx = 70.0; // length of the Z gizmo arrow in screen pixels
                 qreal scaleSizePx = 8.0; // scale gizmo square size in screen pixels
                 qreal scaleGapPx = 2.0; // gap between position gizmos and scale gizmos in screen pixels
                 qreal shearRadiusPx = 4.0; // shear gizmo circle radius in screen pixels
@@ -158,8 +172,15 @@ namespace Friction
                 bool rotateHandleHovered = false; // true when pointer hovers the gizmo
                 QVector<QPointF> rotateHandlePolygon;
                 QVector<QPointF> rotateHandleHitPolygon;
+                QVector<QPointF> rot3DXHandlePolygon;
+                QVector<QPointF> rot3DXHandleHitPolygon;
+                QVector<QPointF> rot3DYHandlePolygon;
+                QVector<QPointF> rot3DYHandleHitPolygon;
+                bool rot3DXHandleHovered = false;
+                bool rot3DYHandleHovered = false;
                 AxisGeometry axisXGeom;
                 AxisGeometry axisYGeom;
+                AxisGeometry axisZGeom;
                 AxisGeometry axisUniformGeom;
                 ScaleGeometry scaleXGeom;
                 ScaleGeometry scaleYGeom;
@@ -168,8 +189,10 @@ namespace Friction
                 ShearGeometry shearYGeom;
                 LineGeometry xLineGeom;
                 LineGeometry yLineGeom;
+                LineGeometry zLineGeom;
                 bool axisXHovered = false;
                 bool axisYHovered = false;
+                bool axisZHovered = false;
                 bool axisUniformHovered = false;
                 bool scaleXHovered = false;
                 bool scaleYHovered = false;

@@ -29,10 +29,14 @@
 #include "followobjecteffectbase.h"
 #include "transformvalues.h"
 
-class ParentEffect : public FollowObjectEffectBase
+class CORE_EXPORT ParentEffect : public FollowObjectEffectBase
 {
 public:
     ParentEffect();
+
+    // node-link UI access to the bound parent target
+    BoxTargetProperty* parentTargetProperty()
+    { return targetProperty(); }
 
     void prp_drawCanvasControls(SkCanvas * const canvas,
                                 const CanvasMode mode,

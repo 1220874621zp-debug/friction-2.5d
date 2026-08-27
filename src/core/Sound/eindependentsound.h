@@ -32,6 +32,7 @@
 #include "ReadWrite/ewritestream.h"
 
 class CORE_EXPORT eIndependentSound : public eSoundObjectBase {
+    Q_OBJECT
     e_OBJECT
     e_DECLARE_TYPE(eIndependentSound)
 protected:

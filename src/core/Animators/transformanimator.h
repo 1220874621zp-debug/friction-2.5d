@@ -209,14 +209,31 @@ public:
     SkMatrix get3DTransformAtFrame(const qreal relFrame) const;
     bool has3DTransformAtFrame(const qreal relFrame) const;
     qreal get3DZPosAtFrame(const qreal relFrame) const;
+
+    // after reading a saved transform, re-enable 2.5D when the file
+    // carries non-default 3D values (the enabled flag itself is not
+    // persisted, and layers default to 2D now)
+    void prp_readProperty_impl(eReadStream& src) override;
     // total transform with 3D applied (rel * 3D * inherited)
     SkMatrix getTotalTransform3D() const;
     void reset3D();
     void set3DPropertiesVisible(const bool visible);
 
+    // canvas gizmo Z-axis drag (undoable, keyframable, mirrors
+    // startPosTransform/moveRelativeToSavedValue used for X/Y)
+    void start3DZTransform();
+    void move3DZRelativeToSavedValue(const qreal dZ);
+
+    // canvas gizmo 3D rotation drags (RotX/RotY billboard tilt)
+    void startRotXTransform();
+    void startRotYTransform();
+    void rotXRelativeToSavedValue(const qreal deg);
+    void rotYRelativeToSavedValue(const qreal deg);
+
     // 2.5D layer toggle (timeline cube button, AE-style)
-    // disabling resets 3D values to defaults (undoable) and
-    // hides the 3D properties from the properties panel
+    // disabling keeps the 3D values (not applied while off) and
+    // hides the 3D properties from the properties panel;
+    // re-enabling restores the previous 3D values
     bool is3DEnabled() const { return m3DEnabled; }
     void set3DEnabled(const bool enabled);
 
@@ -246,7 +263,9 @@ private:
     qsptr<QrealAnimator> mRotYAnimator;
     qsptr<QrealAnimator> mZPosAnimator;
     qsptr<QrealAnimator> mPerspectiveAnimator;
-    bool m3DEnabled = true;
+    // 2.5D is opt-in (AE-style): new layers start as 2D until the
+    // timeline cube button enables it
+    bool m3DEnabled = false;
 };
 
 class CORE_EXPORT BoxTransformAnimator : public AdvancedTransformAnimator {
