@@ -56,7 +56,12 @@ enum class CanvasMode : short {
 
     nullCreate,
     pickFillStroke,
-    pickFillStrokeEvent
+    pickFillStrokeEvent,
+    boneCreate,
+    bonePose,
+    boneBind,
+    boneParent,
+    boneSelect
 };
 
 enum class UpdateReason {

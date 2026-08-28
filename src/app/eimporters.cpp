@@ -24,6 +24,7 @@
 // Fork of enve - Copyright (C) 2016-2020 Maurycy Liebner
 
 #include "eimporters.h"
+#include <QProgressDialog>
 
 #include "GUI/mainwindow.h"
 #include "eimporters.h"
@@ -53,7 +54,24 @@ qsptr<BoundingBox> eSvgImporter::import(const QFileInfo &fileInfo, Canvas * cons
 
 qsptr<BoundingBox> ePsdImporter::import(const QFileInfo &fileInfo, Canvas * const scene) const {
     Q_UNUSED(scene);
-    return ImportPSD::loadPSDFile(fileInfo.absoluteFilePath());
+    // big PSDs take seconds to extract - show progress so it does not
+    // look like a freeze
+    QProgressDialog progress(
+                QObject::tr("Importing PSD ..."),
+                QString(), 0, 1);
+    progress.setWindowModality(Qt::WindowModal);
+    progress.setMinimumDuration(300);
+    const auto result = ImportPSD::loadPSDFile(
+                fileInfo.absoluteFilePath(),
+                [&progress](const int cur, const int total) {
+        if (total > 0 && progress.maximum() != total) {
+            progress.setMaximum(total);
+        }
+        progress.setValue(cur);
+        QCoreApplication::processEvents();
+    });
+    progress.close();
+    return result;
 }
 
 /*qsptr<BoundingBox> eOraImporter::import(const QFileInfo &fileInfo, Canvas * const scene) const {

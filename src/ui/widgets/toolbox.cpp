@@ -21,6 +21,7 @@
 */
 
 #include "toolbox.h"
+#include <QSvgRenderer>
 #include "themesupport.h"
 
 #include <QToolButton>
@@ -132,7 +133,21 @@ void ToolBox::setupMainAction(const QIcon &icon,
         icon.isNull() ||
         title.isEmpty()) { return; }
 
-    const auto act = new QAction(icon,
+    // white variant for the checked state (matches the svg tools)
+    QIcon twoState = icon;
+    const int icSize = ThemeSupport::getIconSize(64).width();
+    QPixmap pm = icon.pixmap(QSize(icSize, icSize));
+    if(!pm.isNull()) {
+        QPixmap pmOn = pm;
+        QPainter pOn(&pmOn);
+        pOn.setCompositionMode(QPainter::CompositionMode_SourceIn);
+        pOn.fillRect(pmOn.rect(), Qt::white);
+        pOn.end();
+        twoState.addPixmap(pm, QIcon::Normal, QIcon::Off);
+        twoState.addPixmap(pmOn, QIcon::Normal, QIcon::On);
+    }
+
+    const auto act = new QAction(twoState,
                                  title,
                                  mMain);
     act->setCheckable(true);
@@ -170,6 +185,21 @@ void ToolBox::setupMainAction(const QIcon &icon,
         case CanvasMode::nullCreate:
             mActions.setNullMode();
             break;
+        case CanvasMode::boneCreate:
+            mActions.setBoneCreateMode();
+            break;
+        case CanvasMode::bonePose:
+            mActions.setBonePoseMode();
+            break;
+        case CanvasMode::boneBind:
+            mActions.setBoneBindMode();
+            break;
+        case CanvasMode::boneParent:
+            mActions.setBoneParentMode();
+            break;
+        case CanvasMode::boneSelect:
+            mActions.setBoneSelectMode();
+            break;
         case CanvasMode::pickFillStroke:
             mActions.setPickPaintSettingsMode();
             break;
@@ -182,6 +212,86 @@ void ToolBox::setupMainAction(const QIcon &icon,
             [act, modes](CanvasMode mode) {
         if (modes.contains(mode)) { act->setChecked(true); }
     });
+}
+
+
+// the bone tool icon: rasterized from the bundled bone_icon.svg via
+// QSvgRenderer (the iconengines plugin is not deployed, so QIcon on an
+// svg file would not work)
+static QIcon svgToolIcon(const QString& qrcPath, const int size) {
+    static QHash<QString, QIcon> cache;
+    const auto hit = cache.constFind(qrcPath);
+    if(hit != cache.constEnd()) return hit.value();
+    QFile f(qrcPath);
+    if(!f.open(QIODevice::ReadOnly)) return QIcon();
+    const QByteArray data = f.readAll();
+    QSvgRenderer renderer(data);
+    if(!renderer.isValid()) return QIcon();
+    // keep the artwork aspect; WIDE artwork (like the bone-select
+    // glyph) is rendered fill-height into a wider temp pixmap and the
+    // center square is cropped out, so it matches the visual weight of
+    // the square icons (Qt5 QSvgRenderer has no source-rect overload)
+    const QSizeF def = renderer.defaultSize();
+    QPixmap pm(size, size);
+    pm.fill(Qt::transparent);
+    if(def.width() > 0 && def.height() > 0) {
+        const double ratio = def.width()/def.height();
+        if(ratio > 1.15) {
+            QPixmap tmp(qRound(size*ratio), size);
+            tmp.fill(Qt::transparent);
+            QPainter pt(&tmp);
+            renderer.render(&pt, QRectF(0, 0, tmp.width(), tmp.height()));
+            pt.end();
+            pm = tmp.copy((tmp.width() - size)/2, 0, size, size);
+        } else if(ratio < 1/1.15) {
+            QPixmap tmp(size, qRound(size/ratio));
+            tmp.fill(Qt::transparent);
+            QPainter pt(&tmp);
+            renderer.render(&pt, QRectF(0, 0, tmp.width(), tmp.height()));
+            pt.end();
+            pm = tmp.copy(0, (tmp.height() - size)/2, size, size);
+        } else {
+            QPainter p(&pm);
+            renderer.render(&p, QRectF(0, 0, size, size));
+            p.end();
+        }
+    } else {
+        QPainter p(&pm);
+        renderer.render(&p, QRectF(0, 0, size, size));
+        p.end();
+    }
+    // checked-state variant: white tint of the same artwork (tool
+    // buttons highlight their icon when the mode is active)
+    QPixmap pmOn = pm;
+    QPainter pOn(&pmOn);
+    pOn.setCompositionMode(QPainter::CompositionMode_SourceIn);
+    pOn.fillRect(pmOn.rect(), Qt::white);
+    pOn.end();
+    QIcon ic;
+    ic.addPixmap(pm, QIcon::Normal, QIcon::Off);
+    ic.addPixmap(pmOn, QIcon::Normal, QIcon::On);
+    cache.insert(qrcPath, ic);
+    return ic;
+}
+
+static QIcon boneSvgIcon(const int size) {
+    return svgToolIcon(QStringLiteral(":/icons/bone.svg"), size);
+}
+
+// monochrome tool glyph rendered with a symbol font (follows the
+// theme color, never a colored emoji)
+static QIcon glyphToolIcon(const QString& glyph, const int size) {
+    QPixmap pm(size, size);
+    pm.fill(Qt::transparent);
+    QPainter p(&pm);
+    p.setRenderHint(QPainter::Antialiasing);
+    QFont f(QStringLiteral("Segoe UI Symbol"));
+    f.setPixelSize(qRound(size*0.82));
+    p.setFont(f);
+    p.setPen(ThemeSupport::getThemeColorBlue());
+    p.drawText(pm.rect(), Qt::AlignCenter, glyph);
+    p.end();
+    return QIcon(pm);
 }
 
 void ToolBox::setupMainActions()
@@ -243,6 +353,45 @@ void ToolBox::setupMainActions()
                                                          "nullMode",
                                                          "F8").toString()),
                     {CanvasMode::nullCreate},
+                    false);
+    setupMainAction(boneSvgIcon(ThemeSupport::getIconSize(64).width()),
+                    tr("Add Bone"),
+                    QKeySequence(AppSupport::getSettings("shortcuts",
+                                                         "boneMode",
+                                                         "B").toString()),
+                    {CanvasMode::boneCreate},
+                    false);
+    setupMainAction(svgToolIcon(QStringLiteral(":/icons/bone_pose.svg"),
+                              ThemeSupport::getIconSize(64).width()),
+                    tr("Bone Pose"),
+                    QKeySequence(AppSupport::getSettings("shortcuts",
+                                                         "bonePose",
+                                                         "P").toString()),
+                    {CanvasMode::bonePose},
+                    false);
+    setupMainAction(svgToolIcon(QStringLiteral(":/icons/bone_bind.svg"),
+                              ThemeSupport::getIconSize(64).width()),
+                    tr("Bone Bind"),
+                    QKeySequence(AppSupport::getSettings("shortcuts",
+                                                         "boneBind",
+                                                         "J").toString()),
+                    {CanvasMode::boneBind},
+                    false);
+    setupMainAction(svgToolIcon(QStringLiteral(":/icons/bone_parent.svg"),
+                              ThemeSupport::getIconSize(64).width()),
+                    tr("Bone Parent"),
+                    QKeySequence(AppSupport::getSettings("shortcuts",
+                                                         "boneParent",
+                                                         "L").toString()),
+                    {CanvasMode::boneParent},
+                    false);
+    setupMainAction(svgToolIcon(QStringLiteral(":/icons/bone_select.svg"),
+                              ThemeSupport::getIconSize(64).width()),
+                    tr("Bone Select"),
+                    QKeySequence(AppSupport::getSettings("shortcuts",
+                                                         "boneSelect",
+                                                         "K").toString()),
+                    {CanvasMode::boneSelect},
                     false);
     setupMainAction(ThemeSupport::themedToolIcon("pick",
                                                  ThemeSupport::getThemeColorRed(),

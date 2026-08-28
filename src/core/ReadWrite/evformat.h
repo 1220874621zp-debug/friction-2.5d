@@ -60,6 +60,11 @@ namespace EvFormat {
         // track matte fields written by BoundingBox in the same version
         layerFxColumns = 39,
         trackMatte = 39,
+        // bone warp: radius/strength moved from the effect onto the
+        // bones themselves; dev-era v39 files carrying the old effect
+        // layout cannot be told apart and are not loadable - re-create
+        // those rigs (development artifacts only)
+        boneWarpOnBone = 40,
 
         nextVersion
     };

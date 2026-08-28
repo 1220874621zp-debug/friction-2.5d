@@ -44,6 +44,8 @@
 #include "Properties/boolproperty.h"
 #include "Properties/boolpropertycontainer.h"
 #include "Animators/qpointfanimator.h"
+#include "Boxes/bone.h"
+#include "Boxes/bonelayer.h"
 #include "Boxes/pathbox.h"
 #include "canvas.h"
 #include "BlendEffects/blendeffectcollection.h"
@@ -287,6 +289,8 @@ QPixmap* BoxSingleWidget::BOX_NULL;
 QPixmap* BoxSingleWidget::BOX_IMAGE;
 QPixmap* BoxSingleWidget::BOX_VIDEO;
 QPixmap* BoxSingleWidget::BOX_SOUND;
+QPixmap* BoxSingleWidget::BOX_BONE;
+QPixmap* BoxSingleWidget::BOX_BONELAYER;
 QPixmap* BoxSingleWidget::BOX_GROUP;
 QPixmap* BoxSingleWidget::BOX_LINK;
 QPixmap* BoxSingleWidget::BOX_SEQ;
@@ -415,6 +419,10 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
             return BoxSingleWidget::BOX_RECT;
         } else if (enve_cast<TextBox*>(target)) {
             return BoxSingleWidget::BOX_TEXT;
+        } else if (enve_cast<BoneLayer*>(target)) {
+            return BoxSingleWidget::BOX_BONELAYER;
+        } else if (enve_cast<Bone*>(target)) {
+            return BoxSingleWidget::BOX_BONE;
         } else if (enve_cast<NullObject*>(target)) {
             return BoxSingleWidget::BOX_NULL;
         } else if (enve_cast<ImageBox*>(target)) {
@@ -1426,6 +1434,33 @@ void BoxSingleWidget::loadStaticPixmaps(int iconSize)
     BOX_RECT = new QPixmap(QIcon::fromTheme("rectCreate").pixmap(pixmapSize));
     BOX_TEXT = new QPixmap(QIcon::fromTheme("textCreate").pixmap(pixmapSize));
     BOX_NULL = new QPixmap(QIcon::fromTheme("nullCreate").pixmap(pixmapSize));
+    {
+        // bone row icon: the U+1F9B4 glyph (text presentation, never a
+        // colored emoji); bone layer: layered two-segment glyph mark
+        const int isz = qMax(8, pixmapSize.width()*4/5);
+        const QColor col = ThemeSupport::getThemeColorYellow();
+        {
+            QPixmap pb(isz, isz); pb.fill(Qt::transparent);
+            QPainter b(&pb);
+            QFont f(QStringLiteral("Segoe UI Symbol"));
+            f.setPixelSize(qRound(isz*0.9));
+            b.setFont(f);
+            b.setPen(col);
+            const QString glyph = QString(QChar(0xD83E)) +
+                    QChar(0xDCB4) + QChar(0xFE0E);
+            b.drawText(pb.rect(), Qt::AlignCenter, glyph);
+            b.end();
+            BOX_BONE = new QPixmap(pb);
+        }
+        QPixmap pl(isz, isz); pl.fill(Qt::transparent);
+        QPainter l(&pl); l.setRenderHint(QPainter::Antialiasing);
+        QPen pen(col); pen.setWidthF(2.2); pen.setCapStyle(Qt::RoundCap);
+        l.setPen(pen);
+        l.drawLine(QPointF(0.15*isz, 0.85*isz), QPointF(0.55*isz, 0.45*isz));
+        l.drawLine(QPointF(0.45*isz, 0.55*isz), QPointF(0.85*isz, 0.15*isz));
+        l.end();
+        BOX_BONELAYER = new QPixmap(pl);
+    }
     BOX_IMAGE = new QPixmap(QIcon::fromTheme("image-x-generic").pixmap(pixmapSize));
     BOX_VIDEO = new QPixmap(QIcon::fromTheme("file_movie").pixmap(pixmapSize));
     BOX_SOUND = new QPixmap(QIcon::fromTheme("audio-x-generic").pixmap(pixmapSize));
@@ -1477,6 +1512,8 @@ void BoxSingleWidget::clearStaticPixmaps()
     delete BOX_RECT;
     delete BOX_TEXT;
     delete BOX_NULL;
+    delete BOX_BONE;
+    delete BOX_BONELAYER;
     delete BOX_IMAGE;
     delete BOX_VIDEO;
     delete BOX_SOUND;
@@ -1568,6 +1605,53 @@ void BoxSingleWidget::mousePressEvent(QMouseEvent *event) {
                     }
                     Document::sInstance->actionFinished();
                 });
+            }
+        }
+        // layer-side bone binding: list every bone in the scene, picking
+        // one re-parents the currently selected layers into it (world
+        // position preserved) - Moho-style bind flow
+        if(const auto box = enve_cast<BoundingBox*>(target)) {
+            if(!enve_cast<Bone*>(box) && !enve_cast<BoneLayer*>(box) &&
+               mParent && mParent->currentScene()) {
+                // bound layer: offer a direct unbind back to the bone
+                // layer (single layer, world appearance preserved)
+                if(const auto hostBone =
+                        enve_cast<Bone*>(box->getParentGroup())) {
+                    menu.addSeparator();
+                    menu.addAction(
+                                QStringLiteral("\u89E3\u7ED1\u9AA8\u9ABC"),
+                                this,
+                                [boxQ = QPointer<BoundingBox>(box),
+                                 boneQ = QPointer<Bone>(hostBone)]() {
+                        if(boxQ && boneQ) boneQ->unbindLayer(boxQ);
+                    });
+                }
+                QList<QPointer<Bone>> bones;
+                std::function<void(ContainerBox*)> walkBones =
+                        [&walkBones, &bones](ContainerBox* const cont) {
+                    for(const auto& b : cont->getContainedBoxes()) {
+                        if(const auto bone = enve_cast<Bone*>(b)) {
+                            bones << bone;
+                            walkBones(bone);
+                        } else if(const auto g =
+                                  enve_cast<ContainerBox*>(b)) {
+                            walkBones(g);
+                        }
+                    }
+                };
+                walkBones(mParent->currentScene());
+                if(!bones.isEmpty()) {
+                    menu.addSeparator();
+                    auto bindMenu = menu.addMenu(
+                                QStringLiteral("\u7ED1\u5B9A\u5230\u9AA8\u9ABC"));
+                    for(const auto& boneQ : bones) {
+                        if(!boneQ) continue;
+                        bindMenu->addAction(boneQ->prp_getName(),
+                                            this, [boneQ]() {
+                            if(boneQ) boneQ->bindSelectedLayers();
+                        });
+                    }
+                }
             }
         }
         menu.exec(event->globalPos());

@@ -123,7 +123,8 @@ void Canvas::mouseMoveEvent(const eMouseEvent &e)
             if ((mCurrentMode == CanvasMode::pointTransform &&
                 !mPressedPoint && !mCurrentNormalSegment.isValid()) ||
                (mCurrentMode == CanvasMode::boxTransform &&
-                !mPressedBox && !mPressedPoint)) {
+                !mPressedBox && !mPressedPoint) ||
+               mCurrentMode == CanvasMode::boneSelect) {
                 startSelectionAtPoint(e.fPos);
             }
         }
@@ -145,6 +146,10 @@ void Canvas::mouseMoveEvent(const eMouseEvent &e)
             updateHoveredPoint(e);
         } else if (mCurrentMode == CanvasMode::pathCreate) {
             handleAddSmartPointMouseMove(e);
+        } else if (mCurrentMode == CanvasMode::boneCreate) {
+            updateDraftBone(e.fPos);
+        } else if (mCurrentMode == CanvasMode::bonePose) {
+            bonePoseMove(e);
         } else if (mCurrentMode == CanvasMode::circleCreate) {
             const QPointF anchor = mHasCreationPressPos ? mCreationPressPos : snapPosToGrid(e.fLastPressPos,
                                                                                             e.fModifiers,
@@ -191,7 +196,10 @@ void Canvas::mouseReleaseEvent(const eMouseEvent &e)
             break;
         case CanvasMode::circleCreate:
         case CanvasMode::rectCreate:
+        case CanvasMode::boneCreate:
             clearSelectionAction();
+            mDraftBone = nullptr;
+            mChainTail = nullptr; // right-click ends the chain
             break;
         case CanvasMode::pickFillStroke:
             applyPixelColor(pickPixelColor(e.fGlobalPos), false);
@@ -211,6 +219,14 @@ void Canvas::mouseReleaseEvent(const eMouseEvent &e)
         return;
     }
     schedulePivotUpdate();
+
+    if(mCurrentMode == CanvasMode::bonePose && e.fButton == Qt::LeftButton) {
+        bonePoseRelease();
+        mPressedBox = nullptr;
+        mPressedPoint = nullptr;
+        mHasCreationPressPos = false;
+        return;
+    }
     /*if(mCurrentMode == CanvasMode::paint) {
         const auto paintMode = mDocument.fPaintMode;
         if(paintMode <= PaintMode::colorize) {

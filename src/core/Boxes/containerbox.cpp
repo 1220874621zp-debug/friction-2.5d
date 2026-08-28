@@ -692,7 +692,7 @@ void ContainerBox::setIsCurrentGroup_k(const bool bT) {
     mIsCurrentGroup = bT;
     setDescendantCurrentGroup(bT);
     if(!bT) {
-        if(mContained.isEmpty() && getParentGroup()) {
+        if(mContained.isEmpty() && getParentGroup() && !mKeepWhenEmpty) {
             removeFromParent_k();
         }
     }
@@ -1406,7 +1406,7 @@ qsptr<eBoxOrSound> ContainerBox::takeContained_k(const int id) {
 
 void ContainerBox::removeContained_k(const qsptr<eBoxOrSound> &child) {
     removeContained(child);
-    if(mContained.isEmpty() && getParentGroup()) {
+    if(mContained.isEmpty() && getParentGroup() && !mKeepWhenEmpty) {
         removeFromParent_k();
     }
 }
@@ -1608,6 +1608,8 @@ void ContainerBox::writeBoxOrSoundXEV(const stdsptr<XevZipFileSaver>& xevFileSav
 #include "customboxcreator.h"
 #include "svglinkbox.h"
 #include "nullobject.h"
+#include "bone.h"
+#include "bonelayer.h"
 #include "Psd/psdimagebox.h"
 
 qsptr<BoundingBox> createBoxOfNonCustomType(const eBoxType type) {
@@ -1642,6 +1644,10 @@ qsptr<BoundingBox> createBoxOfNonCustomType(const eBoxType type) {
             return enve::make_shared<InternalLinkCanvas>(nullptr, false);
         case(eBoxType::nullObject):
             return enve::make_shared<NullObject>();
+        case(eBoxType::bone):
+            return enve::make_shared<Bone>();
+        case(eBoxType::boneLayer):
+            return enve::make_shared<BoneLayer>();
         case(eBoxType::psdImage):
             return enve::make_shared<PsdImageBox>();
         case(eBoxType::deprecated0): break;

@@ -2743,6 +2743,26 @@ you can create a new one by clicking on the '+' button.</source>
 <context>
     <name>Friction::Ui::ToolBox</name>
     <message>
+        <source>Add Bone</source>
+        <translation>骨骼工具（点击画布创建骨骼链）</translation>
+    </message>
+    <message>
+        <source>Bone Pose</source>
+        <translation>操作骨骼（拖骨身旋转，拖头部移动）</translation>
+    </message>
+    <message>
+        <source>Bone Bind</source>
+        <translation>骨骼绑定（先选图层，再点骨骼）</translation>
+    </message>
+    <message>
+        <source>Bone Parent</source>
+        <translation>骨骼父子连接（先选一根骨骼，再点父级骨骼）</translation>
+    </message>
+    <message>
+        <source>Bone Select</source>
+        <translation>骨骼选择（只选中骨骼）</translation>
+    </message>
+    <message>
         <location filename="../../ui/widgets/toolbox.cpp" line="90" />
         <source>ToolBox</source>
         <translation>工具箱</translation>
@@ -5372,6 +5392,18 @@ Are you sure you want to save this project file?</source>
 <context>
     <name>QObject</name>
     <message>
+        <source>Bone Warp</source>
+        <translation>骨骼弯曲</translation>
+    </message>
+    <message>
+        <source>Importing PSD ...</source>
+        <translation>正在导入 PSD ...</translation>
+    </message>
+    <message>
+        <source>Bones</source>
+        <translation>骨骼</translation>
+    </message>
+    <message>
         <source>Path Effects</source>
         <translation>路径特效</translation>
     </message>
@@ -6482,6 +6514,18 @@ Are you sure you want to save this project file?</source>
 </context>
 <context>
     <name>TimelineWidget</name>
+    <message>
+        <source>New Bone Layer</source>
+        <translation>新建骨骼层</translation>
+    </message>
+    <message>
+        <source>New Layer</source>
+        <translation>新建图层</translation>
+    </message>
+    <message>
+        <source>Adjustment Layer</source>
+        <translation>调整图层</translation>
+    </message>
     <message>
         <location filename="../GUI/timelinewidget.cpp" line="83" />
         <source>Filters</source>

@@ -22,6 +22,7 @@
 */
 
 #include "themesupport.h"
+#include <QImageReader>
 
 #include <QFile>
 #include <QIcon>
@@ -462,6 +463,48 @@ QIcon ThemeIconProvider::icon(const QFileInfo &info) const
 {
     const QString name = info.fileName().toLower();
     if (name.endsWith(".friction")) { return mIcon; }
+    // real image thumbnails for formats Qt can decode itself (png/jpg/
+    // bmp/gif/webp/tiff/...): decoded + downscaled HERE, never via the
+    // Windows shell (shell icon handlers may hang on huge files).
+    // PSD & friends keep the generic icon (no decoder available here).
+    {
+        static QHash<QString, QIcon> thumbCache;
+        const QString suffix = info.suffix().toLower();
+        const auto fmts = QImageReader::supportedImageFormats();
+        if(!suffix.isEmpty() && fmts.contains(suffix.toUtf8())) {
+            const QString key = info.absoluteFilePath();
+            const auto cached = thumbCache.constFind(key);
+            if(cached != thumbCache.constEnd()) return cached.value();
+            // skip absurdly big files - decoding those would stall the
+            // dialog (the very hang the fork avoids by not using the
+            // native dialog)
+            constexpr qint64 maxBytes = 64*1024*1024;
+            if(info.size() > 0 && info.size() < maxBytes) {
+                QImageReader reader(info.absoluteFilePath());
+                const QSize full = reader.size();
+                if(full.isValid()) {
+                    QSize scaled = full;
+                    scaled.scale(64, 64, Qt::KeepAspectRatio);
+                    reader.setScaledSize(scaled);
+                    const QImage img = reader.read();
+                    if(!img.isNull()) {
+                        const QIcon ic(QPixmap::fromImage(img));
+                        if(thumbCache.size() > 1024) thumbCache.clear();
+                        thumbCache.insert(key, ic);
+                        return ic;
+                    }
+                }
+            }
+        }
+    }
+    // PSD/PSB: go through the system shell icon (SHGetFileInfo) so a
+    // installed PSD codec shows real thumbnails in the dialog; without
+    // a codec the shell returns a generic icon (modern codecs do not
+    // hang - the old blanket shell ban was for legacy handlers)
+    const QString suf = info.suffix().toLower();
+    if (suf == QLatin1String("psd") || suf == QLatin1String("psb")) {
+        return QFileIconProvider::icon(info);
+    }
     // Never query the Windows shell for per-file icons: shell
     // extensions (e.g. the Photoshop PSD handler) may hang on large
     // files. Generic icons are used for files instead. Directories

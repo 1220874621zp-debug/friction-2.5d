@@ -36,6 +36,7 @@ enum class RasterEffectType : short {
     CUSTOM_SHADER, // xml, GLSL
     MOTION_BLUR,
     WIPE,
+    BONE_WARP,
     NOISE_FADE,
     COLORIZE,
     BRIGHTNESS_CONTRAST

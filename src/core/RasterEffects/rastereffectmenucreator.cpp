@@ -24,6 +24,8 @@
 // Fork of enve - Copyright (C) 2016-2020 Maurycy Liebner
 
 #include "rastereffectmenucreator.h"
+#include "bonewarpeffect.h"
+
 #include "RasterEffects/rastereffectsinclude.h"
 #include "RasterEffects/customrastereffectcreator.h"
 #include "ShaderEffects/shadereffectcreator.h"
@@ -49,6 +51,8 @@ void RasterEffectMenuCreator::forEveryEffectCore(const EffectAdder &add)
         []() { return enve::make_shared<WipeEffect>(); });
     add(QObject::tr("Noise Fade"), QObject::tr("Transitions"),
         []() { return enve::make_shared<NoiseFadeEffect>(); });
+    add(QObject::tr("Bone Warp"), QObject::tr("Bones"),
+        []() { return enve::make_shared<BoneWarpEffect>(); });
 }
 
 void RasterEffectMenuCreator::forEveryEffectCustom(const EffectAdder &add)

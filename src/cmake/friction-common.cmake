@@ -101,7 +101,7 @@ find_package(
     Multimedia
     Qml
     Xml
-    #Svg
+    Svg
     REQUIRED
 )
 
@@ -113,7 +113,7 @@ set(QT_LIBRARIES
     Qt${QT_VERSION_MAJOR}::Multimedia
     Qt${QT_VERSION_MAJOR}::Qml
     Qt${QT_VERSION_MAJOR}::Xml
-    #Qt${QT_VERSION_MAJOR}::Svg
+    Qt${QT_VERSION_MAJOR}::Svg
 )
 
 if(WIN32)

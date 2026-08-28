@@ -146,7 +146,13 @@ void MainWindow::loadEVFile(const QString &path)
 void MainWindow::saveToFile(const QString &path,
                             const bool addRecent)
 {
-    QFile file(path);
+    // atomic save: write to a temp sibling, then swap. A crash (or
+    // power loss) mid-write used to leave a HALF-WRITTEN mix of the
+    // old and new file that fails to load with stream-mismatch errors
+    // ("Invalid box type") and destroys the project
+    const QString tmpPath = path + QStringLiteral(".saving");
+
+    QFile file(tmpPath);
 
     if (!AppSupport::isFlatpak()) {
         if (file.exists()) { file.remove(); }
@@ -162,7 +168,7 @@ void MainWindow::saveToFile(const QString &path,
     }
 
     if (!file.open(QIODevice::WriteOnly)) {
-        RuntimeThrow("Could not open file for writing " + path + ".");
+        RuntimeThrow("Could not open file for writing " + tmpPath + ".");
     }
     eWriteStream writeStream(&file);
     writeStream.setPath(path);
@@ -185,9 +191,23 @@ void MainWindow::saveToFile(const QString &path,
         FileFooter::sWrite(writeStream);
     } catch(...) {
         file.close();
+        QFile::remove(tmpPath);
         RuntimeThrow("Error while writing to file " + path);
     }
     file.close();
+
+    // swap: replace the real file only after the temp one is complete
+    {
+        QFile existing(path);
+        if(existing.exists() && !QFile::remove(path)) {
+            QFile::remove(tmpPath);
+            RuntimeThrow("Could not replace the project file " + path);
+        }
+        if(!QFile::rename(tmpPath, path)) {
+            QFile::remove(tmpPath);
+            RuntimeThrow("Could not finalize the project file " + path);
+        }
+    }
 
     BoundingBox::sClearWriteBoxes();
     if (addRecent) { addRecentFile(path); }

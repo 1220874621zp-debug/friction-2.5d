@@ -20,6 +20,9 @@
 */
 
 #include "canvas.h"
+#include "Boxes/bone.h"
+#include "Boxes/bonelayer.h"
+#include "Boxes/adjustmentlayer.h"
 #include <QPainter>
 #include <QMouseEvent>
 #include <QLineF>
@@ -407,6 +410,11 @@ void Canvas::renderSk(SkCanvas* const canvas,
         for (const auto obj : mNullObjects) {
             canvas->save();
             obj->drawNullObject(canvas, mCurrentMode, invZoom, ctrlPressed);
+            canvas->restore();
+        }
+        for (const auto bone : mBones) {
+            canvas->save();
+            bone->drawBone(canvas, mCurrentMode, invZoom, ctrlPressed);
             canvas->restore();
         }
     //}
@@ -870,8 +878,25 @@ void Canvas::setOutputRendering(const bool bT) {
     mRenderingOutput = bT;
 }
 
+// safe fetch: a strong reference taken IMMEDIATELY from the raw
+// handler pointer. The handler holds strong refs internally, but the
+// memory-checker eviction (freeMemory -> noDataLeft_k -> remove from
+// handler -> last ref drops -> object destroyed) can race with queued
+// callbacks that cached the raw pointer across event-loop passes.
+// ref() on a destroyed object reads freed memory (SelfRef::mThisWeak)
+// and crashes with an access violation.
+static stdsptr<SceneFrameContainer> safeSceneFrame(
+        HddCachableCacheHandler& handler,
+        const int relFrame) {
+    const auto raw = handler.atFrame<SceneFrameContainer>(relFrame);
+    if(!raw) return nullptr;
+    try {
+        return raw->ref<SceneFrameContainer>();
+    } catch(...) { return nullptr; }
+}
+
 void Canvas::setSceneFrame(const int relFrame) {
-    const auto cont = mSceneFramesHandler.atFrame<SceneFrameContainer>(relFrame);
+    const auto cont = safeSceneFrame(mSceneFramesHandler, relFrame);
     if(cont && !cont->storesDataInMemory()) {
         // The frame's pixels were swapped out to a tmp file. Keep the
         // current frame on screen and reload asynchronously instead of
@@ -880,7 +905,7 @@ void Canvas::setSceneFrame(const int relFrame) {
         setLoadingSceneFrame(enve::shared<SceneFrameContainer>(cont));
         return;
     }
-    setSceneFrame(enve::shared<SceneFrameContainer>(cont));
+    setSceneFrame(cont);
 }
 
 void Canvas::setSceneFrame(const stdsptr<SceneFrameContainer>& cont) {
@@ -892,7 +917,7 @@ void Canvas::setSceneFrame(const stdsptr<SceneFrameContainer>& cont) {
 void Canvas::scheduleLoadMissingSceneFrames(const int minRelFrame,
                                             const int maxRelFrame) {
     for(int relFrame = minRelFrame; relFrame <= maxRelFrame; relFrame++) {
-        const auto cont = mSceneFramesHandler.atFrame<SceneFrameContainer>(relFrame);
+        const auto cont = safeSceneFrame(mSceneFramesHandler, relFrame);
         if(cont && !cont->storesDataInMemory())
             cont->scheduleLoadFromTmpFile();
     }
@@ -1293,12 +1318,12 @@ void Canvas::anim_setAbsFrame(const int frame)
     ContainerBox::anim_setAbsFrame(frame);
     const int newRelFrame = anim_getCurrentRelFrame();
 
-    const auto cont = mSceneFramesHandler.atFrame<SceneFrameContainer>(newRelFrame);
+    const auto cont = safeSceneFrame(mSceneFramesHandler, newRelFrame);
     if (cont) {
         if (cont->storesDataInMemory()) {
-            setSceneFrame(cont->ref<SceneFrameContainer>());
+            setSceneFrame(cont);
         } else {
-            setLoadingSceneFrame(cont->ref<SceneFrameContainer>());
+            setLoadingSceneFrame(cont);
         }
         mSceneFrameOutdated = !cont->storesDataInMemory();
     } else {
@@ -1847,6 +1872,65 @@ void Canvas::addNullObject(NullObject* const obj)
 void Canvas::removeNullObject(NullObject* const obj)
 {
     mNullObjects.removeOne(obj);
+}
+
+void Canvas::addBone(Bone* const bone)
+{
+    Bone::diag(QStringLiteral("+bone %1 count=%2")
+               .arg(bone ? bone->prp_getName() : QStringLiteral("?"))
+               .arg(mBones.count() + 1));
+    mBones.append(bone);
+}
+
+void Canvas::removeBone(Bone* const bone)
+{
+    Bone::diag(QStringLiteral("-bone %1 remaining=%2")
+               .arg(bone ? bone->prp_getName() : QStringLiteral("?"))
+               .arg(mBones.count() - 1));
+    mBones.removeOne(bone);
+    if(mDraftBone == bone) mDraftBone = nullptr;
+    if(mChainTail == bone) mChainTail = nullptr;
+}
+
+// begin a bone chain at the given scene position: new bones land in the
+// current bone layer (one is created at the top when none exists yet)
+void Canvas::addBoneLayerAction() {
+    const auto layer = enve::make_shared<BoneLayer>();
+    mCurrentContainer ? mCurrentContainer->addContained(layer) :
+                        addContained(layer);
+    if(Document::sInstance) Document::sInstance->actionFinished();
+}
+
+void Canvas::addAdjustmentLayerAction() {
+    const auto adj = enve::make_shared<AdjustmentLayer>();
+    mCurrentContainer ? mCurrentContainer->addContained(adj) :
+                        addContained(adj);
+    adj->planUpdate(UpdateReason::userChange);
+    if(Document::sInstance) Document::sInstance->actionFinished();
+}
+
+Bone* Canvas::startBoneChain(const QPointF& absPos) {
+    ContainerBox* parent = enve_cast<BoneLayer*>(mCurrentContainer.data());
+    if(!parent) {
+        for(const auto& c : getContained()) {
+            if(const auto bl = enve_cast<BoneLayer*>(c.data())) {
+                parent = bl;
+                break;
+            }
+        }
+    }
+    if(!parent) {
+        const auto layer = enve::make_shared<BoneLayer>();
+        addContained(layer);
+        parent = layer.get();
+    }
+    const auto bone = enve::make_shared<Bone>();
+    parent->addContained(bone);
+    bone->getBoxTransformAnimator()->setPivot(0, 0);
+    const QPointF rel = parent->mapAbsPosToRel(absPos);
+    bone->getBoxTransformAnimator()->setPosition(rel.x(), rel.y());
+    mDraftBone = bone.get();
+    return mDraftBone;
 }
 
 void Canvas::clearGradientRWIds() const

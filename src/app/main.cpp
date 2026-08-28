@@ -268,15 +268,18 @@ static void crashReportMod(HANDLE hFile, const void* addr,
                 reinterpret_cast<uintptr_t>(addr)
                 - reinterpret_cast<uintptr_t>(gCrashMods[i].base);
         if(off) {
-            wsprintfA(line, "  [rsp+0x%04IX] %s+0x%llX\r\n",
-                      reinterpret_cast<uintptr_t>(off),
+            _snprintf(line, sizeof(line)-1,
+                      "  [rsp+0x%04zX] %s+0x%llX\r\n",
+                      reinterpret_cast<size_t>(off),
                       gCrashMods[i].name,
                       static_cast<unsigned long long>(rva));
         } else {
-            wsprintfA(line, "%s+0x%llX   <- RIP\r\n",
+            _snprintf(line, sizeof(line)-1,
+                      "%s+0x%llX   <- RIP\r\n",
                       gCrashMods[i].name,
                       static_cast<unsigned long long>(rva));
         }
+        line[sizeof(line)-1] = 0;
         DWORD written = 0;
         WriteFile(hFile, line, lstrlenA(line), &written, nullptr);
         return;

@@ -53,11 +53,6 @@ void ImageRenderData::setupDirectDraw() {
     fBaseMargin = QMargins();
     dataSet();
     updateGlobalRect();
-    qWarning() << "IMGDRAW:" << fParentBox->prp_getName()
-               << "img" << (fImage ? QStringLiteral("%1x%2").arg(fImage->width()).arg(fImage->height()) : QStringLiteral("NULL"))
-               << "rel" << fRelBoundingRect
-               << "global" << fGlobalRect
-               << "opacity" << fOpacity;
     fRenderTransform.reset();
     fRenderTransform.translate(fRelBoundingRect.x(), fRelBoundingRect.y());
     fRenderTransform *= fScaledTransform;

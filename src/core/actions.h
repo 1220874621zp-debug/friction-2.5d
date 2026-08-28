@@ -126,6 +126,11 @@ public:
     void setTextMode();
 
     void setNullMode();
+    void setBoneCreateMode();
+    void setBonePoseMode();
+    void setBoneBindMode();
+    void setBoneParentMode();
+    void setBoneSelectMode();
     void setPickPaintSettingsMode();
 //
     bool smoothChange() const { return mSmoothChange; }

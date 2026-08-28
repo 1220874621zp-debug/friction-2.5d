@@ -26,6 +26,10 @@
 #include "Sound/esoundsettings.h"
 #include "canvas.h"
 #include "Boxes/rectangle.h"
+#include "Boxes/bonelayer.h"
+#include "Boxes/bone.h"
+#include "RasterEffects/bonewarpeffect.h"
+#include "RasterEffects/rastereffectcollection.h"
 #include "Animators/motionpathhandler.h"
 
 #define NOMINMAX
@@ -269,7 +273,101 @@ int main(int argc, char *argv[]) {
     setlocale(LC_NUMERIC, "C");
 
     QStringList args;
-    for(int i = 1; i < argc; i++) args << QString(argv[i]);
+    for(int i2 = 1; i2 < argc; i2++) args << QString(argv[i2]);
+
+    if(!args.isEmpty() && args.first() == "--warptest") {
+        eSettings settings(HardwareInfo::sCpuThreads(),
+                           HardwareInfo::sRamKB());
+        ImportHandler importHandler;
+        TaskScheduler taskScheduler;
+        Document document(taskScheduler);
+        auto pump = [&app]() {
+            for(int i = 0; i < 200; i++) app.processEvents();
+        };
+        // build: bone layer -> 3-bone chain, rect with the warp effect
+        const auto bl = enve::make_shared<BoneLayer>();
+        document.createNewScene(false)->addContained(bl);
+        Bone* chain[3] = {nullptr, nullptr, nullptr};
+        chain[0] = bl->getContained().isEmpty() ? nullptr :
+                    enve_cast<Bone*>(bl->getContained().first().data());
+        if(!chain[0]) {
+            const auto root = enve::make_shared<Bone>();
+            bl->addContained(root);
+            chain[0] = root.get();
+        }
+        chain[1] = chain[0]->addChildBone();
+        chain[2] = chain[1]->addChildBone();
+        const auto rect = enve::make_shared<RectangleBox>();
+        document.createNewScene(false);
+        document.removeScene(1);
+        document.fScenes.first()->addContained(rect);
+        // REAL bind path: selection + bindSelectedLayers (reparent +
+        // auto-attach + deferred rebind), exactly like the UI tool
+        auto scene0 = document.fScenes.first().data();
+        scene0->clearBoxesSelection();
+        scene0->addBoxToSelection(rect.data());
+        chain[1]->bindSelectedLayers();
+
+        // BISECT: disable the auto-attach so bind = reparent only
+        Bone::sSkipAutoWarpAttach = true;
+        pump();
+        // FUNCTIONAL CHECK: the auto-attached effect must actually bind
+        // bones and produce a caller - not just not-crash
+        {
+            const auto coll = rect->rasterEffectsCollection();
+            const int n = coll ? coll->ca_getNumberOfChildren() : 0;
+            BoneWarpEffect* warp = nullptr;
+            for(int i = 0; i < n; i++) {
+                warp = enve_cast<BoneWarpEffect*>(coll->getChild(i));
+                if(warp) break;
+            }
+            if(!warp) {
+                fprintf(stderr, "[harness] WARPTEST FAIL: no effect\n");
+                return 5;
+            }
+            // pose a bone first: at bind pose the identity guard
+            // correctly skips the warp (caller = NULL is EXPECTED)
+            chain[1]->getBoxTransformAnimator()->getRotAnimator()->
+                    setCurrentBaseValue(35.);
+            pump();
+            const auto caller = warp->getEffectCaller(0, 1., 1., nullptr);
+            fprintf(stderr, "[harness] bound=%d caller=%s\n",
+                    warp->boundBoneCount(),
+                    caller ? "OK" : "NULL");
+            if(warp->boundBoneCount() < 1 || !caller) {
+                fprintf(stderr, "[harness] WARPTEST FAIL: inert effect\n");
+                return 6;
+            }
+        }
+
+        // sweep parameters like a user dragging the sliders
+        int sweepIdx = 0;
+        for(const qreal radius : {10., 80., 200., 800., 2000., 60.}) {
+            fflush(stderr);
+            chain[0]->warpRadiusAnimator()->setCurrentBaseValue(radius);
+            chain[1]->warpRadiusAnimator()->setCurrentBaseValue(radius);
+            chain[2]->warpRadiusAnimator()->setCurrentBaseValue(radius);
+            for(const qreal strength : {0., 0.35, 1.}) {
+                for(Bone* b : chain) {
+                    b->warpStrengthAnimator()->
+                            setCurrentBaseValue(strength);
+                }
+                for(Bone* b : chain) b->planUpdate(UpdateReason::userChange);
+                rect->planUpdate(UpdateReason::userChange);
+                pump();
+            }
+        }
+        // pose the bones too (rotated renders through the warp)
+        for(const qreal deg : {15., -30., 70.}) {
+            chain[1]->getBoxTransformAnimator()->getRotAnimator()->
+                    setCurrentBaseValue(deg);
+            chain[1]->planUpdate(UpdateReason::userChange);
+            pump();
+        }
+        fprintf(stderr, "[harness] WARPTEST PASS\n");
+        fflush(stderr);
+        return 0;
+    }
     if(!args.isEmpty() && args.first() == "--synthetic") {
         const int cycles = args.count() > 1 ? args.at(1).toInt() : 5;
         // Document needs the process-wide settings singleton

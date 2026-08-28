@@ -24,6 +24,7 @@
 // Fork of enve - Copyright (C) 2016-2020 Maurycy Liebner
 
 #include "rastereffectcollection.h"
+#include "bonewarpeffect.h"
 #include "RasterEffects/rastereffect.h"
 #include "Boxes/boundingbox.h"
 #include "Boxes/containerbox.h"
@@ -160,6 +161,8 @@ qsptr<RasterEffect> createRasterEffectForNonCustomType(const RasterEffectType ty
         case(RasterEffectType::MOTION_BLUR):
             return enve::make_shared<MotionBlurEffect>();
         case(RasterEffectType::WIPE):
+        case(RasterEffectType::BONE_WARP):
+            return enve::make_shared<BoneWarpEffect>();
             return enve::make_shared<WipeEffect>();
         case(RasterEffectType::NOISE_FADE):
             return enve::make_shared<NoiseFadeEffect>();

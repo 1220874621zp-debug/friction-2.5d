@@ -108,10 +108,28 @@ void MemoryHandler::freeMemory(const MemoryState newState,
 
     if(minFreeBytes.fValue <= 0) return;
     qint64 memToFree = minFreeBytes.fValue;
-    qWarning() << "MEMH: freeMemory state" << int(newState)
-               << "want" << memToFree << "bytes,"
-               << mDataHandler.count() << "container(s)";
-    while(memToFree > 0 && !mDataHandler.isEmpty()) {
+    // only log when there is something to evict or the state just
+    // changed - the every-poll line with 0 containers flooded the
+    // debug log (500ms cadence) and drowned real diagnostics
+    {
+        static MemoryState sLastLoggedState = static_cast<MemoryState>(-1);
+        if(!mDataHandler.isEmpty() ||
+           sLastLoggedState != mMemoryState) {
+            sLastLoggedState = mMemoryState;
+            qWarning() << "MEMH: freeMemory state" << int(newState)
+                       << "want" << memToFree << "bytes,"
+                       << mDataHandler.count() << "container(s)";
+        }
+    }
+    // keep a minimum working set: when the system deficit is caused by
+    // OTHER programs (often 1.5GB+), evicting our few hundred MB of
+    // image caches achieves nothing except a black canvas - the images
+    // get swapped to tmp, reload is async, and the user sees nothing.
+    // If our total possible contribution is under 25% of the deficit,
+    // the pressure is external: hold on to the last few containers so
+    // the app stays usable
+    const int minKeep = 6;
+    while(memToFree > 0 && mDataHandler.count() > minKeep) {
         const auto contRaw = mDataHandler.takeFirst();
         // hold a strong reference while evicting: free_RAM_k() may
         // release the last owner of the container (e.g. noDataLeft_k

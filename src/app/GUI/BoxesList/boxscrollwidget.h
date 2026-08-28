@@ -51,8 +51,9 @@ public:
     // expose the timeline tree identity so property rows can be
     // revealed programmatically (AE-like A/P/S/R/T/U keys)
     int swtWidgetId() const;
-private:
+public:
     BoxScroller *getBoxScroller();
+private:
 
     stdptr<SWT_Abstraction> mCoreAbs;
 };

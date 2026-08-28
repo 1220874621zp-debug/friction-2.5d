@@ -258,6 +258,11 @@ public:
 
     void updateIfUsesProgram(const ShaderEffectProgram * const program) const final;
 protected:
+    // rig containers (bones / bone layers) are structural nodes: they
+    // must survive becoming empty (upstream auto-removes empty groups
+    // from their parent when the last child leaves - removeContained_k)
+    bool mKeepWhenEmpty = false;
+
     void saveBoxesSVG(SvgExporter& exp,
                       DomEleTask* const eleTask,
                       QDomElement& ele) const;

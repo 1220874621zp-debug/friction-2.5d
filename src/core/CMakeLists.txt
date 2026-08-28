@@ -225,7 +225,10 @@ set(
     RasterEffects/customrastereffect.cpp
     RasterEffects/motionblureffect.cpp
     RasterEffects/trackmattecaller.cpp
+    RasterEffects/bonewarpeffect.cpp
     Boxes/adjustmentlayer.cpp
+    Boxes/bone.cpp
+    Boxes/bonelayer.cpp
     RasterEffects/noisefadeeffect.cpp
     RasterEffects/openglrastereffectcaller.cpp
     RasterEffects/rastereffect.cpp

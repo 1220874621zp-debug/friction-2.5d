@@ -69,6 +69,7 @@ class VideoBox;
 class ImageBox;
 class Document;
 class NullObject;
+class Bone;
 
 class eMouseEvent;
 class eKeyEvent;
@@ -816,6 +817,40 @@ public:
     void addNullObject(NullObject* const obj);
     void removeNullObject(NullObject* const obj);
 
+    // FK bones: editing-time visuals + the bone-in-progress chain
+    void addBone(Bone* const bone);
+
+    // read access for diagnostics / tools
+    const QList<Bone*>& getBones() const { return mBones; }
+    void removeBone(Bone* const bone);
+    // bone currently being placed by the bone tool (length/rotation
+    // follow the cursor until the next click grows a child bone)
+    Bone* draftBone() const { return mDraftBone; }
+    void setDraftBone(Bone* const bone) { mDraftBone = bone; }
+    // target container for new bones: the current BoneLayer if any
+    Bone* startBoneChain(const QPointF& absPos);
+    // UI helpers: create rig/special layers into the current container
+    void addBoneLayerAction();
+    void addAdjustmentLayerAction();
+    // bone tool interaction helpers (canvasmouseinteractions.cpp)
+    void boneCreatePress(const class eMouseEvent& e);
+    void updateDraftBone(const QPointF& absPos);
+    // bone pose tool (Moho-style): drag a bone body to rotate it around
+    // its head, drag the head joint to move the whole chain segment
+    void bonePosePress(const class eMouseEvent& e);
+    void bonePoseMove(const class eMouseEvent& e);
+    void bonePoseRelease();
+    // bone bind tool: click a bone to bind the selected layers into it
+    void boneBindPress(const class eMouseEvent& e);
+    // bone parent-link tool: click a bone to make it the parent of
+    // the currently selected bone (world positions preserved)
+    void boneParentPress(const class eMouseEvent& e);
+    // bone select tool: clicking picks ONLY bones (graphics are
+    // transparent to the pick)
+    void boneSelectPress(const class eMouseEvent& e);
+    Bone* pickBoneAt(const QPointF& absPos, const qreal maxDist);
+    void bonePoseCancel();
+
 private:
     // set first thing in the destructor: while true the track/selection
     // bookkeeping (enforceTrack, forEachSelectedSound) stays inert so
@@ -916,6 +951,21 @@ private:
 
     QList<qsptr<SceneBoundGradient>> mGradients;
     QList<NullObject*> mNullObjects;
+    QList<Bone*> mBones;
+
+    Bone* mDraftBone = nullptr;
+    // tail of the chain being built: every subsequent press grows a
+    // CHILD bone from here (Spine-style auto-chaining, no need to aim
+    // at the tail); Ctrl+press or right-click ends the chain
+    Bone* mChainTail = nullptr;
+
+    // bone pose tool drag state
+    enum class PoseDragMode { none, rotate, move };
+    PoseDragMode mPoseMode = PoseDragMode::none;
+    Bone* mPoseBone = nullptr;
+    qreal mPoseStartAngle = 0;   // world angle of the cursor at press
+    qreal mPoseStartRot = 0;     // bone rotation value at press
+    QPointF mPoseMoveLast;       // last cursor pos while moving
 
 protected:
     Document& mDocument;

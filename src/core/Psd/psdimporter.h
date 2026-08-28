@@ -25,6 +25,7 @@
 #define PSDIMPORTER_H
 
 #include "smartPointers/selfref.h"
+#include <functional>
 #include "Psd/psdfile.h"
 #include "Psd/fpsdpackage.h"
 
@@ -33,7 +34,12 @@ class PsdImageBox;
 
 namespace ImportPSD {
     CORE_EXPORT
-    qsptr<BoundingBox> loadPSDFile(const QString &path);
+    // progress callback: (currentLayer, totalLayers) - called on the
+    // calling thread; used by the app for a progress dialog (big PSDs
+    // take seconds and look like a freeze without feedback)
+    qsptr<BoundingBox> loadPSDFile(
+            const QString &path,
+            const std::function<void(int, int)>& progress = nullptr);
 
     // shared helpers used by PsdImageBox for incremental updates
     namespace PsdSync {

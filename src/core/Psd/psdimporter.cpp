@@ -281,7 +281,9 @@ int updateLayerPixels(psd::PsdFile &psd,
 
 } // namespace PsdSync
 
-qsptr<BoundingBox> loadPSDFile(const QString &path)
+qsptr<BoundingBox> loadPSDFile(
+        const QString &path,
+        const std::function<void(int, int)>& progress)
 {
     psd::PsdFile psd;
     QString error;
@@ -296,7 +298,9 @@ qsptr<BoundingBox> loadPSDFile(const QString &path)
     const QFileInfo psdInfo(path);
     const QString packagePath = resolvePackagePath(psdInfo);
 
+    if (progress) progress(0, 1);
     if (!psd.hasLayers()) {
+        if (progress) progress(1, 1);
         return compositeAsImageBox(psd, path, packagePath);
     }
 
@@ -320,7 +324,10 @@ qsptr<BoundingBox> loadPSDFile(const QString &path)
 
     QMap<QString, QByteArray> entries;
     int imagesCreated = 0;
+    const int totalLayers = psd.layers().count();
+    int layerIndex = 0;
     for (const auto &rec : psd.layers()) {
+        if (progress) progress(++layerIndex, totalLayers);
         if (rec.divider != psd::Divider::None) {
             // group boundary records (folder begin/end) - skipped
             continue;
@@ -391,6 +398,7 @@ qsptr<BoundingBox> loadPSDFile(const QString &path)
 
     if (root->getContainedBoxesCount() == 1 && imagesCreated == 1) {
         return qSharedPointerCast<BoundingBox>(root->takeContained_k(0));
+    if (progress) progress(totalLayers, totalLayers);
     }
     root->planCenterPivotPosition();
     return root;

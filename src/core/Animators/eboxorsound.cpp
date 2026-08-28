@@ -33,6 +33,7 @@
 #include "Sound/soundcomposition.h"
 #include "ReadWrite/evformat.h"
 #include <QPointer>
+#include "Boxes/bone.h"
 
 eBoxOrSound::eBoxOrSound(const QString &name) :
     StaticComplexAnimator(name) {
@@ -490,6 +491,10 @@ void eBoxOrSound::selectionChangeTriggered(const bool shiftPressed) {
 void eBoxOrSound::setVisible(const bool visible)
 {
     if (mVisible == visible) { return; }
+    if(const auto bone = enve_cast<Bone*>(this)) {
+        Bone::diag(QStringLiteral("visibility %1 -> %2")
+                   .arg(prp_getName()).arg(visible));
+    }
     if (!isLink()) {
         if (enve_cast<eSound*>(this)) {
             prp_pushUndoRedoName(visible ? tr("Mute") : tr("Unmute"));
@@ -566,6 +571,10 @@ void eBoxOrSound::setLocked(const bool locked) {
 
 void eBoxOrSound::setSolo(const bool solo) {
     if(mSolo == solo) return;
+    if(const auto bone = enve_cast<Bone*>(this)) {
+        Bone::diag(QStringLiteral("solo %1 -> %2")
+                   .arg(prp_getName()).arg(solo));
+    }
     if(!isLink()) {
         prp_pushUndoRedoName(solo ? tr("Solo") : tr("Unsolo"));
         UndoRedo ur;
@@ -587,6 +596,10 @@ void eBoxOrSound::switchSolo() {
 
 void eBoxOrSound::setShy(const bool shy) {
     if(mShy == shy) return;
+    if(const auto bone = enve_cast<Bone*>(this)) {
+        Bone::diag(QStringLiteral("shy %1 -> %2")
+                   .arg(prp_getName()).arg(shy));
+    }
     mShy = shy;
     // defer the row visibility update: SWT_setVisible immediately
     // rebuilds the visible timeline rows and must not run inside the

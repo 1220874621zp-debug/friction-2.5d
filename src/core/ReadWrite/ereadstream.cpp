@@ -29,7 +29,13 @@ eReadStream::eReadStream(QIODevice * const src) :
     eReadStream(EvFormat::version, src) {}
 
 eReadStream::~eReadStream() {
-    for(const auto& task : mDoneTasks) task(*this);
+    // a failed load throws and unwinds through here: the done-tasks
+    // may then operate on half-read objects and throw (or worse) from
+    // the destructor - swallow per-task errors so the original load
+    // error reaches the user instead of a secondary crash
+    for(const auto& task : mDoneTasks) {
+        try { task(*this); } catch(...) {}
+    }
 }
 
 void eReadStream::addReadBox(const int readId, BoundingBox* const box) {
@@ -61,10 +67,16 @@ bool eReadStream::seek(const eFuturePos &pos) {
 void eReadStream::readCheckpoint(const QString &errMsg) {
     const qint64 sPos = mSrc->pos();
     qint64 pos; read(&pos, sizeof(qint64));
-    if(pos != sPos)
+    if(pos != sPos) {
+        // the stream is misaligned: pending done-tasks would run in
+        // the destructor against half-read objects and crash with an
+        // access violation (try/catch cannot intercept that) - drop
+        // them, the load is failing anyway
+        mDoneTasks.clear();
         RuntimeThrow("The QIODevice::pos '" + QString::number(sPos) +
                      "' does not match the written QIODevice::pos '" +
                      QString::number(pos) + "'.\n" + errMsg);
+    }
 }
 
 QByteArray eReadStream::readCompressed() {

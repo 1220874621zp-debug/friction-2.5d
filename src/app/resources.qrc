@@ -23,6 +23,13 @@
         <file alias="down-arrow.png">pixmaps/down-arrow.png</file>
     </qresource>
     <qresource prefix="/config"/>
+    <qresource prefix="/icons">
+        <file alias="bone.svg">../ui/widgets/bone_icon.svg</file>
+        <file alias="bone_pose.svg">../ui/widgets/bone_pose.svg</file>
+        <file alias="bone_parent.svg">../ui/widgets/bone_parent.svg</file>
+        <file alias="bone_bind.svg">../ui/widgets/bone_bind.svg</file>
+        <file alias="bone_select.svg">../ui/widgets/bone_select.svg</file>
+    </qresource>
     <qresource prefix="/translations">
         <file alias="friction_zh_CN.qm">translations/friction_zh_CN.qm</file>
     </qresource>
