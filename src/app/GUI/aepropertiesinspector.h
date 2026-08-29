@@ -14,15 +14,12 @@
 #include <QWidget>
 #include <QScrollArea>
 #include <QVBoxLayout>
+#include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
-#include <QDoubleSpinBox>
-#include <QSpinBox>
-#include <QSlider>
-#include <QCheckBox>
 #include <QToolButton>
 #include <QPushButton>
-#include <QGroupBox>
+#include <QFrame>
 #include <QPointer>
 #include "smartPointers/ememory.h"
 
@@ -48,7 +45,7 @@ public slots:
 private:
     void buildSceneProperties();
     void buildBoxProperties(BoundingBox *box);
-    QWidget* createCard(const QString &title, const QIcon &icon = QIcon());
+    QFrame* createSectionCard(const QString &title, const QIcon &icon = QIcon());
     void setupTransformControls(QVBoxLayout *layout, BoundingBox *box);
     void setupEffectsControls(QVBoxLayout *layout, BoundingBox *box);
     void setupAppearanceControls(QVBoxLayout *layout, BoundingBox *box);
@@ -58,10 +55,8 @@ private:
     QPointer<Canvas> mScene;
     QWidget *mContainer;
     QVBoxLayout *mMainLayout;
-    bool mUpdatingUI = false;
-
-    // Track active target box
     BoundingBox *mCurrentBox = nullptr;
+    bool mUpdatingUI = false;
 };
 
 #endif // AEPROPERTIESINSPECTOR_H
