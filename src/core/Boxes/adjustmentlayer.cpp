@@ -47,7 +47,9 @@ void adjustmentApplyBackdrop(
             SkImageInfo::MakeN32Premul(dev.width(), dev.height());
     SkBitmap srcB;
     srcB.allocPixels(info);
-    if(!snap->readPixels(srcB.pixmap(), 0, 0)) return;
+    if(!snap->readPixels(srcB.pixmap(), 0, 0)) {
+        if(!surf->readPixels(srcB, dev.left(), dev.top())) return;
+    }
     SkBitmap dstB;
     dstB.allocPixels(info);
     dstB.eraseColor(SK_ColorTRANSPARENT);
@@ -59,12 +61,19 @@ void adjustmentApplyBackdrop(
     cdata.fWidth = static_cast<uint>(dev.width());
     cdata.fHeight = static_cast<uint>(dev.height());
 
+    bool hasProcessed = false;
     for(const auto& caller : callers) {
         if(!caller) continue;
         // MVP: gpu-only callers (custom shaders) are skipped here
         if(caller->hardwareSupport() == HardwareSupport::gpuOnly) continue;
         caller->processCpu(tools, cdata);
+        hasProcessed = true;
+        // Feed dstB back into srcB for the next chained effect
+        if(srcB.getPixels() && dstB.getPixels()) {
+            memcpy(srcB.getPixels(), dstB.getPixels(), srcB.computeByteSize());
+        }
     }
+    if(!hasProcessed) return;
 
     canvas->save();
     canvas->resetMatrix(); // the snapshot is in device space

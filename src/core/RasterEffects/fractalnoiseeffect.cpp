@@ -202,6 +202,11 @@ void FractalNoiseEffectCaller::processCpu(CpuRenderTools& renderTools, const Cpu
             const uchar b = *src++;
             const uchar a = *src++;
 
+            if (a < 2) {
+                *dst++ = 0; *dst++ = 0; *dst++ = 0; *dst++ = 0;
+                continue;
+            }
+
             const qreal nx = (qreal(xi) / imgWidth) * sc;
             qreal val = std::sin(nx * 10.0 + mEvolution * 0.02) * std::cos(ny * 10.0 + mEvolution * 0.02) * 0.5 + 0.5;
             if (mInvert > 0.5) val = 1.0 - val;
@@ -210,17 +215,16 @@ void FractalNoiseEffectCaller::processCpu(CpuRenderTools& renderTools, const Cpu
             const qreal nr = mColor1.redF() * (1.0 - val) + mColor2.redF() * val;
             const qreal ng = mColor1.greenF() * (1.0 - val) + mColor2.greenF() * val;
             const qreal nb = mColor1.blueF() * (1.0 - val) + mColor2.blueF() * val;
-            const qreal na = (mColor1.alphaF() * (1.0 - val) + mColor2.alphaF() * val) * mOpacity;
+            const qreal na = (mColor1.alphaF() * (1.0 - val) + mColor2.alphaF() * val) * (mOpacity * 0.01);
 
-            qreal outR = (a > 2) ? (r * (1.0 - na) + nr * 255.0 * na) : (nr * 255.0);
-            qreal outG = (a > 2) ? (g * (1.0 - na) + ng * 255.0 * na) : (ng * 255.0);
-            qreal outB = (a > 2) ? (b * (1.0 - na) + nb * 255.0 * na) : (nb * 255.0);
-            qreal outA = std::min(255.0, a + na * 255.0);
+            qreal outR = r * (1.0 - na) + nr * 255.0 * na;
+            qreal outG = g * (1.0 - na) + ng * 255.0 * na;
+            qreal outB = b * (1.0 - na) + nb * 255.0 * na;
 
             *dst++ = static_cast<uchar>(std::max(0.0, std::min(255.0, outR)));
             *dst++ = static_cast<uchar>(std::max(0.0, std::min(255.0, outG)));
             *dst++ = static_cast<uchar>(std::max(0.0, std::min(255.0, outB)));
-            *dst++ = static_cast<uchar>(std::max(0.0, std::min(255.0, outA)));
+            *dst++ = a;
         }
     }
 }

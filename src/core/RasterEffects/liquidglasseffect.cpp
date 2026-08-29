@@ -14,6 +14,7 @@
 #include "Animators/qrealanimator.h"
 #include "Animators/coloranimator.h"
 #include "appsupport.h"
+#include <cmath>
 
 LiquidGlassEffect::LiquidGlassEffect() :
     RasterEffect("liquidGlass",
@@ -22,25 +23,25 @@ LiquidGlassEffect::LiquidGlassEffect() :
                  true,
                  RasterEffectType::LIQUID_GLASS)
 {
-    mBlurRadius = enve::make_shared<QrealAnimator>(20.0, 0.0, 100.0, 1.0, "blur radius");
+    mBlurRadius = enve::make_shared<QrealAnimator>(15.0, 0.0, 100.0, 1.0, "blur radius");
     ca_addChild(mBlurRadius);
 
-    mRefraction = enve::make_shared<QrealAnimator>(35.0, 0.0, 100.0, 1.0, "displacement");
+    mRefraction = enve::make_shared<QrealAnimator>(20.0, 0.0, 100.0, 1.0, "displacement");
     ca_addChild(mRefraction);
 
-    mSurfaceNoise = enve::make_shared<QrealAnimator>(25.0, 0.0, 100.0, 1.0, "roughness");
+    mSurfaceNoise = enve::make_shared<QrealAnimator>(20.0, 0.0, 100.0, 1.0, "roughness");
     ca_addChild(mSurfaceNoise);
 
-    mThickness = enve::make_shared<QrealAnimator>(15.0, 0.0, 50.0, 1.0, "thickness");
+    mThickness = enve::make_shared<QrealAnimator>(10.0, 0.0, 50.0, 1.0, "thickness");
     ca_addChild(mThickness);
 
-    mHighlightIntensity = enve::make_shared<QrealAnimator>(80.0, 0.0, 200.0, 1.0, "intensity");
+    mHighlightIntensity = enve::make_shared<QrealAnimator>(60.0, 0.0, 200.0, 1.0, "intensity");
     ca_addChild(mHighlightIntensity);
 
     mLightAngle = enve::make_shared<QrealAnimator>(45.0, -180.0, 180.0, 1.0, "angle");
     ca_addChild(mLightAngle);
 
-    mHighlightSize = enve::make_shared<QrealAnimator>(30.0, 1.0, 100.0, 1.0, "size");
+    mHighlightSize = enve::make_shared<QrealAnimator>(25.0, 1.0, 100.0, 1.0, "size");
     ca_addChild(mHighlightSize);
 
     mEdgeSoftness = enve::make_shared<QrealAnimator>(10.0, 0.0, 100.0, 1.0, "feather");
@@ -53,7 +54,7 @@ LiquidGlassEffect::LiquidGlassEffect() :
     mGlassTint->setColor(QColor(230, 245, 255, 255));
     ca_addChild(mGlassTint);
 
-    mTintOpacity = enve::make_shared<QrealAnimator>(15.0, 0.0, 100.0, 1.0, "opacity");
+    mTintOpacity = enve::make_shared<QrealAnimator>(10.0, 0.0, 100.0, 1.0, "opacity");
     ca_addChild(mTintOpacity);
 }
 
@@ -210,19 +211,53 @@ void LiquidGlassEffectCaller::processCpu(CpuRenderTools& renderTools, const CpuR
     const qreal tb = mGlassTint.blueF() * 255.0;
     const qreal topac = (mTintOpacity * 0.01) * mGlassTint.alphaF();
 
+    const qreal bRad = std::max(0.0, mBlurRadius) * 0.15;
+    const int bRadius = qRound(bRad);
+
     for(int yi = yMin; yi <= yMax; yi++) {
         auto dst = static_cast<uchar*>(dstBtmp.getAddr(0, yi - yMin));
+        const qreal uvy = (qreal(yi) / imgHeight) - 0.5;
 
         for(int xi = xMin; xi <= xMax; xi++) {
-            const int dispX = qRound((xi - imgWidth / 2) * (mThickness * 0.002) * mRefraction);
-            const int dispY = qRound((yi - imgHeight / 2) * (mThickness * 0.002) * mRefraction);
+            const qreal uvx = (qreal(xi) / imgWidth) - 0.5;
 
-            const uchar r = sampleSrc(xi + dispX, yi + dispY, 0);
-            const uchar g = sampleSrc(xi + dispX, yi + dispY, 1);
-            const uchar b = sampleSrc(xi + dispX, yi + dispY, 2);
-            const uchar a = sampleSrc(xi, yi, 3);
+            const qreal freq = 8.0 + mSurfaceNoise * 0.15;
+            const qreal waveX = std::sin(yi * 0.03 * freq + xi * 0.01) * (mSurfaceNoise * 0.1);
+            const qreal waveY = std::cos(xi * 0.03 * freq - yi * 0.01) * (mSurfaceNoise * 0.1);
 
-            if (a < 2) {
+            const int dispX = qRound((uvx * (mThickness * 0.2) + waveX) * (mRefraction * 0.2));
+            const int dispY = qRound((uvy * (mThickness * 0.2) + waveY) * (mRefraction * 0.2));
+
+            const int sampleX = xi + dispX;
+            const int sampleY = yi + dispY;
+
+            qreal sumR = 0, sumG = 0, sumB = 0, sumA = 0;
+            int count = 0;
+
+            if (bRadius > 0) {
+                for(int dy = -bRadius; dy <= bRadius; dy += std::max(1, bRadius / 2)) {
+                    for(int dx = -bRadius; dx <= bRadius; dx += std::max(1, bRadius / 2)) {
+                        sumR += sampleSrc(sampleX + dx, sampleY + dy, 0);
+                        sumG += sampleSrc(sampleX + dx, sampleY + dy, 1);
+                        sumB += sampleSrc(sampleX + dx, sampleY + dy, 2);
+                        sumA += sampleSrc(sampleX + dx, sampleY + dy, 3);
+                        count++;
+                    }
+                }
+            } else {
+                sumR = sampleSrc(sampleX, sampleY, 0);
+                sumG = sampleSrc(sampleX, sampleY, 1);
+                sumB = sampleSrc(sampleX, sampleY, 2);
+                sumA = sampleSrc(sampleX, sampleY, 3);
+                count = 1;
+            }
+
+            const qreal r = sumR / count;
+            const qreal g = sumG / count;
+            const qreal b = sumB / count;
+            const qreal a = sumA / count;
+
+            if (a < 1.0) {
                 *dst++ = 0; *dst++ = 0; *dst++ = 0; *dst++ = 0;
                 continue;
             }
@@ -234,7 +269,7 @@ void LiquidGlassEffectCaller::processCpu(CpuRenderTools& renderTools, const CpuR
             *dst++ = static_cast<uchar>(std::max(0.0, std::min(255.0, outR)));
             *dst++ = static_cast<uchar>(std::max(0.0, std::min(255.0, outG)));
             *dst++ = static_cast<uchar>(std::max(0.0, std::min(255.0, outB)));
-            *dst++ = a;
+            *dst++ = static_cast<uchar>(a);
         }
     }
 }

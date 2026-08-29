@@ -14,23 +14,6 @@ uniform float magnification;
 uniform vec4 glassTint;
 uniform float tintOpacity;
 
-float hash(vec2 p) {
-    p = fract(p * vec2(123.34, 456.21));
-    p += dot(p, p + 45.32);
-    return fract(p.x * p.y);
-}
-
-float smoothNoise(vec2 p) {
-    vec2 i = floor(p);
-    vec2 f = fract(p);
-    f = f * f * (3.0 - 2.0 * f);
-    float a = hash(i);
-    float b = hash(i + vec2(1.0, 0.0));
-    float c = hash(i + vec2(0.0, 1.0));
-    float d = hash(i + vec2(1.0, 1.0));
-    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
-}
-
 void main(void) {
     vec4 src = texture(tex, texCoord);
     if (src.a < 0.001) {
@@ -41,42 +24,47 @@ void main(void) {
     vec2 center = vec2(0.5, 0.5);
     vec2 offset = texCoord - center;
 
-    // Magnification & lens bulge
+    // Magnification (subtle lens zoom)
     float mag = max(magnification, 0.1);
     vec2 uvLens = center + offset / mag;
 
-    // Surface wave & noise normal distortion
-    float n1 = smoothNoise(texCoord * 15.0);
-    float n2 = smoothNoise(texCoord * 15.0 + vec2(7.3, 11.9));
-    vec2 noiseNorm = vec2(n1 - 0.5, n2 - 0.5) * (surfaceNoise * 0.01);
+    // Liquid surface wave normal distortion (subtle harmonic waves)
+    float freq = 8.0 + surfaceNoise * 0.15;
+    vec2 waveNorm = vec2(
+        sin(texCoord.y * freq + texCoord.x * 4.0),
+        cos(texCoord.x * freq - texCoord.y * 4.0)
+    ) * (surfaceNoise * 0.0015);
 
-    // Refractive displacement
-    vec2 refrOffset = (offset * (thickness * 0.02) + noiseNorm) * (refraction * 0.01);
-    vec2 sampleUV = clamp(uvLens + refrOffset, 0.0, 1.0);
+    // Subtle lens curvature refraction
+    vec2 lensCurv = offset * (thickness * 0.001);
+    vec2 totalDisp = (lensCurv + waveNorm) * (refraction * 0.05);
+    vec2 sampleUV = clamp(uvLens + totalDisp, 0.0, 1.0);
 
-    // Multi-sample blur diffusion for frosted glass look
+    // 25-tap frosted glass diffusion blur
     vec4 blurredCol = vec4(0.0);
-    float blur = blurRadius * 0.002;
-    int samples = 9;
-    for (int x = -1; x <= 1; ++x) {
-        for (int y = -1; y <= 1; ++y) {
-            vec2 bUV = clamp(sampleUV + vec2(float(x), float(y)) * blur, 0.0, 1.0);
-            blurredCol += texture(tex, bUV);
+    float bRadius = max(blurRadius, 0.0) * 0.0008;
+    float totalWeight = 0.0;
+    for (int x = -2; x <= 2; ++x) {
+        for (int y = -2; y <= 2; ++y) {
+            float w = 1.0 / (1.0 + float(x*x + y*y) * 0.5);
+            vec2 bUV = clamp(sampleUV + vec2(float(x), float(y)) * bRadius, 0.0, 1.0);
+            blurredCol += texture(tex, bUV) * w;
+            totalWeight += w;
         }
     }
-    blurredCol /= 9.0;
+    blurredCol /= totalWeight;
 
-    // Specular highlight
+    // Specular highlight on wave ridges & glass surface
     float rad = radians(lightAngle);
     vec2 lightDir = vec2(cos(rad), sin(rad));
-    vec2 surfaceGrad = normalize(offset + noiseNorm * 5.0 + vec2(0.001));
-    float spec = max(0.0, dot(surfaceGrad, lightDir));
-    float hlSize = max(highlightSize * 0.5, 1.0);
-    float highlight = pow(spec, hlSize) * (highlightIntensity * 0.01);
+    vec2 surfaceGrad = normalize(waveNorm * 100.0 + lensCurv * 50.0 + vec2(0.0001));
+    float waveDot = max(0.0, dot(surfaceGrad, lightDir));
+    float hlPow = max(highlightSize * 0.5, 2.0);
+    float highlight = pow(waveDot, hlPow) * (highlightIntensity * 0.005);
 
-    // Glass tint & opacity
-    vec3 tintedRgb = mix(blurredCol.rgb, glassTint.rgb, tintOpacity * 0.01 * glassTint.a);
-    vec3 finalRgb = tintedRgb + vec3(highlight);
+    // Glass tinting & opacity
+    vec3 tinted = mix(blurredCol.rgb, glassTint.rgb, (tintOpacity * 0.01) * glassTint.a);
+    vec3 finalRgb = tinted + vec3(highlight);
 
-    fragColor = vec4(clamp(finalRgb, 0.0, 1.0), src.a);
+    fragColor = vec4(clamp(finalRgb, 0.0, 1.0), src.a * blurredCol.a);
 }
