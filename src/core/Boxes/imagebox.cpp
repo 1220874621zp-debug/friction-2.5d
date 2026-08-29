@@ -111,6 +111,10 @@ void ImageBox::reload() {
     if(mFileHandler) mFileHandler->reloadAction();
 }
 
+bool ImageBox::hasLoadedImage() const {
+    return mFileHandler && mFileHandler->hasImage();
+}
+
 void ImageBox::setupCanvasMenu(PropertyMenu * const menu)
 {
     if (menu->hasActionsForType<ImageBox>()) { return; }

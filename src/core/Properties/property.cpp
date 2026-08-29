@@ -280,14 +280,13 @@ void Property::prp_getFullPath(QStringList& names) const {
 }
 
 QString Property::prp_sFixName(const QString &name) {
+    // historically stripped to [A-Za-z0-9 _], which silently destroyed
+    // every non-ASCII (Chinese) name on insertion into a container -
+    // the save/restore workarounds (PSD importer, project load, bone
+    // reparent) kept getting bypassed by newly added paths. Unicode is
+    // now preserved, mirroring the scene-name validation relaxation;
+    // NameFixer still enforces uniqueness among siblings
     QString result = name.trimmed();
-
-    result.remove(QRegExp("[^A-Za-z0-9 _]"));
-    while(!result.isEmpty() &&
-          (result.front() == ' ' ||
-           result.front().isDigit())) {
-        result.remove(0, 1);
-    }
     if(result.isEmpty()) return "Object 0";
     return result;
 }

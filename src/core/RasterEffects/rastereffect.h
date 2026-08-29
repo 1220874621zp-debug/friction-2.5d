@@ -36,8 +36,9 @@ enum class RasterEffectType : short {
     CUSTOM_SHADER, // xml, GLSL
     MOTION_BLUR,
     WIPE,
-    BONE_WARP,
-    NOISE_FADE,
+    // 6 was BONE_WARP (removed) - kept reserved so the serialized ids
+    // of the effects below do not shift against old project files
+    NOISE_FADE = 7,
     COLORIZE,
     BRIGHTNESS_CONTRAST
 };

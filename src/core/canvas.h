@@ -954,9 +954,10 @@ private:
     QList<Bone*> mBones;
 
     Bone* mDraftBone = nullptr;
-    // tail of the chain being built: every subsequent press grows a
-    // CHILD bone from here (Spine-style auto-chaining, no need to aim
-    // at the tail); Ctrl+press or right-click ends the chain
+    // tail of the chain being built: a press WITHIN the pick radius of
+    // this bone's tail grows a CHILD bone from here (Spine-style
+    // auto-chaining); a distant press, Ctrl+press or right-click ends
+    // the chain (a distant press immediately starts a new one)
     Bone* mChainTail = nullptr;
 
     // bone pose tool drag state

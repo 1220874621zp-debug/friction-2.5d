@@ -28,8 +28,12 @@
 #include "Boxes/rectangle.h"
 #include "Boxes/bonelayer.h"
 #include "Boxes/bone.h"
-#include "RasterEffects/bonewarpeffect.h"
+#include "Boxes/imagebox.h"
 #include "RasterEffects/rastereffectcollection.h"
+#include "fileshandler.h"
+#include "memoryhandler.h"
+#include <QImage>
+#include <QDir>
 #include "Animators/motionpathhandler.h"
 
 #define NOMINMAX
@@ -240,6 +244,72 @@ static void clearAllCore(Document& document, TaskScheduler& tasks) {
     document.clear();
 }
 
+// bind repro: ImageBox -> bind into a bone (exactly the UI flow), then
+// inspect the pixel/render state - blank-canvas investigation
+static int runBindTest(Document& document, TaskScheduler& tasks) {
+    Q_UNUSED(tasks)
+    auto pump = [&document]() {
+        for(int i = 0; i < 300; i++) QApplication::processEvents();
+    };
+    // solid-red test png
+    QImage img(64, 64, QImage::Format_ARGB32);
+    img.fill(Qt::red);
+    const QString png = QDir::tempPath() + "/bindtest_red.png";
+    if(!img.save(png)) {
+        fprintf(stderr, "[harness] BINDTEST FAIL: cannot write png\n");
+        return 10;
+    }
+    const auto scene = document.createNewScene(false);
+    const auto bl = enve::make_shared<BoneLayer>();
+    scene->addContained(bl);
+    const auto bone = enve::make_shared<Bone>();
+    bl->addContained(bone);
+    const auto box = enve::make_shared<ImageBox>();
+    box->setFilePath(png);
+    scene->addContained(box);
+    box->planUpdate(UpdateReason::userChange);
+    // the canvas render chain is not driven headlessly - force the
+    // box's render task directly (the export/offscreen path)
+    box->queExternalRender(0, false);
+    pump();
+
+    const auto report = [&](const char* tag) {
+        const auto rd = box->getCurrentRenderData(
+                    box->anim_getCurrentRelFrame());
+        const auto t = box->getTotalTransform();
+        fprintf(stderr, "[harness] %s: loaded=%d name='%s' parent=%s "
+                "renderData=%d bounds=%dx%d det=%.3f\n",
+                tag, int(box->hasLoadedImage()),
+                box->prp_getName().toLocal8Bit().constData(),
+                box->getParentGroup() ?
+                    box->getParentGroup()->prp_getName()
+                        .toLocal8Bit().constData() : "(null)",
+                int(rd != nullptr),
+                rd ? int(rd->fRelBoundingRect.width()) : -1,
+                rd ? int(rd->fRelBoundingRect.height()) : -1,
+                t.determinant());
+    };
+    report("before");
+    if(!box->hasLoadedImage()) {
+        fprintf(stderr, "[harness] BINDTEST FAIL: image not loaded\n");
+        return 11;
+    }
+    // REAL bind path: selection + bindSelectedLayers, like the UI tool
+    scene->clearBoxesSelection();
+    scene->addBoxToSelection(box.data());
+    bone->bindSelectedLayers();
+    box->queExternalRender(0, false);
+    pump();
+    report("after ");
+    const auto rd = box->getCurrentRenderData(
+                box->anim_getCurrentRelFrame());
+    const bool ok = box->hasLoadedImage() && rd &&
+            !rd->fRelBoundingRect.isEmpty();
+    fprintf(stderr, "[harness] BINDTEST %s\n", ok ? "PASS" : "FAIL");
+    fflush(stderr);
+    return ok ? 0 : 12;
+}
+
 // synthetic differential test: every layer creates a MotionPathHandler
 // in prp_updateCanvasProps(); repeated create/destroy cycles used to be
 // lethal with the double-shared PointsHandler ownership
@@ -275,98 +345,18 @@ int main(int argc, char *argv[]) {
     QStringList args;
     for(int i2 = 1; i2 < argc; i2++) args << QString(argv[i2]);
 
-    if(!args.isEmpty() && args.first() == "--warptest") {
+    if(!args.isEmpty() && args.first() == "--bindtest") {
         eSettings settings(HardwareInfo::sCpuThreads(),
                            HardwareInfo::sRamKB());
         ImportHandler importHandler;
         TaskScheduler taskScheduler;
         Document document(taskScheduler);
-        auto pump = [&app]() {
-            for(int i = 0; i < 200; i++) app.processEvents();
-        };
-        // build: bone layer -> 3-bone chain, rect with the warp effect
-        const auto bl = enve::make_shared<BoneLayer>();
-        document.createNewScene(false)->addContained(bl);
-        Bone* chain[3] = {nullptr, nullptr, nullptr};
-        chain[0] = bl->getContained().isEmpty() ? nullptr :
-                    enve_cast<Bone*>(bl->getContained().first().data());
-        if(!chain[0]) {
-            const auto root = enve::make_shared<Bone>();
-            bl->addContained(root);
-            chain[0] = root.get();
-        }
-        chain[1] = chain[0]->addChildBone();
-        chain[2] = chain[1]->addChildBone();
-        const auto rect = enve::make_shared<RectangleBox>();
-        document.createNewScene(false);
-        document.removeScene(1);
-        document.fScenes.first()->addContained(rect);
-        // REAL bind path: selection + bindSelectedLayers (reparent +
-        // auto-attach + deferred rebind), exactly like the UI tool
-        auto scene0 = document.fScenes.first().data();
-        scene0->clearBoxesSelection();
-        scene0->addBoxToSelection(rect.data());
-        chain[1]->bindSelectedLayers();
-
-        // BISECT: disable the auto-attach so bind = reparent only
-        Bone::sSkipAutoWarpAttach = true;
-        pump();
-        // FUNCTIONAL CHECK: the auto-attached effect must actually bind
-        // bones and produce a caller - not just not-crash
-        {
-            const auto coll = rect->rasterEffectsCollection();
-            const int n = coll ? coll->ca_getNumberOfChildren() : 0;
-            BoneWarpEffect* warp = nullptr;
-            for(int i = 0; i < n; i++) {
-                warp = enve_cast<BoneWarpEffect*>(coll->getChild(i));
-                if(warp) break;
-            }
-            if(!warp) {
-                fprintf(stderr, "[harness] WARPTEST FAIL: no effect\n");
-                return 5;
-            }
-            // pose a bone first: at bind pose the identity guard
-            // correctly skips the warp (caller = NULL is EXPECTED)
-            chain[1]->getBoxTransformAnimator()->getRotAnimator()->
-                    setCurrentBaseValue(35.);
-            pump();
-            const auto caller = warp->getEffectCaller(0, 1., 1., nullptr);
-            fprintf(stderr, "[harness] bound=%d caller=%s\n",
-                    warp->boundBoneCount(),
-                    caller ? "OK" : "NULL");
-            if(warp->boundBoneCount() < 1 || !caller) {
-                fprintf(stderr, "[harness] WARPTEST FAIL: inert effect\n");
-                return 6;
-            }
-        }
-
-        // sweep parameters like a user dragging the sliders
-        int sweepIdx = 0;
-        for(const qreal radius : {10., 80., 200., 800., 2000., 60.}) {
-            fflush(stderr);
-            chain[0]->warpRadiusAnimator()->setCurrentBaseValue(radius);
-            chain[1]->warpRadiusAnimator()->setCurrentBaseValue(radius);
-            chain[2]->warpRadiusAnimator()->setCurrentBaseValue(radius);
-            for(const qreal strength : {0., 0.35, 1.}) {
-                for(Bone* b : chain) {
-                    b->warpStrengthAnimator()->
-                            setCurrentBaseValue(strength);
-                }
-                for(Bone* b : chain) b->planUpdate(UpdateReason::userChange);
-                rect->planUpdate(UpdateReason::userChange);
-                pump();
-            }
-        }
-        // pose the bones too (rotated renders through the warp)
-        for(const qreal deg : {15., -30., 70.}) {
-            chain[1]->getBoxTransformAnimator()->getRotAnimator()->
-                    setCurrentBaseValue(deg);
-            chain[1]->planUpdate(UpdateReason::userChange);
-            pump();
-        }
-        fprintf(stderr, "[harness] WARPTEST PASS\n");
-        fflush(stderr);
-        return 0;
+        // ImageBox file handlers need the process-wide registry (the
+        // app builds it in MainWindow; without it assign() crashes),
+        // and the image loader is an eHddTask -> needs MemoryHandler
+        FilesHandler filesHandler;
+        MemoryHandler memoryHandler;
+        return runBindTest(document, taskScheduler);
     }
     if(!args.isEmpty() && args.first() == "--synthetic") {
         const int cycles = args.count() > 1 ? args.at(1).toInt() : 5;

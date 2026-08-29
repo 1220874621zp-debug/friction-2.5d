@@ -75,6 +75,10 @@ public:
     void setFilePath(const QString &path);
 
     const QString& filePath() const { return mPath; }
+    // pixel-in-RAM state for diagnostics (blank canvas investigation):
+    // false = pixels evicted/not loaded yet; the next render schedules
+    // an async reload
+    bool hasLoadedImage() const;
 
     void reload();
 private:

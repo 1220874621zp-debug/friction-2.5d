@@ -35,6 +35,7 @@
 #include <QStatusBar>
 #include "Boxes/boundingbox.h"
 #include "canvas.h"
+#include "Boxes/bonelayer.h"
 #include "Properties/emimedata.h"
 #include "Private/document.h"
 #include "Boxes/containerbox.h"
@@ -309,8 +310,10 @@ void BoxScroller::dropEvent(QDropEvent *event) {
         } else if(mDropTarget.fDropType == DropType::on) {
             // layer rows dropped onto a plain same-kind row combine into
             // one timeline track; mismatched kinds never reach this spot
-            // - while hovering they only ever show a reorder line. Other
-            // targets keep their old behavior (effect drops, groups)
+            // - while hovering they only ever show a reorder line.
+            // Dropping onto a CONTAINER row moves the layers INTO that
+            // container (Moho-style: drop artwork onto the bone-layer
+            // row); SWT_drop carries its own cycle guards
             if(!draggedBos.isEmpty()) {
                 bool combined = false;
                 if(dragCombineTarget(target)) {
@@ -318,8 +321,19 @@ void BoxScroller::dropEvent(QDropEvent *event) {
                                 enve_cast<eBoxOrSound*>(target), draggedBos);
                 }
                 if(!combined) {
-                    MainWindow::sGetInstance()->statusBar()->showMessage(
-                        QStringLiteral("\u65e0\u6cd5\u5408\u5e76\u5230\u8be5\u8f68\u9053"), 4000);
+                    if(const auto bl = enve_cast<BoneLayer*>(target)) {
+                        // Moho-style: dropping onto a bone-layer row
+                        // FLATTENS plain groups (children move directly
+                        // under the bone layer, shell removed) -
+                        // nesting would isolate blend-mode layers from
+                        // their backdrop and shift colors
+                        bl->absorbDroppedBoxes(draggedBos);
+                    } else if(enve_cast<ContainerBox*>(target)) {
+                        target->SWT_drop(mCurrentMimeData);
+                    } else {
+                        MainWindow::sGetInstance()->statusBar()->showMessage(
+                                    QStringLiteral("\u65e0\u6cd5\u5408\u5e76\u5230\u8be5\u8f68\u9053"), 4000);
+                    }
                 }
             } else {
                 target->SWT_drop(mCurrentMimeData);

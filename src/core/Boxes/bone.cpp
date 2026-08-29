@@ -12,10 +12,10 @@
 #include <QCoreApplication>
 #include "include/effects/SkDashPathEffect.h"
 #include "matrixdecomposition.h"
-#include "RasterEffects/bonewarpeffect.h"
-#include "RasterEffects/rastereffectcollection.h"
 #include "canvas.h"
 #include "Private/document.h"
+#include "Psd/psdimagebox.h"
+#include <QTimer>
 
 // draggable tail joint: dragging rotates the bone around its head
 // (pivot); the length itself is edited on the property row or during
@@ -97,12 +97,6 @@ Bone::Bone() : ContainerBox(QStringLiteral("\u9AA8\u9ABC"),
     mLength = enve::make_shared<QrealAnimator>(100, 10, 2000, 1,
                                                QStringLiteral("\u957F\u5EA6"));
     ca_addChild(mLength);
-    mWarpRadius = enve::make_shared<QrealAnimator>(150, 10, 2000, 1,
-                                                   QStringLiteral("\u5F71\u54CD\u534A\u5F84"));
-    mWarpStrength = enve::make_shared<QrealAnimator>(1, 0, 1, 0.01,
-                                                     QStringLiteral("\u5F3A\u5EA6"));
-    ca_addChild(mWarpRadius);
-    ca_addChild(mWarpStrength);
 
     connect(this, &BoundingBox::prp_sceneChanged,
             this, [this](Canvas* const oldS, Canvas* const newS) {
@@ -113,14 +107,6 @@ Bone::Bone() : ContainerBox(QStringLiteral("\u9AA8\u9ABC"),
 
 qreal Bone::getLength() const {
     return mLength->getEffectiveValue();
-}
-
-qreal Bone::warpRadius() const {
-    return mWarpRadius->getEffectiveValue();
-}
-
-qreal Bone::warpStrength() const {
-    return mWarpStrength->getEffectiveValue();
 }
 
 QPointF Bone::getTailRelPos() const {
@@ -277,59 +263,12 @@ void Bone::diagSceneState(const QString& when) {
     diag(out);
 }
 
-// key-aware channel write: with keys present the animator's effective
-// value comes from keys, so a plain base-value write would be silently
-// ignored (and a reparent compensation that "didn't happen" shifts the
-// layer) - write into the key at the current frame instead
-static void setChannelValue(QrealAnimator* const anim, const qreal v) {
-    if(!anim) return;
-    if(anim->anim_hasKeys()) {
-        anim->saveValueToKey(anim->anim_getCurrentRelFrame(), v);
-    } else {
-        anim->setCurrentBaseValue(v);
-    }
-}
-
-static void setChannelValue(QPointFAnimator* const anim,
-                            const qreal x, const qreal y) {
-    if(!anim) return;
-    setChannelValue(anim->getXAnimator(), x);
-    setChannelValue(anim->getYAnimator(), y);
-}
-
-// reparent keeping the FULL world transform: solve the child's new
-// relative transform as totalBefore * newParentTotal^-1 and write the
-// decomposed TRS back. A translation-only compensation would leave the
-// content rotated/scaled whenever the bone itself carries rotation or
-// scale - e.g. binding to a mid-chain bone tilted by the chain drag
-static void reparentKeepWorld(BoundingBox* const layer,
-                               ContainerBox* const newParent) {
-    const auto transform = layer->getBoxTransformAnimator();
-    const QMatrix totalBefore = layer->getTotalTransform();
-    const QMatrix parentTotal = newParent->getTotalTransform();
-    const auto ref = layer->ref<BoundingBox>();
-    layer->removeFromParent_k();
-    newParent->addContained(ref);
-    if(!transform) return;
-    const QMatrix targetRel = totalBefore*parentTotal.inverted();
-    const QPointF pivot(transform->getPivotX(), transform->getPivotY());
-    const auto v = MatrixDecomposition::decomposePivoted(targetRel, pivot);
-    setChannelValue(transform->getPosAnimator(), v.fMoveX, v.fMoveY);
-    setChannelValue(transform->getRotAnimator(), v.fRotation);
-    setChannelValue(transform->getScaleAnimator(), v.fScaleX, v.fScaleY);
-    setChannelValue(transform->getShearAnimator(), v.fShearX, v.fShearY);
-}
-
-// harness bisect switch (auto-attach of the warp effect)
-bool Bone::sSkipAutoWarpAttach = false;
-
-// does the layer already carry a bone warp effect?
-static bool hasBoneWarpEffect(BoundingBox* const layer) {
-    const auto coll = layer->rasterEffectsCollection();
-    if(!coll) return false;
-    const int n = coll->ca_getNumberOfChildren();
-    for(int i = 0; i < n; i++) {
-        if(enve_cast<BoneWarpEffect*>(coll->getChild(i))) return true;
+// does the bone already carry non-bone artwork? (first-bind detection
+// for the stacking-slot preservation below)
+static bool boneHasArtwork(const Bone* const bone) {
+    for(const auto& c : bone->getContained()) {
+        if(enve_cast<Bone*>(c.data())) continue;
+        if(enve_cast<BoundingBox*>(c.data())) return true;
     }
     return false;
 }
@@ -347,18 +286,97 @@ void Bone::bindSelectedLayers() {
         if(enve_cast<Bone*>(box) || enve_cast<BoneLayer*>(box)) continue;
         // a layer that is an ANCESTOR of this bone would create a cycle
         if(isAncestor(box)) continue;
-        // skip anything already inside
-        // Moho semantics: the layer is driven ONLY by the bone warp.
-        // (the earlier design also re-parented the layer into the bone,
-        // but the rigid parent transform exactly cancels the backward
-        // warp and the net visual effect is nothing)
-        // ORDER: add to the layer FIRST, set the chain root AFTER -
-        // setting the target fires the rebind chain which must not run
-        // while the effect is still unparented (bind-time crash)
-        if(!sSkipAutoWarpAttach && !hasBoneWarpEffect(box)) {
-            const auto warp = enve::make_shared<BoneWarpEffect>();
-            box->addRasterEffect(warp);
-            warp->setChainRoot(this);
+        // reparent bind: the layer becomes a child of this bone and
+        // follows its transform rigidly (world position preserved -
+        // the bind pose is the current pose; no mesh deformation).
+        // A bound layer renders at its BONE's slot, so the bone is
+        // placed to keep the layer's position in the stack (first
+        // bind only). For a chain-root bone it takes the layer's old
+        // slot; for a NESTED bone the layer's order is kept against
+        // the artwork already bound to the nearest ancestor bone by
+        // comparing the newcomer's old slot with the chain root's
+        // slot in the shared container (the root sits at the
+        // first-bound layer's position, preserving the artwork order)
+        const auto myParent = getParentGroup();
+        const bool firstBind = !boneHasArtwork(this);
+        const auto oldParent = box->getParentGroup();
+        const int oldSlot = oldParent ?
+                    oldParent->getContainedIndex(box) : -1;
+        // topmost bone ancestor (sits next to the artwork rows)
+        ContainerBox* chainRoot = this;
+        for(auto p = myParent; p && enve_cast<Bone*>(p);
+            p = p->getParentGroup()) {
+            chainRoot = p;
+        }
+        const auto rootParent = chainRoot->getParentGroup();
+        const int rootSlot = rootParent ?
+                    rootParent->getContainedIndex(chainRoot) : -1;
+        reparentKeepWorld(box, this);
+        if(firstBind && myParent) {
+            if(oldParent == myParent && oldSlot >= 0) {
+                // chain root: take the layer's old slot (slot-1: the
+                // layer's own slot was vacated by the reparent)
+                const int from = myParent->getContainedIndex(this);
+                const int to = qMax(0, oldSlot - 1);
+                if(from >= 0 && from != to) {
+                    myParent->moveContainedInList(this, from, to);
+                }
+            } else if(enve_cast<Bone*>(myParent) && oldParent &&
+                      oldParent == rootParent &&
+                      oldSlot >= 0 && rootSlot >= 0) {
+                // nested bone: climb to the nearest ancestor bone with
+                // bound artwork and order the chain segment on that
+                // path against its artwork
+                ContainerBox* artParent = myParent;
+                ContainerBox* unit = this;
+                while(artParent && enve_cast<Bone*>(artParent)) {
+                    const auto ab = static_cast<Bone*>(artParent);
+                    if(boneHasArtwork(ab)) break;
+                    unit = artParent;
+                    artParent = artParent->getParentGroup();
+                }
+                if(artParent && enve_cast<Bone*>(artParent)) {
+                    eBoxOrSound* firstLayer = nullptr;
+                    eBoxOrSound* lastLayer = nullptr;
+                    for(const auto& c : artParent->getContained()) {
+                        if(!c || enve_cast<Bone*>(c.data())) continue;
+                        if(!enve_cast<BoundingBox*>(c.data())) continue;
+                        if(!firstLayer) firstLayer = c.data();
+                        lastLayer = c.data();
+                    }
+                    if(firstLayer && lastLayer) {
+                        if(oldSlot > rootSlot) {
+                            artParent->moveContainedBelow(unit, lastLayer);
+                        } else {
+                            artParent->moveContainedAbove(unit, firstLayer);
+                        }
+                    }
+                }
+            }
+        }
+        // blank-pixels investigation: pixel state of the bound layer at
+        // bind time and again once the render churn settles
+        {
+            QString state;
+            if(const auto psd = enve_cast<PsdImageBox*>(box)) {
+                state = QStringLiteral(" psd file=%1 loaded=%2")
+                        .arg(QFile::exists(psd->filePath()) ? "Y" : "N")
+                        .arg(psd->hasLoadedImage() ? "Y" : "N");
+            }
+            diag(QStringLiteral("bound '%1'%2")
+                 .arg(box->prp_getName(), state));
+            QTimer::singleShot(2000,
+                               [w = QPointer<BoundingBox>(box)]() {
+                if(!w) return;
+                QString s2;
+                if(const auto psd = enve_cast<PsdImageBox*>(w.data())) {
+                    s2 = QStringLiteral(" psd file=%1 loaded=%2")
+                         .arg(QFile::exists(psd->filePath()) ? "Y" : "N")
+                         .arg(psd->hasLoadedImage() ? "Y" : "N");
+                }
+                Bone::diag(QStringLiteral("bound-recheck '%1'%2")
+                           .arg(w->prp_getName(), s2));
+            });
         }
         bound++;
     }
@@ -377,26 +395,16 @@ static ContainerBox* nonBoneAncestor(Bone* const from) {
     return p;
 }
 
-// remove every bone warp effect from the layer (its bones move it)
-static void removeWarpEffects(BoundingBox* const layer) {
-    const auto coll = layer->rasterEffectsCollection();
-    if(!coll) return;
-    QList<BoneWarpEffect*> found;
-    for(int i = 0; i < coll->ca_getNumberOfChildren(); i++) {
-        const auto eff = enve_cast<BoneWarpEffect*>(coll->getChild(i));
-        if(eff) found << eff;
-    }
-    for(const auto eff : found) {
-        layer->removeRasterEffect(eff->ref<RasterEffect>());
-    }
-}
-
 void Bone::unbindLayers() {
     diag(QStringLiteral("unbindLayers on %1").arg(prp_getName()));
     diagSceneState(QStringLiteral("before unbindLayers"));
-    // warp-only bind: unbind = drop the warp effects from every layer
-    // in this bone's subtree (layers may also live inside via the
-    // parent-link tool - those keep their parent, only the warp goes)
+    // reparent bind: unbind = move every non-bone layer in this bone's
+    // subtree back out to the nearest non-bone ancestor (the rig
+    // layer), keeping each one's world appearance; child bones stay
+    const auto dest = nonBoneAncestor(this);
+    if(!dest) return;
+    // collect first: reparenting mutates the very getContained()
+    // lists the walk is iterating over
     QList<BoundingBox*> layers;
     QList<Bone*> stack{this};
     while(!stack.isEmpty()) {
@@ -412,8 +420,20 @@ void Bone::unbindLayers() {
         }
     }
     int moved = 0;
+    // the layers take the BONE's stacking slot instead of clumping at
+    // the top of the container (each right after the previous one,
+    // keeping their relative order)
+    const int baseSlot = dest->getContainedIndex(this);
     for(const auto layer : layers) {
-        removeWarpEffects(layer);
+        reparentKeepWorld(layer, dest);
+        if(baseSlot >= 0) {
+            const int from = dest->getContainedIndex(layer);
+            const int to = qMin(baseSlot + moved,
+                                dest->getContained().count() - 1);
+            if(from >= 0 && from != to) {
+                dest->moveContainedInList(layer, from, to);
+            }
+        }
         moved++;
     }
     if(moved > 0 && Document::sInstance) {
@@ -426,8 +446,19 @@ void Bone::unbindLayer(BoundingBox* const layer) {
          .arg(layer ? layer->prp_getName() : QStringLiteral("?"),
               prp_getName()));
     if(!layer) return;
-    // warp-only bind: unbind = drop the warp effect (no reparenting)
-    removeWarpEffects(layer);
+    // reparent bind: unbind = move the layer out of the bone chain to
+    // the nearest non-bone ancestor, keeping its world appearance and
+    // its visual stacking slot (the bone's position)
+    if(const auto dest = nonBoneAncestor(this)) {
+        const int slot = dest->getContainedIndex(this);
+        reparentKeepWorld(layer, dest);
+        if(slot >= 0) {
+            const int from = dest->getContainedIndex(layer);
+            if(from >= 0 && from != slot) {
+                dest->moveContainedInList(layer, from, slot);
+            }
+        }
+    }
     // keep the layer selected so its new location is obvious
     if(const auto scene = getParentScene()) {
         scene->clearBoxesSelection();

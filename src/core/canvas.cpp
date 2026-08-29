@@ -1909,16 +1909,30 @@ void Canvas::addAdjustmentLayerAction() {
     if(Document::sInstance) Document::sInstance->actionFinished();
 }
 
-Bone* Canvas::startBoneChain(const QPointF& absPos) {
-    ContainerBox* parent = enve_cast<BoneLayer*>(mCurrentContainer.data());
-    if(!parent) {
-        for(const auto& c : getContained()) {
-            if(const auto bl = enve_cast<BoneLayer*>(c.data())) {
-                parent = bl;
-                break;
-            }
+// depth-first search for the first bone layer anywhere in the scene
+// hierarchy (bone layers may be nested inside groups - e.g. a PSD
+// import root converted into one)
+static BoneLayer* findBoneLayerDeep(ContainerBox* const cont) {
+    for(const auto& c : cont->getContained()) {
+        if(const auto bl = enve_cast<BoneLayer*>(c.data())) return bl;
+        if(const auto group = enve_cast<ContainerBox*>(c.data())) {
+            if(const auto bl = findBoneLayerDeep(group)) return bl;
         }
     }
+    return nullptr;
+}
+
+Bone* Canvas::startBoneChain(const QPointF& absPos) {
+    ContainerBox* parent = enve_cast<BoneLayer*>(mCurrentContainer.data());
+    if(!parent && mCurrentContainer) {
+        // walk up: a bone layer nested above the current container is
+        // the natural home for new bones (converted PSD group etc.)
+        for(auto p = mCurrentContainer->getParentGroup(); p;
+            p = p->getParentGroup()) {
+            if(const auto bl = enve_cast<BoneLayer*>(p)) { parent = bl; break; }
+        }
+    }
+    if(!parent) parent = findBoneLayerDeep(this);
     if(!parent) {
         const auto layer = enve::make_shared<BoneLayer>();
         addContained(layer);

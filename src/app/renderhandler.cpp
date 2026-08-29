@@ -347,9 +347,12 @@ void RenderHandler::nextPreviewFrame() {
             startAudio();
         } else stopPreview();
     } else {
-        mCurrentScene->setSceneFrame(mCurrentPreviewFrame);
+        // anim_setAbsFrame updates the canvas's internal frame counter
+        // (drives the playhead drawing) AND displays the cached frame
+        // when available - setSceneFrame only displayed, leaving the
+        // playhead frozen at the pre-playback position
+        mCurrentScene->anim_setAbsFrame(mCurrentPreviewFrame);
         if(!mLoop) mCurrentScene->setMinFrameUseRange(mCurrentPreviewFrame);
-        emit mCurrentScene->currentFrameChanged(mCurrentPreviewFrame);
     }
     emit mCurrentScene->requestUpdate();
 }

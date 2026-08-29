@@ -985,6 +985,14 @@ ContainerBox* BoxSingleWidget::getPromoteTargetGroup() {
             targetGroup = static_cast<ContainerBox*>(parentBox);
         }
     }
+    // rig containers must never be promoted: the operation rewrites the
+    // serialized type and the bone layer / bone would be lost on reload
+    if(targetGroup) {
+        const auto type = targetGroup->getBoxType();
+        if(type == eBoxType::bone || type == eBoxType::boneLayer) {
+            return nullptr;
+        }
+    }
     return targetGroup;
 }
 
@@ -1604,6 +1612,27 @@ void BoxSingleWidget::mousePressEvent(QMouseEvent *event) {
                         nextQ->setHiddenByTrack(false);
                     }
                     Document::sInstance->actionFinished();
+                });
+            }
+        }
+        // convert a plain group (e.g. a flattened PSD import root)
+        // into a bone layer: Moho-style the artwork then lives in the
+        // bone layer while the bones drive it
+        if(const auto cont = enve_cast<ContainerBox*>(target)) {
+            if(cont->getBoxType() == eBoxType::group && !cont->isLink()) {
+                menu.addSeparator();
+                menu.addAction(
+                            QStringLiteral("\u8F6C\u6362\u4E3A\u9AA8\u9ABC\u5C42"),
+                            this,
+                            [contQ = QPointer<ContainerBox>(cont),
+                             sceneQ = QPointer<Canvas>(
+                                 mParent->currentScene())]() {
+                    if(!contQ) return;
+                    const auto bl = BoneLayer::convertFromGroup(contQ);
+                    if(bl && sceneQ) {
+                        sceneQ->clearBoxesSelection();
+                        sceneQ->addBoxToSelection(bl);
+                    }
                 });
             }
         }

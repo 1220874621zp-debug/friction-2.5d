@@ -39,6 +39,8 @@
 #include "namefixer.h"
 #include "BlendEffects/blendeffectcollection.h"
 #include "BlendEffects/blendeffectboxshadow.h"
+#include "matrixdecomposition.h"
+#include "Animators/qpointfanimator.h"
 #include "svgexporter.h"
 #include "Private/Tasks/taskscheduler.h"
 #include "Properties/boolpropertycontainer.h"
@@ -148,6 +150,62 @@ bool ContainerBox::SWT_dropInto(const int index, const QMimeData * const data) {
         return true;
     }
     return false;
+}
+
+// key-aware channel write: with keys present the animator's effective
+// value comes from keys, so a plain base-value write would be silently
+// ignored (and a reparent compensation that "didn't happen" shifts the
+// layer) - write into the key at the current frame instead
+static void setChannelValue(QrealAnimator* const anim, const qreal v) {
+    if(!anim) return;
+    if(anim->anim_hasKeys()) {
+        anim->saveValueToKey(anim->anim_getCurrentRelFrame(), v);
+    } else {
+        anim->setCurrentBaseValue(v);
+    }
+}
+
+static void setChannelValue(QPointFAnimator* const anim,
+                            const qreal x, const qreal y) {
+    if(!anim) return;
+    setChannelValue(anim->getXAnimator(), x);
+    setChannelValue(anim->getYAnimator(), y);
+}
+
+// reparent keeping the FULL world transform: solve the child's new
+// relative transform as totalBefore * newParentTotal^-1 and write the
+// decomposed TRS back. A translation-only compensation would leave the
+// content rotated/scaled whenever the new parent itself carries
+// rotation or scale - e.g. binding to a mid-chain bone tilted by the
+// chain drag
+void ContainerBox::reparentKeepWorld(BoundingBox* const layer,
+                                     ContainerBox* const newParent) {
+    if(!layer || !newParent || layer == newParent) return;
+    const auto transform = layer->getBoxTransformAnimator();
+    const QMatrix totalBefore = layer->getTotalTransform();
+    const QMatrix parentTotal = newParent->getTotalTransform();
+    const auto ref = layer->ref<BoundingBox>();
+    // insertContained() runs the name through makeNameUniqueForDescendants()
+    // whose prp_sFixName() strips every non-ASCII character ("道地" becomes
+    // "Object 4") - save it and restore after the move (the established
+    // workaround pattern, see readContained / the PSD importer)
+    const QString name = layer->prp_getName();
+    layer->removeFromParent_k();
+    newParent->addContained(ref);
+    layer->prp_setName(name);
+    if(!transform) return;
+    const QMatrix targetRel = totalBefore*parentTotal.inverted();
+    const QPointF pivot(transform->getPivotX(), transform->getPivotY());
+    const auto v = MatrixDecomposition::decomposePivoted(targetRel, pivot);
+    setChannelValue(transform->getPosAnimator(), v.fMoveX, v.fMoveY);
+    setChannelValue(transform->getRotAnimator(), v.fRotation);
+    setChannelValue(transform->getScaleAnimator(), v.fScaleX, v.fScaleY);
+    setChannelValue(transform->getShearAnimator(), v.fShearX, v.fShearY);
+    // NOTE: no planUpdate here - a bare planUpdate(userChange) expires
+    // the draw container and clears cached render data, but nothing
+    // guarantees a re-render request reaches the leaf afterwards, so
+    // the box stays blank (dashed bounds only). The transform writes
+    // above already invalidate what needs invalidating.
 }
 
 void ContainerBox::iniPathEffects() {
@@ -401,6 +459,9 @@ void ContainerBox::queTasks() {
 void ContainerBox::promoteToLayer()
 {
     if (!isGroup()) { return; }
+    // rig containers must keep their identity: promoting rewrites the
+    // serialized type and the bone layer / bone would be lost on reload
+    if (mType == eBoxType::bone || mType == eBoxType::boneLayer) { return; }
     if (!isLink()) { mType = eBoxType::layer; }
     mIsLayer = true;
     if (prp_getName().contains("Group")) {
@@ -778,10 +839,15 @@ void ContainerBox::setupCanvasMenu(PropertyMenu * const menu)
     if (menu->hasActionsForType<ContainerBox>()) { return; }
     menu->addedActionsForType<ContainerBox>();
 
+    // rig containers (bone layer / bone) must not be promoted or
+    // ungrouped - either operation destroys the bone container
+    const bool boneKind = mType == eBoxType::bone ||
+                          mType == eBoxType::boneLayer;
+
     menu->addPlainAction<ContainerBox>(QIcon::fromTheme("layer"), tr("Promote to Layer"),
                                        [](ContainerBox * box) {
         box->promoteToLayer();
-    })->setEnabled(isGroup());
+    })->setEnabled(isGroup() && !boneKind);
 
     menu->addPlainAction<ContainerBox>(QIcon::fromTheme("group"), tr("Demote to Group"),
                                        [](ContainerBox * box) {
@@ -789,7 +855,7 @@ void ContainerBox::setupCanvasMenu(PropertyMenu * const menu)
     })->setDisabled(isGroup());
 
 
-    if (!isLink()) {
+    if (!isLink() && !boneKind) {
         menu->addSeparator();
 
         const auto ungroupAbandonAction = menu->addPlainAction<ContainerBox>(QIcon::fromTheme("group"), tr("Ungroup"),

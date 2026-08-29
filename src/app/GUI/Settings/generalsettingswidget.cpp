@@ -29,12 +29,22 @@
 #include <QLabel>
 #include <QGroupBox>
 #include <QScrollArea>
+#include <QPushButton>
+#include <QDesktopServices>
+#include <QDir>
+#include <QMessageBox>
+#include <QUrl>
+#include <functional>
 
 #include "Private/esettings.h"
 #include "GUI/global.h"
 
 #include "../mainwindow.h"
 #include "widgets/twocolumnlayout.h"
+#include "Private/document.h"
+#include "canvas.h"
+#include "Boxes/containerbox.h"
+#include "Psd/psdimagebox.h"
 
 GeneralSettingsWidget::GeneralSettingsWidget(QWidget *parent)
     : SettingsWidget(parent)
@@ -194,6 +204,81 @@ GeneralSettingsWidget::GeneralSettingsWidget(QWidget *parent)
     mProjectLayout->addSpacing(10);
     mProjectLayout->addWidget(mImportFileWidget);
 
+    const auto mCacheWidget = new QGroupBox(this);
+    mCacheWidget->setObjectName("BlueBox");
+    mCacheWidget->setTitle(tr("Cache"));
+    mCacheWidget->setContentsMargins(0, 0, 0, 0);
+    const auto mCacheLayout = new QVBoxLayout(mCacheWidget);
+
+    const auto cachePathLabel = new QLabel(
+                AppSupport::getAppCachePath(), this);
+    cachePathLabel->setWordWrap(true);
+    cachePathLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    mCacheLayout->addWidget(cachePathLabel);
+
+    const auto cacheInfoLabel = new QLabel(tr(
+            "PSD layer pixel cache. Safe to clear - layers currently "
+            "in use are re-extracted from their .fpsd packages."), this);
+    cacheInfoLabel->setWordWrap(true);
+    mCacheLayout->addWidget(cacheInfoLabel);
+
+    const auto cacheBtnRow = new QWidget(this);
+    cacheBtnRow->setContentsMargins(0, 0, 0, 0);
+    const auto cacheBtnLayout = new QHBoxLayout(cacheBtnRow);
+    cacheBtnLayout->setContentsMargins(0, 0, 0, 0);
+    const auto openCacheBtn = new QPushButton(tr("Open Directory"), this);
+    const auto clearCacheBtn = new QPushButton(tr("Clear PSD Cache"), this);
+    cacheBtnLayout->addWidget(openCacheBtn);
+    cacheBtnLayout->addWidget(clearCacheBtn);
+    cacheBtnLayout->addStretch();
+    mCacheLayout->addWidget(cacheBtnRow);
+
+    connect(openCacheBtn, &QPushButton::clicked, this,
+            [cachePathLabel]() {
+        QDesktopServices::openUrl(
+                    QUrl::fromLocalFile(cachePathLabel->text()));
+    });
+    connect(clearCacheBtn, &QPushButton::clicked, this, [this]() {
+        // remove the PSDCache subtree, then re-extract the pixels of
+        // every PSD layer currently in use so nothing goes blank
+        const QString psdCache =
+                AppSupport::getAppCachePath() + "/PSDCache";
+        int removed = 0;
+        QDir dir(psdCache);
+        if(dir.exists()) {
+            const auto dirs = dir.entryList(
+                        QDir::Dirs | QDir::NoDotAndDotDot);
+            for(const auto& d : dirs) {
+                QDir sub(psdCache + "/" + d);
+                removed += sub.entryList(QDir::Files).count();
+            }
+            dir.removeRecursively();
+        }
+        int refreshed = 0;
+        if(Document::sInstance) {
+            for(const auto& scene : Document::sInstance->fScenes) {
+                if(!scene) continue;
+                std::function<void(ContainerBox*)> walk =
+                        [&](ContainerBox* const cont) {
+                    for(const auto& c : cont->getContained()) {
+                        if(const auto psd =
+                                dynamic_cast<PsdImageBox*>(c.data())) {
+                            if(psd->ensureCachedFile()) refreshed++;
+                        } else if(const auto group =
+                                  dynamic_cast<ContainerBox*>(c.data())) {
+                            walk(group);
+                        }
+                    }
+                };
+                walk(scene.data());
+            }
+        }
+        QMessageBox::information(this, tr("Cache"),
+                tr("Removed %1 cache file(s). Re-extracted %2 layer(s) "
+                   "currently in use.").arg(removed).arg(refreshed));
+    });
+
+    mGeneralLayout->addWidget(mCacheWidget);
     mGeneralLayout->addStretch();
     addWidget(mGeneralWidget);
 

@@ -66,11 +66,12 @@ public:
 
     const QString& sourcePackage() const { return mSourcePackage; }
     const QString& sourceLayerKey() const { return mSourceLayerKey; }
-private:
-    // If the pixel cache file is gone (cache cleared), re-extract it
-    // from the .fpsd package.
-    bool ensureCachedFile();
 
+    // If the pixel cache file is gone (cache cleared), re-extract it
+    // from the .fpsd package. Public so the bone-layer conversion can
+    // re-ensure pixels after moving layers around.
+    bool ensureCachedFile();
+private:
     QString mSourcePackage;
     QString mSourceLayerKey;
 };

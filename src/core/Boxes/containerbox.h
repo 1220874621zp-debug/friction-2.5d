@@ -187,6 +187,13 @@ public:
     void ungroupKeepTransform_k();
     void ungroupAbandomTransform_k();
 
+    // re-parent keeping the FULL world transform: solve the child's new
+    // relative transform as totalBefore * newParentTotal^-1 and write
+    // the decomposed TRS back (shared by bone bind/detach and by the
+    // group -> bone-layer conversion)
+    static void reparentKeepWorld(BoundingBox* const layer,
+                                  ContainerBox* const newParent);
+
     bool isCurrentGroup() const;
 
     void updateContainedBoxes();

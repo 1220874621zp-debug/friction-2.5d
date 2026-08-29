@@ -3169,6 +3169,26 @@ you can create a new one by clicking on the '+' button.</source>
         <translation>项目读写</translation>
     </message>
     <message>
+        <source>Cache</source>
+        <translation>缓存</translation>
+    </message>
+    <message>
+        <source>PSD layer pixel cache. Safe to clear - layers currently in use are re-extracted from their .fpsd packages.</source>
+        <translation>PSD 分层像素缓存。可随时清除——正在使用的图层会自动从 .fpsd 包重新提取。</translation>
+    </message>
+    <message>
+        <source>Open Directory</source>
+        <translation>打开目录</translation>
+    </message>
+    <message>
+        <source>Clear PSD Cache</source>
+        <translation>清除 PSD 缓存</translation>
+    </message>
+    <message>
+        <source>Removed %1 cache file(s). Re-extracted %2 layer(s) currently in use.</source>
+        <translation>已删除 %1 个缓存文件。已重新提取 %2 个正在使用的图层。</translation>
+    </message>
+    <message>
         <location filename="../GUI/Settings/generalsettingswidget.cpp" line="58" />
         <source>Enable Backup on Save</source>
         <translation>保存时启用备份</translation>
@@ -3300,6 +3320,76 @@ The scaling factor will then round up for .75 and above.</source>
         <location filename="../../core/Boxes/imagebox.cpp" line="117" />
         <source>Reload</source>
         <translation>重新加载</translation>
+    </message>
+    <message>
+        <source>Update Layer from Source PSD</source>
+        <translation>从源 PSD 更新此图层</translation>
+    </message>
+    <message>
+        <source>Sync All Layers from Source PSD</source>
+        <translation>从源 PSD 同步所有图层</translation>
+    </message>
+    <message>
+        <source>PSD Update</source>
+        <translation>PSD 更新</translation>
+    </message>
+    <message>
+        <source>PSD Sync</source>
+        <translation>PSD 同步</translation>
+    </message>
+    <message>
+        <source>New Layers in Source PSD</source>
+        <translation>源 PSD 中的新图层</translation>
+    </message>
+    <message>
+        <source>The source PSD contains new layers.
+Select the layers you want to import:</source>
+        <translation>源 PSD 包含新图层。
+请选择要导入的图层：</translation>
+    </message>
+    <message>
+        <source>Layer no longer exists in the source PSD.
+It is kept (marked as missing) with all animation data.</source>
+        <translation>该图层在源 PSD 中已不存在。
+图层将保留（标记为缺失）及其全部动画数据。</translation>
+    </message>
+    <message>
+        <source>Layer updated from source PSD.</source>
+        <translation>图层已从源 PSD 更新。</translation>
+    </message>
+    <message>
+        <source>Layer pixels unchanged.</source>
+        <translation>图层像素无变化。</translation>
+    </message>
+    <message>
+        <source>Source PSD is missing:
+%1</source>
+        <translation>源 PSD 缺失：
+%1</translation>
+    </message>
+    <message>
+        <source>Failed to parse source PSD:
+%1</source>
+        <translation>解析源 PSD 失败：
+%1</translation>
+    </message>
+    <message>
+        <source>Failed to write package:
+%1</source>
+        <translation>写入包失败：
+%1</translation>
+    </message>
+    <message>
+        <source>All layers are up to date.</source>
+        <translation>所有图层均为最新。</translation>
+    </message>
+    <message>
+        <source>Updated layers: %1
+Missing layers: %2
+Added layers: %3</source>
+        <translation>已更新图层：%1
+缺失图层：%2
+新增图层：%3</translation>
     </message>
     <message>
         <location filename="../../core/Boxes/imagebox.cpp" line="121" />
@@ -5392,16 +5482,8 @@ Are you sure you want to save this project file?</source>
 <context>
     <name>QObject</name>
     <message>
-        <source>Bone Warp</source>
-        <translation>骨骼弯曲</translation>
-    </message>
-    <message>
         <source>Importing PSD ...</source>
         <translation>正在导入 PSD ...</translation>
-    </message>
-    <message>
-        <source>Bones</source>
-        <translation>骨骼</translation>
     </message>
     <message>
         <source>Path Effects</source>

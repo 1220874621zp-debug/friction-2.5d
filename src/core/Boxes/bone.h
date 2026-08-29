@@ -24,12 +24,6 @@ public:
 
     qreal getLength() const;
     QrealAnimator* lengthAnimator() const { return mLength.get(); }
-    // bone-warp falloff controls: shown in the top property bar and
-    // the timeline when the bone is selected; consumed by BoneWarpEffect
-    qreal warpRadius() const;
-    qreal warpStrength() const;
-    QrealAnimator* warpRadiusAnimator() const { return mWarpRadius.get(); }
-    QrealAnimator* warpStrengthAnimator() const { return mWarpStrength.get(); }
     // local-space tail position (length, 0)
     QPointF getTailRelPos() const;
     // world-space head/tail at the current frame
@@ -60,17 +54,12 @@ public:
     // mirror it to qDebug (the debug-log dialog proved unreliable for
     // capturing qDebug output)
     static void diag(const QString& line);
-    // harness bisect: when true bindSelectedLayers skips the
-    // auto-attach of the bone warp effect
-    static bool sSkipAutoWarpAttach;
     // snapshot of every bone in the scene (name/flags/parent chain)
     static void diagSceneState(const QString& when);
 
     void prp_setupTreeViewMenu(PropertyMenu * const menu) override;
 private:
     qsptr<QrealAnimator> mLength;
-    qsptr<QrealAnimator> mWarpRadius;
-    qsptr<QrealAnimator> mWarpStrength;
     qsptr<Property> mOverlay;
 };
 

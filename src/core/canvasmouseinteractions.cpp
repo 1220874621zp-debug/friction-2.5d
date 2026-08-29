@@ -218,15 +218,18 @@ void Canvas::handleMovePointMousePressEvent(const eMouseEvent& e)
 }
 
 
-// bone tool: press near the tail of the last (or any) bone continues
-// the chain with a child bone; pressing elsewhere starts a new chain.
-// The draft bone's length/rotation then follow the cursor until the
-// next click (see updateDraftBone in the mouse-move path)
+// bone tool: pressing near the tail of the last (or any) bone continues
+// the chain with a child bone; pressing farther away starts a new,
+// independent bone at the click point. The draft bone's length/rotation
+// then follow the cursor until the next click (see updateDraftBone in
+// the mouse-move path)
 void Canvas::boneCreatePress(const eMouseEvent& e) {
     clearBoxesSelection();
+    // screen-pixel pick radius so the connect feel stays the same at
+    // every zoom level (same style as pickBoneAt's 12*e.fScale)
+    const qreal pickDist = 20*e.fScale;
     // branching: pressing near ANOTHER bone's tail re-targets the
     // chain there (fork a new branch from that bone)
-    const qreal pickDist = 20;
     for(const auto bone : mBones) {
         if(!bone || bone == mDraftBone) continue;
         if(QLineF(e.fPos, bone->getTailAbsPos()).length() < pickDist) {
@@ -241,8 +244,11 @@ void Canvas::boneCreatePress(const eMouseEvent& e) {
             return;
         }
     }
-    // Ctrl starts a fresh chain ignoring the current one
-    if(mChainTail && !e.ctrlMod()) {
+    // continue the chain ONLY when the press hugs the chain tail - a
+    // distant press means the user is drawing a separate bone and must
+    // not be yanked back onto the chain; Ctrl forces a new chain too
+    if(mChainTail && !e.ctrlMod()
+            && QLineF(e.fPos, mChainTail->getTailAbsPos()).length() < pickDist) {
         mDraftBone = mChainTail->addChildBone();
         // advance the chain tail to the fresh bone, otherwise every
         // subsequent bone keeps branching off the FIRST one

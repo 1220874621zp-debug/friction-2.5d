@@ -324,7 +324,7 @@ add_executable(
 
 # headless reproduction harness for the project-switch heap corruption
 # (development tool only, never installed or deployed)
-add_executable(friction_harness harness.cpp)
+add_executable(friction_harness harness.cpp memoryhandler.cpp memorychecker.cpp)
 set_target_properties(friction_harness PROPERTIES WIN32_EXECUTABLE FALSE)
 if(MSVC)
     # generate a linker map so the VEH crash reporter output can be

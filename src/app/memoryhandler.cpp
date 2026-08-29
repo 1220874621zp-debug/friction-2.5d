@@ -108,19 +108,11 @@ void MemoryHandler::freeMemory(const MemoryState newState,
 
     if(minFreeBytes.fValue <= 0) return;
     qint64 memToFree = minFreeBytes.fValue;
-    // only log when there is something to evict or the state just
-    // changed - the every-poll line with 0 containers flooded the
-    // debug log (500ms cadence) and drowned real diagnostics
-    {
-        static MemoryState sLastLoggedState = static_cast<MemoryState>(-1);
-        if(!mDataHandler.isEmpty() ||
-           sLastLoggedState != mMemoryState) {
-            sLastLoggedState = mMemoryState;
-            qWarning() << "MEMH: freeMemory state" << int(newState)
-                       << "want" << memToFree << "bytes,"
-                       << mDataHandler.count() << "container(s)";
-        }
-    }
+    // no per-poll logging here: under persistent EXTERNAL memory pressure
+    // the state stays put and the count pins at the min working set, so
+    // even a "state-changed or has-containers" gate reprints the same
+    // line every 500ms and drowns the real diagnostics in the debug log
+    // (user request: keep the log clean)
     // keep a minimum working set: when the system deficit is caused by
     // OTHER programs (often 1.5GB+), evicting our few hundred MB of
     // image caches achieves nothing except a black canvas - the images
