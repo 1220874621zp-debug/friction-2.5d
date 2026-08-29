@@ -6870,6 +6870,14 @@ Are you sure you want to save this project file?</source>
         <source>Resume Preview</source>
         <translation>继续预览</translation>
     </message>
+    <message>
+        <source>Freeze Pose</source>
+        <translation>冻结姿势</translation>
+    </message>
+    <message>
+        <source>Auto freeze pose: key ALL bone channels on every pose edit (pinned poses, no drift)</source>
+        <translation>自动冻结姿势：每次摆姿势记录骨骼全部通道（姿势钉死不漂移）</translation>
+    </message>
 </context>
 <context>
     <name>TimelineSettingsWidget</name>

@@ -48,10 +48,12 @@ public:
     void finishTransform() override {
         const auto rot = mBone->getBoxTransformAnimator()->getRotAnimator();
         rot->prp_finishTransform();
-        // Moho-style auto-keyframing: posing a bone records a rotation
-        // key at the current frame (no-op drags do not create keys)
+        // Moho-style auto-keyframing: posing a bone records a key at
+        // the current frame (no-op drags do not create keys); with
+        // auto-freeze on the WHOLE bone is keyed (pose pinned)
         if(qAbs(rot->getEffectiveValue() - mRotAtStart) > 0.01) {
-            rot->anim_saveCurrentValueAsKey();
+            if(Bone::sAutoFreezePose) mBone->freezeChannels();
+            else rot->anim_saveCurrentValueAsKey();
         }
         if(Document::sInstance) Document::sInstance->actionFinished();
     }
@@ -495,6 +497,10 @@ bool Bone::setParentBone(Bone* const parent) {
     return true;
 }
 
+// toolbar-driven auto-freeze: when on, pose operations key ALL bone
+// channels instead of just the touched one
+bool Bone::sAutoFreezePose = false;
+
 void Bone::freezeChannels() {
     diag(QStringLiteral("freezePose '%1' @%2")
          .arg(prp_getName())
@@ -504,23 +510,6 @@ void Bone::freezeChannels() {
     // shear); length is the Bone-specific extra channel
     getBoxTransformAnimator()->anim_saveCurrentValueAsKey();
     lengthAnimator()->anim_saveCurrentValueAsKey();
-}
-
-void Bone::freezePose() {
-    const auto scene = getParentScene();
-    bool expanded = false;
-    if(scene && isSelected()) {
-        // freezing one of several selected bones freezes the whole
-        // selection - one click pins the posed rig part
-        for(const auto& box : scene->getSelectedBoxesList()) {
-            if(const auto bone = enve_cast<Bone*>(box)) {
-                bone->freezeChannels();
-                expanded = true;
-            }
-        }
-    }
-    if(!expanded) freezeChannels();
-    if(Document::sInstance) Document::sInstance->actionFinished();
 }
 
 void Bone::prp_setupTreeViewMenu(PropertyMenu * const menu) {
@@ -535,10 +524,6 @@ void Bone::prp_setupTreeViewMenu(PropertyMenu * const menu) {
                 icon,
                 tr("Unbind Layers"),
                 [](Bone* const bone) { bone->unbindLayers(); });
-    menu->addPlainAction<Bone>(
-                icon,
-                tr("Freeze Pose"),
-                [](Bone* const bone) { bone->freezePose(); });
     ContainerBox::prp_setupTreeViewMenu(menu);
 }
 

@@ -99,19 +99,6 @@ void Canvas::addActionsToMenu(QMenu *const menu)
         addSolidLayerAction();
     });
 
-    // Moho-style freeze pose for the WHOLE rig: key every channel of
-    // every bone at the current frame so the pose cannot drift from
-    // staggered per-channel keys
-    if(!mBones.isEmpty()) {
-        menu->addAction(tr("Freeze Pose (All Bones)"), [this]() {
-            const QList<Bone*> bones = mBones;
-            for(const auto bone : bones) {
-                if(bone) bone->freezeChannels();
-            }
-            if(Document::sInstance) Document::sInstance->actionFinished();
-        });
-    }
-
     const auto clipboard = mDocument.getBoxesClipboard();
     if (clipboard) {
         QAction * const pasteAct = menu->addAction(tr("Paste"), this,
@@ -520,12 +507,14 @@ void Canvas::bonePoseRelease() {
         // Moho-style auto-keyframing: posing a bone records a key at
         // the current frame (no-op clicks do not create keys)
         if(mPoseMoved) {
-            transform->getRotAnimator()->anim_saveCurrentValueAsKey();
+            if(Bone::sAutoFreezePose) mPoseBone->freezeChannels();
+            else transform->getRotAnimator()->anim_saveCurrentValueAsKey();
         }
     } else if(mPoseMode == PoseDragMode::move) {
         transform->getPosAnimator()->prp_finishTransform();
         if(mPoseMoved) {
-            transform->getPosAnimator()->anim_saveCurrentValueAsKey();
+            if(Bone::sAutoFreezePose) mPoseBone->freezeChannels();
+            else transform->getPosAnimator()->anim_saveCurrentValueAsKey();
         }
     }
     if(Document::sInstance) Document::sInstance->actionFinished();
