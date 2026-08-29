@@ -68,7 +68,7 @@ void adjustmentApplyBackdrop(
 
     canvas->save();
     canvas->resetMatrix(); // the snapshot is in device space
-    canvas->drawImage(SkImage::MakeFromBitmap(dstB), 0, 0);
+    canvas->drawImage(SkImage::MakeFromBitmap(dstB), dev.left(), dev.top());
     canvas->restore();
 }
 
