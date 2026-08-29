@@ -885,6 +885,7 @@ void MainWindow::setupImporters()
 
     ImportHandler::sInstance->addImporter<eSvgImporter>();
     ImportHandler::sInstance->addImporter<ePsdImporter>();
+    ImportHandler::sInstance->addImporter<eKraImporter>();
     //ImportHandler::sInstance->addImporter<eOraImporter>();
 }
 
@@ -1810,7 +1811,7 @@ void MainWindow::importFile()
 
     const QString title = tr("Import File(s)", "ImportDialog_Title");
     const QString fileType = tr("Files %1", "ImportDialog_FileTypes");
-    const QString fileTypes = "(*.friction *.svg *.psd *.psb " +
+    const QString fileTypes = "(*.friction *.svg *.psd *.psb *.kra " +
             FileExtensions::videoFilters() +
             FileExtensions::imageFilters() +
             FileExtensions::soundFilters() + ")";

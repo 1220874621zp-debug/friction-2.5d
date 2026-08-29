@@ -5681,6 +5681,54 @@ Are you sure you want to save this project file?</source>
         <translation>正在导入 PSD ...</translation>
     </message>
     <message>
+        <source>Importing Krita file ...</source>
+        <translation>正在导入 Krita 文件 ...</translation>
+    </message>
+    <message>
+        <source>Krita import</source>
+        <translation>Krita 导入</translation>
+    </message>
+    <message>
+        <source>The following items were skipped:</source>
+        <translation>以下项目未被导入：</translation>
+    </message>
+    <message>
+        <source>masks are not imported</source>
+        <translation>蒙版未导入</translation>
+    </message>
+    <message>
+        <source>empty layer</source>
+        <translation>空白图层</translation>
+    </message>
+    <message>
+        <source>empty frame</source>
+        <translation>空白帧</translation>
+    </message>
+    <message>
+        <source>vector layer</source>
+        <translation>矢量图层</translation>
+    </message>
+    <message>
+        <source>filter layer</source>
+        <translation>滤镜图层</translation>
+    </message>
+    <message>
+        <source>generator layer</source>
+        <translation>生成器图层</translation>
+    </message>
+    <message>
+        <source>clone layer</source>
+        <translation>克隆图层</translation>
+    </message>
+    <message>
+        <source>file layer</source>
+        <translation>文件图层</translation>
+    </message>
+    <message>
+        <source>unsupported layer type %1</source>
+        <translation>不支持的图层类型 %1</translation>
+    </message>
+    <message>
         <source>Path Effects</source>
         <translation>路径特效</translation>
     </message>

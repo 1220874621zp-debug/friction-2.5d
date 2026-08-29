@@ -24,12 +24,14 @@
 // Fork of enve - Copyright (C) 2016-2020 Maurycy Liebner
 
 #include "eimporters.h"
+#include <QMessageBox>
 #include <QProgressDialog>
 
 #include "GUI/mainwindow.h"
 #include "eimporters.h"
 #include "svgimporter.h"
 #include "Psd/psdimporter.h"
+#include "Kra/kraimporter.h"
 //#include "Ora/oraimporter.h"
 
 qsptr<BoundingBox> eXevImporter::import(const QFileInfo &fileInfo, Canvas * const scene) const {
@@ -71,6 +73,37 @@ qsptr<BoundingBox> ePsdImporter::import(const QFileInfo &fileInfo, Canvas * cons
         QCoreApplication::processEvents();
     });
     progress.close();
+    return result;
+}
+
+qsptr<BoundingBox> eKraImporter::import(const QFileInfo &fileInfo, Canvas * const scene) const {
+    // decoding the tiled layer data of an animated document takes a
+    // while - show progress so it does not look like a freeze
+    QProgressDialog progress(
+                QObject::tr("Importing Krita file ..."),
+                QString(), 0, 1);
+    progress.setWindowModality(Qt::WindowModal);
+    progress.setMinimumDuration(300);
+    QStringList skipped;
+    const auto result = ImportKRA::loadKRAFile(
+                fileInfo.absoluteFilePath(),
+                scene,
+                [&progress](const int cur, const int total) {
+        if (total > 0 && progress.maximum() != total) {
+            progress.setMaximum(total);
+        }
+        progress.setValue(cur);
+        QCoreApplication::processEvents();
+    },
+                &skipped);
+    progress.close();
+    if (!skipped.isEmpty()) {
+        QMessageBox::information(
+                    MainWindow::sGetInstance(),
+                    QObject::tr("Krita import"),
+                    QObject::tr("The following items were skipped:") +
+                    QLatin1Char('\n') + skipped.join(QLatin1Char('\n')));
+    }
     return result;
 }
 

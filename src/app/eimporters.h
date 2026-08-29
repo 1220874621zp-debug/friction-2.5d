@@ -71,6 +71,16 @@ public:
                               Canvas* const scene) const;
 };
 
+class eKraImporter : public eImporter {
+public:
+    bool supports(const QFileInfo& fileInfo) const {
+        return fileInfo.suffix().toLower() == "kra";
+    }
+
+    qsptr<BoundingBox> import(const QFileInfo& fileInfo,
+                              Canvas* const scene) const;
+};
+
 /*class eOraImporter : public eImporter {
 public:
     bool supports(const QFileInfo& fileInfo) const {
