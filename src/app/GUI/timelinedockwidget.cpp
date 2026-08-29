@@ -230,14 +230,21 @@ TimelineDockWidget::TimelineDockWidget(Document& document,
         QPixmap tg(64, 64);
         tg.fill(Qt::transparent);
         QPainter t(&tg);
+        t.setRenderHint(QPainter::Antialiasing);
+        // inset checkerboard (rounded, bordered) so the icon matches
+        // the visual weight of the neighbouring toolbar icons
+        const QRectF grid(14, 14, 36, 36);
         t.setPen(Qt::NoPen);
-        for(int y = 0; y < 8; y++) {
-            for(int x = 0; x < 8; x++) {
-                t.fillRect(x*8, y*8, 8, 8,
-                           (x + y)%2 ? QColor(255, 255, 255)
-                                     : QColor(160, 160, 160));
-            }
-        }
+        t.setBrush(QColor(160, 160, 160));
+        t.drawRoundedRect(grid, 5, 5);
+        t.setBrush(QColor(255, 255, 255));
+        t.drawRoundedRect(grid.adjusted(9, 0, -9, 18), 3, 3);
+        t.drawRoundedRect(grid.adjusted(0, 18, -18, 0), 3, 3);
+        QPen border(QColor(255, 255, 255, 200));
+        border.setWidthF(2.5);
+        t.setPen(border);
+        t.setBrush(Qt::NoBrush);
+        t.drawRoundedRect(grid, 5, 5);
         t.end();
         mTransparencyGridButton = new QAction(tg, tr("Transparency Grid"),
                                               this);

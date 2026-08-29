@@ -463,6 +463,7 @@ void Canvas::bonePosePress(const eMouseEvent& e) {
     clearBoxesSelection();
     addBoxToSelection(best);
     mPoseBone = best;
+    mPoseMoved = false;
     const auto transform = best->getBoxTransformAnimator();
     const QPointF head = best->getHeadAbsPos();
     if(QLineF(e.fPos, head).length() < 10*e.fScale) {
@@ -494,6 +495,7 @@ void Canvas::bonePoseMove(const eMouseEvent& e) {
         mPoseMoveLast = e.fPos;
         transform->translate(delta.x(), delta.y());
     }
+    mPoseMoved = true;
     mPoseBone->planUpdate(UpdateReason::userChange);
 }
 
@@ -502,12 +504,21 @@ void Canvas::bonePoseRelease() {
     const auto transform = mPoseBone->getBoxTransformAnimator();
     if(mPoseMode == PoseDragMode::rotate) {
         transform->getRotAnimator()->prp_finishTransform();
+        // Moho-style auto-keyframing: posing a bone records a key at
+        // the current frame (no-op clicks do not create keys)
+        if(mPoseMoved) {
+            transform->getRotAnimator()->anim_saveCurrentValueAsKey();
+        }
     } else if(mPoseMode == PoseDragMode::move) {
         transform->getPosAnimator()->prp_finishTransform();
+        if(mPoseMoved) {
+            transform->getPosAnimator()->anim_saveCurrentValueAsKey();
+        }
     }
     if(Document::sInstance) Document::sInstance->actionFinished();
     mPoseMode = PoseDragMode::none;
     mPoseBone = nullptr;
+    mPoseMoved = false;
 }
 
 void Canvas::bonePoseCancel() {

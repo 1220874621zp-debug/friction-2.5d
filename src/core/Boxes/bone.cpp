@@ -41,10 +41,18 @@ public:
     }
 
     void startTransform() override {
+        mRotAtStart = mBone->getBoxTransformAnimator()->
+                getRotAnimator()->getEffectiveValue();
         mBone->getBoxTransformAnimator()->getRotAnimator()->prp_startTransform();
     }
     void finishTransform() override {
-        mBone->getBoxTransformAnimator()->getRotAnimator()->prp_finishTransform();
+        const auto rot = mBone->getBoxTransformAnimator()->getRotAnimator();
+        rot->prp_finishTransform();
+        // Moho-style auto-keyframing: posing a bone records a rotation
+        // key at the current frame (no-op drags do not create keys)
+        if(qAbs(rot->getEffectiveValue() - mRotAtStart) > 0.01) {
+            rot->anim_saveCurrentValueAsKey();
+        }
         if(Document::sInstance) Document::sInstance->actionFinished();
     }
     void cancelTransform() override {
@@ -62,6 +70,7 @@ public:
     }
 private:
     Bone * const mBone;
+    qreal mRotAtStart = 0.;
 };
 
 // canvas overlay property (NOT in the property tree): owns the tail

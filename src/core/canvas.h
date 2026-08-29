@@ -998,6 +998,7 @@ private:
     qreal mCamStartRotX = 0;
     qreal mCamStartRotY = 0;
     Bone* mPoseBone = nullptr;
+    bool mPoseMoved = false;   // any value written this drag
     qreal mPoseStartAngle = 0;   // world angle of the cursor at press
     qreal mPoseStartRot = 0;     // bone rotation value at press
     QPointF mPoseMoveLast;       // last cursor pos while moving
