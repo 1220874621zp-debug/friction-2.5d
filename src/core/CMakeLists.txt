@@ -240,6 +240,11 @@ set(
     RasterEffects/letterboxeffect.cpp
     RasterEffects/scanlineseffect.cpp
     RasterEffects/gloweffect.cpp
+    RasterEffects/directionalblureffect.cpp
+    RasterEffects/radialblureffect.cpp
+    RasterEffects/wavewarpeffect.cpp
+    RasterEffects/raineffect.cpp
+    RasterEffects/edgedetecteffect.cpp
     RasterEffects/wipeeffect.cpp
     ReadWrite/ereadstream.cpp
     ReadWrite/ewritestream.cpp
@@ -570,6 +575,11 @@ set(
     RasterEffects/letterboxeffect.h
     RasterEffects/scanlineseffect.h
     RasterEffects/gloweffect.h
+    RasterEffects/directionalblureffect.h
+    RasterEffects/radialblureffect.h
+    RasterEffects/wavewarpeffect.h
+    RasterEffects/raineffect.h
+    RasterEffects/edgedetecteffect.h
     RasterEffects/wipeeffect.h
     ReadWrite/efuturepos.h
     ReadWrite/ereadstream.h

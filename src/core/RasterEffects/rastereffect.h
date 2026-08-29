@@ -45,7 +45,12 @@ enum class RasterEffectType : short {
     CHROMATIC_ABERRATION,
     LETTERBOX,
     SCANLINES,
-    GLOW
+    GLOW,
+    DIRECTIONAL_BLUR,
+    RADIAL_BLUR,
+    WAVE_WARP,
+    RAIN,
+    EDGE_DETECT
 };
 
 struct BoxRenderData;

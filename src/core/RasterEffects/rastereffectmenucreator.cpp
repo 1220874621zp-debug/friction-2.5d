@@ -40,6 +40,10 @@ void RasterEffectMenuCreator::forEveryEffect(const EffectAdder& add) {
 void RasterEffectMenuCreator::forEveryEffectCore(const EffectAdder &add)
 {
     add(QObject::tr("Blur"), "", []() { return enve::make_shared<BlurEffect>(); });
+    add(QObject::tr("Directional Blur"), QObject::tr("Blur"),
+        []() { return enve::make_shared<DirectionalBlurEffect>(); });
+    add(QObject::tr("Radial Blur"), QObject::tr("Blur"),
+        []() { return enve::make_shared<RadialBlurEffect>(); });
     add(QObject::tr("Shadow"), "", []() { return enve::make_shared<ShadowEffect>(); });
     add(QObject::tr("Motion Blur"), "", []() { return enve::make_shared<MotionBlurEffect>(); });
     add(QObject::tr("Brightness-Contrast"), QObject::tr("Color"),
@@ -50,12 +54,18 @@ void RasterEffectMenuCreator::forEveryEffectCore(const EffectAdder &add)
         []() { return enve::make_shared<GlowEffect>(); });
     add(QObject::tr("Chromatic Aberration"), QObject::tr("Distort"),
         []() { return enve::make_shared<ChromaticAberrationEffect>(); });
+    add(QObject::tr("Wave Warp"), QObject::tr("Distort"),
+        []() { return enve::make_shared<WaveWarpEffect>(); });
     add(QObject::tr("Vignette"), QObject::tr("Stylize"),
         []() { return enve::make_shared<VignetteEffect>(); });
     add(QObject::tr("Letterbox"), QObject::tr("Stylize"),
         []() { return enve::make_shared<LetterboxEffect>(); });
     add(QObject::tr("Scanlines"), QObject::tr("Stylize"),
         []() { return enve::make_shared<ScanlinesEffect>(); });
+    add(QObject::tr("Edge Detect"), QObject::tr("Stylize"),
+        []() { return enve::make_shared<EdgeDetectEffect>(); });
+    add(QObject::tr("Rain"), QObject::tr("Simulation"),
+        []() { return enve::make_shared<RainEffect>(); });
     add(QObject::tr("Wipe"), QObject::tr("Transitions"),
         []() { return enve::make_shared<WipeEffect>(); });
     add(QObject::tr("Noise Fade"), QObject::tr("Transitions"),

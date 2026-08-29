@@ -12,6 +12,11 @@
         <file alias="letterboxeffect.frag">RasterEffects/letterboxeffect.frag</file>
         <file alias="scanlineseffect.frag">RasterEffects/scanlineseffect.frag</file>
         <file alias="gloweffect.frag">RasterEffects/gloweffect.frag</file>
+        <file alias="directionalblureffect.frag">RasterEffects/directionalblureffect.frag</file>
+        <file alias="radialblureffect.frag">RasterEffects/radialblureffect.frag</file>
+        <file alias="wavewarpeffect.frag">RasterEffects/wavewarpeffect.frag</file>
+        <file alias="raineffect.frag">RasterEffects/raineffect.frag</file>
+        <file alias="edgedetecteffect.frag">RasterEffects/edgedetecteffect.frag</file>
         <file alias="alpha.frag">colorshaders/alpha.frag</file>
         <file alias="blue.frag">colorshaders/blue.frag</file>
         <file alias="border.frag">colorshaders/border.frag</file>

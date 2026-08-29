@@ -177,6 +177,16 @@ qsptr<RasterEffect> createRasterEffectForNonCustomType(const RasterEffectType ty
             return enve::make_shared<ScanlinesEffect>();
         case(RasterEffectType::GLOW):
             return enve::make_shared<GlowEffect>();
+        case(RasterEffectType::DIRECTIONAL_BLUR):
+            return enve::make_shared<DirectionalBlurEffect>();
+        case(RasterEffectType::RADIAL_BLUR):
+            return enve::make_shared<RadialBlurEffect>();
+        case(RasterEffectType::WAVE_WARP):
+            return enve::make_shared<WaveWarpEffect>();
+        case(RasterEffectType::RAIN):
+            return enve::make_shared<RainEffect>();
+        case(RasterEffectType::EDGE_DETECT):
+            return enve::make_shared<EdgeDetectEffect>();
         default: return nullptr;
     }
 }
