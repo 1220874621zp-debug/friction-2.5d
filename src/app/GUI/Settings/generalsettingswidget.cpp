@@ -189,6 +189,40 @@ GeneralSettingsWidget::GeneralSettingsWidget(QWidget *parent)
 
     mGeneralLayout->addWidget(mThemeWidget);
 
+    // language selector (restart to apply; Chinese is the default)
+    {
+        const auto langWidget = new QWidget(this);
+        langWidget->setContentsMargins(0, 0, 0, 0);
+        const auto langLayout = new QHBoxLayout(langWidget);
+        langLayout->setContentsMargins(0, 0, 0, 0);
+        const auto langLabel = new QLabel(tr("Language"), this);
+        const auto langCombo = new QComboBox(this);
+        langCombo->addItem(QStringLiteral("\u4E2D\u6587"),   // 中文
+                           QStringLiteral("zh_CN"));
+        langCombo->addItem(QStringLiteral("English"),
+                           QStringLiteral("en"));
+        const QString curLang = AppSupport::getSettings(
+                    QStringLiteral("ui"), QStringLiteral("language"),
+                    QStringLiteral("zh_CN")).toString();
+        const int idx = curLang == QStringLiteral("en") ? 1 : 0;
+        langCombo->setCurrentIndex(idx);
+        connect(langCombo, qOverload<int>(&QComboBox::activated),
+                this, [langCombo](const int index) {
+            AppSupport::setSettings(QStringLiteral("ui"),
+                                    QStringLiteral("language"),
+                                    langCombo->itemData(index).toString());
+        });
+        langLayout->addWidget(langLabel);
+        langLayout->addWidget(langCombo);
+        langLayout->addStretch();
+        mThemeLayout->addWidget(langWidget);
+
+        const auto langInfoLabel = new QLabel(
+                    tr("Changing the language requires a restart of Friction."),
+                    this);
+        mThemeLayout->addWidget(langInfoLabel);
+    }
+
     const auto mImportFileWidget = new QWidget(this);
     mImportFileWidget->setContentsMargins(0, 0, 0, 0);
     const auto mImportFileLayout = new QHBoxLayout(mImportFileWidget);

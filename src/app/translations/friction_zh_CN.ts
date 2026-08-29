@@ -3177,6 +3177,14 @@ you can create a new one by clicking on the '+' button.</source>
         <translation>项目读写</translation>
     </message>
     <message>
+        <source>Language</source>
+        <translation>语言</translation>
+    </message>
+    <message>
+        <source>Changing the language requires a restart of Friction.</source>
+        <translation>更改语言需要重启 Friction。</translation>
+    </message>
+    <message>
         <source>Cache</source>
         <translation>缓存</translation>
     </message>

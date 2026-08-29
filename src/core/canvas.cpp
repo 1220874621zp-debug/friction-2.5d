@@ -386,34 +386,6 @@ void Canvas::renderSk(SkCanvas* const canvas,
                                       gridPixelRatio);
     }
 
-    if (mShowSafeFrames) {
-        // AE-style guides: action safe 90%, title safe 80% of the
-        // canvas, centered (edit view only - renderSk never feeds the
-        // scene frame cache or exports)
-        SkPaint sfPaint;
-        sfPaint.setStyle(SkPaint::kStroke_Style);
-        sfPaint.setColor(SkColorSetARGB(170, 255, 70, 70));
-        sfPaint.setStrokeWidth(invZoom);
-        sfPaint.setPathEffect(dashPathEffect);
-        const auto mkRect = [canvasRect](const qreal f) {
-            const SkScalar w = canvasRect.width()*f;
-            const SkScalar h = canvasRect.height()*f;
-            return SkRect::MakeXYWH(canvasRect.centerX() - w/2,
-                                    canvasRect.centerY() - h/2, w, h);
-        };
-        canvas->drawRect(mkRect(0.9), sfPaint);  // action safe
-        sfPaint.setColor(SkColorSetARGB(170, 255, 220, 60));
-        canvas->drawRect(mkRect(0.8), sfPaint);  // title safe
-        // center marker: small cross at the canvas center
-        const SkScalar cx = canvasRect.centerX();
-        const SkScalar cy = canvasRect.centerY();
-        const SkScalar m = 6*invZoom;
-        sfPaint.setStrokeWidth(1.5f*invZoom);
-        sfPaint.setPathEffect(nullptr);
-        sfPaint.setColor(SkColorSetARGB(200, 255, 255, 255));
-        canvas->drawLine(cx - m, cy, cx + m, cy, sfPaint);
-        canvas->drawLine(cx, cy - m, cx, cy + m, sfPaint);
-    }
 
     canvas->save();
 
@@ -449,6 +421,35 @@ void Canvas::renderSk(SkCanvas* const canvas,
                                       gridViewport,
                                       worldToScreenTransform,
                                       gridPixelRatio);
+    }
+
+    if (mShowSafeFrames) {
+        // AE-style guides: action safe 90%, title safe 80% of the
+        // canvas, centered, drawn ON TOP of the content (edit view
+        // only - renderSk never feeds the scene frame cache/exports)
+        SkPaint sfPaint;
+        sfPaint.setStyle(SkPaint::kStroke_Style);
+        sfPaint.setColor(SkColorSetARGB(170, 255, 70, 70));
+        sfPaint.setStrokeWidth(invZoom);
+        sfPaint.setPathEffect(dashPathEffect);
+        const auto mkRect = [canvasRect](const qreal f) {
+            const SkScalar w = canvasRect.width()*f;
+            const SkScalar h = canvasRect.height()*f;
+            return SkRect::MakeXYWH(canvasRect.centerX() - w/2,
+                                    canvasRect.centerY() - h/2, w, h);
+        };
+        canvas->drawRect(mkRect(0.9), sfPaint);  // action safe
+        sfPaint.setColor(SkColorSetARGB(170, 255, 220, 60));
+        canvas->drawRect(mkRect(0.8), sfPaint);  // title safe
+        // center marker: small cross at the canvas center
+        const SkScalar cx = canvasRect.centerX();
+        const SkScalar cy = canvasRect.centerY();
+        const SkScalar m = 6*invZoom;
+        sfPaint.setStrokeWidth(1.5f*invZoom);
+        sfPaint.setPathEffect(nullptr);
+        sfPaint.setColor(SkColorSetARGB(200, 255, 255, 255));
+        canvas->drawLine(cx - m, cy, cx + m, cy, sfPaint);
+        canvas->drawLine(cx, cy - m, cx, cy + m, sfPaint);
     }
 
     if (!enve_cast<Canvas*>(mCurrentContainer)) {
