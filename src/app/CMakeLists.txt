@@ -235,6 +235,7 @@ set(
     GUI/RenderWidgets/outputsettingsdisplaywidget.cpp
     GUI/animationdockwidget.cpp
     GUI/easingpresetspanel.cpp
+    GUI/effectspresetspanel.cpp
     GUI/scriptmanager.cpp
     GUI/scriptconsole.cpp
     GUI/canvaswindow.cpp
@@ -289,6 +290,7 @@ set(
     GUI/RenderWidgets/outputsettingsdisplaywidget.h
     GUI/animationdockwidget.h
     GUI/easingpresetspanel.h
+    GUI/effectspresetspanel.h
     GUI/scriptmanager.h
     GUI/scriptconsole.h
     GUI/canvaswindow.h
@@ -320,6 +322,22 @@ add_executable(
     ${SOURCES}
     ${RESOURCES}
     ${WINDOWS_RESOURCE_FILE}
+)
+
+add_executable(friction_effects_test effects_unittest.cpp ${RESOURCES})
+target_link_directories(
+    friction_effects_test
+    PRIVATE
+    ${FFMPEG_LIBRARIES_DIRS}
+    ${SKIA_LIBRARIES_DIRS}
+)
+target_link_libraries(
+    friction_effects_test
+    PRIVATE
+    ${PROJECT_NAME}core
+    ${QT_LIBRARIES}
+    ${FFMPEG_LIBRARIES}
+    ${SKIA_LIBRARIES}
 )
 
 if(WIN32)

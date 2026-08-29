@@ -66,6 +66,7 @@
 #include "dialogs/markereditordialog.h"
 #include "timelinedockwidget.h"
 #include "easingpresetspanel.h"
+#include "effectspresetspanel.h"
 #include "scriptmanager.h"
 #include "scriptconsole.h"
 #include "GUI/keysview.h"
@@ -1377,6 +1378,7 @@ void MainWindow::rebuildWorkspaceMenu()
     panelsMenu->addAction(mFillStrokeDock->toggleViewAction());
     panelsMenu->addAction(mPropertiesDock->toggleViewAction());
     panelsMenu->addAction(mEasingDock->toggleViewAction());
+    panelsMenu->addAction(mEffectsPresetsDock->toggleViewAction());
     if (mScriptManager && mScriptManager->console()) {
         panelsMenu->addAction(mScriptManager->console()->toggleViewAction());
     }
@@ -1539,14 +1541,21 @@ void MainWindow::setupLayout()
     mEasingDock = makeDock(tr("Easing Presets"), QStringLiteral("dockEasingPresets"),
                            easingPresets);
 
+    // AE-like Effects & Presets search panel
+    const auto effectsPanel = new EffectsPresetsPanel(this, this);
+    mEffectsPresetsDock = makeDock(tr("Effects & Presets"), QStringLiteral("dockEffectsPresets"),
+                                   effectsPanel);
+
     setCentralWidget(mStackWidget);
     addDockWidget(Qt::RightDockWidgetArea, mFillStrokeDock);
     addDockWidget(Qt::RightDockWidgetArea, mPropertiesDock);
     addDockWidget(Qt::RightDockWidgetArea, mEasingDock);
+    addDockWidget(Qt::RightDockWidgetArea, mEffectsPresetsDock);
     addDockWidget(Qt::BottomDockWidgetArea, mTimelineDock);
 
     // hidden by default, can be opened from the Panels menu
     mEasingDock->hide();
+    mEffectsPresetsDock->hide();
 
     // JS plugin system: Scripts menu + script console dock
     setupScripting();

@@ -187,6 +187,16 @@ qsptr<RasterEffect> createRasterEffectForNonCustomType(const RasterEffectType ty
             return enve::make_shared<RainEffect>();
         case(RasterEffectType::EDGE_DETECT):
             return enve::make_shared<EdgeDetectEffect>();
+        case(RasterEffectType::INVERT):
+            return enve::make_shared<InvertEffect>();
+        case(RasterEffectType::TINT):
+            return enve::make_shared<TintEffect>();
+        case(RasterEffectType::PIXELATE):
+            return enve::make_shared<PixelateEffect>();
+        case(RasterEffectType::NOISE):
+            return enve::make_shared<NoiseEffect>();
+        case(RasterEffectType::MIRROR):
+            return enve::make_shared<MirrorEffect>();
         default: return nullptr;
     }
 }

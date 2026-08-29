@@ -245,6 +245,11 @@ set(
     RasterEffects/wavewarpeffect.cpp
     RasterEffects/raineffect.cpp
     RasterEffects/edgedetecteffect.cpp
+    RasterEffects/inverteffect.cpp
+    RasterEffects/tinteffect.cpp
+    RasterEffects/pixelateeffect.cpp
+    RasterEffects/noiseeffect.cpp
+    RasterEffects/mirroreffect.cpp
     RasterEffects/wipeeffect.cpp
     ReadWrite/ereadstream.cpp
     ReadWrite/ewritestream.cpp
@@ -580,6 +585,11 @@ set(
     RasterEffects/wavewarpeffect.h
     RasterEffects/raineffect.h
     RasterEffects/edgedetecteffect.h
+    RasterEffects/inverteffect.h
+    RasterEffects/tinteffect.h
+    RasterEffects/pixelateeffect.h
+    RasterEffects/noiseeffect.h
+    RasterEffects/mirroreffect.h
     RasterEffects/wipeeffect.h
     ReadWrite/efuturepos.h
     ReadWrite/ereadstream.h

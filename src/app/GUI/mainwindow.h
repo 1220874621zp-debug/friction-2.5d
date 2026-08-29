@@ -168,6 +168,14 @@ public:
     void saveBackup();
     const QString checkBeforeExportSVG();
     void exportSVG(const bool &preview = false);
+
+    void addRasterEffect(const qsptr<RasterEffect> &effect);
+    void addBlendEffect(const qsptr<BlendEffect> &effect);
+    void addTransformEffect(const qsptr<TransformEffect> &effect);
+    void addPathEffect(const qsptr<PathEffect> &effect);
+    void addFillPathEffect(const qsptr<PathEffect> &effect);
+    void addOutlineBasePathEffect(const qsptr<PathEffect> &effect);
+    void addOutlinePathEffect(const qsptr<PathEffect> &effect);
     void updateLastOpenDir(const QString &path);
     void updateLastSaveDir(const QString &path);
     const QString getLastOpenDir();
@@ -242,6 +250,7 @@ private:
     QDockWidget *mFillStrokeDock = nullptr;
     QDockWidget *mPropertiesDock = nullptr;
     QDockWidget *mEasingDock = nullptr;
+    QDockWidget *mEffectsPresetsDock = nullptr;
 
     // JS plugin system (Scripts menu + console dock)
     ScriptManager *mScriptManager = nullptr;
@@ -342,14 +351,6 @@ private:
     void setupPropertiesActions();
 
     BoundingBox* getCurrentBox();
-
-    void addRasterEffect(const qsptr<RasterEffect> &effect);
-    void addBlendEffect(const qsptr<BlendEffect> &effect);
-    void addTransformEffect(const qsptr<TransformEffect> &effect);
-    void addPathEffect(const qsptr<PathEffect> &effect);
-    void addFillPathEffect(const qsptr<PathEffect> &effect);
-    void addOutlineBasePathEffect(const qsptr<PathEffect> &effect);
-    void addOutlinePathEffect(const qsptr<PathEffect> &effect);
 
     QList<SceneBoundGradient*> mLoadedGradientsList;
 

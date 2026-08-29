@@ -50,12 +50,18 @@ void RasterEffectMenuCreator::forEveryEffectCore(const EffectAdder &add)
         []() { return enve::make_shared<BrightnessContrastEffect>(); });
     add(QObject::tr("Colorize"), QObject::tr("Color"),
         []() { return enve::make_shared<ColorizeEffect>(); });
+    add(QObject::tr("Invert"), QObject::tr("Color"),
+        []() { return enve::make_shared<InvertEffect>(); });
+    add(QObject::tr("Tint"), QObject::tr("Color"),
+        []() { return enve::make_shared<TintEffect>(); });
     add(QObject::tr("Glow"), QObject::tr("Light"),
         []() { return enve::make_shared<GlowEffect>(); });
     add(QObject::tr("Chromatic Aberration"), QObject::tr("Distort"),
         []() { return enve::make_shared<ChromaticAberrationEffect>(); });
     add(QObject::tr("Wave Warp"), QObject::tr("Distort"),
         []() { return enve::make_shared<WaveWarpEffect>(); });
+    add(QObject::tr("Mirror"), QObject::tr("Distort"),
+        []() { return enve::make_shared<MirrorEffect>(); });
     add(QObject::tr("Vignette"), QObject::tr("Stylize"),
         []() { return enve::make_shared<VignetteEffect>(); });
     add(QObject::tr("Letterbox"), QObject::tr("Stylize"),
@@ -64,6 +70,10 @@ void RasterEffectMenuCreator::forEveryEffectCore(const EffectAdder &add)
         []() { return enve::make_shared<ScanlinesEffect>(); });
     add(QObject::tr("Edge Detect"), QObject::tr("Stylize"),
         []() { return enve::make_shared<EdgeDetectEffect>(); });
+    add(QObject::tr("Pixelate"), QObject::tr("Stylize"),
+        []() { return enve::make_shared<PixelateEffect>(); });
+    add(QObject::tr("Noise"), QObject::tr("Stylize"),
+        []() { return enve::make_shared<NoiseEffect>(); });
     add(QObject::tr("Rain"), QObject::tr("Simulation"),
         []() { return enve::make_shared<RainEffect>(); });
     add(QObject::tr("Wipe"), QObject::tr("Transitions"),

@@ -5542,6 +5542,90 @@ Are you sure you want to save this project file?</source>
         <translation>过渡</translation>
     </message>
     <message>
+        <source>Directional Blur</source>
+        <translation>方向模糊</translation>
+    </message>
+    <message>
+        <source>Radial Blur</source>
+        <translation>径向模糊</translation>
+    </message>
+    <message>
+        <source>Invert</source>
+        <translation>反色</translation>
+    </message>
+    <message>
+        <source>Tint</source>
+        <translation>色调映射</translation>
+    </message>
+    <message>
+        <source>Glow</source>
+        <translation>发光/辉光</translation>
+    </message>
+    <message>
+        <source>Chromatic Aberration</source>
+        <translation>RGB色差</translation>
+    </message>
+    <message>
+        <source>Wave Warp</source>
+        <translation>波浪扭曲</translation>
+    </message>
+    <message>
+        <source>Mirror</source>
+        <translation>镜像</translation>
+    </message>
+    <message>
+        <source>Vignette</source>
+        <translation>暗角</translation>
+    </message>
+    <message>
+        <source>Letterbox</source>
+        <translation>电影遮幅</translation>
+    </message>
+    <message>
+        <source>Scanlines</source>
+        <translation>CRT扫描线</translation>
+    </message>
+    <message>
+        <source>Edge Detect</source>
+        <translation>边缘检测</translation>
+    </message>
+    <message>
+        <source>Pixelate</source>
+        <translation>像素化</translation>
+    </message>
+    <message>
+        <source>Noise</source>
+        <translation>噪点/颗粒</translation>
+    </message>
+    <message>
+        <source>Rain</source>
+        <translation>下雨模拟</translation>
+    </message>
+    <message>
+        <source>Light</source>
+        <translation>光效</translation>
+    </message>
+    <message>
+        <source>Distort</source>
+        <translation>扭曲</translation>
+    </message>
+    <message>
+        <source>Stylize</source>
+        <translation>风格化</translation>
+    </message>
+    <message>
+        <source>Simulation</source>
+        <translation>模拟</translation>
+    </message>
+    <message>
+        <source>Effects &amp; Presets</source>
+        <translation>特效与预设</translation>
+    </message>
+    <message>
+        <source>Search Effects &amp; Presets...</source>
+        <translation>搜索特效与预设...</translation>
+    </message>
+    <message>
         <location filename="../main.cpp" line="218" />
         <source>Loading ...</source>
         <translation>正在加载...</translation>
@@ -6972,6 +7056,37 @@ Are you sure you want to save this project file?</source>
     <message>
         <source>Friction JS console ready. Try:</source>
         <translation>Friction JS 控制台已就绪，试试：</translation>
+    </message>
+</context>
+<context>
+    <name>EffectsPresetsPanel</name>
+    <message>
+        <source>Search Effects &amp; Presets...</source>
+        <translation>搜索特效与预设...</translation>
+    </message>
+    <message>
+        <source>General</source>
+        <translation>通用</translation>
+    </message>
+    <message>
+        <source>Custom</source>
+        <translation>自定义</translation>
+    </message>
+    <message>
+        <source>Shader</source>
+        <translation>着色器</translation>
+    </message>
+    <message>
+        <source>Path Effects</source>
+        <translation>路径特效</translation>
+    </message>
+    <message>
+        <source>Blend Effects</source>
+        <translation>混合特效</translation>
+    </message>
+    <message>
+        <source>Transform Effects</source>
+        <translation>变换特效</translation>
     </message>
 </context>
 </TS>

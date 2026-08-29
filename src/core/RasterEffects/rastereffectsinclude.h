@@ -18,5 +18,10 @@
 #include "wavewarpeffect.h"
 #include "raineffect.h"
 #include "edgedetecteffect.h"
+#include "inverteffect.h"
+#include "tinteffect.h"
+#include "pixelateeffect.h"
+#include "noiseeffect.h"
+#include "mirroreffect.h"
 
 #endif // RASTEREFFECTSINCLUDE_H

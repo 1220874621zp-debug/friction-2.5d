@@ -50,7 +50,12 @@ enum class RasterEffectType : short {
     RADIAL_BLUR,
     WAVE_WARP,
     RAIN,
-    EDGE_DETECT
+    EDGE_DETECT,
+    INVERT,
+    TINT,
+    PIXELATE,
+    NOISE,
+    MIRROR
 };
 
 struct BoxRenderData;
@@ -79,6 +84,10 @@ public:
 
     void writeIdentifier(eWriteStream& dst) const;
     void writeIdentifierXEV(QDomElement& ele) const;
+
+    RasterEffectType getEffectType() const {
+        return mType;
+    }
 
     HardwareSupport instanceHwSupport() const {
         return mInstHwSupport;

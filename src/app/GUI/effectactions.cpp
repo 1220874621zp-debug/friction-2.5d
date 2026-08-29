@@ -31,21 +31,69 @@
 void MainWindow::setupMenuEffects()
 {
     const QIcon eIcon = QIcon::fromTheme("effect");
-    { // path
+    QMap<QString, QMenu*> categoryMenus;
+
+    const auto getCatMenu = [this, &categoryMenus, eIcon](const QString& category) -> QMenu* {
+        const QString catName = category.isEmpty() ? tr("General") : category;
+        if (!categoryMenus.contains(catName)) {
+            categoryMenus[catName] = mEffectsMenu->addMenu(eIcon, catName);
+        }
+        return categoryMenus[catName];
+    };
+
+    // 1. Raster Effects by Category (Blur, Color, Distort, Light, Stylize, Simulation, Transitions...)
+    RasterEffectMenuCreator::forEveryEffectCore(
+        [this, getCatMenu, eIcon](const QString& name, const QString& cat,
+                                  const RasterEffectMenuCreator::EffectCreator& creator) {
+            if (name.isEmpty()) { return; }
+            const auto targetMenu = getCatMenu(cat);
+            const auto act = targetMenu->addAction(eIcon, name);
+            act->setData(QString(name).prepend(tr("Add ")).append(tr(" (Raster Effect)")));
+            cmdAddAction(act);
+            connect(act, &QAction::triggered, this, [this, creator]() {
+                addRasterEffect(creator());
+            });
+        });
+
+    RasterEffectMenuCreator::forEveryEffectCustom(
+        [this, getCatMenu, eIcon](const QString& name, const QString& cat,
+                                  const RasterEffectMenuCreator::EffectCreator& creator) {
+            if (name.isEmpty()) { return; }
+            const auto targetMenu = getCatMenu(cat.isEmpty() ? tr("Custom") : cat);
+            const auto act = targetMenu->addAction(eIcon, name);
+            act->setData(QString(name).prepend(tr("Add ")).append(tr(" (Raster Effect)")));
+            cmdAddAction(act);
+            connect(act, &QAction::triggered, this, [this, creator]() {
+                addRasterEffect(creator());
+            });
+        });
+
+    RasterEffectMenuCreator::forEveryEffectShader(
+        [this, getCatMenu, eIcon](const QString& name, const QString& cat,
+                                  const RasterEffectMenuCreator::EffectCreator& creator) {
+            if (name.isEmpty()) { return; }
+            const auto targetMenu = getCatMenu(cat.isEmpty() ? tr("Shader") : cat);
+            const auto act = targetMenu->addAction(eIcon, name);
+            act->setData(QString(name).prepend(tr("Add ")).append(tr(" (Raster Effect)")));
+            cmdAddAction(act);
+            connect(act, &QAction::triggered, this, [this, creator]() {
+                addRasterEffect(creator());
+            });
+        });
+
+    mEffectsMenu->addSeparator();
+
+    // 2. Path Effects
+    {
         const auto menu1 = mEffectsMenu->addMenu(eIcon, tr("Path Effects"));
         const auto menu2 = mEffectsMenu->addMenu(eIcon, tr("Fill Effects"));
         const auto menu3 = mEffectsMenu->addMenu(eIcon, tr("Outline Base Effects"));
         const auto menu4 = mEffectsMenu->addMenu(eIcon, tr("Outline Effects"));
-        const auto adder = [this,
-                            menu1,
-                            menu2,
-                            menu3,
-                            menu4,
-                            eIcon](const QString& name,
+        const auto adder = [this, menu1, menu2, menu3, menu4, eIcon](const QString& name,
                                    const PathEffectMenuCreator::EffectCreator& creator) {
             if (name.isEmpty()) { return; }
             {
-                const auto act =  menu1->addAction(eIcon, name);
+                const auto act = menu1->addAction(eIcon, name);
                 act->setData(QString(name).prepend(tr("Add ")).append(tr(" (Path Effect)")));
                 cmdAddAction(act);
                 connect(act, &QAction::triggered, this, [this, creator]() {
@@ -53,7 +101,7 @@ void MainWindow::setupMenuEffects()
                 });
             }
             {
-                const auto act =  menu2->addAction(eIcon, name);
+                const auto act = menu2->addAction(eIcon, name);
                 act->setData(QString(name).prepend(tr("Add ")).append(tr(" (Fill Effect)")));
                 cmdAddAction(act);
                 connect(act, &QAction::triggered, this, [this, creator]() {
@@ -61,7 +109,7 @@ void MainWindow::setupMenuEffects()
                 });
             }
             {
-                const auto act =  menu3->addAction(eIcon, name);
+                const auto act = menu3->addAction(eIcon, name);
                 act->setData(QString(name).prepend(tr("Add ")).append(tr(" (Outline Base Effect)")));
                 cmdAddAction(act);
                 connect(act, &QAction::triggered, this, [this, creator]() {
@@ -69,7 +117,7 @@ void MainWindow::setupMenuEffects()
                 });
             }
             {
-                const auto act =  menu4->addAction(eIcon, name);
+                const auto act = menu4->addAction(eIcon, name);
                 act->setData(QString(name).prepend(tr("Add ")).append(tr(" (Outline Effect)")));
                 cmdAddAction(act);
                 connect(act, &QAction::triggered, this, [this, creator]() {
@@ -79,26 +127,14 @@ void MainWindow::setupMenuEffects()
         };
         PathEffectMenuCreator::forEveryEffect(adder);
     }
-    { // transform
-        const auto menu = mEffectsMenu->addMenu(eIcon, tr("Transform Effects"));
-        const auto adder = [this, menu, eIcon](const QString& name,
-                                        const TransformEffectMenuCreator::EffectCreator& creator) {
-            if (name.isEmpty()) { return; }
-            const auto act =  menu->addAction(eIcon, name);
-            act->setData(QString(name).prepend(tr("Add ")).append(tr(" (Transform Effect)")));
-            cmdAddAction(act);
-            connect(act, &QAction::triggered, this, [this, creator]() {
-                addTransformEffect(creator());
-            });
-        };
-        TransformEffectMenuCreator::forEveryEffect(adder);
-    }
-    { // blend
+
+    // 3. Blend Effects
+    {
         const auto menu = mEffectsMenu->addMenu(eIcon, tr("Blend Effects"));
         const auto adder = [this, menu, eIcon](const QString& name,
                                         const BlendEffectMenuCreator::EffectCreator& creator) {
             if (name.isEmpty()) { return; }
-            const auto act =  menu->addAction(eIcon, name);
+            const auto act = menu->addAction(eIcon, name);
             act->setData(QString(name).prepend(tr("Add ")).append(tr(" (Blend Effect)")));
             cmdAddAction(act);
             connect(act, &QAction::triggered, this, [this, creator]() {
@@ -107,24 +143,21 @@ void MainWindow::setupMenuEffects()
         };
         BlendEffectMenuCreator::forEveryEffect(adder);
     }
-    { // raster
-        const auto menu = mEffectsMenu->addMenu(eIcon, tr("Raster Effects"));
-        const auto adder = [this, menu, eIcon](const QString& name, const QString& path,
-                                        const RasterEffectMenuCreator::EffectCreator& creator) {
+
+    // 4. Transform Effects
+    {
+        const auto menu = mEffectsMenu->addMenu(eIcon, tr("Transform Effects"));
+        const auto adder = [this, menu, eIcon](const QString& name,
+                                        const TransformEffectMenuCreator::EffectCreator& creator) {
             if (name.isEmpty()) { return; }
-            QString title = name;
-            if (!path.isEmpty()) { title.append(QString(" (%1)").arg(path));}
-            const auto act =  menu->addAction(eIcon, title);
-            act->setData(QString(name).prepend(tr("Add ")).append(tr(" (Raster Effect)")));
+            const auto act = menu->addAction(eIcon, name);
+            act->setData(QString(name).prepend(tr("Add ")).append(tr(" (Transform Effect)")));
             cmdAddAction(act);
             connect(act, &QAction::triggered, this, [this, creator]() {
-                addRasterEffect(creator());
+                addTransformEffect(creator());
             });
         };
-        RasterEffectMenuCreator::forEveryEffectCore(adder);
-        menu->addSeparator();
-        RasterEffectMenuCreator::forEveryEffectCustom(adder);
-        RasterEffectMenuCreator::forEveryEffectShader(adder);
+        TransformEffectMenuCreator::forEveryEffect(adder);
     }
 }
 
