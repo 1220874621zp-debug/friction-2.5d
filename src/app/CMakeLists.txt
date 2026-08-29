@@ -32,7 +32,7 @@ include(friction-ffmpeg)
 
 add_definitions(-DPROJECT_VERSION="${PROJECT_VERSION}")
 
-if(${LINUX_DEPLOY})
+if(UNIX AND NOT APPLE)
     set(CMAKE_INSTALL_RPATH "$ORIGIN/../lib")
 endif()
 
