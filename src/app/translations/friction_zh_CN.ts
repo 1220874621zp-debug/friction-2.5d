@@ -4960,24 +4960,19 @@ Are you sure you want to save this project file?</source>
         <translation>即使窗口卡死，也可用记事本打开此文件查看日志</translation>
     </message>
     <message>
-        <source>Import OCA Folder</source>
-        <translation>导入 OCA 文件夹</translation>
-    </message>
-    <message>
-        <source>Not an OCA folder (the folder name must end with .oca)</source>
-        <translation>不是 OCA 文件夹（文件夹名必须以 .oca 结尾）</translation>
-    </message>
-    <message>
         <source>Import OCA</source>
+        <comment>MenuBar_File</comment>
         <translation>导入 OCA</translation>
     </message>
     <message>
-        <source>No OCA manifest found in this folder.
-An OCA package is a folder containing a JSON manifest and frame images (PNG).
-Export OCA from Krita/Blender/Animation Paper first.</source>
-        <translation>此文件夹中没有找到 OCA 清单文件。
-OCA 包是一个包含 JSON 清单和帧图片（PNG）的文件夹。
-请先从 Krita/Blender/Animation Paper 导出 OCA。</translation>
+        <source>Select OCA Manifest</source>
+        <comment>ImportOCADialog_Title</comment>
+        <translation>选择 OCA 清单文件</translation>
+    </message>
+    <message>
+        <source>OCA manifest %1</source>
+        <comment>ImportOCADialog_FileTypes</comment>
+        <translation>OCA 清单 %1</translation>
     </message>
 </context>
 <context>

@@ -861,12 +861,10 @@ void MainWindow::setupMenuBar()
     mToolbar->addAction(mSaveAct);
     mToolbar->addAction(mImportAct);
 
-    // OCA quick-import next to the generic import; just the themed
-    // icon + text label - no custom "OCA" text pixmap (that read as
-    // duplicated text next to the button label)
-    mToolbar->addAction(QIcon::fromTheme("file_import"),
-                        tr("Import OCA"),
-                        this, &MainWindow::importOCA);
+    // OCA quick-import next to the generic import; shares the menu
+    // action so it disables with no scene (a standalone action stayed
+    // enabled and silently did nothing)
+    mToolbar->addAction(mImportOCAAct);
 
     mToolbar->addAction(mLinkedAct);
 

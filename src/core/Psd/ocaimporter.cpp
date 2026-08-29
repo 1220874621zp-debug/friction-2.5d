@@ -13,20 +13,37 @@
 #include "Animators/transformanimator.h"
 #include "Animators/qpointfanimator.h"
 
-QJsonObject ImportOCA::readManifest(const QDir& ocaDir) {
+namespace {
+// any non-_meta .json/.oca FILE in this directory could be the manifest
+bool dirHasManifestCandidate(const QDir& dir) {
+    const auto entries = dir.entryInfoList(
+                QStringList() << QStringLiteral("*.json")
+                              << QStringLiteral("*.oca"),
+                QDir::Files, QDir::Name);
+    for(const auto& f : entries) {
+        if(f.fileName().endsWith(QStringLiteral("_meta.json"))) continue;
+        return true;
+    }
+    return false;
+}
+
+QJsonObject tryLoadJsonObject(const QString& path) {
+    QFile file(path);
+    if(file.open(QIODevice::ReadOnly)) {
+        const auto doc = QJsonDocument::fromJson(file.readAll());
+        if(doc.isObject()) return doc.object();
+    }
+    return QJsonObject();
+}
+}
+
+QJsonObject ImportOCA::readManifest(const QDir& ocaDir,
+                                    QDir* const manifestFoundIn) {
     // the manifest is a JSON file; the OCA-Krita reference exporter
     // names it <docname>.oca (JSON content despite the extension) and
     // puts it in a subfolder named after the document inside the
     // .oca folder - so search the root first, then immediate
     // subfolders
-    const auto tryLoad = [](const QString& path) -> QJsonObject {
-        QFile file(path);
-        if(file.open(QIODevice::ReadOnly)) {
-            const auto doc = QJsonDocument::fromJson(file.readAll());
-            if(doc.isObject()) return doc.object();
-        }
-        return QJsonObject();
-    };
     // root: .oca / .json named like the folder, or any non-_meta json
     const auto rootEntries = ocaDir.entryInfoList(
                 QStringList() << QStringLiteral("*.json")
@@ -34,8 +51,11 @@ QJsonObject ImportOCA::readManifest(const QDir& ocaDir) {
                 QDir::Files, QDir::Name);
     for(const auto& f : rootEntries) {
         if(f.fileName().endsWith(QStringLiteral("_meta.json"))) continue;
-        const auto obj = tryLoad(f.absoluteFilePath());
-        if(!obj.isEmpty()) return obj;
+        const auto obj = tryLoadJsonObject(f.absoluteFilePath());
+        if(!obj.isEmpty()) {
+            if(manifestFoundIn) *manifestFoundIn = ocaDir;
+            return obj;
+        }
     }
     // immediate subfolders (Krita layout: <folder>.oca/<docname>/...)
     const auto subDirs = ocaDir.entryInfoList(
@@ -48,8 +68,11 @@ QJsonObject ImportOCA::readManifest(const QDir& ocaDir) {
                     QDir::Files, QDir::Name);
         for(const auto& f : subEntries) {
             if(f.fileName().endsWith(QStringLiteral("_meta.json"))) continue;
-            const auto obj = tryLoad(f.absoluteFilePath());
-            if(!obj.isEmpty()) return obj;
+            const auto obj = tryLoadJsonObject(f.absoluteFilePath());
+            if(!obj.isEmpty()) {
+                if(manifestFoundIn) *manifestFoundIn = sub;
+                return obj;
+            }
         }
     }
     RuntimeThrow("No OCA manifest found in " + ocaDir.absolutePath());
@@ -105,11 +128,8 @@ SkBlendMode ImportOCA::blendModeFromOca(const QString& mode) {
 }
 
 qsptr<BoundingBox> ImportOCA::buildLayer(const QJsonObject& layerJson,
-                                         const QDir& ocaDir,
                                          ContainerBox* const parent,
-                                         Canvas* const scene,
                                          const QDir& manifestDir) {
-    Q_UNUSED(scene)
     const QString type = layerJson[QStringLiteral("type")].toString(
                 QStringLiteral("paintlayer"));
 
@@ -127,8 +147,7 @@ qsptr<BoundingBox> ImportOCA::buildLayer(const QJsonObject& layerJson,
         // OCA stores layers bottom-to-top; addContained PREPENDS, so
         // iterating in order keeps the stacking correct
         for(const auto& child : children) {
-            buildLayer(child.toObject(), ocaDir, group.get(), scene,
-                       manifestDir);
+            buildLayer(child.toObject(), group.get(), manifestDir);
         }
         const qreal opacity = layerJson[QStringLiteral("opacity")].toDouble(1.);
         group->setOpacity(opacity);
@@ -211,57 +230,54 @@ qsptr<BoundingBox> ImportOCA::buildLayer(const QJsonObject& layerJson,
 bool ImportOCA::looksLikeOCA(const QString& folderPath) {
     const QDir dir(folderPath);
     if(!dir.isReadable()) return false;
-    const auto entries = dir.entryInfoList(
-                QStringList() << QStringLiteral("*.json")
-                              << QStringLiteral("*.oca"),
-                QDir::Files, QDir::Name);
-    for(const auto& f : entries) {
-        if(f.fileName().endsWith(QStringLiteral("_meta.json"))) continue;
-        return true;
+    if(dirHasManifestCandidate(dir)) return true;
+    // Krita nests the manifest one level down: <pkg>.oca/<docname>/
+    const auto subDirs = dir.entryInfoList(
+                QStringList(), QDir::Dirs | QDir::NoDotAndDotDot);
+    for(const auto& d : subDirs) {
+        if(dirHasManifestCandidate(QDir(d.absoluteFilePath()))) {
+            return true;
+        }
     }
     return false;
 }
 
+bool ImportOCA::looksLikeOCAJson(const QString& filePath) {
+    const auto obj = tryLoadJsonObject(filePath);
+    if(obj.isEmpty()) return false;
+    return obj.contains(QStringLiteral("layers")) ||
+           obj.contains(QStringLiteral("ocaVersion"));
+}
+
+qsptr<ContainerBox> ImportOCA::loadOCAManifestFile(const QString& filePath,
+                                                   Canvas* const scene) {
+    Q_UNUSED(scene)
+    const auto manifest = tryLoadJsonObject(filePath);
+    if(manifest.isEmpty()) {
+        RuntimeThrow(filePath + " is not a readable JSON object.");
+    }
+    if(!manifest.contains(QStringLiteral("layers"))) {
+        RuntimeThrow(filePath +
+                     " has no \"layers\" array - not an OCA manifest.");
+    }
+    // frame fileName paths are relative to the manifest's own folder
+    // (same rule as the DuIO/AE reference importer: file.parent)
+    const QDir manifestDir = QFileInfo(filePath).absoluteDir();
+    qWarning() << "OCA: importing manifest file" << filePath;
+    return buildTree(manifest, manifestDir);
+}
+
 qsptr<ContainerBox> ImportOCA::loadOCAFolder(const QString& folderPath,
                                              Canvas* const scene) {
+    Q_UNUSED(scene)
     const QDir ocaDir(folderPath);
-    const auto manifest = readManifest(ocaDir);
-    // frame fileName paths are relative to the MANIFEST's folder (the
-    // Krita exporter puts the manifest in a subfolder next to the
-    // images); find which directory held it
     QDir manifestDir = ocaDir;
-    {
-        const auto rootEntries = ocaDir.entryInfoList(
-                    QStringList() << QStringLiteral("*.json")
-                                  << QStringLiteral("*.oca"),
-                    QDir::Files, QDir::Name);
-        bool foundAtRoot = false;
-        for(const auto& f : rootEntries) {
-            if(f.fileName().endsWith(QStringLiteral("_meta.json"))) continue;
-            foundAtRoot = true;
-            break;
-        }
-        if(!foundAtRoot) {
-            // search immediate subfolders
-            const auto subs = ocaDir.entryInfoList(
-                        QStringList(), QDir::Dirs | QDir::NoDotAndDotDot);
-            for(const auto& d : subs) {
-                const QDir sub(d.absoluteFilePath());
-                const auto entries = sub.entryInfoList(
-                            QStringList() << QStringLiteral("*.json")
-                                          << QStringLiteral("*.oca"),
-                            QDir::Files, QDir::Name);
-                for(const auto& f : entries) {
-                    if(f.fileName().endsWith(
-                                QStringLiteral("_meta.json"))) continue;
-                    manifestDir = sub;
-                    break;
-                }
-                if(manifestDir != ocaDir) break;
-            }
-        }
-    }
+    const auto manifest = readManifest(ocaDir, &manifestDir);
+    return buildTree(manifest, manifestDir);
+}
 
+qsptr<ContainerBox> ImportOCA::buildTree(const QJsonObject& manifest,
+                                         const QDir& manifestDir) {
     // the whole document becomes one group named after the OCA doc
     const auto rootGroup = enve::make_shared<ContainerBox>(
                 eBoxType::group);
@@ -269,11 +285,15 @@ qsptr<ContainerBox> ImportOCA::loadOCAFolder(const QString& folderPath,
                 QStringLiteral("OCA")));
 
     const auto layers = manifest[QStringLiteral("layers")].toArray();
+    if(layers.isEmpty()) {
+        RuntimeThrow("OCA manifest contains no layers.");
+    }
+    qWarning() << "OCA: building" << layers.count()
+               << "layers from manifest in" << manifestDir.absolutePath();
     // OCA stores layers bottom-to-top; addContained prepends so the
     // final stacking order matches the manifest
     for(const auto& layer : layers) {
-        buildLayer(layer.toObject(), ocaDir, rootGroup.get(), scene,
-                   manifestDir);
+        buildLayer(layer.toObject(), rootGroup.get(), manifestDir);
     }
     return rootGroup;
 }

@@ -589,9 +589,12 @@ const QString AppSupport::getOpenDirectory(QWidget *parent,
     ThemeIconProvider iconProvider;
     dialog.setIconProvider(&iconProvider);
 
+    qWarning() << "DIALOG: opening directory picker at" << dir
+               << "(requested" << path << ")";
     if (dialog.exec()) {
         const QStringList paths = dialog.selectedFiles();
         if (paths.isEmpty()) { return QString(); }
+        qWarning() << "DIALOG: closed, selected" << paths;
 
         QString openPath = paths.first();
         if (QUrl(openPath).isLocalFile()) {
@@ -599,6 +602,7 @@ const QString AppSupport::getOpenDirectory(QWidget *parent,
         }
         return openPath;
     }
+    qWarning() << "DIALOG: cancelled";
 
     return QString();
 }

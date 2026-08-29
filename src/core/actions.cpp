@@ -820,7 +820,16 @@ eBoxOrSound *Actions::importFile(const QString &path,
             target->insertContained(insertId, result);
         } else {
             try {
-                if (isImageExt(extension)) {
+                const QString extLower = extension.toLower();
+                if (extLower == QLatin1String("oca") ||
+                    (extLower == QLatin1String("json") &&
+                     ImportOCA::looksLikeOCAJson(path))) {
+                    // the OCA manifest FILE itself was picked (the
+                    // Krita exporter names it <doc>.oca); frame images
+                    // resolve relative to its folder
+                    qWarning() << "IMPORT: route=oca-manifest";
+                    result = ImportOCA::loadOCAManifestFile(path, scene);
+                } else if (isImageExt(extension)) {
                     qWarning() << "IMPORT: route=image";
                     result = createImageBox(path);
                 } else if (isVideoExt(extension)) {

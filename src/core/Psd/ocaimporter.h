@@ -24,18 +24,30 @@ class Canvas;
 class ImportOCA {
 public:
     // cheap check: does the folder hold anything resembling an OCA
-    // manifest (any .json / .oca file at the root)?
+    // manifest (any .json / .oca file at the root or in an immediate
+    // subfolder - the Krita exporter nests the manifest one level
+    // down)?
     static bool looksLikeOCA(const QString& folderPath);
+    // cheap check: is this .json/.oca FILE an OCA manifest (parses
+    // and looks for the layers array / ocaVersion key)?
+    static bool looksLikeOCAJson(const QString& filePath);
     // loads the manifest from an .oca FOLDER; the caller hands the
     // folder path (not the json). Throws enve exceptions on bad data
     static qsptr<ContainerBox> loadOCAFolder(const QString& folderPath,
                                              Canvas* const scene);
+    // loads OCA starting from the manifest FILE the user picked;
+    // frame paths resolve relative to the manifest's own folder
+    // (same rule as the DuIO/AE reference importer). Throws enve
+    // exceptions on bad data
+    static qsptr<ContainerBox> loadOCAManifestFile(const QString& filePath,
+                                                   Canvas* const scene);
 private:
-    static QJsonObject readManifest(const QDir& ocaDir);
+    static QJsonObject readManifest(const QDir& ocaDir,
+                                    QDir* const manifestFoundIn = nullptr);
+    static qsptr<ContainerBox> buildTree(const QJsonObject& manifest,
+                                         const QDir& manifestDir);
     static qsptr<BoundingBox> buildLayer(const QJsonObject& layerJson,
-                                         const QDir& ocaDir,
                                          ContainerBox* const parent,
-                                         Canvas* const scene,
                                          const QDir& manifestDir);
     static SkBlendMode blendModeFromOca(const QString& mode);
 };

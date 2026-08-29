@@ -1874,32 +1874,23 @@ void MainWindow::importOCA()
     disableEventFilter();
     const QString defPath = mDocument.fEvFile.isEmpty() ?
                 QDir::homePath() : mDocument.fEvFile;
-    const QString title = tr("Import OCA Folder", "ImportOCADialog_Title");
-    const auto folder = AppSupport::getOpenDirectory(this,
-                                                     title,
-                                                     defPath);
+    // DuIO/AE-style: the user picks the MANIFEST FILE (.oca/.json)
+    // and the import starts right away; a directory-only picker hid
+    // the manifest file entirely and read as "clicking does nothing"
+    const QString title = tr("Select OCA Manifest", "ImportOCADialog_Title");
+    const QString fileType = tr("OCA manifest %1", "ImportOCADialog_FileTypes");
+    const auto importPaths = AppSupport::getOpenFiles(this,
+                                                      title,
+                                                      defPath,
+                                                      fileType.arg("(*.oca *.json)"));
     enableEventFilter();
-    if(folder.isEmpty()) return;
-    // any folder is accepted as long as it holds an OCA manifest; a
-    // clear dialog explains the problem when it does not (a status
-    // bar message proved invisible during testing)
-    const QDir dir(folder);
-    const bool hasJson = !dir.entryList(
-                QStringList() << QStringLiteral("*.json")
-                              << QStringLiteral("*.oca"),
-                QDir::Files).isEmpty();
-    if(!hasJson) {
-        QMessageBox::warning(this, tr("Import OCA"),
-            tr("No OCA manifest found in this folder.\n"
-               "An OCA package is a folder containing a JSON manifest "
-               "and frame images (PNG).\n"
-               "Export OCA from Krita/Blender/Animation Paper first."));
-        return;
-    }
-    try {
-        mActions.importFile(folder);
-    } catch(const std::exception& e) {
-        gPrintExceptionCritical(e);
+    for (const QString &path : importPaths) {
+        if (path.isEmpty()) { continue; }
+        try {
+            mActions.importFile(path);
+        } catch(const std::exception& e) {
+            gPrintExceptionCritical(e);
+        }
     }
 }
 
