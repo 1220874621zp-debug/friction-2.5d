@@ -1439,11 +1439,9 @@ void MainWindow::setupPropertiesWidgets()
     mObjectSettingsWidget = new BoxScrollWidget(mDocument,
                                                 mObjectSettingsScrollArea);
     mObjectSettingsScrollArea->setWidget(mObjectSettingsWidget);
-    const int defaultRule = AppSupport::getSettings("ui",
-                                                    "propertiesFilter",
-                                                    (int)SWT_BoxRule::selected).toInt();
-    mObjectSettingsWidget->setCurrentRule(static_cast<SWT_BoxRule>(defaultRule));
-    mObjectSettingsWidget->setCurrentTarget(nullptr, SWT_Target::group);
+    mObjectSettingsWidget->setAlwaysShowChildren(false);
+    mObjectSettingsWidget->setCurrentRule(SWT_BoxRule::selected);
+    mObjectSettingsWidget->setCurrentTarget(nullptr, SWT_Target::canvas);
 
     // font widget
     mFontWidget = new Ui::FontsWidget(this);

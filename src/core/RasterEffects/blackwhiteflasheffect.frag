@@ -2,12 +2,14 @@
 in vec2 texCoord;
 out vec4 fragColor;
 uniform sampler2D tex;
+uniform vec2 anchor;
 uniform float threshold;
 uniform float contrast;
 uniform float lightIntensity;
 uniform float lightLength;
 uniform float edgeIntensity;
 uniform float invert;
+uniform float blend;
 uniform vec4 flashColor;
 uniform vec4 bgColor;
 
@@ -39,27 +41,38 @@ void main(void) {
     vec2 grad = vec2(l_r - l_l, l_u - l_d);
     float edge = length(grad);
 
-    // Ray emission along normal
+    // Radial ray direction from user-defined Anchor / Center Point
+    vec2 radialDir = texCoord - anchor;
+    float radialDist = length(radialDir);
+    vec2 norm = (radialDist > 0.0001) ? normalize(radialDir) : vec2(0.0, 1.0);
+
+    // If strong edge, combine edge normal with radial impact direction
+    if (edge > 0.05) {
+        norm = normalize(norm + normalize(grad) * 0.5);
+    }
+
+    // Ray emission along impact radiation vector
     float rayEmission = 0.0;
     if (lightIntensity > 0.01 && lightLength > 0.5) {
-        vec2 norm = (edge > 0.01) ? normalize(grad) : vec2(0.0);
         float stepLen = 2.0;
-        int maxSteps = int(clamp(lightLength / stepLen, 1.0, 40.0));
+        int maxSteps = int(clamp(lightLength / stepLen, 1.0, 30.0));
         for (int i = 1; i <= maxSteps; ++i) {
             float dist = float(i) * stepLen;
             vec2 samplePos = texCoord - norm * (dist * invSize);
             float sVal = getLum(samplePos);
             float diff = abs(centerVal - sVal);
-            float atten = exp(-dist / max(lightLength * 0.35, 1.0));
+            float atten = exp(-dist / max(lightLength * 0.4, 1.0));
             rayEmission += diff * atten;
         }
-        rayEmission = clamp(rayEmission * (lightIntensity * 0.1) * edgeIntensity, 0.0, 1.0);
+        rayEmission = clamp(rayEmission * (lightIntensity * 0.08) * edgeIntensity, 0.0, 1.0);
     }
 
-    float finalVal = centerVal + rayEmission + edge * edgeIntensity * 0.5;
+    float finalVal = centerVal + rayEmission + edge * edgeIntensity * 0.4;
     finalVal = clamp(finalVal, 0.0, 1.0);
     if (invert > 0.5) finalVal = 1.0 - finalVal;
 
-    vec4 outCol = mix(bgColor, flashColor, finalVal);
-    fragColor = vec4(clamp(outCol.rgb, 0.0, 1.0), src.a * outCol.a);
+    vec4 flashRgb = mix(bgColor, flashColor, finalVal);
+    vec3 outRgb = mix(src.rgb, flashRgb.rgb, (blend * 0.01) * flashRgb.a);
+
+    fragColor = vec4(clamp(outRgb, 0.0, 1.0), src.a);
 }

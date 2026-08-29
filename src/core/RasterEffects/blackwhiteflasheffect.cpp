@@ -14,6 +14,7 @@
 #include "Animators/qrealanimator.h"
 #include "Animators/coloranimator.h"
 #include "appsupport.h"
+#include <cmath>
 
 BlackWhiteFlashEffect::BlackWhiteFlashEffect() :
     RasterEffect("blackWhiteFlash",
@@ -22,6 +23,12 @@ BlackWhiteFlashEffect::BlackWhiteFlashEffect() :
                  true,
                  RasterEffectType::BLACK_WHITE_FLASH)
 {
+    mCenterX = enve::make_shared<QrealAnimator>(50.0, -100.0, 200.0, 1.0, "x");
+    ca_addChild(mCenterX);
+
+    mCenterY = enve::make_shared<QrealAnimator>(50.0, -100.0, 200.0, 1.0, "y");
+    ca_addChild(mCenterY);
+
     mThreshold = enve::make_shared<QrealAnimator>(50.0, 0.0, 100.0, 1.0, "threshold");
     ca_addChild(mThreshold);
 
@@ -40,6 +47,9 @@ BlackWhiteFlashEffect::BlackWhiteFlashEffect() :
     mInvert = enve::make_shared<QrealAnimator>(0.0, 0.0, 1.0, 1.0, "invert");
     ca_addChild(mInvert);
 
+    mBlend = enve::make_shared<QrealAnimator>(100.0, 0.0, 100.0, 1.0, "blend");
+    ca_addChild(mBlend);
+
     mFlashColor = enve::make_shared<ColorAnimator>("color");
     mFlashColor->setColor(QColor(255, 255, 255, 255));
     ca_addChild(mFlashColor);
@@ -52,47 +62,57 @@ BlackWhiteFlashEffect::BlackWhiteFlashEffect() :
 class BlackWhiteFlashEffectCaller : public OpenGLRasterEffectCaller {
 public:
     BlackWhiteFlashEffectCaller(const HardwareSupport hwSupport,
+                                qreal centerX,
+                                qreal centerY,
                                 qreal threshold,
                                 qreal contrast,
                                 qreal lightIntensity,
                                 qreal lightLength,
                                 qreal edgeIntensity,
                                 qreal invert,
+                                qreal blend,
                                 const QColor& flashColor,
                                 const QColor& bgColor) :
         OpenGLRasterEffectCaller(sInitialized, sProgramId,
                                  ":/shaders/blackwhiteflasheffect.frag",
                                  hwSupport),
+        mCenterX(centerX),
+        mCenterY(centerY),
         mThreshold(threshold),
         mContrast(contrast),
         mLightIntensity(lightIntensity),
         mLightLength(lightLength),
         mEdgeIntensity(edgeIntensity),
         mInvert(invert),
+        mBlend(blend),
         mFlashColor(flashColor),
         mBgColor(bgColor) {}
 
     void processCpu(CpuRenderTools& renderTools, const CpuRenderData& data) override;
 protected:
     void iniVars(QGL33 * const gl) const override {
+        sAnchorU = gl->glGetUniformLocation(sProgramId, "anchor");
         sThresholdU = gl->glGetUniformLocation(sProgramId, "threshold");
         sContrastU = gl->glGetUniformLocation(sProgramId, "contrast");
         sLightIntensityU = gl->glGetUniformLocation(sProgramId, "lightIntensity");
         sLightLengthU = gl->glGetUniformLocation(sProgramId, "lightLength");
         sEdgeIntensityU = gl->glGetUniformLocation(sProgramId, "edgeIntensity");
         sInvertU = gl->glGetUniformLocation(sProgramId, "invert");
+        sBlendU = gl->glGetUniformLocation(sProgramId, "blend");
         sFlashColorU = gl->glGetUniformLocation(sProgramId, "flashColor");
         sBgColorU = gl->glGetUniformLocation(sProgramId, "bgColor");
     }
 
     void setVars(QGL33 * const gl) const override {
         gl->glUseProgram(sProgramId);
+        gl->glUniform2f(sAnchorU, toSkScalar(mCenterX * 0.01), toSkScalar(mCenterY * 0.01));
         gl->glUniform1f(sThresholdU, toSkScalar(mThreshold));
         gl->glUniform1f(sContrastU, toSkScalar(mContrast));
         gl->glUniform1f(sLightIntensityU, toSkScalar(mLightIntensity));
         gl->glUniform1f(sLightLengthU, toSkScalar(mLightLength));
         gl->glUniform1f(sEdgeIntensityU, toSkScalar(mEdgeIntensity));
         gl->glUniform1f(sInvertU, toSkScalar(mInvert));
+        gl->glUniform1f(sBlendU, toSkScalar(mBlend));
         gl->glUniform4f(sFlashColorU, mFlashColor.redF(), mFlashColor.greenF(), mFlashColor.blueF(), mFlashColor.alphaF());
         gl->glUniform4f(sBgColorU, mBgColor.redF(), mBgColor.greenF(), mBgColor.blueF(), mBgColor.alphaF());
     }
@@ -100,21 +120,26 @@ private:
     static bool sInitialized;
     static GLuint sProgramId;
 
+    static GLint sAnchorU;
     static GLint sThresholdU;
     static GLint sContrastU;
     static GLint sLightIntensityU;
     static GLint sLightLengthU;
     static GLint sEdgeIntensityU;
     static GLint sInvertU;
+    static GLint sBlendU;
     static GLint sFlashColorU;
     static GLint sBgColorU;
 
+    const qreal mCenterX;
+    const qreal mCenterY;
     const qreal mThreshold;
     const qreal mContrast;
     const qreal mLightIntensity;
     const qreal mLightLength;
     const qreal mEdgeIntensity;
     const qreal mInvert;
+    const qreal mBlend;
     const QColor mFlashColor;
     const QColor mBgColor;
 };
@@ -122,12 +147,14 @@ private:
 bool BlackWhiteFlashEffectCaller::sInitialized = false;
 GLuint BlackWhiteFlashEffectCaller::sProgramId = 0;
 
+GLint BlackWhiteFlashEffectCaller::sAnchorU = -1;
 GLint BlackWhiteFlashEffectCaller::sThresholdU = -1;
 GLint BlackWhiteFlashEffectCaller::sContrastU = -1;
 GLint BlackWhiteFlashEffectCaller::sLightIntensityU = -1;
 GLint BlackWhiteFlashEffectCaller::sLightLengthU = -1;
 GLint BlackWhiteFlashEffectCaller::sEdgeIntensityU = -1;
 GLint BlackWhiteFlashEffectCaller::sInvertU = -1;
+GLint BlackWhiteFlashEffectCaller::sBlendU = -1;
 GLint BlackWhiteFlashEffectCaller::sFlashColorU = -1;
 GLint BlackWhiteFlashEffectCaller::sBgColorU = -1;
 
@@ -137,18 +164,21 @@ stdsptr<RasterEffectCaller> BlackWhiteFlashEffect::getEffectCaller(
     Q_UNUSED(resolution)
     Q_UNUSED(data)
 
+    const qreal centerX = mCenterX->getEffectiveValue(relFrame);
+    const qreal centerY = mCenterY->getEffectiveValue(relFrame);
     const qreal threshold = mThreshold->getEffectiveValue(relFrame);
     const qreal contrast = mContrast->getEffectiveValue(relFrame);
     const qreal lightIntensity = mLightIntensity->getEffectiveValue(relFrame) * influence;
     const qreal lightLength = mLightLength->getEffectiveValue(relFrame);
     const qreal edgeIntensity = mEdgeIntensity->getEffectiveValue(relFrame);
     const qreal invert = mInvert->getEffectiveValue(relFrame);
+    const qreal blend = mBlend->getEffectiveValue(relFrame);
     const QColor flashColor = mFlashColor->getColor(relFrame);
     const QColor bgColor = mBgColor->getColor(relFrame);
 
     return enve::make_shared<BlackWhiteFlashEffectCaller>(
-                instanceHwSupport(), threshold, contrast, lightIntensity,
-                lightLength, edgeIntensity, invert, flashColor, bgColor);
+                instanceHwSupport(), centerX, centerY, threshold, contrast, lightIntensity,
+                lightLength, edgeIntensity, invert, blend, flashColor, bgColor);
 }
 
 void BlackWhiteFlashEffectCaller::processCpu(CpuRenderTools& renderTools, const CpuRenderData& data) {
@@ -164,6 +194,8 @@ void BlackWhiteFlashEffectCaller::processCpu(CpuRenderTools& renderTools, const 
     const int xMax = std::min((int)data.fTexTile.right(), imgWidth - 1);
     const int yMin = std::max(0, data.fTexTile.top());
     const int yMax = std::min((int)data.fTexTile.bottom(), imgHeight - 1);
+
+    const qreal blendF = (mBlend * 0.01);
 
     for(int yi = yMin; yi <= yMax; yi++) {
         auto dst = static_cast<uchar*>(dstBtmp.getAddr(0, yi - yMin));
@@ -185,13 +217,17 @@ void BlackWhiteFlashEffectCaller::processCpu(CpuRenderTools& renderTools, const 
             qreal val = (cl > mThreshold * 0.01) ? 1.0 : 0.0;
             if (mInvert > 0.5) val = 1.0 - val;
 
-            const qreal outR = mBgColor.redF() * (1.0 - val) + mFlashColor.redF() * val;
-            const qreal outG = mBgColor.greenF() * (1.0 - val) + mFlashColor.greenF() * val;
-            const qreal outB = mBgColor.blueF() * (1.0 - val) + mFlashColor.blueF() * val;
+            const qreal fR = mBgColor.redF() * (1.0 - val) + mFlashColor.redF() * val;
+            const qreal fG = mBgColor.greenF() * (1.0 - val) + mFlashColor.greenF() * val;
+            const qreal fB = mBgColor.blueF() * (1.0 - val) + mFlashColor.blueF() * val;
 
-            *dst++ = static_cast<uchar>(outR * 255.0);
-            *dst++ = static_cast<uchar>(outG * 255.0);
-            *dst++ = static_cast<uchar>(outB * 255.0);
+            const qreal outR = r * (1.0 - blendF) + fR * 255.0 * blendF;
+            const qreal outG = g * (1.0 - blendF) + fG * 255.0 * blendF;
+            const qreal outB = b * (1.0 - blendF) + fB * 255.0 * blendF;
+
+            *dst++ = static_cast<uchar>(std::max(0.0, std::min(255.0, outR)));
+            *dst++ = static_cast<uchar>(std::max(0.0, std::min(255.0, outG)));
+            *dst++ = static_cast<uchar>(std::max(0.0, std::min(255.0, outB)));
             *dst++ = a;
         }
     }
