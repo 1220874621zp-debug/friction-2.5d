@@ -147,13 +147,16 @@ void TrackMatteCaller::processCpu(CpuRenderTools& renderTools,
     // fully masked out (AE semantics)
     SkIRect ov = SkIRect::MakeXYWH(imgOff.x(), imgOff.y(),
                                    mattePix.width(), mattePix.height());
+    const bool inverted = (mMode == Mode::alphaInv || mMode == Mode::lumaInv);
     if(!ov.intersect(tile)) {
-        // no matte pixels here: clear the tile's alpha completely
-        SkCanvas clear(renderTools.fDstBtmp);
-        SkPaint p;
-        p.setBlendMode(SkBlendMode::kDstOut);
-        p.setColor(SK_ColorWHITE); // a = 1 - dst.a
-        clear.drawPaint(p);
+        if(!inverted) {
+            // no matte pixels here: clear the tile's alpha completely
+            SkCanvas clear(renderTools.fDstBtmp);
+            SkPaint p;
+            p.setBlendMode(SkBlendMode::kDstOut);
+            p.setColor(SK_ColorWHITE); // a = 1 - dst.a
+            clear.drawPaint(p);
+        }
         return;
     }
     // ov is in IMAGE coordinates; mattePix lives in its own local space
@@ -165,11 +168,11 @@ void TrackMatteCaller::processCpu(CpuRenderTools& renderTools,
     const int drawX = ov.left()  - tile.left();
     const int drawY = ov.top()   - tile.top();
 
-    // build an alpha-only tile: transparent outside the matte, the
-    // filtered matte alpha inside
+    // build an alpha-only tile: transparent outside the matte for normal modes,
+    // opaque white (a=1) for inverted modes, and filtered matte alpha inside
     SkBitmap alphaBmp;
     alphaBmp.allocPixels(renderTools.fDstBtmp.info());
-    alphaBmp.eraseColor(SK_ColorTRANSPARENT);
+    alphaBmp.eraseColor(inverted ? SK_ColorWHITE : SK_ColorTRANSPARENT);
     SkCanvas ac(alphaBmp);
     SkPaint pf;
     pf.setBlendMode(SkBlendMode::kSrc);
