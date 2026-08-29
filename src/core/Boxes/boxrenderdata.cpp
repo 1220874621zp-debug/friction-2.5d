@@ -38,11 +38,15 @@ BoxRenderData::BoxRenderData(BoundingBox * const parent) :
 }
 
 SkMatrix BoxRenderData::getFullRenderTransform() const {
-    if(!fHasPerspective) return toSkMatrix(fScaledTransform);
+    if(!fHasPerspective && !fHasSceneCamera) {
+        return toSkMatrix(fScaledTransform);
+    }
     // point order: 3D perspective (layer space, around own pivot)
-    //              -> rel -> inherited -> resolution
+    //              -> rel -> inherited -> scene camera (world space)
+    //              -> resolution
     // SkMatrix preConcat(m): this = this * m (m applied first)
     SkMatrix result = toSkMatrix(fResolutionScale);
+    if(fHasSceneCamera) result.preConcat(fSceneCameraT);
     result.preConcat(toSkMatrix(fInheritedTransform));
     result.preConcat(toSkMatrix(fRelTransform));
     result.preConcat(fPerspectiveTransform);
@@ -63,6 +67,8 @@ void BoxRenderData::copyFrom(BoxRenderData *src) {
     fScaledTransform = src->fScaledTransform;
     fPerspectiveTransform = src->fPerspectiveTransform;
     fHasPerspective = src->fHasPerspective;
+    fSceneCameraT = src->fSceneCameraT;
+    fHasSceneCamera = src->fHasSceneCamera;
     fRelFrame = src->fRelFrame;
     fRelBoundingRect = src->fRelBoundingRect;
     fRenderTransform = src->fRenderTransform;

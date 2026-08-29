@@ -180,6 +180,11 @@ public:
     void addBookmarkColor(const QColor& color);
 
     void removeBookmarkColor(const QColor& color);
+
+    // global (app-wide, persistent) color favorites: mirror fColors to
+    // the app settings / seed fColors from them
+    void syncGlobalBookmarkColors() const;
+    void restoreGlobalBookmarkColors();
 //
     void setBrush(BrushContexedWrapper * const brush);
 

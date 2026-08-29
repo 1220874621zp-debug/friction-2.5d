@@ -61,7 +61,9 @@ enum class CanvasMode : short {
     bonePose,
     boneBind,
     boneParent,
-    boneSelect
+    boneSelect,
+
+    camera
 };
 
 enum class UpdateReason {

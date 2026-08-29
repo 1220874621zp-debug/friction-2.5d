@@ -26,8 +26,10 @@
 #include "Private/document.h"
 #include "Boxes/internallinkcanvas.h"
 #include "canvas.h"
+#include "appsupport.h"
 #include "simpletask.h"
 
+#include <QStringList>
 #include <QVariant>
 #include <QColor>
 
@@ -39,6 +41,9 @@ Document::Document(TaskScheduler& taskScheduler)
 {
     Q_ASSERT(!sInstance);
     sInstance = this;
+
+    // global color favorites (survive new projects / restarts)
+    restoreGlobalBookmarkColors();
 
     mGrid = new Grid(this);
     mGrid->setSettings(eSettings::instance().fGrid);
@@ -354,10 +359,39 @@ void Document::removeBookmarkBrush(SimpleBrushWrapper * const brush)
     }
 }
 
+// bookmarked colors are GLOBAL app favorites, not per-project: every
+// change is mirrored to the app settings and seeded back on startup
+// and whenever the document is cleared (new project)
+void Document::syncGlobalBookmarkColors() const {
+    QStringList names;
+    for(const auto& c : fColors) names << c.name();
+    AppSupport::setSettings(QStringLiteral("colors"),
+                            QStringLiteral("bookmarks"),
+                            QVariant(names));
+}
+
+void Document::restoreGlobalBookmarkColors() {
+    const auto names = AppSupport::getSettings(
+                QStringLiteral("colors"),
+                QStringLiteral("bookmarks")).toStringList();
+    for(const auto& name : names) {
+        const QColor c(name);
+        if(!c.isValid()) continue;
+        bool present = false;
+        for(const auto& existing : fColors) {
+            if(existing.rgba() == c.rgba()) { present = true; break; }
+        }
+        if(present) continue;
+        fColors << c;
+        emit bookmarkColorAdded(c);
+    }
+}
+
 void Document::addBookmarkColor(const QColor &color)
 {
     removeBookmarkColor(color);
     fColors << color;
+    syncGlobalBookmarkColors();
     emit bookmarkColorAdded(color);
 }
 
@@ -367,6 +401,7 @@ void Document::removeBookmarkColor(const QColor &color)
     for (int i = 0; i < fColors.count(); i++) {
         if (fColors.at(i).rgba() == rgba) {
             fColors.removeAt(i);
+            syncGlobalBookmarkColors();
             emit bookmarkColorRemoved(color);
             break;
         }
@@ -445,11 +480,33 @@ void Document::clear()
         removeBookmarkBrush(brush);
     }
     fBrushes.clear();
+    // snapshot the GLOBAL favorites BEFORE the removal loop: every
+    // removeBookmarkColor syncs the shrinking list back to the app
+    // settings, which would wipe the global store empty
+    const QStringList globalFavorites = AppSupport::getSettings(
+                QStringLiteral("colors"),
+                QStringLiteral("bookmarks")).toStringList();
     const auto iColors = fColors;
     for (const auto& color : iColors) {
         removeBookmarkColor(color);
     }
     fColors.clear();
+    // new project: re-seed from the pre-clear snapshot (bypasses the
+    // just-wiped settings copy) AND write it back - the removal loop
+    // above left an empty list in the settings file, so without this
+    // re-write the favorites died on app close (clear runs at exit)
+    for(const auto& name : globalFavorites) {
+        const QColor c(name);
+        if(!c.isValid()) continue;
+        bool present = false;
+        for(const auto& existing : fColors) {
+            if(existing.rgba() == c.rgba()) { present = true; break; }
+        }
+        if(present) continue;
+        fColors << c;
+        emit bookmarkColorAdded(c);
+    }
+    if(!globalFavorites.isEmpty()) syncGlobalBookmarkColors();
 
     mGrid->setSettings(eSettings::instance().fGrid);
 }

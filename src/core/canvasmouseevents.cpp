@@ -150,6 +150,8 @@ void Canvas::mouseMoveEvent(const eMouseEvent &e)
             updateDraftBone(e.fPos);
         } else if (mCurrentMode == CanvasMode::bonePose) {
             bonePoseMove(e);
+        } else if (mCurrentMode == CanvasMode::camera) {
+            cameraMove(e);
         } else if (mCurrentMode == CanvasMode::circleCreate) {
             const QPointF anchor = mHasCreationPressPos ? mCreationPressPos : snapPosToGrid(e.fLastPressPos,
                                                                                             e.fModifiers,
@@ -225,6 +227,10 @@ void Canvas::mouseReleaseEvent(const eMouseEvent &e)
         mPressedBox = nullptr;
         mPressedPoint = nullptr;
         mHasCreationPressPos = false;
+        return;
+    }
+    if(mCurrentMode == CanvasMode::camera && e.fButton == Qt::LeftButton) {
+        cameraRelease();
         return;
     }
     /*if(mCurrentMode == CanvasMode::paint) {

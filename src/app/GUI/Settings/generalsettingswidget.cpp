@@ -30,6 +30,8 @@
 #include <QGroupBox>
 #include <QScrollArea>
 #include <QPushButton>
+#include <QLineEdit>
+#include <QStandardPaths>
 #include <QDesktopServices>
 #include <QDir>
 #include <QMessageBox>
@@ -187,6 +189,40 @@ GeneralSettingsWidget::GeneralSettingsWidget(QWidget *parent)
 
     mGeneralLayout->addWidget(mThemeWidget);
 
+    // language selector (restart to apply; Chinese is the default)
+    {
+        const auto langWidget = new QWidget(this);
+        langWidget->setContentsMargins(0, 0, 0, 0);
+        const auto langLayout = new QHBoxLayout(langWidget);
+        langLayout->setContentsMargins(0, 0, 0, 0);
+        const auto langLabel = new QLabel(tr("Language"), this);
+        const auto langCombo = new QComboBox(this);
+        langCombo->addItem(QStringLiteral("\u4E2D\u6587"),   // 中文
+                           QStringLiteral("zh_CN"));
+        langCombo->addItem(QStringLiteral("English"),
+                           QStringLiteral("en"));
+        const QString curLang = AppSupport::getSettings(
+                    QStringLiteral("ui"), QStringLiteral("language"),
+                    QStringLiteral("zh_CN")).toString();
+        const int idx = curLang == QStringLiteral("en") ? 1 : 0;
+        langCombo->setCurrentIndex(idx);
+        connect(langCombo, qOverload<int>(&QComboBox::activated),
+                this, [langCombo](const int index) {
+            AppSupport::setSettings(QStringLiteral("ui"),
+                                    QStringLiteral("language"),
+                                    langCombo->itemData(index).toString());
+        });
+        langLayout->addWidget(langLabel);
+        langLayout->addWidget(langCombo);
+        langLayout->addStretch();
+        mThemeLayout->addWidget(langWidget);
+
+        const auto langInfoLabel = new QLabel(
+                    tr("Changing the language requires a restart of Friction."),
+                    this);
+        mThemeLayout->addWidget(langInfoLabel);
+    }
+
     const auto mImportFileWidget = new QWidget(this);
     mImportFileWidget->setContentsMargins(0, 0, 0, 0);
     const auto mImportFileLayout = new QHBoxLayout(mImportFileWidget);
@@ -279,6 +315,53 @@ GeneralSettingsWidget::GeneralSettingsWidget(QWidget *parent)
     });
 
     mGeneralLayout->addWidget(mCacheWidget);
+
+    // snapshot export destination (timeline camera button)
+    const auto mSnapshotWidget = new QGroupBox(this);
+    mSnapshotWidget->setObjectName("BlueBox");
+    mSnapshotWidget->setTitle(tr("Snapshots"));
+    mSnapshotWidget->setContentsMargins(0, 0, 0, 0);
+    const auto mSnapshotLayout = new QVBoxLayout(mSnapshotWidget);
+
+    const auto snapDirRow = new QWidget(this);
+    snapDirRow->setContentsMargins(0, 0, 0, 0);
+    const auto snapDirLayout = new QHBoxLayout(snapDirRow);
+    snapDirLayout->setContentsMargins(0, 0, 0, 0);
+    const auto snapDirLabel = new QLabel(tr("Snapshot folder"), this);
+    const auto snapDirEdit = new QLineEdit(this);
+    snapDirEdit->setReadOnly(true);
+    {
+        QString dir = AppSupport::getSettings(QStringLiteral("snapshots"),
+                                              QStringLiteral("dir")).toString();
+        if(dir.isEmpty()) {
+            dir = QStandardPaths::writableLocation(
+                        QStandardPaths::DesktopLocation);
+        }
+        snapDirEdit->setText(dir);
+    }
+    const auto snapDirBrowse = new QPushButton(tr("Browse..."), this);
+    snapDirLayout->addWidget(snapDirLabel);
+    snapDirLayout->addWidget(snapDirEdit, 1);
+    snapDirLayout->addWidget(snapDirBrowse);
+    mSnapshotLayout->addWidget(snapDirRow);
+
+    const auto snapInfoLabel = new QLabel(tr(
+            "Snapshot PNGs are exported at 100% resolution. "
+            "Empty folder means the Desktop is used."), this);
+    snapInfoLabel->setWordWrap(true);
+    mSnapshotLayout->addWidget(snapInfoLabel);
+
+    connect(snapDirBrowse, &QPushButton::clicked, this, [this, snapDirEdit]() {
+        const QString dir = AppSupport::getExistingDirectory(
+                    this, tr("Choose Snapshot Folder"),
+                    snapDirEdit->text());
+        if(dir.isEmpty()) return;
+        snapDirEdit->setText(dir);
+        AppSupport::setSettings(QStringLiteral("snapshots"),
+                                QStringLiteral("dir"), dir);
+    });
+
+    mGeneralLayout->addWidget(mSnapshotWidget);
     mGeneralLayout->addStretch();
     addWidget(mGeneralWidget);
 

@@ -27,6 +27,7 @@
 #include "Boxes/boxrendercontainer.h"
 #include "CacheHandlers/cachecontainer.h"
 #include "GUI/mainwindow.h"
+#include "Private/Tasks/taskscheduler.h"
 #include <QDebug>
 #include <QMetaType>
 
@@ -120,7 +121,18 @@ void MemoryHandler::freeMemory(const MemoryState newState,
     // If our total possible contribution is under 25% of the deficit,
     // the pressure is external: hold on to the last few containers so
     // the app stays usable
-    const int minKeep = 6;
+    const int minKeep = 16;
+    // never evict mid-render: containers evicted while render tasks are
+    // still running leave their dependent render chains waiting on an
+    // async reload - the affected layers then show blank (dashed bounds
+    // only) or stale-composited frames (visible color shifts for
+    // blend-mode layers). Defer to the next poll instead.
+    const auto sched = TaskScheduler::instance();
+    if(sched && (sched->busyCpuThreads() > 0 ||
+                 sched->busyHddThreads() > 0)) {
+        emit memoryFreed();
+        return;
+    }
     while(memToFree > 0 && mDataHandler.count() > minKeep) {
         const auto contRaw = mDataHandler.takeFirst();
         // hold a strong reference while evicting: free_RAM_k() may

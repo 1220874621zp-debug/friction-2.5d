@@ -82,6 +82,7 @@ set(
     widgets/colortoolbutton.cpp
     widgets/colorlabel.cpp
     widgets/colorsettingswidget.cpp
+    widgets/colorwheelwidget.cpp
     widgets/colorvaluerect.cpp
     widgets/colorwidget.cpp
     widgets/colorwidgetshaders.cpp

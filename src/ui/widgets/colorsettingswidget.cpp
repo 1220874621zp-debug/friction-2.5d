@@ -256,9 +256,9 @@ void ColorSettingsWidget::moveAlphaWidgetToTab(const int tabId) {
             mHSVLayout->addLayout(aLayout);
         } else if(tabId == 2) {
             mHSLLayout->addLayout(aLayout);
-        }/* else if(tabId == 3) {
+        } else if(tabId == 3 && mWheelLayout) {
             mWheelLayout->addLayout(aLayout);
-        }*/
+        }
     }
     ((QLayout*)hexLayout->parent())->removeItem(hexLayout);
     if(tabId == 0) {
@@ -267,9 +267,9 @@ void ColorSettingsWidget::moveAlphaWidgetToTab(const int tabId) {
         mHSVLayout->addLayout(hexLayout);
     } else if(tabId == 2) {
         mHSLLayout->addLayout(hexLayout);
-    }/* else if(tabId == 3) {
+    } else if(tabId == 3 && mWheelLayout) {
         mWheelLayout->addLayout(hexLayout);
-    }*/
+    }
     /*for(int i=0;i < mTabWidget->count();i++)
         if(i!=tabId)
             mTabWidget->widget(i)->setSizePolicy(QSizePolicy::Minimum,
@@ -332,6 +332,29 @@ ColorSettingsWidget::ColorSettingsWidget(QWidget *parent)
 //    wheel_triangle_widget = new H_Wheel_SV_Triangle(this);
 //    mWheelLayout->addWidget(wheel_triangle_widget, Qt::AlignHCenter);
 //    mWheelLayout->setAlignment(wheel_triangle_widget, Qt::AlignHCenter);
+
+    // color wheel tab: hue ring + SV triangle. Editing follows the
+    // same start/change/finish pipeline as the other tabs
+    mWheelWidget = new QWidget(this);
+    mWheelLayout = new QVBoxLayout(mWheelWidget);
+    mWheelLayout->setContentsMargins(0, 0, 0, 0);
+    mWheelLayout->setAlignment(Qt::AlignTop);
+    mWheel = new ColorWheelWidget(this);
+    mWheelLayout->addWidget(mWheel, Qt::AlignHCenter);
+    connect(mWheel, &ColorWheelWidget::editingStarted,
+            this, &ColorSettingsWidget::emitStartFullColorChangedSignal);
+    connect(mWheel, &ColorWheelWidget::colorChanged,
+            this, [this](const QColor& color) {
+        setDisplayedColor(color);
+        // apply live: parameter=all reads the just-synced HSL spins
+        // of the fallback tab path - full color, alpha untouched
+        emitColorChangedSignal();
+    });
+    connect(mWheel, &ColorWheelWidget::editingFinished,
+            this, [this]() {
+        emitFinishFullColorChangedSignal();
+        Document::sInstance->actionFinished();
+    });
 
 
     int spinWidth = eSizesUI::widget * 3;
@@ -426,7 +449,7 @@ ColorSettingsWidget::ColorSettingsWidget(QWidget *parent)
     mTabWidget->addTab(mRGBWidget, "RGB");
     mTabWidget->addTab(mHSVWidget, "HSV");
     mTabWidget->addTab(mHSLWidget, "HSL");
-    //mTabWidget->addTab(mWheelWidget, "Wheel");
+    mTabWidget->addTab(mWheelWidget, tr("Wheel"));
     mWidgetsLayout->addWidget(mTabWidget);
     mRGBLayout->addLayout(aLayout);
 
@@ -770,6 +793,7 @@ void ColorSettingsWidget::setDisplayedColor(const QColor& color) {
     setDisplayedHSV(hue, hsvS, color.valueF());
     setDisplayedHSL(hue, hslS, color.lightnessF());
     setDisplayedAlpha(color.alphaF());
+    if(mWheel) mWheel->setDisplayedColor(color);
     mBookmarkedColors->setColor(color);
 }
 

@@ -200,6 +200,9 @@ void ToolBox::setupMainAction(const QIcon &icon,
         case CanvasMode::boneSelect:
             mActions.setBoneSelectMode();
             break;
+        case CanvasMode::camera:
+            mActions.setCameraMode();
+            break;
         case CanvasMode::pickFillStroke:
             mActions.setPickPaintSettingsMode();
             break;
@@ -393,6 +396,16 @@ void ToolBox::setupMainActions()
                                                          "K").toString()),
                     {CanvasMode::boneSelect},
                     false);
+    // scene camera (AE-like): orbit/pan/zoom the whole composition -
+    // LMB orbit, Shift+LMB pan, Ctrl+LMB zoom
+    setupMainAction(svgToolIcon(QStringLiteral(":/icons/camera_tool.svg"),
+                              ThemeSupport::getIconSize(64).width()),
+                    tr("Camera"),
+                    QKeySequence(AppSupport::getSettings("shortcuts",
+                                                         "camera",
+                                                         "C").toString()),
+                    {CanvasMode::camera},
+                    false);
     setupMainAction(ThemeSupport::themedToolIcon("pick",
                                                  ThemeSupport::getThemeColorRed(),
                                                  64),
@@ -427,21 +440,12 @@ void ToolBox::setupMainActions()
     // mask pen: draw DstIn mask shapes right above bitmap layers
     // (AE-style clipping); glyph U+29EA for the icon
     {
-        QPixmap pm(64, 64);
-        pm.fill(Qt::transparent);
-        QPainter p(&pm);
-        p.setRenderHint(QPainter::TextAntialiasing);
-        QFont f = qApp->font();
-        f.setPixelSize(46);
-        f.setBold(true);
-        p.setFont(f);
-        p.setPen(qApp->palette().color(QPalette::WindowText));
-        p.drawText(QRect(0, 0, 64, 64), Qt::AlignCenter, QChar(0x29EA));
-        p.end();
-
-        mMaskPen = new QAction(QIcon(pm),
-                               tr("Mask Pen (draw shapes that clip layers below)"),
-                               mMain);
+        // user-provided white pen-nib svg
+        mMaskPen = new QAction(
+                    svgToolIcon(QStringLiteral(":/icons/pen_tool.svg"),
+                                ThemeSupport::getIconSize(64).width()),
+                    tr("Mask Pen (draw shapes that clip layers below)"),
+                    mMain);
         mMaskPen->setCheckable(true);
         connect(mMaskPen, &QAction::toggled,
                 this, [this](const bool checked) {

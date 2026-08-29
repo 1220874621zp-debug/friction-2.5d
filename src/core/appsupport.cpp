@@ -132,7 +132,7 @@ void applySidebar(QFileDialog &dialog)
         // UrlRole = Qt::UserRole + 1 (QUrlModel private enum)
         if (idx.data(Qt::UserRole + 1).toUrl() == QUrl(QStringLiteral("file:"))) {
             const auto label = QLocale::system().language() == QLocale::Chinese
-                    ? QStringLiteral("\u6211\u7684\u7535\u8111") // My Computer
+                    ? QObject::tr("My Computer") // My Computer
                     : QStringLiteral("My Computer");
             sidebar->model()->setData(idx, label, Qt::DisplayRole);
         }

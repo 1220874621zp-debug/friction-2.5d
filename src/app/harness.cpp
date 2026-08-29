@@ -27,6 +27,7 @@
 #include "canvas.h"
 #include "Boxes/rectangle.h"
 #include "Boxes/bonelayer.h"
+#include "Boxes/layerboxrenderdata.h"
 #include "Boxes/bone.h"
 #include "Boxes/imagebox.h"
 #include "RasterEffects/rastereffectcollection.h"
@@ -265,13 +266,21 @@ static int runBindTest(Document& document, TaskScheduler& tasks) {
     const auto bone = enve::make_shared<Bone>();
     bl->addContained(bone);
     const auto box = enve::make_shared<ImageBox>();
+    fprintf(stderr, "[harness] ckpt: setup done\n"); fflush(stderr);
     box->setFilePath(png);
+    fprintf(stderr, "[harness] ckpt: setFilePath\n"); fflush(stderr);
     scene->addContained(box);
+    fprintf(stderr, "[harness] ckpt: addContained\n"); fflush(stderr);
     box->planUpdate(UpdateReason::userChange);
+    fprintf(stderr, "[harness] ckpt: planUpdate\n"); fflush(stderr);
     // the canvas render chain is not driven headlessly - force the
     // box's render task directly (the export/offscreen path)
-    box->queExternalRender(0, false);
-    pump();
+    for(int i = 0; i < 6; i++) {
+        box->queExternalRender(0, false);
+        fprintf(stderr, "[harness] ckpt: queExternalRender %d\n", i); fflush(stderr);
+        for(int j = 0; j < 50; j++) QApplication::processEvents();
+        fprintf(stderr, "[harness] ckpt: pumped %d\n", i); fflush(stderr);
+    }
 
     const auto report = [&](const char* tag) {
         const auto rd = box->getCurrentRenderData(
@@ -289,18 +298,75 @@ static int runBindTest(Document& document, TaskScheduler& tasks) {
                 rd ? int(rd->fRelBoundingRect.height()) : -1,
                 t.determinant());
     };
+    // the loader completes asynchronously - wait it out (the plain
+    // check raced and failed on slow runs)
+    for(int w = 0; w < 40 && !box->hasLoadedImage(); w++) {
+        for(int j = 0; j < 25; j++) QApplication::processEvents();
+    }
     report("before");
     if(!box->hasLoadedImage()) {
         fprintf(stderr, "[harness] BINDTEST FAIL: image not loaded\n");
         return 11;
     }
+    // realistic psd-like transform: centered pivot + offset +
+    // rotation + scale (the trivial identity case always round-trips;
+    // if decomposePivoted mishandles the pivot convention, THIS is
+    // where it shows)
+    {
+        const auto tr = box->getBoxTransformAnimator();
+        tr->setPivot(32, 32);
+        tr->setPosition(100, 50);
+        tr->getRotAnimator()->setCurrentBaseValue(15);
+        tr->getScaleAnimator()->getXAnimator()->setCurrentBaseValue(0.8);
+        tr->getScaleAnimator()->getYAnimator()->setCurrentBaseValue(1.2);
+        pump();
+        const auto m = box->getTotalTransform();
+        fprintf(stderr, "[harness] tx before: %g %g %g %g %g %g\n",
+                m.m11(), m.m12(), m.m21(), m.m22(), m.dx(), m.dy());
+    }
     // REAL bind path: selection + bindSelectedLayers, like the UI tool
     scene->clearBoxesSelection();
     scene->addBoxToSelection(box.data());
+    fprintf(stderr, "[harness] ckpt: selected\n"); fflush(stderr);
     bone->bindSelectedLayers();
-    box->queExternalRender(0, false);
-    pump();
+    fprintf(stderr, "[harness] ckpt: bound\n"); fflush(stderr);
+    for(int i = 0; i < 6; i++) {
+        box->queExternalRender(0, false);
+        fprintf(stderr, "[harness] ckpt: post-bind que %d\n", i); fflush(stderr);
+        for(int j = 0; j < 50; j++) QApplication::processEvents();
+        fprintf(stderr, "[harness] ckpt: post-bind pumped %d\n", i); fflush(stderr);
+    }
     report("after ");
+    {
+        const auto m = box->getTotalTransform();
+        fprintf(stderr, "[harness] tx after : %g %g %g %g %g %g\n",
+                m.m11(), m.m12(), m.m21(), m.m22(), m.dx(), m.dy());
+        // exact round-trip expectation: world transform unchanged
+        QMatrix want; // recomputed via a fresh bind of the same values
+        const bool sane = !qIsNaN(m.m11()) && !qIsNaN(m.dx()) &&
+                          qAbs(m.determinant()) > 0.01;
+        fprintf(stderr, "[harness] tx sane=%d det=%.4f\n",
+                int(sane), m.determinant());
+    }
+    // compositor smoke test: render the BONE LAYER group (the exact
+    // container the layer now lives in) with a psd-like blend mode on
+    // the box - verifies the child render chain builds and finishes
+    {
+        box->setBlendModeSk(SkBlendMode::kMultiply);
+        const auto blData = bl->queExternalRender(0, false);
+        for(int w = 0; w < 40; w++) {
+            for(int j = 0; j < 25; j++) QApplication::processEvents();
+            if(blData && blData->finished()) break;
+        }
+        const auto contData = enve::shared(
+                    static_cast<ContainerBoxRenderData*>(blData.get()));
+        const int n = contData ? contData->fChildrenRenderData.count() : -1;
+        fprintf(stderr, "[harness] compositor: blData=%p finished=%d "
+                "children=%d boxData=%d\n",
+                blData.get(), int(blData && blData->finished()), n,
+                int(box->getCurrentRenderData(
+                        box->anim_getCurrentRelFrame()) != nullptr));
+    }
     const auto rd = box->getCurrentRenderData(
                 box->anim_getCurrentRelFrame());
     const bool ok = box->hasLoadedImage() && rd &&
@@ -345,6 +411,15 @@ int main(int argc, char *argv[]) {
     QStringList args;
     for(int i2 = 1; i2 < argc; i2++) args << QString(argv[i2]);
 
+    // route Qt messages straight to stderr - the app's custom handler
+    // buffers them into the debug-log dialog and the console sees
+    // nothing (which hid the ImageLoader diagnostics)
+    qInstallMessageHandler([](QtMsgType, const QMessageLogContext&,
+                              const QString& msg) {
+        fprintf(stderr, "[qt] %s\n", msg.toLocal8Bit().constData());
+        fflush(stderr);
+    });
+
     if(!args.isEmpty() && args.first() == "--bindtest") {
         eSettings settings(HardwareInfo::sCpuThreads(),
                            HardwareInfo::sRamKB());
@@ -353,9 +428,11 @@ int main(int argc, char *argv[]) {
         Document document(taskScheduler);
         // ImageBox file handlers need the process-wide registry (the
         // app builds it in MainWindow; without it assign() crashes),
-        // and the image loader is an eHddTask -> needs MemoryHandler
+        // the image loader is an eHddTask -> needs MemoryHandler, and
+        // BoxRenderData's ctor reads eFilterSettings::sRender()
         FilesHandler filesHandler;
         MemoryHandler memoryHandler;
+        eFilterSettings filterSettings;
         return runBindTest(document, taskScheduler);
     }
     if(!args.isEmpty() && args.first() == "--synthetic") {

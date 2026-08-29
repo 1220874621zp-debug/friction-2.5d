@@ -1,3 +1,13 @@
+/*
+#
+# Friction - https://friction.graphics
+#
+# Copyright (c) Ole-André Rodlie and contributors
+#
+# See 'README.md' for more information.
+#
+*/
+
 #include "adjustmentlayer.h"
 
 #include "Boxes/boxrenderdata.h"
@@ -85,7 +95,7 @@ void adjustmentApplyBackdrop(
 // AdjustmentLayer
 
 AdjustmentLayer::AdjustmentLayer() :
-    BoundingBox(QStringLiteral("\u8C03\u6574\u56FE\u5C42"),
+    BoundingBox(QObject::tr("Adjustment Layer"),
                 eBoxType::adjustmentLayer) {}
 
 stdsptr<BoxRenderData> AdjustmentLayer::createRenderData() {

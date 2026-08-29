@@ -28,6 +28,15 @@
 #include <QKeyEvent>
 #include <QScrollBar>
 #include <QShortcut>
+#include <QPainter>
+#include <QDir>
+#include <QFileInfo>
+#include <QRegularExpression>
+#include <QStandardPaths>
+#include <QTime>
+#include <QStatusBar>
+#include <QTimer>
+#include <QSvgRenderer>
 
 #include <functional>
 
@@ -37,6 +46,8 @@
 #include "GUI/BoxesList/boxsinglewidget.h"
 #include "GUI/keysview.h"
 #include "Boxes/boundingbox.h"
+#include "CacheHandlers/sceneframecontainer.h"
+#include "skia/skiahelpers.h"
 #include "Animators/transformanimator.h"
 #include "Animators/complexanimator.h"
 #include "Animators/animator.h"
@@ -164,6 +175,91 @@ TimelineDockWidget::TimelineDockWidget(Document& document,
     mLoopButton->setCheckable(true);
     connect(mLoopButton, &QAction::triggered,
             this, &TimelineDockWidget::setLoop);
+
+    // snapshot: quick PNG export of the current canvas frame
+    {
+        QPixmap pm(64, 64);
+        pm.fill(Qt::transparent);
+        QPainter g(&pm);
+        g.setRenderHint(QPainter::Antialiasing);
+        QSvgRenderer renderer(
+                    QStringLiteral(":/icons/camera_tool.svg"));
+        renderer.render(&g, QRectF(0, 0, 64, 64));
+        g.end();
+        // white version (toolbar icon convention)
+        QPainter w(&pm);
+        w.setCompositionMode(QPainter::CompositionMode_SourceIn);
+        w.fillRect(pm.rect(), Qt::white);
+        w.end();
+        mSnapshotButton = new QAction(pm, tr("Snapshot PNG"), this);
+        mSnapshotButton->setToolTip(tr(
+                "Export the current frame as a 100% resolution PNG "
+                "(snapshot path is configurable in Preferences, "
+                "default: Desktop)"));
+        connect(mSnapshotButton, &QAction::triggered,
+                this, &TimelineDockWidget::snapshotCurrentFrame);
+    }
+
+    // AE-style view toggles: action/title safe guides + transparency
+    // checkerboard background (view only, never rendered/exported)
+    {
+        QPixmap sf(64, 64);
+        sf.fill(Qt::transparent);
+        QPainter p(&sf);
+        p.setRenderHint(QPainter::Antialiasing);
+        QPen pen(QColor(255, 255, 255, 220));
+        pen.setWidthF(4.);
+        pen.setStyle(Qt::DashLine);
+        p.setPen(pen);
+        p.drawRect(QRectF(6, 14, 52, 36));
+        pen.setColor(QColor(255, 220, 90, 220));
+        pen.setWidthF(4.);
+        p.setPen(pen);
+        p.drawRect(QRectF(14, 21, 36, 22));
+        p.end();
+        mSafeFramesButton = new QAction(sf, tr("Safe Frames"), this);
+        mSafeFramesButton->setCheckable(true);
+        mSafeFramesButton->setToolTip(tr(
+                "Show action/title safe frames (90%/80%)"));
+        connect(mSafeFramesButton, &QAction::triggered,
+                this, [this](const bool checked) {
+            const auto scene = *mDocument.fActiveScene;
+            if(scene) scene->setSafeFramesVisible(checked);
+        });
+
+        QPixmap tg(64, 64);
+        tg.fill(Qt::transparent);
+        QPainter t(&tg);
+        // clean 2x2 checkerboard (no rounded sub-patches - those left
+        // antialiased seams that read as stray pixels), inset so the
+        // icon matches the visual weight of the neighbouring icons
+        const QRectF grid(14, 14, 36, 36);
+        const qreal half = 18.;
+        t.setPen(Qt::NoPen);
+        t.setBrush(QColor(160, 160, 160));
+        t.drawRect(grid);                       // gray base (TL + BR)
+        t.setBrush(QColor(255, 255, 255));
+        t.drawRect(QRectF(grid.left() + half, grid.top(),
+                          half, half));         // white TR
+        t.drawRect(QRectF(grid.left(), grid.top() + half,
+                          half, half));         // white BL
+        QPen border(QColor(255, 255, 255, 210));
+        border.setWidthF(2.5);
+        t.setPen(border);
+        t.setBrush(Qt::NoBrush);
+        t.drawRect(grid.adjusted(-1.25, -1.25, 1.25, 1.25));
+        t.end();
+        mTransparencyGridButton = new QAction(tg, tr("Transparency Grid"),
+                                              this);
+        mTransparencyGridButton->setCheckable(true);
+        mTransparencyGridButton->setToolTip(tr(
+                "Toggle the transparency grid background"));
+        connect(mTransparencyGridButton, &QAction::triggered,
+                this, [this](const bool checked) {
+            const auto scene = *mDocument.fActiveScene;
+            if(scene) scene->setTransparencyGrid(checked);
+        });
+    }
 
     mStepPreviewTimer = new QTimer(this);
 
@@ -321,6 +417,9 @@ TimelineDockWidget::TimelineDockWidget(Document& document,
     mToolBar->addAction(mPlayButton);
     mToolBar->addAction(mStopButton);
     mToolBar->addAction(mLoopButton);
+    mToolBar->addAction(mSnapshotButton);
+    mToolBar->addAction(mSafeFramesButton);
+    mToolBar->addAction(mTransparencyGridButton);
 
     addSpacer();
 
@@ -413,6 +512,103 @@ void TimelineDockWidget::addBlankAction()
 void TimelineDockWidget::setLoop(const bool loop)
 {
     RenderHandler::sInstance->setLoop(loop);
+}
+
+// quick PNG export of the current frame at FULL (100%) resolution:
+// when the preview runs at a lower resolution (default 50%), the
+// scene resolution is bumped to 1.0, the fresh frame is awaited and
+// the previous resolution restored. Destination: the snapshot path
+// from the preferences (default: Desktop)
+void TimelineDockWidget::snapshotCurrentFrame()
+{
+    const auto scene = *mDocument.fActiveScene;
+    if(!scene) return;
+    const int frame = scene->getCurrentFrame();
+    const auto status = [this](const QString& msg) {
+        mMainWindow->statusBar()->showMessage(msg, 5000);
+    };
+    // destination: preferences setting, fallback Desktop
+    QString dir = AppSupport::getSettings(QStringLiteral("snapshots"),
+                                          QStringLiteral("dir")).toString();
+    if(dir.isEmpty() || !QDir(dir).exists()) {
+        dir = QStandardPaths::writableLocation(
+                    QStandardPaths::DesktopLocation);
+    }
+    static const QRegularExpression badChars(
+                QStringLiteral("[\\\\/:*?\"<>|]"));
+    QString sceneName = scene->prp_getName();
+    sceneName.replace(badChars, QStringLiteral("_"));
+    const QString name = QStringLiteral("%1_f%2_%3.png")
+            .arg(sceneName)
+            .arg(frame)
+            .arg(QTime::currentTime().toString(QStringLiteral("HHmmss")));
+    const QString path = dir + QStringLiteral("/") + name;
+
+    const qreal savedRes = scene->getResolution();
+    const auto saveAndReport = [status, path](const sk_sp<SkImage>& img) {
+        SkiaHelpers::saveImage(path, img,
+                               SkEncodedImageFormat::kPNG, 100);
+        if(QFile::exists(path)) {
+            status(tr("Snapshot saved: %1").arg(path));
+        } else {
+            status(tr("Failed to save snapshot: %1").arg(path));
+        }
+    };
+
+    const auto contRaw = scene->getSceneFramesHandler().atFrame(frame);
+    const auto frameCont = dynamic_cast<SceneFrameContainer*>(contRaw);
+    const sk_sp<SkImage> img = frameCont ? frameCont->getImage() : nullptr;
+    if(img && (savedRes > 0.999 || frameCont->fResolution > 0.999)) {
+        // already at full resolution
+        saveAndReport(img);
+        return;
+    }
+    if(savedRes > 0.999) {
+        status(tr("No rendered frame available yet - wait for the "
+                  "preview to render this frame"));
+        return;
+    }
+    // bump the scene to 100% and wait for the fresh full-res frame;
+    // actionFinished() actually SCHEDULES the re-render (the video
+    // export does the same setResolution + actionFinished dance)
+    scene->setResolution(1.);
+    mDocument.actionFinished();
+    QPointer<Canvas> sceneQ(scene);
+    const bool restoreRes = true;
+    const qreal resToRestore = savedRes;
+    auto* const timer = new QTimer(this);
+    auto tries = std::make_shared<int>(0);
+    connect(timer, &QTimer::timeout, this,
+            [this, timer, sceneQ, frame, path, restoreRes, resToRestore,
+             tries, status, saveAndReport]() {
+        if(!sceneQ) {
+            timer->stop();
+            timer->deleteLater();
+            return;
+        }
+        const auto cont = sceneQ->getSceneFramesHandler().atFrame(frame);
+        const auto fc = dynamic_cast<SceneFrameContainer*>(cont);
+        const bool ready = fc && fc->getImage() &&
+                           fc->fResolution > 0.999;
+        if(!ready) {
+            if(++(*tries) > 100) { // ~10s timeout
+                timer->stop();
+                timer->deleteLater();
+                sceneQ->setResolution(resToRestore);
+                mDocument.actionFinished();
+                status(tr("Snapshot timed out - the frame did not "
+                          "render in time"));
+            }
+            return;
+        }
+        timer->stop();
+        timer->deleteLater();
+        saveAndReport(fc->getImage());
+        sceneQ->setResolution(resToRestore);
+        mDocument.actionFinished();
+    });
+    timer->start(100);
+    status(tr("Rendering snapshot at 100% resolution..."));
 }
 
 bool TimelineDockWidget::processKeyPress(QKeyEvent *event)

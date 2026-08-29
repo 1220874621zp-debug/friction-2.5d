@@ -374,11 +374,16 @@ int main(int argc, char *argv[])
     // Must run after QApplication so the heartbeat timer starts.
     HangWatchdog::start();
 
-    // i18n: load Chinese translation if system locale is Chinese
+    // i18n: language from the preferences ("ui"/"language", default
+    // Chinese regardless of the system locale); takes effect on
+    // restart
     static QTranslator appTranslator;
     {
         const auto locale = QLocale::system();
-        const bool isChinese = (locale.language() == QLocale::Chinese);
+        const QString lang = AppSupport::getSettings(
+                    QStringLiteral("ui"), QStringLiteral("language"),
+                    QStringLiteral("zh_CN")).toString();
+        const bool isChinese = lang == QStringLiteral("zh_CN");
         const bool loaded = appTranslator.load(":/translations/friction_zh_CN.qm");
         if (isChinese && loaded) {
             QCoreApplication::installTranslator(&appTranslator);

@@ -74,6 +74,8 @@
 
 #include "Boxes/circle.h"
 #include "Boxes/rectangle.h"
+#include "Boxes/solidlayer.h"
+#include "Boxes/cameralayer.h"
 #include "Boxes/nullobject.h"
 #include "Sound/evideosound.h"
 #include "Boxes/internallinkgroupbox.h"
@@ -81,8 +83,6 @@
 
 QPixmap* BoxSingleWidget::VISIBLE_ICON;
 
-// Translate internal (lowercase) property names for display in the timeline.
-// lupdate extracts the tr() literals below.
 QString translatePropertyName(const QString& name) {
     static const QHash<QString, QString> map = {
         { QStringLiteral("transform"), BoxSingleWidget::tr("transform") },
@@ -388,11 +388,13 @@ QPixmap* BoxSingleWidget::BOX_CIRCLE;
 QPixmap* BoxSingleWidget::BOX_RECT;
 QPixmap* BoxSingleWidget::BOX_TEXT;
 QPixmap* BoxSingleWidget::BOX_NULL;
+QPixmap* BoxSingleWidget::BOX_CAMERA;
 QPixmap* BoxSingleWidget::BOX_IMAGE;
 QPixmap* BoxSingleWidget::BOX_VIDEO;
 QPixmap* BoxSingleWidget::BOX_SOUND;
 QPixmap* BoxSingleWidget::BOX_BONE;
 QPixmap* BoxSingleWidget::BOX_BONELAYER;
+QPixmap* BoxSingleWidget::BOX_SOLID;
 QPixmap* BoxSingleWidget::BOX_GROUP;
 QPixmap* BoxSingleWidget::BOX_LINK;
 QPixmap* BoxSingleWidget::BOX_SEQ;
@@ -517,6 +519,8 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
         }
         if (enve_cast<Circle*>(target)) {
             return BoxSingleWidget::BOX_CIRCLE;
+        } else if (enve_cast<SolidLayer*>(target)) {
+            return BoxSingleWidget::BOX_SOLID;
         } else if (enve_cast<RectangleBox*>(target)) {
             return BoxSingleWidget::BOX_RECT;
         } else if (enve_cast<TextBox*>(target)) {
@@ -525,6 +529,8 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
             return BoxSingleWidget::BOX_BONELAYER;
         } else if (enve_cast<Bone*>(target)) {
             return BoxSingleWidget::BOX_BONE;
+        } else if (enve_cast<CameraLayer*>(target)) {
+            return BoxSingleWidget::BOX_CAMERA;
         } else if (enve_cast<NullObject*>(target)) {
             return BoxSingleWidget::BOX_NULL;
         } else if (enve_cast<ImageBox*>(target)) {
@@ -566,14 +572,14 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
             QColor(130, 130, 130),  // gray
         };
         const QString names[] = {
-            QStringLiteral("\u7EA2"),  // red
-            QStringLiteral("\u6A59"),  // orange
-            QStringLiteral("\u9EC4"),  // yellow
-            QStringLiteral("\u7EFF"),  // green
-            QStringLiteral("\u9752"),  // cyan
-            QStringLiteral("\u84DD"),  // blue
-            QStringLiteral("\u7D2B"),  // purple
-            QStringLiteral("\u7070"),  // gray
+            BoxSingleWidget::tr("Red"),  // red
+            BoxSingleWidget::tr("Orange"),  // orange
+            BoxSingleWidget::tr("Yellow"),  // yellow
+            BoxSingleWidget::tr("Green"),  // green
+            BoxSingleWidget::tr("Cyan"),  // cyan
+            BoxSingleWidget::tr("Blue"),  // blue
+            BoxSingleWidget::tr("Purple"),  // purple
+            BoxSingleWidget::tr("Gray"),  // gray
         };
         for(int i = 0; i < 8; i++) {
             const QColor c = colors[i];
@@ -584,7 +590,7 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
             });
         }
         menu.addSeparator();
-        menu.addAction(QStringLiteral("\u65E0\u989C\u8272"), // no color
+        menu.addAction(tr("No Color"), // no color
                        this, [ebsGuard]() {
             if(ebsGuard) ebsGuard->setLabelColor(QColor());
             Document::sInstance->actionFinished();
@@ -941,7 +947,7 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
     mParentLinkCombo->setObjectName("parentLinkCombo");
     mParentLinkCombo->setToolTip(tr(
         "Parent link (click to pick, drag onto a layer row)"));
-    mParentLinkCombo->addItem(QStringLiteral("\u65E0\u7236\u7EA7")); // 无父级
+    mParentLinkCombo->addItem(tr("No Parent")); // 无父级
     mParentLinkCombo->setVisible(false);
     // NOTE: showPopup is NOT a signal in Qt5 (it is a protected virtual
     // method) - connecting to it logs "signal not found" at runtime and
@@ -978,7 +984,7 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
     mMainLayout->addWidget(mTrkMatLayerCombo);
     mTrkMatLayerCombo->setObjectName("trackMatteLayerCombo");
     mTrkMatLayerCombo->setToolTip(tr("Track matte layer"));
-    mTrkMatLayerCombo->addItem(QStringLiteral("\u65E0"));
+    mTrkMatLayerCombo->addItem(tr("None"));
     mTrkMatLayerCombo->setVisible(false);
     mTrkMatLayerCombo->installEventFilter(this);
     connect(mTrkMatLayerCombo, qOverload<int>(&QComboBox::activated),
@@ -1198,6 +1204,7 @@ void BoxSingleWidget::setTargetAbstraction(SWT_Abstraction *abs) {
 
     const auto boolProperty = enve_cast<BoolProperty*>(prop);
     const auto boolPropertyContainer = enve_cast<BoolPropertyContainer*>(prop);
+    const auto boolAnimator = enve_cast<BoolAnimator*>(prop);
     const auto boxTargetProperty = enve_cast<BoxTargetProperty*>(prop);
     const auto comboBoxProperty = enve_cast<ComboBoxProperty*>(prop);
     const auto animator = enve_cast<Animator*>(prop);
@@ -1248,7 +1255,8 @@ void BoxSingleWidget::setTargetAbstraction(SWT_Abstraction *abs) {
         }
     }
     mBoxTargetWidget->setVisible(boxTargetProperty);
-    mCheckBox->setVisible(boolProperty || boolPropertyContainer);
+    mCheckBox->setVisible(boolProperty || boolPropertyContainer ||
+                         boolAnimator);
 
     mPropertyComboBox->setVisible(comboBoxProperty);
 
@@ -1314,6 +1322,17 @@ void BoxSingleWidget::setTargetAbstraction(SWT_Abstraction *abs) {
                                this, [this]() { mCheckBox->update(); });
     } else if(comboBoxProperty) {
         setComboProperty(comboBoxProperty);
+    } else if(boolAnimator) {
+        // a 0/1 channel with no meaningful transition - a checkbox
+        // matches the semantics (the value slider implies continuous
+        // interpolation); repaint when the frame changes so the check
+        // follows the keys during playback/scrubbing
+        mCheckBox->setTarget(boolAnimator);
+        mTargetConn << connect(boolAnimator,
+                               &Property::prp_currentFrameChanged,
+                               this, [this](const UpdateReason) {
+            mCheckBox->update();
+        });
     } else if(const auto qra = enve_cast<QrealAnimator*>(prop)) {
         mValueSlider->setTarget(qra);
         valueSliderVisible = true;
@@ -1544,6 +1563,27 @@ void BoxSingleWidget::loadStaticPixmaps(int iconSize)
     BOX_RECT = new QPixmap(QIcon::fromTheme("rectCreate").pixmap(pixmapSize));
     BOX_TEXT = new QPixmap(QIcon::fromTheme("textCreate").pixmap(pixmapSize));
     BOX_NULL = new QPixmap(QIcon::fromTheme("nullCreate").pixmap(pixmapSize));
+    // camera layer icon: rounded body + lens circle
+    {
+        const int isz = qMax(8, pixmapSize.width()*4/5);
+        const QColor col = ThemeSupport::getThemeColorYellow();
+        QPixmap pc(isz, isz); pc.fill(Qt::transparent);
+        QPainter c(&pc); c.setRenderHint(QPainter::Antialiasing);
+        QPen cpen(col); cpen.setWidthF(2.0); cpen.setCapStyle(Qt::RoundCap);
+        c.setPen(cpen);
+        c.setBrush(Qt::NoBrush);
+        c.drawRoundedRect(QRectF(0.10*isz, 0.30*isz, 0.80*isz, 0.52*isz),
+                          0.12*isz, 0.12*isz);
+        c.drawEllipse(QPointF(0.5*isz, 0.56*isz), 0.17*isz, 0.17*isz);
+        c.drawLine(QPointF(0.32*isz, 0.30*isz),
+                   QPointF(0.40*isz, 0.18*isz));
+        c.drawLine(QPointF(0.40*isz, 0.18*isz),
+                   QPointF(0.60*isz, 0.18*isz));
+        c.drawLine(QPointF(0.60*isz, 0.18*isz),
+                   QPointF(0.68*isz, 0.30*isz));
+        c.end();
+        BOX_CAMERA = new QPixmap(pc);
+    }
     {
         // bone row icon: the U+1F9B4 glyph (text presentation, never a
         // colored emoji); bone layer: layered two-segment glyph mark
@@ -1570,6 +1610,17 @@ void BoxSingleWidget::loadStaticPixmaps(int iconSize)
         l.drawLine(QPointF(0.45*isz, 0.55*isz), QPointF(0.85*isz, 0.15*isz));
         l.end();
         BOX_BONELAYER = new QPixmap(pl);
+        // solid layer: filled rounded square with border (flat-color
+        // plane)
+        QPixmap ps(isz, isz); ps.fill(Qt::transparent);
+        QPainter s(&ps); s.setRenderHint(QPainter::Antialiasing);
+        const QRectF r(0.14*isz, 0.26*isz, 0.72*isz, 0.48*isz);
+        s.setPen(QPen(col, 2.2, Qt::SolidLine, Qt::RoundCap,
+                               Qt::RoundJoin));
+        s.setBrush(col);
+        s.drawRoundedRect(r, 0.12*isz, 0.12*isz);
+        s.end();
+        BOX_SOLID = new QPixmap(ps);
     }
     BOX_IMAGE = new QPixmap(QIcon::fromTheme("image-x-generic").pixmap(pixmapSize));
     BOX_VIDEO = new QPixmap(QIcon::fromTheme("file_movie").pixmap(pixmapSize));
@@ -1624,6 +1675,8 @@ void BoxSingleWidget::clearStaticPixmaps()
     delete BOX_NULL;
     delete BOX_BONE;
     delete BOX_BONELAYER;
+    delete BOX_SOLID;
+    delete BOX_CAMERA;
     delete BOX_IMAGE;
     delete BOX_VIDEO;
     delete BOX_SOUND;
@@ -1724,7 +1777,7 @@ void BoxSingleWidget::mousePressEvent(QMouseEvent *event) {
             if(cont->getBoxType() == eBoxType::group && !cont->isLink()) {
                 menu.addSeparator();
                 menu.addAction(
-                            QStringLiteral("\u8F6C\u6362\u4E3A\u9AA8\u9ABC\u5C42"),
+                            BoxSingleWidget::tr("Convert to Bone Layer"),
                             this,
                             [contQ = QPointer<ContainerBox>(cont),
                              sceneQ = QPointer<Canvas>(
@@ -1750,7 +1803,7 @@ void BoxSingleWidget::mousePressEvent(QMouseEvent *event) {
                         enve_cast<Bone*>(box->getParentGroup())) {
                     menu.addSeparator();
                     menu.addAction(
-                                QStringLiteral("\u89E3\u7ED1\u9AA8\u9ABC"),
+                                BoxSingleWidget::tr("Unbind from Bone"),
                                 this,
                                 [boxQ = QPointer<BoundingBox>(box),
                                  boneQ = QPointer<Bone>(hostBone)]() {
@@ -1774,7 +1827,7 @@ void BoxSingleWidget::mousePressEvent(QMouseEvent *event) {
                 if(!bones.isEmpty()) {
                     menu.addSeparator();
                     auto bindMenu = menu.addMenu(
-                                QStringLiteral("\u7ED1\u5B9A\u5230\u9AA8\u9ABC"));
+                                BoxSingleWidget::tr("Bind to Bone"));
                     for(const auto& boneQ : bones) {
                         if(!boneQ) continue;
                         bindMenu->addAction(boneQ->prp_getName(),
@@ -2080,7 +2133,7 @@ void BoxSingleWidget::rebuildParentLinkCandidates() {
     const auto scene = mParent ? mParent->currentScene() : nullptr;
     const auto box = currentLinkedBox();
     mParentLinkCombo->clear();
-    mParentLinkCombo->addItem(QStringLiteral("\u65E0\u7236\u7EA7"));
+    mParentLinkCombo->addItem(tr("No Parent"));
     int match = 0;
     if(box && scene) {
         BoundingBox* cur = nullptr;
@@ -2116,7 +2169,7 @@ void BoxSingleWidget::rebuildTrkMatLayerCandidates() {
     const auto scene = mParent ? mParent->currentScene() : nullptr;
     const auto box = currentLinkedBox();
     mTrkMatLayerCombo->clear();
-    mTrkMatLayerCombo->addItem(QStringLiteral("\u65E0"));
+    mTrkMatLayerCombo->addItem(tr("None"));
     int match = 0;
     if(box && scene) {
         BoundingBox* cur = box->trackMatteTarget() ?
@@ -2147,7 +2200,7 @@ void BoxSingleWidget::rebuildTrkMatLayerCandidates() {
 void BoxSingleWidget::refreshParentLinkCombo() {
     const auto combo = mParentLinkCombo;
     const auto box = currentLinkedBox();
-    QString txt = QStringLiteral("\u65E0\u7236\u7EA7");
+    QString txt = tr("No Parent");
     quintptr curRaw = 0;
     if(box && mTarget) {
         if(const auto pe = findParentEffect(box)) {
@@ -2192,7 +2245,7 @@ void BoxSingleWidget::showParentLinkMenu() {
     QMenu menu(this);
     {
         const auto act = menu.addAction(
-                    QStringLiteral("\u65E0\u7236\u7EA7")); // 无父级
+                    BoxSingleWidget::tr("No Parent")); // 无父级
         connect(act, &QAction::triggered, this,
                 [sceneGuard, boxGuard]() {
             if(sceneGuard && boxGuard) {

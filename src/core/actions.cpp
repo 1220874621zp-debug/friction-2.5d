@@ -968,6 +968,10 @@ void Actions::setBoneSelectMode() {
     mDocument.setCanvasMode(CanvasMode::boneSelect);
 }
 
+void Actions::setCameraMode() {
+    mDocument.setCanvasMode(CanvasMode::camera);
+}
+
 
 void Actions::finishSmoothChange() {
     mSmoothChange = false;

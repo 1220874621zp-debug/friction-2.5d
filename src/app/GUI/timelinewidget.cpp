@@ -266,6 +266,22 @@ TimelineWidget::TimelineWidget(Document &document,
                 scene->addAdjustmentLayerAction();
             }
         });
+        layerMenu->addAction(tr("Solid Layer"), this, [this]() {
+            const auto scroller = mBoxesListWidget ?
+                        mBoxesListWidget->getBoxScroller() : nullptr;
+            if(const auto scene = scroller ?
+                        scroller->currentScene() : nullptr) {
+                scene->addSolidLayerAction();
+            }
+        });
+        layerMenu->addAction(tr("Camera"), this, [this]() {
+            const auto scroller = mBoxesListWidget ?
+                        mBoxesListWidget->getBoxScroller() : nullptr;
+            if(const auto scene = scroller ?
+                        scroller->currentScene() : nullptr) {
+                scene->addCameraLayerAction();
+            }
+        });
         layerBtn->setMenu(layerMenu);
         mMenuLayout->addWidget(layerBtn);
     }

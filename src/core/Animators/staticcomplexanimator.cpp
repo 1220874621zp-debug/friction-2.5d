@@ -24,6 +24,7 @@
 // Fork of enve - Copyright (C) 2016-2020 Maurycy Liebner
 
 #include "staticcomplexanimator.h"
+#include "boolanimator.h"
 #include "ReadWrite/evformat.h"
 
 StaticComplexAnimator::StaticComplexAnimator(const QString &name) :
@@ -46,6 +47,11 @@ void StaticComplexAnimator::prp_readProperty_impl(eReadStream &src)
             SVGProperties.contains(prop->prp_getName())) { continue; }
         if (src.evFileVersion() < EvFormat::subPathOffset &&
             isSubPathEffect && prop->prp_getName() == "offset") { continue; }
+        // the keyframable "Visible" child of every eBoxOrSound is
+        // absent in older files - skip by TYPE (BoolAnimator), not by
+        // the display name (which is now translated)
+        if (src.evFileVersion() < EvFormat::visibilityKeyframes &&
+            enve_cast<BoolAnimator*>(prop.get())) { continue; }
         prop->prp_readProperty(src);
     }
 }

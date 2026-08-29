@@ -100,6 +100,8 @@ public:
 
 private:
     void setLoop(const bool loop);
+    // quick PNG export of the current canvas frame
+    void snapshotCurrentFrame();
     void interruptPreview();
     void jumpToIntermediateFrame(bool forward);
 
@@ -139,6 +141,9 @@ private:
     QAction *mPlayButton;
     QAction *mStopButton;
     QAction *mLoopButton;
+    QAction *mSnapshotButton = nullptr;
+    QAction *mSafeFramesButton = nullptr;
+    QAction *mTransparencyGridButton = nullptr;
 
     FrameSpinBox *mFrameStartSpin;
     FrameSpinBox *mFrameEndSpin;

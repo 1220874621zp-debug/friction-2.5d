@@ -226,6 +226,8 @@ set(
     RasterEffects/motionblureffect.cpp
     RasterEffects/trackmattecaller.cpp
     Boxes/adjustmentlayer.cpp
+    Boxes/solidlayer.cpp
+    Boxes/cameralayer.cpp
     Boxes/bone.cpp
     Boxes/bonelayer.cpp
     RasterEffects/noisefadeeffect.cpp

@@ -260,7 +260,7 @@ protected:
             if (w && !qobject_cast<QMenu*>(w)) {
                 debugLogAppendLine(QStringLiteral("USER"),
                     QStringLiteral("%1 %2").arg(
-                        QStringLiteral("\u70B9\u51FB"), // click
+                        tr("Click"), // click
                         debugLogDescribeWidget(w)));
             }
         } else if (type == QEvent::MouseButtonRelease) {
@@ -271,7 +271,7 @@ protected:
                 if (action && !action->isSeparator()) {
                     debugLogAppendLine(QStringLiteral("USER"),
                         QStringLiteral("%1 \"%2\" @ %3").arg(
-                            QStringLiteral("\u83DC\u5355"), // menu
+                            tr("Menu"), // menu
                             debugLogClip(action->text()),
                             debugLogClip(menu->windowTitle().isEmpty()
                                             ? QString::fromLatin1("MenuBar")
@@ -286,7 +286,7 @@ protected:
                     const auto keyStr = QKeySequence(ke->key()).toString();
                     debugLogAppendLine(QStringLiteral("USER"),
                         QStringLiteral("%1 %2 @ %3").arg(
-                            QStringLiteral("\u6309\u952E"), // key press
+                            tr("Key Press"), // key press
                             keyStr,
                             QString::fromLatin1(w->metaObject()->className())));
                 }
@@ -598,7 +598,7 @@ void MainWindow::setupDebugLog()
     mDebugLogButton = new QPushButton(QString(QChar(0x2315)), this);
     mDebugLogButton->setObjectName("DebugLogButton");
     mDebugLogButton->setFixedSize(30, 30);
-    mDebugLogButton->setToolTip(QStringLiteral("\u8C03\u8BD5\u65E5\u5FD7"));
+    mDebugLogButton->setToolTip(tr("Debug Log"));
     mDebugLogButton->setCursor(Qt::PointingHandCursor);
     mDebugLogButton->setFocusPolicy(Qt::NoFocus);
     mDebugLogButton->setFlat(true);
@@ -626,7 +626,7 @@ void MainWindow::openDebugLogDialog()
     // log is open, so the user can always copy its contents.
     if (!mDebugLogDialog) {
         mDebugLogDialog = new QDialog(this);
-        mDebugLogDialog->setWindowTitle(QStringLiteral("\u8C03\u8BD5\u65E5\u5FD7"));
+        mDebugLogDialog->setWindowTitle(tr("Debug Log"));
         mDebugLogDialog->resize(560, 440);
         mDebugLogDialog->setSizeGripEnabled(true);
 
@@ -634,27 +634,27 @@ void MainWindow::openDebugLogDialog()
 
         const auto pathLabel = new QLabel(mDebugLogDialog);
         pathLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
-        pathLabel->setText(QStringLiteral("\u65E5\u5FD7\u6587\u4EF6: %1")
+        pathLabel->setText(tr("Log file: %1")
                            .arg(gDebugLogFile ? gDebugLogFile->path()
                                               : QStringLiteral("-")));
-        pathLabel->setToolTip(QStringLiteral("\u5373\u4F7F\u7A97\u53E3\u5361\u6B7B\uFF0C"
-                                             "\u4E5F\u53EF\u7528\u8BB0\u4E8B\u672C\u6253"
-                                             "\u5F00\u6B64\u6587\u4EF6\u67E5\u770B\u65E5\u5FD7"));
+        pathLabel->setToolTip(tr("Even if the window freezes, "
+                                 "this file can be opened in Notepad "
+                                 "to read the log"));
 
         mDebugLogView = new QPlainTextEdit(mDebugLogDialog);
         mDebugLogView->setReadOnly(true);
         mDebugLogView->setLineWrapMode(QPlainTextEdit::NoWrap);
 
         const auto btnLayout = new QHBoxLayout();
-        const auto copyBtn = new QPushButton(QStringLiteral("\u590D\u5236\u65E5\u5FD7"), mDebugLogDialog);
-        const auto clearBtn = new QPushButton(QStringLiteral("\u6E05\u9664\u65E5\u5FD7"), mDebugLogDialog);
-        const auto closeBtn = new QPushButton(QStringLiteral("\u5173\u95ED"), mDebugLogDialog);
+        const auto copyBtn = new QPushButton(tr("Copy Log"), mDebugLogDialog);
+        const auto clearBtn = new QPushButton(tr("Clear Log"), mDebugLogDialog);
+        const auto closeBtn = new QPushButton(tr("Close"), mDebugLogDialog);
 
         const auto viewPtr = mDebugLogView;
         connect(copyBtn, &QPushButton::clicked, copyBtn, [copyBtn, viewPtr]() {
             QApplication::clipboard()->setText(viewPtr->toPlainText());
             const auto oldText = copyBtn->text();
-            copyBtn->setText(QStringLiteral("\u5DF2\u590D\u5236"));
+            copyBtn->setText(tr("Copied"));
             QTimer::singleShot(1500, copyBtn, [copyBtn, oldText]() {
                 copyBtn->setText(oldText);
             });

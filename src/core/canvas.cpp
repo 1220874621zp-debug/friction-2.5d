@@ -23,6 +23,8 @@
 #include "Boxes/bone.h"
 #include "Boxes/bonelayer.h"
 #include "Boxes/adjustmentlayer.h"
+#include "Boxes/solidlayer.h"
+#include "Boxes/cameralayer.h"
 #include <QPainter>
 #include <QMouseEvent>
 #include <QLineF>
@@ -84,6 +86,12 @@ Canvas::Canvas(Document &document,
     mFps = fps;
 
     mBackgroundColor->setColor(QColor(75, 75, 75));
+    mShowSafeFrames = AppSupport::getSettings(
+                QStringLiteral("view"), QStringLiteral("safeFrames"),
+                false).toBool();
+    mTransparencyGrid = AppSupport::getSettings(
+                QStringLiteral("view"), QStringLiteral("transparencyGrid"),
+                false).toBool();
     ca_addChild(mBackgroundColor);
     mSoundComposition = qsptr<SoundComposition>::create(this);
 
@@ -138,6 +146,22 @@ Canvas::~Canvas()
 qreal Canvas::getResolution() const
 {
     return mResolution;
+}
+
+void Canvas::setSafeFramesVisible(const bool visible) {
+    if(mShowSafeFrames == visible) return;
+    mShowSafeFrames = visible;
+    AppSupport::setSettings(QStringLiteral("view"),
+                            QStringLiteral("safeFrames"), visible);
+    emit requestUpdate();
+}
+
+void Canvas::setTransparencyGrid(const bool grid) {
+    if(mTransparencyGrid == grid) return;
+    mTransparencyGrid = grid;
+    AppSupport::setSettings(QStringLiteral("view"),
+                            QStringLiteral("transparencyGrid"), grid);
+    emit requestUpdate();
 }
 
 void Canvas::setResolution(const qreal percent)
@@ -345,7 +369,8 @@ void Canvas::renderSk(SkCanvas* const canvas,
         canvas->drawRect(toSkRect(getCurrentBounds()), paint);
     }
     if (!mClipToCanvasSize || !drawCanvas) {
-        if (bgColor.alpha() == 255 && skViewTrans.mapRect(canvasRect).contains(toSkRect(drawRect))) {
+        if (bgColor.alpha() == 255 && !mTransparencyGrid &&
+                skViewTrans.mapRect(canvasRect).contains(toSkRect(drawRect))) {
             canvas->clear(toSkColor(bgColor));
         } else {
             SkPaint bgPaint;
@@ -361,17 +386,22 @@ void Canvas::renderSk(SkCanvas* const canvas,
                                       gridPixelRatio);
     }
 
+
     canvas->save();
 
     if (mClipToCanvasSize) {
         canvas->clipRect(canvasRect);
     }
 
-    if (bgColor.alpha() != 255) {
+    if (bgColor.alpha() != 255 || mTransparencyGrid) {
         drawTransparencyMesh(canvas, canvasRect);
     }
 
     if (!mClipToCanvasSize || !drawCanvas) {
+        // NOTE: no camera concat here - the camera affects ONLY 3D
+        // layers (AE rule) and that filtering happens per-layer in
+        // the render pipeline; a whole-canvas concat would wrongly
+        // transform 2D layers in this transient path
         canvas->saveLayer(nullptr, nullptr);
         drawContained(canvas, filter);
         canvas->restore();
@@ -391,6 +421,35 @@ void Canvas::renderSk(SkCanvas* const canvas,
                                       gridViewport,
                                       worldToScreenTransform,
                                       gridPixelRatio);
+    }
+
+    if (mShowSafeFrames) {
+        // AE-style guides: action safe 90%, title safe 80% of the
+        // canvas, centered, drawn ON TOP of the content (edit view
+        // only - renderSk never feeds the scene frame cache/exports)
+        SkPaint sfPaint;
+        sfPaint.setStyle(SkPaint::kStroke_Style);
+        sfPaint.setColor(SkColorSetARGB(170, 255, 70, 70));
+        sfPaint.setStrokeWidth(invZoom);
+        sfPaint.setPathEffect(dashPathEffect);
+        const auto mkRect = [canvasRect](const qreal f) {
+            const SkScalar w = canvasRect.width()*f;
+            const SkScalar h = canvasRect.height()*f;
+            return SkRect::MakeXYWH(canvasRect.centerX() - w/2,
+                                    canvasRect.centerY() - h/2, w, h);
+        };
+        canvas->drawRect(mkRect(0.9), sfPaint);  // action safe
+        sfPaint.setColor(SkColorSetARGB(170, 255, 220, 60));
+        canvas->drawRect(mkRect(0.8), sfPaint);  // title safe
+        // center marker: small cross at the canvas center
+        const SkScalar cx = canvasRect.centerX();
+        const SkScalar cy = canvasRect.centerY();
+        const SkScalar m = 6*invZoom;
+        sfPaint.setStrokeWidth(1.5f*invZoom);
+        sfPaint.setPathEffect(nullptr);
+        sfPaint.setColor(SkColorSetARGB(200, 255, 255, 255));
+        canvas->drawLine(cx - m, cy, cx + m, cy, sfPaint);
+        canvas->drawLine(cx, cy - m, cx, cy + m, sfPaint);
     }
 
     if (!enve_cast<Canvas*>(mCurrentContainer)) {
@@ -1907,6 +1966,80 @@ void Canvas::addAdjustmentLayerAction() {
                         addContained(adj);
     adj->planUpdate(UpdateReason::userChange);
     if(Document::sInstance) Document::sInstance->actionFinished();
+}
+
+// AE solid layer: flat-color plane the size of the canvas
+void Canvas::addSolidLayerAction() {
+    const auto solid = enve::make_shared<SolidLayer>();
+    solid->setTopLeftPos(QPointF(0, 0));
+    solid->setBottomRightPos(QPointF(getCanvasWidth(), getCanvasHeight()));
+    mCurrentContainer ? mCurrentContainer->addContained(solid) :
+                        addContained(solid);
+    solid->planUpdate(UpdateReason::userChange);
+    if(Document::sInstance) Document::sInstance->actionFinished();
+}
+
+// ---- scene camera (AE-like, driven by a CameraLayer box) ----
+
+CameraLayer* Canvas::getCameraLayer() const {
+    for(const auto& c : getContained()) {
+        if(const auto cam = enve_cast<CameraLayer*>(c.data())) {
+            return cam;
+        }
+    }
+    return nullptr;
+}
+
+void Canvas::addCameraLayerAction() {
+    if(getCameraLayer()) return;
+    const auto cam = enve::make_shared<CameraLayer>();
+    addContained(cam);
+    if(Document::sInstance) Document::sInstance->actionFinished();
+}
+
+SkMatrix Canvas::getCameraTransformAtFrame(const qreal relFrame) const {
+    const auto cam = getCameraLayer();
+    if(!cam) return SkMatrix();
+    return cam->getCameraTransformAtFrame(relFrame, mWidth, mHeight);
+}
+
+bool Canvas::cameraHasPerspectiveAtFrame(const qreal relFrame) const {
+    const auto cam = getCameraLayer();
+    if(!cam) return false;
+    return cam->hasPerspectiveAtFrame(relFrame);
+}
+
+// camera values changed: drop the cached scene frames AND every 3D
+// layer's render data - the layers themselves believe nothing of
+// their own changed and would otherwise keep serving cached data
+// carrying the OLD camera matrix (the original "camera tool has no
+// effect" bug)
+void Canvas::sceneCameraChanged(const FrameRange& range) {
+    mSceneFramesHandler.remove(range);
+    if(!mSceneFramesHandler.atFrame(anim_getCurrentRelFrame())) {
+        mSceneFrameOutdated = true;
+    }
+    int invalidated = 0;
+    std::function<void(ContainerBox*)> walk =
+            [&](ContainerBox* const cont) {
+        for(const auto& c : cont->getContained()) {
+            const auto box = enve_cast<BoundingBox*>(c.data());
+            if(const auto group = enve_cast<ContainerBox*>(c.data())) {
+                walk(group);
+            }
+            if(box && box->getBoxTransformAnimator() &&
+               box->getBoxTransformAnimator()->is3DEnabled()) {
+                box->planUpdate(UpdateReason::userChange);
+                invalidated++;
+            }
+        }
+    };
+    walk(const_cast<Canvas*>(this));
+    planUpdate(UpdateReason::userChange);
+    // camera-chain diagnostic: 0 = no layer has its 3D switch enabled
+    // (AE rule: the camera affects 3D layers only)
+    qWarning() << "CAMERA: changed, invalidated" << invalidated
+               << "3D layer(s)";
 }
 
 // depth-first search for the first bone layer anywhere in the scene
