@@ -34,5 +34,9 @@
 #include "colorgradingeffect.h"
 #include "stripeeffect.h"
 #include "motiontileeffect.h"
+#include "fractalnoiseeffect.h"
+#include "lightsweepeffect.h"
+#include "displacementwarpeffect.h"
+#include "filmgraineffect.h"
 
 #endif // RASTEREFFECTSINCLUDE_H

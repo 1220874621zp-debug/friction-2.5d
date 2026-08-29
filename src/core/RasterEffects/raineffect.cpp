@@ -38,10 +38,10 @@ RainEffect::RainEffect() :
                  true,
                  RasterEffectType::RAIN)
 {
-    mDensity = enve::make_shared<QrealAnimator>(60.0, 1.0, 300.0, 1.0, "density");
+    mDensity = enve::make_shared<QrealAnimator>(50.0, 5.0, 300.0, 1.0, "density");
     ca_addChild(mDensity);
 
-    mSpeed = enve::make_shared<QrealAnimator>(30.0, 0.0, 100.0, 0.5, "speed");
+    mSpeed = enve::make_shared<QrealAnimator>(20.0, 0.0, 100.0, 0.5, "speed");
     ca_addChild(mSpeed);
 
     mAngle = enve::make_shared<QrealAnimator>(12.0, -60.0, 60.0, 1.0, "angle");
@@ -51,7 +51,7 @@ RainEffect::RainEffect() :
     ca_addChild(mOpacity);
 
     mColor = enve::make_shared<ColorAnimator>("color");
-    mColor->setColor(QColor(210, 235, 255, 230));
+    mColor->setColor(QColor(220, 240, 255, 240));
     ca_addChild(mColor);
 }
 
@@ -129,7 +129,7 @@ stdsptr<RasterEffectCaller> RainEffect::getEffectCaller(
 
     const qreal density = mDensity->getEffectiveValue(relFrame);
     const qreal speed = mSpeed->getEffectiveValue(relFrame);
-    const qreal timeOffset = relFrame * (speed * 0.02) + 0.1;
+    const qreal timeOffset = relFrame * (speed * 0.005);
     const qreal angle = mAngle->getEffectiveValue(relFrame);
     const qreal slant = std::tan(qDegreesToRadians(angle));
     const qreal opacity = (mOpacity->getEffectiveValue(relFrame) / 100.0) * influence;
@@ -162,25 +162,29 @@ void RainEffectCaller::processCpu(CpuRenderTools& renderTools,
     const qreal cr = mColor.redF() * 255.0;
     const qreal cg = mColor.greenF() * 255.0;
     const qreal cb = mColor.blueF() * 255.0;
+    const qreal ca = mColor.alphaF();
 
-    const auto streakAt = [this](qreal nx, qreal ny, qreal scale, qreal speed, qreal seed) -> qreal {
-        qreal px = (nx + ny * mSlant + seed) * scale * 1.5;
-        qreal py = (ny + mTimeOffset * speed) * scale * 0.1;
+    const auto streakAt = [this](qreal nx, qreal ny, qreal scale, qreal speedMul, qreal seed) -> qreal {
+        qreal px = (nx + ny * mSlant + seed * 19.17) * scale;
+        qreal py = (ny + mTimeOffset * speedMul * 4.0) * (scale * 0.12);
         qreal cellX = std::floor(px);
         qreal cellY = std::floor(py);
         qreal fracX = px - cellX - 0.5;
         qreal fracY = py - cellY - 0.5;
 
-        qreal n = std::abs(std::sin(cellX * 127.1 + cellY * 311.7 + seed * 17.13) * 43758.5453);
-        qreal h = n - std::floor(n);
-        if (h < 0.5) return 0.0;
+        qreal n = std::abs(std::sin(cellX * 127.1 + cellY * 311.7 + seed * 37.19) * 43758.5453);
+        qreal hx = n - std::floor(n);
+        if (hx < 0.45) return 0.0;
 
-        qreal dropX = (h - 0.5) * 1.6 - 0.8;
-        qreal dist = std::abs(fracX - dropX * 0.35);
-        if (dist < 0.06 && std::abs(fracY) < 0.5) {
-            qreal sx = 1.0 - dist / 0.06;
+        qreal hy = std::abs(std::sin((cellX + 1.0) * 269.5 + (cellY + 1.0) * 183.3) * 43758.5453);
+        hy = hy - std::floor(hy);
+
+        qreal dropX = (hy - 0.5) * 0.8;
+        qreal dist = std::abs(fracX - dropX);
+        if (dist < 0.08 && std::abs(fracY) < 0.5) {
+            qreal sx = 1.0 - dist / 0.08;
             qreal sy = 1.0 - std::abs(fracY) / 0.5;
-            return sx * sy * (0.5 + 0.5 * h);
+            return sx * sy * (0.6 + 0.4 * hx);
         }
         return 0.0;
     };
@@ -197,20 +201,27 @@ void RainEffectCaller::processCpu(CpuRenderTools& renderTools,
             const uchar a = *src++;
 
             const qreal nx = qreal(xi) / imgWidth;
-            qreal r1 = streakAt(nx, ny, mDensity * 0.5, 1.8, 1.0) * 0.7;
-            qreal r2 = streakAt(nx + 0.23, ny + 0.41, mDensity * 1.0, 1.4, 2.5) * 0.5;
-            qreal r3 = streakAt(nx + 0.67, ny + 0.83, mDensity * 2.0, 1.0, 5.7) * 0.3;
+            qreal r1 = streakAt(nx, ny, mDensity * 0.7, 1.8, 1.0) * 0.8;
+            qreal r2 = streakAt(nx + 0.31, ny + 0.47, mDensity * 1.3, 1.4, 3.7) * 0.5;
+            qreal r3 = streakAt(nx + 0.73, ny + 0.89, mDensity * 2.2, 1.0, 7.3) * 0.3;
             qreal rain = std::min(1.0, (r1 + r2 + r3) * mOpacity);
 
-            const qreal outR = std::min(255.0, r + cr * rain * 1.5);
-            const qreal outG = std::min(255.0, g + cg * rain * 1.5);
-            const qreal outB = std::min(255.0, b + cb * rain * 1.5);
-            const qreal outA = std::min(255.0, a + rain * 255.0 * mColor.alphaF());
+            qreal outR, outG, outB;
+            if (a > 2) {
+                outR = (r * (1.0 - rain * ca) + cr * rain * ca) + cr * rain * 0.5;
+                outG = (g * (1.0 - rain * ca) + cg * rain * ca) + cg * rain * 0.5;
+                outB = (b * (1.0 - rain * ca) + cb * rain * ca) + cb * rain * 0.5;
+            } else {
+                outR = cr;
+                outG = cg;
+                outB = cb;
+            }
+            const qreal outA = std::min(255.0, a + rain * 255.0 * ca);
 
-            *dst++ = static_cast<uchar>(outR);
-            *dst++ = static_cast<uchar>(outG);
-            *dst++ = static_cast<uchar>(outB);
-            *dst++ = static_cast<uchar>(outA);
+            *dst++ = static_cast<uchar>(std::max(0.0, std::min(255.0, outR)));
+            *dst++ = static_cast<uchar>(std::max(0.0, std::min(255.0, outG)));
+            *dst++ = static_cast<uchar>(std::max(0.0, std::min(255.0, outB)));
+            *dst++ = static_cast<uchar>(std::max(0.0, std::min(255.0, outA)));
         }
     }
 }

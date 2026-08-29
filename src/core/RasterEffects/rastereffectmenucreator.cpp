@@ -94,6 +94,14 @@ void RasterEffectMenuCreator::forEveryEffectCore(const EffectAdder &add)
         []() { return enve::make_shared<HalftoneEffect>(); });
     add(QObject::tr("Motion Tile"), QObject::tr("Stylize"),
         []() { return enve::make_shared<MotionTileEffect>(); });
+    add(QObject::tr("Fractal Noise"), QObject::tr("Generate"),
+        []() { return enve::make_shared<FractalNoiseEffect>(); });
+    add(QObject::tr("Light Sweep"), QObject::tr("Light"),
+        []() { return enve::make_shared<LightSweepEffect>(); });
+    add(QObject::tr("Displacement Warp"), QObject::tr("Distort"),
+        []() { return enve::make_shared<DisplacementWarpEffect>(); });
+    add(QObject::tr("Film Grain"), QObject::tr("Stylize"),
+        []() { return enve::make_shared<FilmGrainEffect>(); });
     add(QObject::tr("Rain"), QObject::tr("Simulation"),
         []() { return enve::make_shared<RainEffect>(); });
     add(QObject::tr("Wipe"), QObject::tr("Transitions"),

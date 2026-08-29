@@ -219,6 +219,14 @@ qsptr<RasterEffect> createRasterEffectForNonCustomType(const RasterEffectType ty
             return enve::make_shared<StripeEffect>();
         case(RasterEffectType::MOTION_TILE):
             return enve::make_shared<MotionTileEffect>();
+        case(RasterEffectType::FRACTAL_NOISE):
+            return enve::make_shared<FractalNoiseEffect>();
+        case(RasterEffectType::LIGHT_SWEEP):
+            return enve::make_shared<LightSweepEffect>();
+        case(RasterEffectType::DISPLACEMENT_WARP):
+            return enve::make_shared<DisplacementWarpEffect>();
+        case(RasterEffectType::FILM_GRAIN):
+            return enve::make_shared<FilmGrainEffect>();
         default: return nullptr;
     }
 }

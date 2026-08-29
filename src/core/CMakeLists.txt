@@ -261,6 +261,10 @@ set(
     RasterEffects/colorgradingeffect.cpp
     RasterEffects/stripeeffect.cpp
     RasterEffects/motiontileeffect.cpp
+    RasterEffects/fractalnoiseeffect.cpp
+    RasterEffects/lightsweepeffect.cpp
+    RasterEffects/displacementwarpeffect.cpp
+    RasterEffects/filmgraineffect.cpp
     RasterEffects/wipeeffect.cpp
     ReadWrite/ereadstream.cpp
     ReadWrite/ewritestream.cpp
@@ -612,6 +616,10 @@ set(
     RasterEffects/colorgradingeffect.h
     RasterEffects/stripeeffect.h
     RasterEffects/motiontileeffect.h
+    RasterEffects/fractalnoiseeffect.h
+    RasterEffects/lightsweepeffect.h
+    RasterEffects/displacementwarpeffect.h
+    RasterEffects/filmgraineffect.h
     RasterEffects/wipeeffect.h
     ReadWrite/efuturepos.h
     ReadWrite/ereadstream.h

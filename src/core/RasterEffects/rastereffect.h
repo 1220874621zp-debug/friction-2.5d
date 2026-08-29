@@ -66,7 +66,11 @@ enum class RasterEffectType : short {
     ZOOM_BLUR,
     COLOR_GRADING,
     STRIPE,
-    MOTION_TILE
+    MOTION_TILE,
+    FRACTAL_NOISE,
+    LIGHT_SWEEP,
+    DISPLACEMENT_WARP,
+    FILM_GRAIN
 };
 
 struct BoxRenderData;
