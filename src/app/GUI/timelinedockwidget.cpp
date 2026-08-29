@@ -193,7 +193,7 @@ TimelineDockWidget::TimelineDockWidget(Document& document,
         w.end();
         mSnapshotButton = new QAction(pm, tr("Snapshot PNG"), this);
         mSnapshotButton->setToolTip(tr(
-                "Export the current frame as a 100%% resolution PNG "
+                "Export the current frame as a 100% resolution PNG "
                 "(snapshot path is configurable in Preferences, "
                 "default: Desktop)"));
         connect(mSnapshotButton, &QAction::triggered,
@@ -220,7 +220,7 @@ TimelineDockWidget::TimelineDockWidget(Document& document,
         mSafeFramesButton = new QAction(sf, tr("Safe Frames"), this);
         mSafeFramesButton->setCheckable(true);
         mSafeFramesButton->setToolTip(tr(
-                "Show action/title safe frames (90%%/80%%)"));
+                "Show action/title safe frames (90%/80%)"));
         connect(mSafeFramesButton, &QAction::triggered,
                 this, [this](const bool checked) {
             const auto scene = *mDocument.fActiveScene;

@@ -404,6 +404,15 @@ void Canvas::renderSk(SkCanvas* const canvas,
         canvas->drawRect(mkRect(0.9), sfPaint);  // action safe
         sfPaint.setColor(SkColorSetARGB(170, 255, 220, 60));
         canvas->drawRect(mkRect(0.8), sfPaint);  // title safe
+        // center marker: small cross at the canvas center
+        const SkScalar cx = canvasRect.centerX();
+        const SkScalar cy = canvasRect.centerY();
+        const SkScalar m = 6*invZoom;
+        sfPaint.setStrokeWidth(1.5f*invZoom);
+        sfPaint.setPathEffect(nullptr);
+        sfPaint.setColor(SkColorSetARGB(200, 255, 255, 255));
+        canvas->drawLine(cx - m, cy, cx + m, cy, sfPaint);
+        canvas->drawLine(cx, cy - m, cx, cy + m, sfPaint);
     }
 
     canvas->save();
