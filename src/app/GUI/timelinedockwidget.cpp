@@ -250,7 +250,7 @@ TimelineDockWidget::TimelineDockWidget(Document& document,
         }
     });
 
-    mSetInPointAct = new QAction(QIcon::fromTheme("go-first"),
+    mSetInPointAct = new QAction(QIcon::fromTheme("range-in"),
                                   tr("Set Layer In Point (Alt+[)"),
                                   this);
     mSetInPointAct->setToolTip(tr("Set Layer In Point (Alt+[)"));
@@ -262,7 +262,7 @@ TimelineDockWidget::TimelineDockWidget(Document& document,
         mDocument.actionFinished();
     });
 
-    mSetOutPointAct = new QAction(QIcon::fromTheme("go-last"),
+    mSetOutPointAct = new QAction(QIcon::fromTheme("range-out"),
                                    tr("Set Layer Out Point (Alt+])"),
                                    this);
     mSetOutPointAct->setToolTip(tr("Set Layer Out Point (Alt+])"));
