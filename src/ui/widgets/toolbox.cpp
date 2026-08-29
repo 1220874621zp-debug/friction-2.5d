@@ -315,7 +315,8 @@ void ToolBox::setupMainActions()
                                                          "F2").toString()),
                     {CanvasMode::pointTransform},
                     false);
-    setupMainAction(QIcon::fromTheme("pathCreate"),
+    setupMainAction(svgToolIcon(QStringLiteral(":/icons/pen_tool.svg"),
+                              ThemeSupport::getIconSize(64).width()),
                     tr("Add Path"),
                     QKeySequence(AppSupport::getSettings("shortcuts",
                                                          "pathCreate",

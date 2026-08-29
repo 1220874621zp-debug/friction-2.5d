@@ -30,6 +30,7 @@
         <file alias="bone_bind.svg">../ui/widgets/bone_bind.svg</file>
         <file alias="bone_select.svg">../ui/widgets/bone_select.svg</file>
         <file alias="camera_tool.svg">../ui/widgets/camera_tool.svg</file>
+        <file alias="pen_tool.svg">../ui/widgets/pen_tool.svg</file>
     </qresource>
     <qresource prefix="/translations">
         <file alias="friction_zh_CN.qm">translations/friction_zh_CN.qm</file>
