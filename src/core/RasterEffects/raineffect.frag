@@ -15,10 +15,10 @@ vec2 hash22(vec2 p) {
 }
 
 float rainLayer(vec2 uv, float scale, float speedMultiplier, float seed) {
-    vec2 p = vec2(uv.x + uv.y * slant + seed * 19.17, uv.y);
+    vec2 p = vec2(uv.x + (1.0 - uv.y) * slant + seed * 19.17, uv.y);
     p.x *= scale;
-    float yTime = timeOffset * speedMultiplier * 4.0;
-    p.y = (p.y + yTime) * (scale * 0.12);
+    float yTime = timeOffset * speedMultiplier * 5.0;
+    p.y = (p.y - yTime) * (scale * 0.12);
 
     vec2 id = floor(p);
     vec2 gv = fract(p) - 0.5;
@@ -31,7 +31,7 @@ float rainLayer(vec2 uv, float scale, float speedMultiplier, float seed) {
 
     float streakW = 0.08;
     float horizontalFalloff = smoothstep(streakW, 0.0, dist);
-    float verticalFalloff = smoothstep(0.5, -0.5, gv.y);
+    float verticalFalloff = smoothstep(0.4, -0.45, gv.y);
 
     return horizontalFalloff * verticalFalloff * (0.6 + 0.4 * h.x);
 }

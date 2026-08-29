@@ -165,8 +165,8 @@ void RainEffectCaller::processCpu(CpuRenderTools& renderTools,
     const qreal ca = mColor.alphaF();
 
     const auto streakAt = [this](qreal nx, qreal ny, qreal scale, qreal speedMul, qreal seed) -> qreal {
-        qreal px = (nx + ny * mSlant + seed * 19.17) * scale;
-        qreal py = (ny + mTimeOffset * speedMul * 4.0) * (scale * 0.12);
+        qreal px = (nx + (1.0 - ny) * mSlant + seed * 19.17) * scale;
+        qreal py = (ny - mTimeOffset * speedMul * 5.0) * (scale * 0.12);
         qreal cellX = std::floor(px);
         qreal cellY = std::floor(py);
         qreal fracX = px - cellX - 0.5;
