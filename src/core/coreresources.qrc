@@ -22,6 +22,11 @@
         <file alias="pixelateeffect.frag">RasterEffects/pixelateeffect.frag</file>
         <file alias="noiseeffect.frag">RasterEffects/noiseeffect.frag</file>
         <file alias="mirroreffect.frag">RasterEffects/mirroreffect.frag</file>
+        <file alias="glitcheffect.frag">RasterEffects/glitcheffect.frag</file>
+        <file alias="posterizeeffect.frag">RasterEffects/posterizeeffect.frag</file>
+        <file alias="twirleffect.frag">RasterEffects/twirleffect.frag</file>
+        <file alias="channelblureffect.frag">RasterEffects/channelblureffect.frag</file>
+        <file alias="halftoneeffect.frag">RasterEffects/halftoneeffect.frag</file>
         <file alias="alpha.frag">colorshaders/alpha.frag</file>
         <file alias="blue.frag">colorshaders/blue.frag</file>
         <file alias="border.frag">colorshaders/border.frag</file>

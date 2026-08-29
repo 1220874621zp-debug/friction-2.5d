@@ -40,6 +40,7 @@ public:
                                 QWidget * const parent = nullptr);
 
     void populateEffects();
+    void focusSearch();
 
 private slots:
     void onSearchTextChanged(const QString &text);

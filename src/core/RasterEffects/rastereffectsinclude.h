@@ -23,5 +23,10 @@
 #include "pixelateeffect.h"
 #include "noiseeffect.h"
 #include "mirroreffect.h"
+#include "glitcheffect.h"
+#include "posterizeeffect.h"
+#include "twirleffect.h"
+#include "channelblureffect.h"
+#include "halftoneeffect.h"
 
 #endif // RASTEREFFECTSINCLUDE_H

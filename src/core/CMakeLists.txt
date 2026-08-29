@@ -250,6 +250,11 @@ set(
     RasterEffects/pixelateeffect.cpp
     RasterEffects/noiseeffect.cpp
     RasterEffects/mirroreffect.cpp
+    RasterEffects/glitcheffect.cpp
+    RasterEffects/posterizeeffect.cpp
+    RasterEffects/twirleffect.cpp
+    RasterEffects/channelblureffect.cpp
+    RasterEffects/halftoneeffect.cpp
     RasterEffects/wipeeffect.cpp
     ReadWrite/ereadstream.cpp
     ReadWrite/ewritestream.cpp
@@ -590,6 +595,11 @@ set(
     RasterEffects/pixelateeffect.h
     RasterEffects/noiseeffect.h
     RasterEffects/mirroreffect.h
+    RasterEffects/glitcheffect.h
+    RasterEffects/posterizeeffect.h
+    RasterEffects/twirleffect.h
+    RasterEffects/channelblureffect.h
+    RasterEffects/halftoneeffect.h
     RasterEffects/wipeeffect.h
     ReadWrite/efuturepos.h
     ReadWrite/ereadstream.h

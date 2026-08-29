@@ -197,6 +197,16 @@ qsptr<RasterEffect> createRasterEffectForNonCustomType(const RasterEffectType ty
             return enve::make_shared<NoiseEffect>();
         case(RasterEffectType::MIRROR):
             return enve::make_shared<MirrorEffect>();
+        case(RasterEffectType::GLITCH):
+            return enve::make_shared<GlitchEffect>();
+        case(RasterEffectType::POSTERIZE):
+            return enve::make_shared<PosterizeEffect>();
+        case(RasterEffectType::TWIRL):
+            return enve::make_shared<TwirlEffect>();
+        case(RasterEffectType::CHANNEL_BLUR):
+            return enve::make_shared<ChannelBlurEffect>();
+        case(RasterEffectType::HALFTONE):
+            return enve::make_shared<HalftoneEffect>();
         default: return nullptr;
     }
 }

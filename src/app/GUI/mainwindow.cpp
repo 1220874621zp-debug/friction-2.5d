@@ -1323,6 +1323,7 @@ void MainWindow::applyDefaultWorkspace()
     const QList<QDockWidget*> docks = {mTimelineDock,
                                        mFillStrokeDock,
                                        mPropertiesDock,
+                                       mEffectsPresetsDock,
                                        mEasingDock};
     for (const auto dock : docks) {
         if (!dock) { continue; }
@@ -1332,8 +1333,12 @@ void MainWindow::applyDefaultWorkspace()
 
     addDockWidget(Qt::RightDockWidgetArea, mFillStrokeDock);
     addDockWidget(Qt::RightDockWidgetArea, mPropertiesDock);
+    tabifyDockWidget(mPropertiesDock, mEffectsPresetsDock);
     addDockWidget(Qt::RightDockWidgetArea, mEasingDock);
     addDockWidget(Qt::BottomDockWidgetArea, mTimelineDock);
+
+    if (mEasingDock) { mEasingDock->hide(); }
+    if (mPropertiesDock) { mPropertiesDock->raise(); }
 
     const int w = width();
     const int h = height();
@@ -1549,13 +1554,12 @@ void MainWindow::setupLayout()
     setCentralWidget(mStackWidget);
     addDockWidget(Qt::RightDockWidgetArea, mFillStrokeDock);
     addDockWidget(Qt::RightDockWidgetArea, mPropertiesDock);
+    tabifyDockWidget(mPropertiesDock, mEffectsPresetsDock);
     addDockWidget(Qt::RightDockWidgetArea, mEasingDock);
-    addDockWidget(Qt::RightDockWidgetArea, mEffectsPresetsDock);
     addDockWidget(Qt::BottomDockWidgetArea, mTimelineDock);
 
-    // hidden by default, can be opened from the Panels menu
     mEasingDock->hide();
-    mEffectsPresetsDock->hide();
+    mPropertiesDock->raise();
 
     // JS plugin system: Scripts menu + script console dock
     setupScripting();

@@ -72,6 +72,14 @@ EffectsPresetsPanel::EffectsPresetsPanel(MainWindow * const mainWindow,
     populateEffects();
 }
 
+void EffectsPresetsPanel::focusSearch()
+{
+    if (mSearchEdit) {
+        mSearchEdit->setFocus();
+        mSearchEdit->selectAll();
+    }
+}
+
 void EffectsPresetsPanel::addEffectItem(const QString &categoryName,
                                         const QString &effectName,
                                         const QString &desc,

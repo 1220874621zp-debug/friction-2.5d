@@ -44,6 +44,8 @@ void RasterEffectMenuCreator::forEveryEffectCore(const EffectAdder &add)
         []() { return enve::make_shared<DirectionalBlurEffect>(); });
     add(QObject::tr("Radial Blur"), QObject::tr("Blur"),
         []() { return enve::make_shared<RadialBlurEffect>(); });
+    add(QObject::tr("Channel Blur"), QObject::tr("Blur"),
+        []() { return enve::make_shared<ChannelBlurEffect>(); });
     add(QObject::tr("Shadow"), "", []() { return enve::make_shared<ShadowEffect>(); });
     add(QObject::tr("Motion Blur"), "", []() { return enve::make_shared<MotionBlurEffect>(); });
     add(QObject::tr("Brightness-Contrast"), QObject::tr("Color"),
@@ -54,6 +56,8 @@ void RasterEffectMenuCreator::forEveryEffectCore(const EffectAdder &add)
         []() { return enve::make_shared<InvertEffect>(); });
     add(QObject::tr("Tint"), QObject::tr("Color"),
         []() { return enve::make_shared<TintEffect>(); });
+    add(QObject::tr("Posterize"), QObject::tr("Color"),
+        []() { return enve::make_shared<PosterizeEffect>(); });
     add(QObject::tr("Glow"), QObject::tr("Light"),
         []() { return enve::make_shared<GlowEffect>(); });
     add(QObject::tr("Chromatic Aberration"), QObject::tr("Distort"),
@@ -62,6 +66,8 @@ void RasterEffectMenuCreator::forEveryEffectCore(const EffectAdder &add)
         []() { return enve::make_shared<WaveWarpEffect>(); });
     add(QObject::tr("Mirror"), QObject::tr("Distort"),
         []() { return enve::make_shared<MirrorEffect>(); });
+    add(QObject::tr("Twirl"), QObject::tr("Distort"),
+        []() { return enve::make_shared<TwirlEffect>(); });
     add(QObject::tr("Vignette"), QObject::tr("Stylize"),
         []() { return enve::make_shared<VignetteEffect>(); });
     add(QObject::tr("Letterbox"), QObject::tr("Stylize"),
@@ -74,6 +80,10 @@ void RasterEffectMenuCreator::forEveryEffectCore(const EffectAdder &add)
         []() { return enve::make_shared<PixelateEffect>(); });
     add(QObject::tr("Noise"), QObject::tr("Stylize"),
         []() { return enve::make_shared<NoiseEffect>(); });
+    add(QObject::tr("Glitch"), QObject::tr("Stylize"),
+        []() { return enve::make_shared<GlitchEffect>(); });
+    add(QObject::tr("Halftone"), QObject::tr("Stylize"),
+        []() { return enve::make_shared<HalftoneEffect>(); });
     add(QObject::tr("Rain"), QObject::tr("Simulation"),
         []() { return enve::make_shared<RainEffect>(); });
     add(QObject::tr("Wipe"), QObject::tr("Transitions"),

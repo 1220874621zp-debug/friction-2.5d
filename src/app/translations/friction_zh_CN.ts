@@ -5622,6 +5622,26 @@ Are you sure you want to save this project file?</source>
         <translation>特效与预设</translation>
     </message>
     <message>
+        <source>Glitch</source>
+        <translation>故障艺术/错位</translation>
+    </message>
+    <message>
+        <source>Posterize</source>
+        <translation>色调分离</translation>
+    </message>
+    <message>
+        <source>Twirl</source>
+        <translation>旋转扭曲</translation>
+    </message>
+    <message>
+        <source>Channel Blur</source>
+        <translation>通道模糊</translation>
+    </message>
+    <message>
+        <source>Halftone</source>
+        <translation>半色调网点</translation>
+    </message>
+    <message>
         <source>Search Effects &amp; Presets...</source>
         <translation>搜索特效与预设...</translation>
     </message>

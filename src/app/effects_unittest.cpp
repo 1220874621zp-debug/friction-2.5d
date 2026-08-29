@@ -77,7 +77,12 @@ int main(int argc, char *argv[])
             RasterEffectType::TINT,
             RasterEffectType::PIXELATE,
             RasterEffectType::NOISE,
-            RasterEffectType::MIRROR
+            RasterEffectType::MIRROR,
+            RasterEffectType::GLITCH,
+            RasterEffectType::POSTERIZE,
+            RasterEffectType::TWIRL,
+            RasterEffectType::CHANNEL_BLUR,
+            RasterEffectType::HALFTONE
         };
 
         for (const auto t : types) {
@@ -113,7 +118,12 @@ int main(int argc, char *argv[])
             RasterEffectType::TINT,
             RasterEffectType::PIXELATE,
             RasterEffectType::NOISE,
-            RasterEffectType::MIRROR
+            RasterEffectType::MIRROR,
+            RasterEffectType::GLITCH,
+            RasterEffectType::POSTERIZE,
+            RasterEffectType::TWIRL,
+            RasterEffectType::CHANNEL_BLUR,
+            RasterEffectType::HALFTONE
         };
 
         SkBitmap srcBtmp;

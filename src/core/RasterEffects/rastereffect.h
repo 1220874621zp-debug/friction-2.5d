@@ -55,7 +55,12 @@ enum class RasterEffectType : short {
     TINT,
     PIXELATE,
     NOISE,
-    MIRROR
+    MIRROR,
+    GLITCH,
+    POSTERIZE,
+    TWIRL,
+    CHANNEL_BLUR,
+    HALFTONE
 };
 
 struct BoxRenderData;
