@@ -4,7 +4,11 @@
 
 [Friction](https://friction.graphics) is a powerful and versatile motion graphics application that allows you to create vector and raster animations for web and video.
 <img width="3842" height="2090" alt="ScreenShot_2026-08-26_213719_382" src="https://github.com/user-attachments/assets/3c2f9de3-17f6-4fc9-9d96-d49b1ef4aaf8" />
-<img width="3842" height="2090" alt="ScreenShot_2026-08-26_213640_298" src="https://github.com/user-attachments/assets/c6302683-41da-498c-9f5c-0895425f5828" />
+<img width="1988" height="1080" alt="8月29日(3)" src="https://github.com/user-attachments/assets/cf32b2e9-2da1-4f1a-8961-4c6c2e1ab82f" />
+<img width="1988" height="1080" alt="8月29日(2)" src="https://github.com/user-attachments/assets/4ecc6773-7dfb-4d2e-89c6-261f6f39601a" />
+<img width="1988" height="1080" alt="8月29日(1)" src="https://github.com/user-attachments/assets/08773cea-45d9-4771-a23f-9a872756b53b" />
+<img width="1988" height="1080" alt="8月29日" src="https://github.com/user-attachments/assets/12b06cd3-9b08-40dc-aede-613e402c4abf" />
+
 
 
 
@@ -48,6 +52,9 @@ It's always preferred to submit pull requests against the `main` branch.
 10. ✅ **i18n汉化架构**
 11. ✅ **运动曲线快捷面板**
 12. ✅ **多个脚本内置**
+13. ✅ **骨骼系统和工具**类似moho操作逻辑和绑定方式
+14. ✅ **自由层级拖动**类似剪辑软件一样的自由层级，可自由合并和分解
+15. ✅ **层属性按钮完善**和ae一样的层属性按钮功能
 
 
 **部署位置：** `friction/build/output/friction-cn-test/friction.exe`
