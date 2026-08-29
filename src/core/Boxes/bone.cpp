@@ -5,7 +5,6 @@
 #include "MovablePoints/pointshandler.h"
 #include "bonelayer.h"
 #include <QDebug>
-#include <QDebug>
 #include <QFile>
 #include <QTextStream>
 #include <QDateTime>
@@ -228,16 +227,11 @@ Property* Bone::ensureBoneOverlay() {
 
 
 void Bone::diag(const QString& line) {
+#ifdef QT_DEBUG
     qDebug() << "[BONE-DIAG]" << line;
-    QFile f(QCoreApplication::applicationDirPath() +
-            QStringLiteral("/bone_diag.txt"));
-    if(f.open(QIODevice::Append | QIODevice::Text)) {
-        QTextStream s(&f);
-        s << QDateTime::currentDateTime().toString(
-                     QStringLiteral("hh:mm:ss.zzz "))
-          << line << "\n";
-        f.close();
-    }
+#else
+    Q_UNUSED(line)
+#endif
 }
 
 void Bone::diagSceneState(const QString& when) {
@@ -353,30 +347,6 @@ void Bone::bindSelectedLayers() {
                     }
                 }
             }
-        }
-        // blank-pixels investigation: pixel state of the bound layer at
-        // bind time and again once the render churn settles
-        {
-            QString state;
-            if(const auto psd = enve_cast<PsdImageBox*>(box)) {
-                state = QStringLiteral(" psd file=%1 loaded=%2")
-                        .arg(QFile::exists(psd->filePath()) ? "Y" : "N")
-                        .arg(psd->hasLoadedImage() ? "Y" : "N");
-            }
-            diag(QStringLiteral("bound '%1'%2")
-                 .arg(box->prp_getName(), state));
-            QTimer::singleShot(2000,
-                               [w = QPointer<BoundingBox>(box)]() {
-                if(!w) return;
-                QString s2;
-                if(const auto psd = enve_cast<PsdImageBox*>(w.data())) {
-                    s2 = QStringLiteral(" psd file=%1 loaded=%2")
-                         .arg(QFile::exists(psd->filePath()) ? "Y" : "N")
-                         .arg(psd->hasLoadedImage() ? "Y" : "N");
-                }
-                Bone::diag(QStringLiteral("bound-recheck '%1'%2")
-                           .arg(w->prp_getName(), s2));
-            });
         }
         bound++;
     }

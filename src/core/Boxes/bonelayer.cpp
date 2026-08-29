@@ -4,28 +4,9 @@
 #include "Boxes/imagebox.h"
 #include "Psd/psdimagebox.h"
 #include <QFile>
-#include <QTimer>
-
 namespace {
 
-QString psdPixelState(BoundingBox* const layer) {
-    if(const auto psd = enve_cast<PsdImageBox*>(layer)) {
-        return QStringLiteral(" psd file=%1 loaded=%2")
-                .arg(QFile::exists(psd->filePath()) ? "Y" : "N")
-                .arg(psd->hasLoadedImage() ? "Y" : "N");
-    }
-    if(const auto img = enve_cast<ImageBox*>(layer)) {
-        return QStringLiteral(" img file=%1 loaded=%2")
-                .arg(QFile::exists(img->filePath()) ? "Y" : "N")
-                .arg(img->hasLoadedImage() ? "Y" : "N");
-    }
-    return QString();
-}
-
-// blank-pixels investigation: log each moved layer's pixel state right
-// at move time, then again once the render churn settles - eviction /
-// reload races only show up in the second pass (bone_diag.txt)
-void diagMovedLayers(const QList<QPointer<BoundingBox>>& layers) {
+void ensureMovedLayersCache(const QList<QPointer<BoundingBox>>& layers) {
     for(const auto& w : layers) {
         if(!w) continue;
         // self-heal: a missing PsdImageBox pixel-cache file would leave
@@ -34,16 +15,7 @@ void diagMovedLayers(const QList<QPointer<BoundingBox>>& layers) {
         if(const auto psd = enve_cast<PsdImageBox*>(w.data())) {
             psd->ensureCachedFile();
         }
-        Bone::diag(QStringLiteral("moved '%1'%2")
-                   .arg(w->prp_getName(), psdPixelState(w.data())));
     }
-    QTimer::singleShot(2000, [layers]() {
-        for(const auto& w : layers) {
-            if(!w) continue;
-            Bone::diag(QStringLiteral("recheck '%1'%2")
-                       .arg(w->prp_getName(), psdPixelState(w.data())));
-        }
-    });
 }
 
 } // namespace
@@ -86,7 +58,7 @@ BoneLayer* BoneLayer::convertFromGroup(ContainerBox* const group) {
             moved << layer;
         }
     }
-    diagMovedLayers(moved);
+    ensureMovedLayersCache(moved);
     // non-BoundingBox stragglers (blend-effect shadows etc.) may keep
     // the group alive - remove the shell explicitly when it survived
     if(group->getParentGroup()) group->removeFromParent_k();
@@ -138,7 +110,7 @@ void BoneLayer::absorbDroppedBoxes(const QList<eBoxOrSound*>& boxes) {
             absorbed++;
         }
     }
-    diagMovedLayers(moved);
+    ensureMovedLayersCache(moved);
     if(absorbed > 0 && Document::sInstance) {
         Document::sInstance->actionFinished();
     }
