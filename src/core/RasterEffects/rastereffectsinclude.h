@@ -8,5 +8,6 @@
 #include "noisefadeeffect.h"
 #include "colorizeeffect.h"
 #include "brightnesscontrasteffect.h"
+#include "chromakeyeffect.h"
 
 #endif // RASTEREFFECTSINCLUDE_H

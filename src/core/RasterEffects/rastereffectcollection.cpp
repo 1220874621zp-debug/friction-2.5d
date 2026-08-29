@@ -167,6 +167,8 @@ qsptr<RasterEffect> createRasterEffectForNonCustomType(const RasterEffectType ty
             return enve::make_shared<ColorizeEffect>();
         case(RasterEffectType::BRIGHTNESS_CONTRAST):
             return enve::make_shared<BrightnessContrastEffect>();
+        case(RasterEffectType::CHROMA_KEY):
+            return enve::make_shared<ChromaKeyEffect>();
         default: return nullptr;
     }
 }

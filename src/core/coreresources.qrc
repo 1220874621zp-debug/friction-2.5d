@@ -7,6 +7,7 @@
         <file alias="noisefadeeffect.frag">RasterEffects/noisefadeeffect.frag</file>
         <file alias="colorizeeffect.frag">RasterEffects/colorizeeffect.frag</file>
         <file alias="brightnesscontrasteffect.frag">RasterEffects/brightnesscontrasteffect.frag</file>
+        <file alias="chromakeyeffect.frag">RasterEffects/chromakeyeffect.frag</file>
         <file alias="alpha.frag">colorshaders/alpha.frag</file>
         <file alias="blue.frag">colorshaders/blue.frag</file>
         <file alias="border.frag">colorshaders/border.frag</file>

@@ -5765,6 +5765,94 @@ Are you sure you want to save this project file?</source>
         <translation>亮度-对比度</translation>
     </message>
     <message>
+        <source>Chroma Key</source>
+        <translation>色度键控（扣绿）</translation>
+    </message>
+    <message>
+        <source>key color</source>
+        <translation>键控颜色</translation>
+    </message>
+    <message>
+        <source>keying method</source>
+        <translation>键控方法</translation>
+    </message>
+    <message>
+        <source>tolerance</source>
+        <translation>容差</translation>
+    </message>
+    <message>
+        <source>matte black</source>
+        <translation>遮罩黑点</translation>
+    </message>
+    <message>
+        <source>matte white</source>
+        <translation>遮罩白点</translation>
+    </message>
+    <message>
+        <source>matte highlights</source>
+        <translation>遮罩高光</translation>
+    </message>
+    <message>
+        <source>matte shadows</source>
+        <translation>遮罩阴影</translation>
+    </message>
+    <message>
+        <source>edge softness</source>
+        <translation>边缘柔化</translation>
+    </message>
+    <message>
+        <source>hair detail</source>
+        <translation>发丝细节</translation>
+    </message>
+    <message>
+        <source>edge defringe</source>
+        <translation>边缘去色</translation>
+    </message>
+    <message>
+        <source>spill reduction</source>
+        <translation>溢色抑制</translation>
+    </message>
+    <message>
+        <source>spill balance</source>
+        <translation>溢色平衡</translation>
+    </message>
+    <message>
+        <source>preview mode</source>
+        <translation>预览模式</translation>
+    </message>
+    <message>
+        <source>RGB Difference</source>
+        <translation>RGB 差分（适合绿幕）</translation>
+    </message>
+    <message>
+        <source>YUV Color Space</source>
+        <translation>YUV 色彩空间（适合蓝幕）</translation>
+    </message>
+    <message>
+        <source>Hybrid</source>
+        <translation>混合（适合复杂光照）</translation>
+    </message>
+    <message>
+        <source>Multi-Layer</source>
+        <translation>多层（适合复杂场景）</translation>
+    </message>
+    <message>
+        <source>Final Result</source>
+        <translation>最终结果</translation>
+    </message>
+    <message>
+        <source>Alpha Channel</source>
+        <translation>Alpha 通道（白=保留）</translation>
+    </message>
+    <message>
+        <source>Edge Matte</source>
+        <translation>边缘遮罩</translation>
+    </message>
+    <message>
+        <source>Spill Matte</source>
+        <translation>溢色遮罩</translation>
+    </message>
+    <message>
         <source>Colorize</source>
         <translation>颜色替换</translation>
     </message>

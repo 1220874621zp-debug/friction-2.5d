@@ -233,6 +233,7 @@ void PerformanceSettingsWidget::setupRasterEffectWidgets()
 {
     QStringList effects = {"Blur",
                            "BrightnessContrast",
+                           "ChromaKey",
                            "Colorize",
                            "MotionBlur",
                            "NoiseFade",

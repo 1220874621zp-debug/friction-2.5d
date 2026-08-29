@@ -46,6 +46,8 @@ void RasterEffectMenuCreator::forEveryEffectCore(const EffectAdder &add)
         []() { return enve::make_shared<BrightnessContrastEffect>(); });
     add(QObject::tr("Colorize"), QObject::tr("Color"),
         []() { return enve::make_shared<ColorizeEffect>(); });
+    add(QObject::tr("Chroma Key"), QObject::tr("Color"),
+        []() { return enve::make_shared<ChromaKeyEffect>(); });
     add(QObject::tr("Wipe"), QObject::tr("Transitions"),
         []() { return enve::make_shared<WipeEffect>(); });
     add(QObject::tr("Noise Fade"), QObject::tr("Transitions"),
