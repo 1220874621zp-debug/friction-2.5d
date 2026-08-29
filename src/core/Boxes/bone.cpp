@@ -35,9 +35,17 @@ public:
     }
 
     void setRelativePos(const QPointF &relPos) override {
+        const auto rot = mBone->getBoxTransformAnimator()->getRotAnimator();
         const qreal deg = qRadiansToDegrees(qAtan2(relPos.y(), relPos.x()));
-        mBone->getBoxTransformAnimator()->getRotAnimator()->
-                setCurrentBaseValue(deg);
+        // take the SHORTEST angular path from the current value: atan2
+        // returns (-180, 180], and a raw set when the tail crosses the
+        // +/-180 direction jumps the stored value by ~360 - keys then
+        // interpolate the long way around (reversed rotation)
+        const qreal cur = rot->getEffectiveValue();
+        qreal diff = deg - cur;
+        while(diff > 180.) diff -= 360.;
+        while(diff < -180.) diff += 360.;
+        rot->setCurrentBaseValue(cur + diff);
     }
 
     void startTransform() override {
