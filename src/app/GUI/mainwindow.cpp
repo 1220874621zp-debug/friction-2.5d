@@ -1323,7 +1323,6 @@ void MainWindow::applyDefaultWorkspace()
     const QList<QDockWidget*> docks = {mTimelineDock,
                                        mFillStrokeDock,
                                        mPropertiesDock,
-                                       mEffectsPresetsDock,
                                        mEasingDock};
     for (const auto dock : docks) {
         if (!dock) { continue; }
@@ -1333,12 +1332,10 @@ void MainWindow::applyDefaultWorkspace()
 
     addDockWidget(Qt::RightDockWidgetArea, mFillStrokeDock);
     addDockWidget(Qt::RightDockWidgetArea, mPropertiesDock);
-    tabifyDockWidget(mPropertiesDock, mEffectsPresetsDock);
     addDockWidget(Qt::RightDockWidgetArea, mEasingDock);
     addDockWidget(Qt::BottomDockWidgetArea, mTimelineDock);
 
     if (mEasingDock) { mEasingDock->hide(); }
-    if (mPropertiesDock) { mPropertiesDock->raise(); }
 
     const int w = width();
     const int h = height();
@@ -1383,7 +1380,6 @@ void MainWindow::rebuildWorkspaceMenu()
     panelsMenu->addAction(mFillStrokeDock->toggleViewAction());
     panelsMenu->addAction(mPropertiesDock->toggleViewAction());
     panelsMenu->addAction(mEasingDock->toggleViewAction());
-    panelsMenu->addAction(mEffectsPresetsDock->toggleViewAction());
     if (mScriptManager && mScriptManager->console()) {
         panelsMenu->addAction(mScriptManager->console()->toggleViewAction());
     }
@@ -1485,6 +1481,12 @@ void MainWindow::setupPropertiesWidgets()
                                                  ThemeSupport::themedToolIcon("drawPathAutoChecked",
                                                                               ThemeSupport::getThemeColorBlue(), 64),
                                                  tr("Properties"));
+    const auto effectsPanel = new EffectsPresetsPanel(this, this);
+    mEffectsPresetsPanel = effectsPanel;
+    mTabEffectsIndex = mTabProperties->addTab(effectsPanel,
+                                              ThemeSupport::themedToolIcon("effect",
+                                                                           ThemeSupport::getThemeColorOrange(), 64),
+                                              tr("Effects"));
     mTabAssetsIndex = mTabProperties->addTab(assets,
                                              ThemeSupport::themedToolIcon("asset_manager",
                                                                           ThemeSupport::getThemeColorGreen(), 64),
@@ -1546,20 +1548,13 @@ void MainWindow::setupLayout()
     mEasingDock = makeDock(tr("Easing Presets"), QStringLiteral("dockEasingPresets"),
                            easingPresets);
 
-    // AE-like Effects & Presets search panel
-    const auto effectsPanel = new EffectsPresetsPanel(this, this);
-    mEffectsPresetsDock = makeDock(tr("Effects & Presets"), QStringLiteral("dockEffectsPresets"),
-                                   effectsPanel);
-
     setCentralWidget(mStackWidget);
     addDockWidget(Qt::RightDockWidgetArea, mFillStrokeDock);
     addDockWidget(Qt::RightDockWidgetArea, mPropertiesDock);
-    tabifyDockWidget(mPropertiesDock, mEffectsPresetsDock);
     addDockWidget(Qt::RightDockWidgetArea, mEasingDock);
     addDockWidget(Qt::BottomDockWidgetArea, mTimelineDock);
 
     mEasingDock->hide();
-    mPropertiesDock->raise();
 
     // JS plugin system: Scripts menu + script console dock
     setupScripting();

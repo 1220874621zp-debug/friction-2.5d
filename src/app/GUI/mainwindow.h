@@ -79,6 +79,7 @@ class ObjectSettingsWidget;
 class BoxScrollWidget;
 class ScrollArea;
 class ScriptManager;
+class EffectsPresetsPanel;
 
 class MainWindow : public QMainWindow
 {
@@ -250,7 +251,7 @@ private:
     QDockWidget *mFillStrokeDock = nullptr;
     QDockWidget *mPropertiesDock = nullptr;
     QDockWidget *mEasingDock = nullptr;
-    QDockWidget *mEffectsPresetsDock = nullptr;
+    EffectsPresetsPanel *mEffectsPresetsPanel = nullptr;
 
     // JS plugin system (Scripts menu + console dock)
     ScriptManager *mScriptManager = nullptr;
@@ -360,6 +361,7 @@ private:
     int mTabColorIndex;
     int mTabTextIndex;
     int mTabPropertiesIndex;
+    int mTabEffectsIndex;
     int mTabAssetsIndex;
     int mTabQueueIndex;
 
