@@ -7270,6 +7270,10 @@ Are you sure you want to save this project file?</source>
         <source>Scripts reloaded (%1 command(s))</source>
         <translation>脚本已重新加载（%1 个命令）</translation>
     </message>
+    <message>
+        <source>Panel: %1</source>
+        <translation>面板：%1</translation>
+    </message>
 </context>
 <context>
     <name>ScriptConsoleDock</name>
