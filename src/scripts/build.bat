@@ -99,7 +99,11 @@ cd "%BUILD_OUTPUT%"
 
 7z a -mx9 friction-%VERSION%-windows-x64.7z friction-%VERSION%
 
-copy "%CWD%\build\src\app\%BDIR%\friction.iss" "%OUTPUT_DIR%\"
+if exist "%CWD%\build\src\app\%BDIR%\friction.iss" (
+    copy "%CWD%\build\src\app\%BDIR%\friction.iss" "%OUTPUT_DIR%\"
+) else (
+    copy "%CWD%\build\src\app\friction.iss" "%OUTPUT_DIR%\"
+)
 copy "%CWD%\src\app\icons\friction.ico" "%OUTPUT_DIR%\"
 copy "%CWD%\src\app\icons\friction.bmp" "%OUTPUT_DIR%\"
 copy "%CWD%\LICENSE.md" "%OUTPUT_DIR%\"

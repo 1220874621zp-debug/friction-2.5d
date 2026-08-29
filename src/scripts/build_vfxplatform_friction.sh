@@ -64,7 +64,7 @@ fi
 
 if [ ! -d "${BUILD}/friction" ]; then
     (cd ${BUILD} ;
-        git clone ${FRICTION_REPO_URL}
+        git clone ${FRICTION_REPO_URL} friction
         cd friction
         git checkout ${CHECKOUT}
         git submodule update -i --recursive
