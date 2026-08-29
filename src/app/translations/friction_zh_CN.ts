@@ -1441,7 +1441,7 @@
         <source>Make Segments Lines</source>
         <translation>转换线段为直线</translation>
     </message>
-</context>
+<message><source>Set Layer In Point (Alt+[)</source><translation>设置图层入点 (Alt+[)</translation></message><message><source>Set Layer Out Point (Alt+])</source><translation>设置图层出点 (Alt+])</translation></message><message><source>Split Clip (Ctrl+Shift+D)</source><translation>分割片段 (Ctrl+Shift+D)</translation></message><message><source>Split Clip at Current Frame</source><translation>在当前帧分割片段</translation></message><message><source>Edit duration</source><translation>编辑持续时间</translation></message><message><source>Split Clip</source><translation>分割片段</translation></message><message><source>Scene frame start</source><translation>场景起始帧</translation></message><message><source>Scene frame end</source><translation>场景结束帧</translation></message><message><source>Current frame</source><translation>当前帧</translation></message><message><source>Rewind</source><translation>倒带</translation></message><message><source>Fast Forward</source><translation>快进</translation></message><message><source>Go to First Frame</source><translation>跳转到起始帧</translation></message><message><source>Go to Last Frame</source><translation>跳转到结束帧</translation></message><message><source>Play Preview From Start</source><translation>从头开始预览</translation></message><message><source>Play Preview</source><translation>播放预览</translation></message><message><source>Stop Preview</source><translation>停止预览</translation></message><message><source>Loop Preview</source><translation>循环预览</translation></message><message><source>Cache %p%</source><translation>缓存进度 %p%</translation></message><message><source>Previous Keyframe</source><translation>上一关键帧</translation></message><message><source>Next Keyframe</source><translation>下一关键帧</translation></message><message><source>Set In</source><translation>设置入点</translation></message><message><source>Set Out</source><translation>设置出点</translation></message></context>
 <context>
     <name>CanvasSettingsWidget</name>
     <message>
@@ -2354,7 +2354,7 @@ you can create a new one by clicking on the '+' button.</source>
     <message>
         <location filename="../../ui/widgets/framescrollbar.cpp" line="357" />
         <source>Split Clip</source>
-        <translation>拆分剪辑</translation>
+        <translation>分割片段</translation>
     </message>
 </context>
 <context>
@@ -3618,14 +3618,14 @@ Added layers: %3</source>
     <message>
         <location filename="../GUI/keysview.cpp" line="397" />
         <source>Edit duration</source>
-        <translation>编辑时长</translation>
+        <translation>编辑持续时间</translation>
     </message>
     <message>
         <location filename="../GUI/keysview.cpp" line="398" />
         <source>Split Clip</source>
-        <translation>拆分剪辑</translation>
+        <translation>分割片段</translation>
     </message>
-</context>
+<message><source>Set Layer In Point (Alt+[)</source><translation>设置图层入点 (Alt+[)</translation></message><message><source>Set Layer Out Point (Alt+])</source><translation>设置图层出点 (Alt+])</translation></message><message><source>Split Clip (Ctrl+Shift+D)</source><translation>分割片段 (Ctrl+Shift+D)</translation></message><message><source>Split Clip at Current Frame</source><translation>在当前帧分割片段</translation></message><message><source>Set In Point</source><translation>设置入点</translation></message><message><source>Set Out Point</source><translation>设置出点</translation></message><message><source>Scene frame start</source><translation>场景起始帧</translation></message><message><source>Scene frame end</source><translation>场景结束帧</translation></message><message><source>Current frame</source><translation>当前帧</translation></message><message><source>Rewind</source><translation>倒带</translation></message><message><source>Fast Forward</source><translation>快进</translation></message><message><source>Go to First Frame</source><translation>跳转到起始帧</translation></message><message><source>Go to Last Frame</source><translation>跳转到结束帧</translation></message><message><source>Play Preview From Start</source><translation>从头开始预览</translation></message><message><source>Play Preview</source><translation>播放预览</translation></message><message><source>Stop Preview</source><translation>停止预览</translation></message><message><source>Loop Preview</source><translation>循环预览</translation></message><message><source>Cache %p%</source><translation>缓存进度 %p%</translation></message><message><source>Previous Keyframe</source><translation>上一关键帧</translation></message><message><source>Next Keyframe</source><translation>下一关键帧</translation></message><message><source>Set In</source><translation>设置入点</translation></message><message><source>Set Out</source><translation>设置出点</translation></message></context>
 <context>
     <name>LayoutHandler</name>
     <message>
@@ -7035,7 +7035,7 @@ Select the layers you want to import:</source>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="57" />
         <source>Go to First Frame</source>
-        <translation>跳转到起始帧 (Home)</translation>
+        <translation>跳转到起始帧</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="57" />
@@ -7054,7 +7054,7 @@ Select the layers you want to import:</source>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="58" />
         <source>Go to Last Frame</source>
-        <translation>跳转到结束帧 (End)</translation>
+        <translation>跳转到结束帧</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="60" />
@@ -7518,12 +7518,12 @@ Select the layers you want to import:</source>
     <message>
         <location filename="../GUI/timelinedockwidget.cpp" line="98" />
         <source>Rewind</source>
-        <translation>倒回</translation>
+        <translation>倒带</translation>
     </message>
     <message>
         <location filename="../GUI/timelinedockwidget.cpp" line="103" />
         <source>Go to First Frame</source>
-        <translation>跳转到起始帧 (Home)</translation>
+        <translation>跳转到起始帧</translation>
     </message>
     <message>
         <location filename="../GUI/timelinedockwidget.cpp" line="118" />
@@ -7533,12 +7533,12 @@ Select the layers you want to import:</source>
     <message>
         <location filename="../GUI/timelinedockwidget.cpp" line="123" />
         <source>Go to Last Frame</source>
-        <translation>跳转到结束帧 (End)</translation>
+        <translation>跳转到结束帧</translation>
     </message>
     <message>
         <location filename="../GUI/timelinedockwidget.cpp" line="138" />
         <source>Play Preview From Start</source>
-        <translation>从头播放预览</translation>
+        <translation>从头开始预览</translation>
     </message>
     <message>
         <location filename="../GUI/timelinedockwidget.cpp" line="151" />
@@ -7585,7 +7585,7 @@ Select the layers you want to import:</source>
     <message>
         <location filename="../GUI/timelinedockwidget.cpp" line="260" />
         <source>Cache %p%</source>
-        <translation>缓存 %p%</translation>
+        <translation>缓存进度 %p%</translation>
     </message>
     <message>
         <location filename="../GUI/timelinedockwidget.cpp" line="491" />
@@ -7597,7 +7597,7 @@ Select the layers you want to import:</source>
         <source>Resume Preview</source>
         <translation>继续预览</translation>
     </message>
-</context>
+<message><source>Set Layer In Point (Alt+[)</source><translation>设置图层入点 (Alt+[)</translation></message><message><source>Set Layer Out Point (Alt+])</source><translation>设置图层出点 (Alt+])</translation></message><message><source>Split Clip (Ctrl+Shift+D)</source><translation>分割片段 (Ctrl+Shift+D)</translation></message><message><source>Split Clip at Current Frame</source><translation>在当前帧分割片段</translation></message><message><source>Set In Point</source><translation>设置入点</translation></message><message><source>Set Out Point</source><translation>设置出点</translation></message><message><source>Edit duration</source><translation>编辑持续时间</translation></message><message><source>Split Clip</source><translation>分割片段</translation></message><message><source>Set In</source><translation>设置入点</translation></message><message><source>Set Out</source><translation>设置出点</translation></message></context>
 <context>
     <name>TimelineSettingsWidget</name>
     <message>
@@ -7956,4 +7956,4 @@ Select the layers you want to import:</source>
         <translation>拉伸</translation>
     </message>
 </context>
-</TS>
+<context><name>CanvasWindow</name><message><source>Set Layer In Point (Alt+[)</source><translation>设置图层入点 (Alt+[)</translation></message><message><source>Set Layer Out Point (Alt+])</source><translation>设置图层出点 (Alt+])</translation></message><message><source>Split Clip (Ctrl+Shift+D)</source><translation>分割片段 (Ctrl+Shift+D)</translation></message><message><source>Split Clip at Current Frame</source><translation>在当前帧分割片段</translation></message><message><source>Set In Point</source><translation>设置入点</translation></message><message><source>Set Out Point</source><translation>设置出点</translation></message><message><source>Edit duration</source><translation>编辑持续时间</translation></message><message><source>Split Clip</source><translation>分割片段</translation></message><message><source>Scene frame start</source><translation>场景起始帧</translation></message><message><source>Scene frame end</source><translation>场景结束帧</translation></message><message><source>Current frame</source><translation>当前帧</translation></message><message><source>Rewind</source><translation>倒带</translation></message><message><source>Fast Forward</source><translation>快进</translation></message><message><source>Go to First Frame</source><translation>跳转到起始帧</translation></message><message><source>Go to Last Frame</source><translation>跳转到结束帧</translation></message><message><source>Play Preview From Start</source><translation>从头开始预览</translation></message><message><source>Play Preview</source><translation>播放预览</translation></message><message><source>Stop Preview</source><translation>停止预览</translation></message><message><source>Loop Preview</source><translation>循环预览</translation></message><message><source>Cache %p%</source><translation>缓存进度 %p%</translation></message><message><source>Previous Keyframe</source><translation>上一关键帧</translation></message><message><source>Next Keyframe</source><translation>下一关键帧</translation></message><message><source>Set In</source><translation>设置入点</translation></message><message><source>Set Out</source><translation>设置出点</translation></message></context></TS>
