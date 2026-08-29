@@ -554,6 +554,10 @@
         <source>Unbind Layers</source>
         <translation>解绑图层</translation>
     </message>
+    <message>
+        <source>Freeze Pose</source>
+        <translation>冻结姿势</translation>
+    </message>
 </context>
 <context>
     <name>BoxSingleWidget</name>
@@ -1461,6 +1465,10 @@
         <location filename="../../core/canvasselectedpointsactions.cpp" line="332" />
         <source>Make Segments Lines</source>
         <translation>转换线段为直线</translation>
+    </message>
+    <message>
+        <source>Freeze Pose (All Bones)</source>
+        <translation>冻结姿势（全部骨骼）</translation>
     </message>
 </context>
 <context>

@@ -99,6 +99,19 @@ void Canvas::addActionsToMenu(QMenu *const menu)
         addSolidLayerAction();
     });
 
+    // Moho-style freeze pose for the WHOLE rig: key every channel of
+    // every bone at the current frame so the pose cannot drift from
+    // staggered per-channel keys
+    if(!mBones.isEmpty()) {
+        menu->addAction(tr("Freeze Pose (All Bones)"), [this]() {
+            const QList<Bone*> bones = mBones;
+            for(const auto bone : bones) {
+                if(bone) bone->freezeChannels();
+            }
+            if(Document::sInstance) Document::sInstance->actionFinished();
+        });
+    }
+
     const auto clipboard = mDocument.getBoxesClipboard();
     if (clipboard) {
         QAction * const pasteAct = menu->addAction(tr("Paste"), this,

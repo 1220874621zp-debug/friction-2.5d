@@ -46,6 +46,17 @@ public:
     // (bone parent-link tool); returns false on no-op/cycle
     bool setParentBone(Bone* const parent);
 
+    // Moho-style freeze pose: key EVERY animatable channel of this
+    // bone (position/rotation/scale/shear/pivot + length) at the
+    // current frame. Staggered per-channel keys leave the un-keyed
+    // channels interpolating through the pose frame, mixing the posed
+    // values with in-between ones (visible drift); freezing pins the
+    // whole pose. Selection-aware: freezing one of several selected
+    // bones freezes the entire selection.
+    void freezePose();
+    // key all channels of THIS bone only (no selection expansion)
+    void freezeChannels();
+
     // lazily create the canvas overlay (tail joint); called from
     // BoundingBox::prp_updateCanvasProps which owns the props list
     Property* ensureBoneOverlay();
