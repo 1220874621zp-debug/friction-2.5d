@@ -46,6 +46,9 @@ private slots:
     void onSearchTextChanged(const QString &text);
     void onItemDoubleClicked(QTreeWidgetItem *item, int column);
     void onApplyPressed();
+    void onImportEffectClicked();
+    void onOpenFolderClicked();
+    void onRefreshClicked();
 
 private:
     void addEffectItem(const QString &categoryName,

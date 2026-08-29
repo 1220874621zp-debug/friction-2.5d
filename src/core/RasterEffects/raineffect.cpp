@@ -140,7 +140,7 @@ stdsptr<RasterEffectCaller> RainEffect::getEffectCaller(
 }
 
 void RainEffectCaller::processCpu(CpuRenderTools& renderTools,
-                                 const CpuRenderData& data)
+                                  const CpuRenderData& data)
 {
     const auto& srcBtmp = renderTools.fSrcBtmp;
     const auto& dstBtmp = renderTools.fDstBtmp;
@@ -159,9 +159,31 @@ void RainEffectCaller::processCpu(CpuRenderTools& renderTools,
     const int yMin = std::max(0, data.fTexTile.top());
     const int yMax = std::min((int)data.fTexTile.bottom(), imgHeight - 1);
 
-    const qreal cr = mColor.redF();
-    const qreal cg = mColor.greenF();
-    const qreal cb = mColor.blueF();
+    const qreal cr = mColor.redF() * 255.0;
+    const qreal cg = mColor.greenF() * 255.0;
+    const qreal cb = mColor.blueF() * 255.0;
+
+    const auto streakAt = [this](qreal nx, qreal ny, qreal scale, qreal speed) -> qreal {
+        qreal px = (nx + ny * mSlant) * scale * 2.0;
+        qreal py = (ny + mTimeOffset * speed) * scale * 0.2;
+        qreal cellX = std::floor(px);
+        qreal cellY = std::floor(py);
+        qreal fracX = px - cellX - 0.5;
+        qreal fracY = py - cellY - 0.5;
+
+        qreal n = std::abs(std::sin(cellX * 127.1 + cellY * 311.7) * 43758.5453);
+        qreal h = n - std::floor(n);
+        if (h < 0.65) return 0.0;
+
+        qreal lineX = (h - 0.65) / 0.35 - 0.5;
+        qreal dist = std::abs(fracX - lineX * 0.4);
+        if (dist < 0.1 && std::abs(fracY) < 0.5) {
+            qreal sx = 1.0 - dist / 0.1;
+            qreal sy = 1.0 - std::abs(fracY) / 0.5;
+            return sx * sy * (h * 0.5 + 0.5);
+        }
+        return 0.0;
+    };
 
     for(int yi = yMin; yi <= yMax; yi++) {
         auto dst = static_cast<uchar*>(dstBtmp.getAddr(0, yi - yMin));
@@ -175,32 +197,15 @@ void RainEffectCaller::processCpu(CpuRenderTools& renderTools,
             const uchar a = *src++;
 
             const qreal nx = qreal(xi) / imgWidth;
-            const qreal py = ny * mDensity + mTimeOffset;
-            const qreal px = nx * mDensity + py * mSlant;
-            const qreal cellY = std::floor(py);
-            const qreal cellX = std::floor(px);
-            const qreal fracY = py - cellY - 0.5;
-            const qreal fracX = px - cellX - 0.5;
+            qreal r1 = streakAt(nx, ny, mDensity * 0.6, 1.2) * 0.4;
+            qreal r2 = streakAt(nx + 0.33, ny + 0.17, mDensity * 1.0, 1.6) * 0.5;
+            qreal r3 = streakAt(nx + 0.67, ny + 0.53, mDensity * 1.5, 2.0) * 0.3;
+            qreal rain = std::min(1.0, (r1 + r2 + r3) * mOpacity);
 
-            const qreal n = std::abs(std::sin(cellX * 127.1 + cellY * 311.7) * 43758.5453);
-            const qreal hashVal = n - std::floor(n);
-            qreal rain = 0.0;
-            if (hashVal > 0.75) {
-                const qreal lineX = (hashVal - 0.75) * 4.0 - 0.5;
-                const qreal d = std::abs(fracX - lineX * 0.4);
-                if (d < 0.06 && std::abs(fracY) < 0.5) {
-                    rain = (1.0 - d / 0.06) * (1.0 - std::abs(fracY) / 0.5) * mOpacity;
-                }
-            }
-
-            const qreal aNorm = a / 255.0;
-            const qreal rOut = (r / 255.0) * (1.0 - rain) + cr * aNorm * rain;
-            const qreal gOut = (g / 255.0) * (1.0 - rain) + cg * aNorm * rain;
-            const qreal bOut = (b / 255.0) * (1.0 - rain) + cb * aNorm * rain;
-
-            *dst++ = static_cast<uchar>(std::max(0.0, std::min(255.0, rOut * 255.0)));
-            *dst++ = static_cast<uchar>(std::max(0.0, std::min(255.0, gOut * 255.0)));
-            *dst++ = static_cast<uchar>(std::max(0.0, std::min(255.0, bOut * 255.0)));
+            const qreal aNorm = std::max(0.2, a / 255.0);
+            *dst++ = static_cast<uchar>(std::max(0.0, std::min(255.0, r + cr * rain * aNorm)));
+            *dst++ = static_cast<uchar>(std::max(0.0, std::min(255.0, g + cg * rain * aNorm)));
+            *dst++ = static_cast<uchar>(std::max(0.0, std::min(255.0, b + cb * rain * aNorm)));
             *dst++ = a;
         }
     }

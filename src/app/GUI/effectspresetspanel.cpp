@@ -26,6 +26,14 @@
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
+#include <QPushButton>
+#include <QFileDialog>
+#include <QDesktopServices>
+#include <QUrl>
+#include <QMessageBox>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
 #include <QHeaderView>
 #include <QIcon>
 #include <QShortcut>
@@ -35,6 +43,8 @@
 #include "TransformEffects/transformeffectmenucreator.h"
 #include "PathEffects/patheffectmenucreator.h"
 #include "themesupport.h"
+#include "appsupport.h"
+#include "effectsloader.h"
 
 EffectsPresetsPanel::EffectsPresetsPanel(MainWindow * const mainWindow,
                                          QWidget * const parent) :
@@ -68,6 +78,31 @@ EffectsPresetsPanel::EffectsPresetsPanel(MainWindow * const mainWindow,
     const auto enterShortcut = new QShortcut(QKeySequence(Qt::Key_Enter), mTreeWidget);
     connect(enterShortcut, &QShortcut::activated,
             this, &EffectsPresetsPanel::onApplyPressed);
+
+    // Bottom tool buttons: Import custom effect / Open folder / Refresh
+    const auto btnLayout = new QHBoxLayout();
+    btnLayout->setContentsMargins(0, 0, 0, 0);
+    btnLayout->setSpacing(2);
+
+    const auto importBtn = new QPushButton(QIcon::fromTheme("document-open"), tr("Import..."), this);
+    importBtn->setToolTip(tr("Import custom GLSL shader effect (.frag / .json)"));
+    importBtn->setFocusPolicy(Qt::NoFocus);
+    connect(importBtn, &QPushButton::clicked, this, &EffectsPresetsPanel::onImportEffectClicked);
+
+    const auto folderBtn = new QPushButton(QIcon::fromTheme("file_folder"), tr("Folder"), this);
+    folderBtn->setToolTip(tr("Open custom effects & shaders directory"));
+    folderBtn->setFocusPolicy(Qt::NoFocus);
+    connect(folderBtn, &QPushButton::clicked, this, &EffectsPresetsPanel::onOpenFolderClicked);
+
+    const auto refreshBtn = new QPushButton(QIcon::fromTheme("reload"), tr("Refresh"), this);
+    refreshBtn->setToolTip(tr("Reload shader effects and presets"));
+    refreshBtn->setFocusPolicy(Qt::NoFocus);
+    connect(refreshBtn, &QPushButton::clicked, this, &EffectsPresetsPanel::onRefreshClicked);
+
+    btnLayout->addWidget(importBtn);
+    btnLayout->addWidget(folderBtn);
+    btnLayout->addWidget(refreshBtn);
+    mainLayout->addLayout(btnLayout);
 
     populateEffects();
 }
@@ -210,4 +245,57 @@ void EffectsPresetsPanel::onApplyPressed()
     if (item && mApplyCallbacks.contains(item)) {
         mApplyCallbacks[item]();
     }
+}
+
+void EffectsPresetsPanel::onImportEffectClicked()
+{
+    const QString targetDir = AppSupport::getAppShaderEffectsPath();
+    QDir().mkpath(targetDir);
+
+    const QStringList files = QFileDialog::getOpenFileNames(
+        this,
+        tr("Import Custom GLSL Shader Effect"),
+        QDir::homePath(),
+        tr("Shader Effects (*.frag *.json *.glsl);;All Files (*)")
+    );
+
+    if (files.isEmpty()) { return; }
+
+    int importedCount = 0;
+    for (const auto &filePath : files) {
+        const QFileInfo fi(filePath);
+        const QString destPath = targetDir + QDir::separator() + fi.fileName();
+        if (QFile::exists(destPath)) {
+            QFile::remove(destPath);
+        }
+        if (QFile::copy(filePath, destPath)) {
+            importedCount++;
+        }
+    }
+
+    if (EffectsLoader::sInstance) {
+        EffectsLoader::sInstance->iniShaderEffects();
+    }
+    populateEffects();
+
+    QMessageBox::information(
+        this,
+        tr("Import Complete"),
+        tr("Successfully imported %1 shader effect(s).\nSaved to: %2").arg(importedCount).arg(targetDir)
+    );
+}
+
+void EffectsPresetsPanel::onOpenFolderClicked()
+{
+    const QString dirPath = AppSupport::getAppShaderEffectsPath();
+    QDir().mkpath(dirPath);
+    QDesktopServices::openUrl(QUrl::fromLocalFile(dirPath));
+}
+
+void EffectsPresetsPanel::onRefreshClicked()
+{
+    if (EffectsLoader::sInstance) {
+        EffectsLoader::sInstance->iniShaderEffects();
+    }
+    populateEffects();
 }
