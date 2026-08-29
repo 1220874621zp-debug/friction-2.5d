@@ -64,6 +64,10 @@ It's always preferred to submit pull requests against the `main` branch.
 21. ✅ **骨骼动画自动记录关键帧**-类似moho的操作体验
 22. ✅ **新增固态层**-
 23. ✅ **特效模块加强**-由协助者移植开发，我做的ae特效黑白闪，像素化，移植到了friction
+24. ✅ **原生oca导入**-开源的动画格式，支持opentoonz，krita
+25. ✅ **扣绿特效 Chroma Key**-移植 Enhanced Hybrid Keyer 3.1，MIT 许可
+26. ✅ **骨骼冻结姿势**-全属性关键帧钉死姿势
+27. ✅ **Krita .kra 原生导入**-绘画层静态+逐关键帧动画/组递归/混合模式/帧率画布
 
 
 **部署位置：** `friction/build/output/friction-cn-test/friction.exe`
