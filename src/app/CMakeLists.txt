@@ -322,14 +322,32 @@ add_executable(
     ${WINDOWS_RESOURCE_FILE}
 )
 
-# headless reproduction harness for the project-switch heap corruption
-# (development tool only, never installed or deployed)
-add_executable(friction_harness harness.cpp memoryhandler.cpp memorychecker.cpp)
-set_target_properties(friction_harness PROPERTIES WIN32_EXECUTABLE FALSE)
-if(MSVC)
-    # generate a linker map so the VEH crash reporter output can be
-    # symbolized without any debugger installed
-    target_link_options(friction_harness PRIVATE "/DEBUG" "/MAP")
+if(WIN32)
+    # headless reproduction harness for the project-switch heap corruption
+    # (development tool only, never installed or deployed)
+    add_executable(friction_harness harness.cpp memoryhandler.cpp memorychecker.cpp)
+    set_target_properties(friction_harness PROPERTIES WIN32_EXECUTABLE FALSE)
+    if(MSVC)
+        # generate a linker map so the VEH crash reporter output can be
+        # symbolized without any debugger installed
+        target_link_options(friction_harness PRIVATE "/DEBUG" "/MAP")
+    endif()
+
+    target_link_directories(
+        friction_harness
+        PRIVATE
+        ${FFMPEG_LIBRARIES_DIRS}
+        ${SKIA_LIBRARIES_DIRS}
+    )
+
+    target_link_libraries(
+        friction_harness
+        PRIVATE
+        ${PROJECT_NAME}core
+        ${QT_LIBRARIES}
+        ${FFMPEG_LIBRARIES}
+        ${SKIA_LIBRARIES}
+    )
 endif()
 
 if(APPLE)
@@ -346,13 +364,6 @@ target_link_directories(
     ${FFMPEG_LIBRARIES_DIRS}
     ${QSCINTILLA_LIBRARIES_DIRS}
     #${QUAZIP_LIBRARIES_DIRS}
-    ${SKIA_LIBRARIES_DIRS}
-)
-
-target_link_directories(
-    friction_harness
-    PRIVATE
-    ${FFMPEG_LIBRARIES_DIRS}
     ${SKIA_LIBRARIES_DIRS}
 )
 
@@ -389,15 +400,6 @@ target_link_libraries(
     ${QT_LIBRARIES}
     #${QUAZIP_LIBRARIES}
     ${QSCINTILLA_LIBRARIES}
-    ${FFMPEG_LIBRARIES}
-    ${SKIA_LIBRARIES}
-)
-
-target_link_libraries(
-    friction_harness
-    PRIVATE
-    ${PROJECT_NAME}core
-    ${QT_LIBRARIES}
     ${FFMPEG_LIBRARIES}
     ${SKIA_LIBRARIES}
 )
