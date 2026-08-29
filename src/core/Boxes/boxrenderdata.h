@@ -105,7 +105,13 @@ public:
     SkMatrix fPerspectiveTransform;
     bool fHasPerspective = false;
 
-    // full canvas transform: rel * 3D * inherited * resolution
+    // scene camera transform (canvas/world space, set by
+    // BoundingBox::setupWithoutRasterEffects from the Canvas; identity
+    // when the camera is at its defaults)
+    SkMatrix fSceneCameraT;
+    bool fHasSceneCamera = false;
+
+    // full canvas transform: rel * 3D * camera * inherited * resolution
     SkMatrix getFullRenderTransform() const;
 
     bool fRelBoundingRectSet = false;

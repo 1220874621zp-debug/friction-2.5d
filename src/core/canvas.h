@@ -832,6 +832,20 @@ public:
     // UI helpers: create rig/special layers into the current container
     void addBoneLayerAction();
     void addAdjustmentLayerAction();
+    void addSolidLayerAction();
+
+    // ---- scene camera (AE-like): driven by a CameraLayer box (the
+    // camera tool auto-creates one on first use). Affects ONLY layers
+    // with their 3D switch enabled (AE rule - plain 2D layers live in
+    // screen space) ----
+    class CameraLayer* getCameraLayer() const;
+    SkMatrix getCameraTransformAtFrame(const qreal relFrame) const;
+    bool cameraHasPerspectiveAtFrame(const qreal relFrame) const;
+    // invalidate every 3D layer's render data + the scene frame cache
+    // (wired to the CameraLayer animators - without this the layers
+    // keep serving cached render data with the OLD camera matrix)
+    void sceneCameraChanged(const FrameRange& range);
+    void addCameraLayerAction();
     // bone tool interaction helpers (canvasmouseinteractions.cpp)
     void boneCreatePress(const class eMouseEvent& e);
     void updateDraftBone(const QPointF& absPos);
@@ -848,6 +862,12 @@ public:
     // bone select tool: clicking picks ONLY bones (graphics are
     // transparent to the pick)
     void boneSelectPress(const class eMouseEvent& e);
+    // scene camera tool (Blender-flavoured): LMB drag orbits (tilt),
+    // Shift+LMB pans, Ctrl+LMB drags zoom
+    void cameraPress(const class eMouseEvent& e);
+    void cameraMove(const class eMouseEvent& e);
+    void cameraRelease();
+    void cameraCancel();
     Bone* pickBoneAt(const QPointF& absPos, const qreal maxDist);
     void bonePoseCancel();
 
@@ -963,6 +983,16 @@ private:
     // bone pose tool drag state
     enum class PoseDragMode { none, rotate, move };
     PoseDragMode mPoseMode = PoseDragMode::none;
+
+    // camera tool drag state
+    enum class CamDragMode { none, orbit, pan, zoom };
+    CamDragMode mCamDragMode = CamDragMode::none;
+    QPointF mCamPressPos;
+    qreal mCamStartPanX = 0;
+    qreal mCamStartPanY = 0;
+    qreal mCamStartZoom = 1;
+    qreal mCamStartRotX = 0;
+    qreal mCamStartRotY = 0;
     Bone* mPoseBone = nullptr;
     qreal mPoseStartAngle = 0;   // world angle of the cursor at press
     qreal mPoseStartRot = 0;     // bone rotation value at press

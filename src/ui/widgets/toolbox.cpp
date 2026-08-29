@@ -200,6 +200,9 @@ void ToolBox::setupMainAction(const QIcon &icon,
         case CanvasMode::boneSelect:
             mActions.setBoneSelectMode();
             break;
+        case CanvasMode::camera:
+            mActions.setCameraMode();
+            break;
         case CanvasMode::pickFillStroke:
             mActions.setPickPaintSettingsMode();
             break;
@@ -392,6 +395,16 @@ void ToolBox::setupMainActions()
                                                          "boneSelect",
                                                          "K").toString()),
                     {CanvasMode::boneSelect},
+                    false);
+    // scene camera (AE-like): orbit/pan/zoom the whole composition -
+    // LMB orbit, Shift+LMB pan, Ctrl+LMB zoom
+    setupMainAction(svgToolIcon(QStringLiteral(":/icons/camera_tool.svg"),
+                              ThemeSupport::getIconSize(64).width()),
+                    tr("Camera"),
+                    QKeySequence(AppSupport::getSettings("shortcuts",
+                                                         "camera",
+                                                         "C").toString()),
+                    {CanvasMode::camera},
                     false);
     setupMainAction(ThemeSupport::themedToolIcon("pick",
                                                  ThemeSupport::getThemeColorRed(),

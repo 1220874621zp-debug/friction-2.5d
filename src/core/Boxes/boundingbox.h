@@ -94,6 +94,8 @@ enum class eBoxType {
     adjustmentLayer,
     bone,
     boneLayer,
+    solid,
+    cameraLayer,
 
     count
 };

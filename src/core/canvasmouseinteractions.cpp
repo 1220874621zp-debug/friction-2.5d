@@ -27,6 +27,7 @@
 #include "Boxes/adjustmentlayer.h"
 #include "Boxes/bone.h"
 #include "Boxes/bonelayer.h"
+#include "Boxes/cameralayer.h"
 
 #include "eevent.h"
 
@@ -91,6 +92,11 @@ void Canvas::addActionsToMenu(QMenu *const menu)
         const auto layer = enve::make_shared<BoneLayer>();
         mCurrentContainer->addContained(layer);
         Document::sInstance->actionFinished();
+    });
+
+    // new solid layer (AE-style flat-color plane, canvas-sized)
+    menu->addAction(QStringLiteral("\u65B0\u5EFA\u56FA\u6001\u5C42"), [this]() {
+        addSolidLayerAction();
     });
 
     const auto clipboard = mDocument.getBoxesClipboard();
@@ -348,6 +354,103 @@ void Canvas::boneSelectPress(const eMouseEvent& e) {
     }
 }
 
+// scene camera tool (AE-like, Blender-flavoured): LMB drag orbits the
+// composition (tilt X/Y), Shift+LMB pans, Ctrl+LMB drags zoom. AE
+// flow: a camera LAYER must exist - auto-created on first use; the
+// camera only affects layers with their 3D switch enabled. All values
+// live as plain animators on the camera layer - the standard
+// prp_start/finishTransform pipeline carries undo and auto-keying
+void Canvas::cameraPress(const eMouseEvent& e) {
+    const bool autoCreated = !getCameraLayer();
+    if(autoCreated) addCameraLayerAction();
+    const auto cam = getCameraLayer();
+    if(!cam) return;
+    if(e.ctrlMod()) mCamDragMode = CamDragMode::zoom;
+    else if(e.shiftMod()) mCamDragMode = CamDragMode::pan;
+    else mCamDragMode = CamDragMode::orbit;
+    qWarning() << "CAMERA: press, drag mode" << int(mCamDragMode)
+               << (autoCreated ? "(camera layer auto-created)"
+                               : "(camera layer present)");
+    mCamPressPos = e.fPos;
+    mCamStartPanX = cam->panXAnimator()->getCurrentBaseValue();
+    mCamStartPanY = cam->panYAnimator()->getCurrentBaseValue();
+    mCamStartZoom = cam->zoomAnimator()->getCurrentBaseValue();
+    mCamStartRotX = cam->rotXAnimator()->getCurrentBaseValue();
+    mCamStartRotY = cam->rotYAnimator()->getCurrentBaseValue();
+    if(mCamDragMode == CamDragMode::orbit) {
+        cam->rotXAnimator()->prp_startTransform();
+        cam->rotYAnimator()->prp_startTransform();
+    } else if(mCamDragMode == CamDragMode::pan) {
+        cam->panXAnimator()->prp_startTransform();
+        cam->panYAnimator()->prp_startTransform();
+    } else {
+        cam->zoomAnimator()->prp_startTransform();
+    }
+}
+
+void Canvas::cameraMove(const eMouseEvent& e) {
+    if(mCamDragMode == CamDragMode::none) return;
+    const auto cam = getCameraLayer();
+    if(!cam) { mCamDragMode = CamDragMode::none; return; }
+    const QPointF d = e.fPos - mCamPressPos;
+    if(mCamDragMode == CamDragMode::orbit) {
+        cam->rotYAnimator()->setCurrentBaseValue(
+                    qBound(-89., mCamStartRotY + d.x()*0.3, 89.));
+        cam->rotXAnimator()->setCurrentBaseValue(
+                    qBound(-89., mCamStartRotX + d.y()*0.3, 89.));
+    } else if(mCamDragMode == CamDragMode::pan) {
+        // content follows the cursor 1:1: canvas units = view pixels
+        // divided by view scale and camera zoom
+        const qreal k = 1./(e.fScale*qMax(0.01, mCamStartZoom));
+        cam->panXAnimator()->setCurrentBaseValue(
+                    mCamStartPanX - d.x()*k);
+        cam->panYAnimator()->setCurrentBaseValue(
+                    mCamStartPanY - d.y()*k);
+    } else {
+        // drag up = zoom in
+        cam->zoomAnimator()->setCurrentBaseValue(
+                    qBound(0.01, mCamStartZoom*std::exp(-d.y()*0.005),
+                           100.));
+    }
+}
+
+void Canvas::cameraRelease() {
+    if(mCamDragMode == CamDragMode::none) return;
+    const auto cam = getCameraLayer();
+    if(cam) {
+        if(mCamDragMode == CamDragMode::orbit) {
+            cam->rotXAnimator()->prp_finishTransform();
+            cam->rotYAnimator()->prp_finishTransform();
+        } else if(mCamDragMode == CamDragMode::pan) {
+            cam->panXAnimator()->prp_finishTransform();
+            cam->panYAnimator()->prp_finishTransform();
+        } else {
+            cam->zoomAnimator()->prp_finishTransform();
+        }
+    }
+    mCamDragMode = CamDragMode::none;
+    if(Document::sInstance) Document::sInstance->actionFinished();
+}
+
+void Canvas::cameraCancel() {
+    if(mCamDragMode == CamDragMode::none) return;
+    const auto cam = getCameraLayer();
+    if(cam) {
+        // write the press-time values back before finishing so the
+        // undo entry becomes a no-op
+        if(mCamDragMode == CamDragMode::orbit) {
+            cam->rotXAnimator()->setCurrentBaseValue(mCamStartRotX);
+            cam->rotYAnimator()->setCurrentBaseValue(mCamStartRotY);
+        } else if(mCamDragMode == CamDragMode::pan) {
+            cam->panXAnimator()->setCurrentBaseValue(mCamStartPanX);
+            cam->panYAnimator()->setCurrentBaseValue(mCamStartPanY);
+        } else {
+            cam->zoomAnimator()->setCurrentBaseValue(mCamStartZoom);
+        }
+    }
+    cameraRelease();
+}
+
 // bone pose tool (Moho-style): pick the nearest bone under the cursor.
 // Pressing near the head joint grabs a MOVE (translate the bone, the
 // chain follows); pressing anywhere else on the body grabs a ROTATION
@@ -500,6 +603,8 @@ void Canvas::handleLeftButtonMousePress(const eMouseEvent& e)
         boneParentPress(e);
     } else if (mCurrentMode == CanvasMode::boneSelect) {
         boneSelectPress(e);
+    } else if (mCurrentMode == CanvasMode::camera) {
+        cameraPress(e);
     } else if (mCurrentMode == CanvasMode::circleCreate) {
         const auto newPath = enve::make_shared<Circle>();
         newPath->planCenterPivotPosition();
@@ -553,6 +658,7 @@ void Canvas::cancelCurrentTransform()
     mGizmos.fState.rotatingFromHandle = false;
 
     if(mCurrentMode == CanvasMode::bonePose) { bonePoseCancel(); }
+    if(mCurrentMode == CanvasMode::camera) { cameraCancel(); }
 
     if (mCurrentMode == CanvasMode::pointTransform) {
         if (mCurrentNormalSegment.isValid()) {

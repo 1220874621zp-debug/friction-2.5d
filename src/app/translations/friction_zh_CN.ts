@@ -2763,6 +2763,10 @@ you can create a new one by clicking on the '+' button.</source>
         <translation>骨骼选择（只选中骨骼）</translation>
     </message>
     <message>
+        <source>Camera</source>
+        <translation>摄像机（左键拖动=轨道倾斜，Shift+左键=平移，Ctrl+左键=缩放）</translation>
+    </message>
+    <message>
         <location filename="../../ui/widgets/toolbox.cpp" line="90" />
         <source>ToolBox</source>
         <translation>工具箱</translation>
@@ -6607,6 +6611,14 @@ Are you sure you want to save this project file?</source>
     <message>
         <source>Adjustment Layer</source>
         <translation>调整图层</translation>
+    </message>
+    <message>
+        <source>Solid Layer</source>
+        <translation>固态图层</translation>
+    </message>
+    <message>
+        <source>Camera</source>
+        <translation>摄像机</translation>
     </message>
     <message>
         <location filename="../GUI/timelinewidget.cpp" line="83" />

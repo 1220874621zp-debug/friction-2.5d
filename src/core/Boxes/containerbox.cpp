@@ -1666,6 +1666,8 @@ void ContainerBox::writeBoxOrSoundXEV(const stdsptr<XevZipFileSaver>& xevFileSav
 #include "textbox.h"
 #include "videobox.h"
 #include "rectangle.h"
+#include "Boxes/solidlayer.h"
+#include "Boxes/cameralayer.h"
 #include "circle.h"
 //#include "paintbox.h"
 #include "imagesequencebox.h"
@@ -1714,8 +1716,16 @@ qsptr<BoundingBox> createBoxOfNonCustomType(const eBoxType type) {
             return enve::make_shared<Bone>();
         case(eBoxType::boneLayer):
             return enve::make_shared<BoneLayer>();
+        case(eBoxType::solid):
+            return enve::make_shared<SolidLayer>();
+        case(eBoxType::cameraLayer):
+            return enve::make_shared<CameraLayer>();
         case(eBoxType::psdImage):
             return enve::make_shared<PsdImageBox>();
+        // adjustment layers were never registered here - saving one
+        // and reloading the project threw "Invalid box type"
+        case(eBoxType::adjustmentLayer):
+            return enve::make_shared<AdjustmentLayer>();
         case(eBoxType::deprecated0): break;
         case(eBoxType::canvas) : break;
         case(eBoxType::count) : break;

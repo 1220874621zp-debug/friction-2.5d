@@ -131,6 +131,7 @@ public:
     void setBoneBindMode();
     void setBoneParentMode();
     void setBoneSelectMode();
+    void setCameraMode();
     void setPickPaintSettingsMode();
 //
     bool smoothChange() const { return mSmoothChange; }

@@ -74,6 +74,8 @@
 
 #include "Boxes/circle.h"
 #include "Boxes/rectangle.h"
+#include "Boxes/solidlayer.h"
+#include "Boxes/cameralayer.h"
 #include "Boxes/nullobject.h"
 #include "Sound/evideosound.h"
 #include "Boxes/internallinkgroupbox.h"
@@ -286,11 +288,13 @@ QPixmap* BoxSingleWidget::BOX_CIRCLE;
 QPixmap* BoxSingleWidget::BOX_RECT;
 QPixmap* BoxSingleWidget::BOX_TEXT;
 QPixmap* BoxSingleWidget::BOX_NULL;
+QPixmap* BoxSingleWidget::BOX_CAMERA;
 QPixmap* BoxSingleWidget::BOX_IMAGE;
 QPixmap* BoxSingleWidget::BOX_VIDEO;
 QPixmap* BoxSingleWidget::BOX_SOUND;
 QPixmap* BoxSingleWidget::BOX_BONE;
 QPixmap* BoxSingleWidget::BOX_BONELAYER;
+QPixmap* BoxSingleWidget::BOX_SOLID;
 QPixmap* BoxSingleWidget::BOX_GROUP;
 QPixmap* BoxSingleWidget::BOX_LINK;
 QPixmap* BoxSingleWidget::BOX_SEQ;
@@ -415,6 +419,8 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
         }
         if (enve_cast<Circle*>(target)) {
             return BoxSingleWidget::BOX_CIRCLE;
+        } else if (enve_cast<SolidLayer*>(target)) {
+            return BoxSingleWidget::BOX_SOLID;
         } else if (enve_cast<RectangleBox*>(target)) {
             return BoxSingleWidget::BOX_RECT;
         } else if (enve_cast<TextBox*>(target)) {
@@ -423,6 +429,8 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
             return BoxSingleWidget::BOX_BONELAYER;
         } else if (enve_cast<Bone*>(target)) {
             return BoxSingleWidget::BOX_BONE;
+        } else if (enve_cast<CameraLayer*>(target)) {
+            return BoxSingleWidget::BOX_CAMERA;
         } else if (enve_cast<NullObject*>(target)) {
             return BoxSingleWidget::BOX_NULL;
         } else if (enve_cast<ImageBox*>(target)) {
@@ -1442,6 +1450,27 @@ void BoxSingleWidget::loadStaticPixmaps(int iconSize)
     BOX_RECT = new QPixmap(QIcon::fromTheme("rectCreate").pixmap(pixmapSize));
     BOX_TEXT = new QPixmap(QIcon::fromTheme("textCreate").pixmap(pixmapSize));
     BOX_NULL = new QPixmap(QIcon::fromTheme("nullCreate").pixmap(pixmapSize));
+    // camera layer icon: rounded body + lens circle
+    {
+        const int isz = qMax(8, pixmapSize.width()*4/5);
+        const QColor col = ThemeSupport::getThemeColorYellow();
+        QPixmap pc(isz, isz); pc.fill(Qt::transparent);
+        QPainter c(&pc); c.setRenderHint(QPainter::Antialiasing);
+        QPen cpen(col); cpen.setWidthF(2.0); cpen.setCapStyle(Qt::RoundCap);
+        c.setPen(cpen);
+        c.setBrush(Qt::NoBrush);
+        c.drawRoundedRect(QRectF(0.10*isz, 0.30*isz, 0.80*isz, 0.52*isz),
+                          0.12*isz, 0.12*isz);
+        c.drawEllipse(QPointF(0.5*isz, 0.56*isz), 0.17*isz, 0.17*isz);
+        c.drawLine(QPointF(0.32*isz, 0.30*isz),
+                   QPointF(0.40*isz, 0.18*isz));
+        c.drawLine(QPointF(0.40*isz, 0.18*isz),
+                   QPointF(0.60*isz, 0.18*isz));
+        c.drawLine(QPointF(0.60*isz, 0.18*isz),
+                   QPointF(0.68*isz, 0.30*isz));
+        c.end();
+        BOX_CAMERA = new QPixmap(pc);
+    }
     {
         // bone row icon: the U+1F9B4 glyph (text presentation, never a
         // colored emoji); bone layer: layered two-segment glyph mark
@@ -1468,6 +1497,17 @@ void BoxSingleWidget::loadStaticPixmaps(int iconSize)
         l.drawLine(QPointF(0.45*isz, 0.55*isz), QPointF(0.85*isz, 0.15*isz));
         l.end();
         BOX_BONELAYER = new QPixmap(pl);
+        // solid layer: filled rounded square with border (flat-color
+        // plane)
+        QPixmap ps(isz, isz); ps.fill(Qt::transparent);
+        QPainter s(&ps); s.setRenderHint(QPainter::Antialiasing);
+        const QRectF r(0.14*isz, 0.26*isz, 0.72*isz, 0.48*isz);
+        s.setPen(QPen(col, 2.2, Qt::SolidLine, Qt::RoundCap,
+                               Qt::RoundJoin));
+        s.setBrush(col);
+        s.drawRoundedRect(r, 0.12*isz, 0.12*isz);
+        s.end();
+        BOX_SOLID = new QPixmap(ps);
     }
     BOX_IMAGE = new QPixmap(QIcon::fromTheme("image-x-generic").pixmap(pixmapSize));
     BOX_VIDEO = new QPixmap(QIcon::fromTheme("file_movie").pixmap(pixmapSize));
@@ -1522,6 +1562,8 @@ void BoxSingleWidget::clearStaticPixmaps()
     delete BOX_NULL;
     delete BOX_BONE;
     delete BOX_BONELAYER;
+    delete BOX_SOLID;
+    delete BOX_CAMERA;
     delete BOX_IMAGE;
     delete BOX_VIDEO;
     delete BOX_SOUND;

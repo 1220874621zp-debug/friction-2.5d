@@ -32,6 +32,10 @@ class CORE_EXPORT RectangleBox : public PathBox {
     e_OBJECT
 protected:
     RectangleBox();
+    // for subclasses with their own box type (SolidLayer): the type
+    // tag is serialized by writeIdentifier() and must match the
+    // subclass (ImageBox pattern)
+    RectangleBox(const QString &name, const eBoxType type);
 public:
     SkPath getRelativePath(const qreal relFrame) const;
     bool differenceInEditPathBetweenFrames(

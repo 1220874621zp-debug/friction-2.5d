@@ -1317,6 +1317,26 @@ void BoundingBox::setupWithoutRasterEffects(const qreal relFrame,
         data->fHasPerspective = true;
     }
 
+    // scene camera (world space; AE rule: only layers with their 3D
+    // switch enabled are affected - plain 2D layers live in screen
+    // space; the canvas itself is skipped too - its own render data
+    // composites the already-camera-mapped children)
+    data->fSceneCameraT.reset();
+    data->fHasSceneCamera = false;
+    if(mType != eBoxType::canvas && mTransformAnimator->is3DEnabled()) {
+        const SkMatrix cam = scene->getCameraTransformAtFrame(relFrame);
+        if(!cam.isIdentity()) {
+            data->fSceneCameraT = cam;
+            data->fHasSceneCamera = true;
+            // a camera with tilt has perspective terms: reuse the
+            // fHasPerspective convention so direct-draw paths fall
+            // back to offscreen rasterization
+            if(scene->cameraHasPerspectiveAtFrame(relFrame)) {
+                data->fHasPerspective = true;
+            }
+        }
+    }
+
     data->fResolution = scene->getResolution();
     data->fResolutionScale.reset();
     data->fResolutionScale.scale(data->fResolution, data->fResolution);
