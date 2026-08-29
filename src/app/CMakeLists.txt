@@ -243,6 +243,7 @@ set(
     GUI/graphboxeslist.cpp
     GUI/keysview.cpp
     GUI/mainwindow.cpp
+    GUI/aepropertiesinspector.cpp
     GUI/hangwatchdog.cpp
     GUI/extraactions.cpp
     GUI/effectactions.cpp
@@ -251,6 +252,7 @@ set(
 
 set(
     HEADERS
+    GUI/aepropertiesinspector.h
     GUI/BoxesList/boxscroller.h
     GUI/Dialogs/dialogsinterfaceimpl.h
     GUI/Expressions/expressiondialog.h

@@ -13,6 +13,8 @@
 #include "openglrastereffectcaller.h"
 #include "Animators/qrealanimator.h"
 #include "Animators/coloranimator.h"
+#include "Boxes/boundingbox.h"
+#include "skia/skqtconversions.h"
 #include "appsupport.h"
 #include <cmath>
 
@@ -57,6 +59,8 @@ BlackWhiteFlashEffect::BlackWhiteFlashEffect() :
     mBgColor = enve::make_shared<ColorAnimator>("bgcolor");
     mBgColor->setColor(QColor(0, 0, 0, 255));
     ca_addChild(mBgColor);
+
+    prp_enabledDrawingOnCanvas();
 }
 
 class BlackWhiteFlashEffectCaller : public OpenGLRasterEffectCaller {
@@ -231,4 +235,53 @@ void BlackWhiteFlashEffectCaller::processCpu(CpuRenderTools& renderTools, const 
             *dst++ = a;
         }
     }
+}
+
+void BlackWhiteFlashEffect::prp_drawCanvasControls(
+        SkCanvas * const canvas, const CanvasMode mode,
+        const float invScale, const bool ctrlPressed) {
+    Q_UNUSED(mode)
+    Q_UNUSED(ctrlPressed)
+
+    const auto box = getFirstAncestor<BoundingBox>();
+    if (!box) return;
+
+    const QRectF bRect = box->getRelBoundingRect();
+    const qreal cx = bRect.left() + (mCenterX->getEffectiveValue() * 0.01) * bRect.width();
+    const qreal cy = bRect.top() + (mCenterY->getEffectiveValue() * 0.01) * bRect.height();
+    const SkPoint pt = toSkPoint(QPointF(cx, cy));
+
+    const float r = 10.0f * invScale;
+    const float cross = 18.0f * invScale;
+
+    SkPaint pShadow;
+    pShadow.setAntiAlias(true);
+    pShadow.setColor(SkColorSetARGB(180, 0, 0, 0));
+    pShadow.setStyle(SkPaint::kStroke_Style);
+    pShadow.setStrokeWidth(3.0f * invScale);
+
+    SkPaint pLine;
+    pLine.setAntiAlias(true);
+    pLine.setColor(SkColorSetARGB(255, 0, 220, 255));
+    pLine.setStyle(SkPaint::kStroke_Style);
+    pLine.setStrokeWidth(1.5f * invScale);
+
+    canvas->drawCircle(pt.fX, pt.fY, r, pShadow);
+    canvas->drawCircle(pt.fX, pt.fY, r, pLine);
+
+    SkPaint pDot;
+    pDot.setAntiAlias(true);
+    pDot.setColor(SkColorSetARGB(255, 255, 255, 255));
+    pDot.setStyle(SkPaint::kFill_Style);
+    canvas->drawCircle(pt.fX, pt.fY, 2.5f * invScale, pDot);
+
+    canvas->drawLine(pt.fX - cross, pt.fY, pt.fX - r * 0.5f, pt.fY, pShadow);
+    canvas->drawLine(pt.fX + r * 0.5f, pt.fY, pt.fX + cross, pt.fY, pShadow);
+    canvas->drawLine(pt.fX, pt.fY - cross, pt.fX, pt.fY - r * 0.5f, pShadow);
+    canvas->drawLine(pt.fX, pt.fY + r * 0.5f, pt.fX, pt.fY + cross, pShadow);
+
+    canvas->drawLine(pt.fX - cross, pt.fY, pt.fX - r * 0.5f, pt.fY, pLine);
+    canvas->drawLine(pt.fX + r * 0.5f, pt.fY, pt.fX + cross, pt.fY, pLine);
+    canvas->drawLine(pt.fX, pt.fY - cross, pt.fX, pt.fY - r * 0.5f, pLine);
+    canvas->drawLine(pt.fX, pt.fY + r * 0.5f, pt.fX, pt.fY + cross, pLine);
 }

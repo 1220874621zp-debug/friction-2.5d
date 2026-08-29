@@ -341,6 +341,7 @@ private:
 
     BoxScrollWidget *mObjectSettingsWidget;
     ScrollArea *mObjectSettingsScrollArea;
+    class AEPropertiesInspector *mPropertiesInspector;
 
     void setupMainWidgets();
     void setupStackWidgets();

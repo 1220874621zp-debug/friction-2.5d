@@ -72,6 +72,7 @@
 #include "scriptconsole.h"
 #include "GUI/keysview.h"
 #include "canvaswindow.h"
+#include "aepropertiesinspector.h"
 #include "GUI/BoxesList/boxscrollwidget.h"
 #include "clipboardcontainer.h"
 #include "optimalscrollarena/scrollarea.h"
@@ -743,6 +744,7 @@ void MainWindow::updateSettingsForCurrentCanvas(Canvas* const scene)
     if (mCanvasToolBar) { mCanvasToolBar->setCurrentCanvas(scene); }
 
     mObjectSettingsWidget->setCurrentScene(scene);
+    if (mPropertiesInspector) { mPropertiesInspector->setCurrentScene(scene); }
 
     if (mPreviewSVGAct) { mPreviewSVGAct->setEnabled(scene); }
     if (mExportSVGAct) { mExportSVGAct->setEnabled(scene); }
@@ -1472,7 +1474,8 @@ void MainWindow::setupPropertiesWidgets()
     propertiesLayout->setContentsMargins(0, 0, 0, 0);
     propertiesLayout->setSpacing(0);
 
-    propertiesLayout->addWidget(mObjectSettingsScrollArea);
+    mPropertiesInspector = new AEPropertiesInspector(mDocument, this);
+    propertiesLayout->addWidget(mPropertiesInspector);
     propertiesLayout->addWidget(mFontWidget);
     propertiesLayout->addWidget(alignWidget);
 

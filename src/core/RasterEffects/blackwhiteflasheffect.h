@@ -12,6 +12,7 @@
 #define BLACKWHITEFLASHEFFECT_H
 
 #include "rastereffect.h"
+#include "skia/skiaincludes.h"
 
 class QrealAnimator;
 class ColorAnimator;
@@ -27,6 +28,13 @@ public:
             const qreal resolution,
             const qreal influence,
             BoxRenderData * const data) const override;
+
+    void prp_drawCanvasControls(
+            SkCanvas * const canvas,
+            const CanvasMode mode,
+            const float invScale,
+            const bool ctrlPressed) override;
+
 private:
     qsptr<QrealAnimator> mCenterX;
     qsptr<QrealAnimator> mCenterY;
