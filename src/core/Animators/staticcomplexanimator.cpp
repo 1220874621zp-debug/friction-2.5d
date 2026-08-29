@@ -46,6 +46,8 @@ void StaticComplexAnimator::prp_readProperty_impl(eReadStream &src)
             SVGProperties.contains(prop->prp_getName())) { continue; }
         if (src.evFileVersion() < EvFormat::subPathOffset &&
             isSubPathEffect && prop->prp_getName() == "offset") { continue; }
+        if (src.evFileVersion() < EvFormat::visibilityKeyframes &&
+            prop->prp_getName() == QStringLiteral("可见")) { continue; }
         prop->prp_readProperty(src);
     }
 }

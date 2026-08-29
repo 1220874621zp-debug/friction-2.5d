@@ -27,6 +27,7 @@
 #define EBOXORSOUND_H
 
 #include "staticcomplexanimator.h"
+#include "boolanimator.h"
 
 #include "../zipfilesaver.h"
 #include "../zipfileloader.h"
@@ -202,6 +203,10 @@ private:
 
     bool mSelected = false;
     bool mVisible = true;
+    // keyframable visibility channel ("可见" property row): an extra
+    // gate AND-ed with the row eye (mVisible) - base value true keeps
+    // the legacy behavior until the user keys it
+    qsptr<BoolAnimator> mVisibleAnim;
     bool mLocked = false;
     bool mSolo = false;
     bool mShy = false;

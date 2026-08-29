@@ -65,6 +65,10 @@ namespace EvFormat {
         // carry a bone warp effect are not loadable - re-create those
         // rigs (development artifacts only)
         boneWarpRemoved = 40,
+        // keyframable layer visibility ("可见" bool animator) became a
+        // serialized child of every eBoxOrSound; older files lack the
+        // block and must skip it (positional binary property tree)
+        visibilityKeyframes = 41,
 
         nextVersion
     };

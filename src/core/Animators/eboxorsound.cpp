@@ -38,6 +38,12 @@
 eBoxOrSound::eBoxOrSound(const QString &name) :
     StaticComplexAnimator(name) {
     ca_setDisabledWhenEmpty(false);
+    // keyframable "可见" row: an extra visibility gate AND-ed with the
+    // row eye; base value true = legacy behavior until keyed
+    mVisibleAnim = enve::make_shared<BoolAnimator>(
+                QStringLiteral("可见"));
+    mVisibleAnim->setCurrentBoolValue(true);
+    ca_addChild(mVisibleAnim);
     connect(this, &Property::prp_nameChanged, this,
             &SingleWidgetTarget::SWT_scheduleSearchContentUpdate);
 }
@@ -331,17 +337,20 @@ bool eBoxOrSound::durationRectangleLocked() const {
 }
 
 bool eBoxOrSound::isVisibleAndInVisibleDurationRect() const {
-    return isFrameInDurationRect(anim_getCurrentRelFrame()) && mVisible;
+    return isFrameInDurationRect(anim_getCurrentRelFrame()) &&
+            mVisible && mVisibleAnim->getBoolValue();
 }
 
 bool eBoxOrSound::isVisibleAndInDurationRect(
         const int relFrame) const {
-    return isFrameInDurationRect(relFrame) && mVisible;
+    return isFrameInDurationRect(relFrame) && mVisible &&
+            mVisibleAnim->getEffectiveIntValue(relFrame) == 1;
 }
 
 bool eBoxOrSound::isFrameFVisibleAndInDurationRect(
         const qreal relFrame) const {
-    return isFrameFInDurationRect(relFrame) && mVisible;
+    return isFrameFInDurationRect(relFrame) && mVisible &&
+            mVisibleAnim->getEffectiveIntValue(relFrame) == 1;
 }
 
 bool eBoxOrSound::hasDurationRectangle() const {
@@ -536,7 +545,7 @@ void eBoxOrSound::show() {
 }
 
 bool eBoxOrSound::isVisible() const {
-    return mVisible;
+    return mVisible && mVisibleAnim->getBoolValue();
 }
 
 bool eBoxOrSound::isVisibleAndUnlocked() const {
