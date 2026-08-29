@@ -8,5 +8,10 @@
 #include "noisefadeeffect.h"
 #include "colorizeeffect.h"
 #include "brightnesscontrasteffect.h"
+#include "vignetteeffect.h"
+#include "chromaticaberrationeffect.h"
+#include "letterboxeffect.h"
+#include "scanlineseffect.h"
+#include "gloweffect.h"
 
 #endif // RASTEREFFECTSINCLUDE_H

@@ -235,6 +235,11 @@ set(
     RasterEffects/rastereffectcollection.cpp
     RasterEffects/rastereffectmenucreator.cpp
     RasterEffects/shadoweffect.cpp
+    RasterEffects/vignetteeffect.cpp
+    RasterEffects/chromaticaberrationeffect.cpp
+    RasterEffects/letterboxeffect.cpp
+    RasterEffects/scanlineseffect.cpp
+    RasterEffects/gloweffect.cpp
     RasterEffects/wipeeffect.cpp
     ReadWrite/ereadstream.cpp
     ReadWrite/ewritestream.cpp
@@ -560,6 +565,11 @@ set(
     RasterEffects/rastereffectmenucreator.h
     RasterEffects/rastereffectsinclude.h
     RasterEffects/shadoweffect.h
+    RasterEffects/vignetteeffect.h
+    RasterEffects/chromaticaberrationeffect.h
+    RasterEffects/letterboxeffect.h
+    RasterEffects/scanlineseffect.h
+    RasterEffects/gloweffect.h
     RasterEffects/wipeeffect.h
     ReadWrite/efuturepos.h
     ReadWrite/ereadstream.h

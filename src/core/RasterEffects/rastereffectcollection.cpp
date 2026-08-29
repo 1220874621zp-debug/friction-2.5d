@@ -167,6 +167,16 @@ qsptr<RasterEffect> createRasterEffectForNonCustomType(const RasterEffectType ty
             return enve::make_shared<ColorizeEffect>();
         case(RasterEffectType::BRIGHTNESS_CONTRAST):
             return enve::make_shared<BrightnessContrastEffect>();
+        case(RasterEffectType::VIGNETTE):
+            return enve::make_shared<VignetteEffect>();
+        case(RasterEffectType::CHROMATIC_ABERRATION):
+            return enve::make_shared<ChromaticAberrationEffect>();
+        case(RasterEffectType::LETTERBOX):
+            return enve::make_shared<LetterboxEffect>();
+        case(RasterEffectType::SCANLINES):
+            return enve::make_shared<ScanlinesEffect>();
+        case(RasterEffectType::GLOW):
+            return enve::make_shared<GlowEffect>();
         default: return nullptr;
     }
 }

@@ -40,7 +40,12 @@ enum class RasterEffectType : short {
     // of the effects below do not shift against old project files
     NOISE_FADE = 7,
     COLORIZE,
-    BRIGHTNESS_CONTRAST
+    BRIGHTNESS_CONTRAST,
+    VIGNETTE,
+    CHROMATIC_ABERRATION,
+    LETTERBOX,
+    SCANLINES,
+    GLOW
 };
 
 struct BoxRenderData;

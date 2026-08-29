@@ -46,6 +46,16 @@ void RasterEffectMenuCreator::forEveryEffectCore(const EffectAdder &add)
         []() { return enve::make_shared<BrightnessContrastEffect>(); });
     add(QObject::tr("Colorize"), QObject::tr("Color"),
         []() { return enve::make_shared<ColorizeEffect>(); });
+    add(QObject::tr("Glow"), QObject::tr("Light"),
+        []() { return enve::make_shared<GlowEffect>(); });
+    add(QObject::tr("Chromatic Aberration"), QObject::tr("Distort"),
+        []() { return enve::make_shared<ChromaticAberrationEffect>(); });
+    add(QObject::tr("Vignette"), QObject::tr("Stylize"),
+        []() { return enve::make_shared<VignetteEffect>(); });
+    add(QObject::tr("Letterbox"), QObject::tr("Stylize"),
+        []() { return enve::make_shared<LetterboxEffect>(); });
+    add(QObject::tr("Scanlines"), QObject::tr("Stylize"),
+        []() { return enve::make_shared<ScanlinesEffect>(); });
     add(QObject::tr("Wipe"), QObject::tr("Transitions"),
         []() { return enve::make_shared<WipeEffect>(); });
     add(QObject::tr("Noise Fade"), QObject::tr("Transitions"),
