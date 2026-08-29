@@ -1981,6 +1981,16 @@ void Canvas::addSolidLayerAction() {
 
 // ---- scene camera (AE-like, driven by a CameraLayer box) ----
 
+// freeze pose across the whole rig: key every channel of every bone
+// at the current frame - a pose is only pinned when no bone anywhere
+// keeps interpolating through this frame (staggered keys = drift)
+void Canvas::freezeAllBones() {
+    const QList<Bone*> bones = mBones;
+    for(const auto bone : bones) {
+        if(bone) bone->freezeChannels();
+    }
+}
+
 CameraLayer* Canvas::getCameraLayer() const {
     for(const auto& c : getContained()) {
         if(const auto cam = enve_cast<CameraLayer*>(c.data())) {

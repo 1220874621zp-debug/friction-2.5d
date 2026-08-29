@@ -826,6 +826,9 @@ public:
 
     // read access for diagnostics / tools
     const QList<Bone*>& getBones() const { return mBones; }
+    // freeze-pose helper: key every channel of every bone in the scene
+    // at the current frame (the auto-freeze toolbar toggle uses this)
+    void freezeAllBones();
     void removeBone(Bone* const bone);
     // bone currently being placed by the bone tool (length/rotation
     // follow the cursor until the next click grows a child bone)

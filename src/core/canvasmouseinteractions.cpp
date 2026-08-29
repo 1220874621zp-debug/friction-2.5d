@@ -507,13 +507,13 @@ void Canvas::bonePoseRelease() {
         // Moho-style auto-keyframing: posing a bone records a key at
         // the current frame (no-op clicks do not create keys)
         if(mPoseMoved) {
-            if(Bone::sAutoFreezePose) mPoseBone->freezeChannels();
+            if(Bone::sAutoFreezePose) freezeAllBones();
             else transform->getRotAnimator()->anim_saveCurrentValueAsKey();
         }
     } else if(mPoseMode == PoseDragMode::move) {
         transform->getPosAnimator()->prp_finishTransform();
         if(mPoseMoved) {
-            if(Bone::sAutoFreezePose) mPoseBone->freezeChannels();
+            if(Bone::sAutoFreezePose) freezeAllBones();
             else transform->getPosAnimator()->anim_saveCurrentValueAsKey();
         }
     }

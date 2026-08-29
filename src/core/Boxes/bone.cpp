@@ -52,7 +52,17 @@ public:
         // the current frame (no-op drags do not create keys); with
         // auto-freeze on the WHOLE bone is keyed (pose pinned)
         if(qAbs(rot->getEffectiveValue() - mRotAtStart) > 0.01) {
-            if(Bone::sAutoFreezePose) mBone->freezeChannels();
+            if(Bone::sAutoFreezePose) {
+                // freeze the WHOLE rig (every bone in the scene), not
+                // just the touched one - a pose is only pinned when no
+                // bone anywhere keeps interpolating through this frame
+                if(const auto scene = mBone->getParentScene()) {
+                    const QList<Bone*> bones = scene->getBones();
+                    for(const auto b : bones) {
+                        if(b) b->freezeChannels();
+                    }
+                }
+            }
             else rot->anim_saveCurrentValueAsKey();
         }
         if(Document::sInstance) Document::sInstance->actionFinished();
