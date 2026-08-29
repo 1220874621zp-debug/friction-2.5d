@@ -32,7 +32,7 @@
 ScanlinesEffect::ScanlinesEffect() :
     RasterEffect("scanlines",
                  AppSupport::getRasterEffectHardwareSupport("Scanlines",
-                                                            HardwareSupport::cpuOnly),
+                                                            HardwareSupport::gpuPreffered),
                  true,
                  RasterEffectType::SCANLINES)
 {

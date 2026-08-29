@@ -80,6 +80,7 @@ class BoxScrollWidget;
 class ScrollArea;
 class ScriptManager;
 class EffectsPresetsPanel;
+class QuickEffectSearchDialog;
 
 class MainWindow : public QMainWindow
 {
@@ -177,6 +178,7 @@ public:
     void addFillPathEffect(const qsptr<PathEffect> &effect);
     void addOutlineBasePathEffect(const qsptr<PathEffect> &effect);
     void addOutlinePathEffect(const qsptr<PathEffect> &effect);
+    void showQuickEffectSearch();
     void updateLastOpenDir(const QString &path);
     void updateLastSaveDir(const QString &path);
     const QString getLastOpenDir();
@@ -252,6 +254,7 @@ private:
     QDockWidget *mPropertiesDock = nullptr;
     QDockWidget *mEasingDock = nullptr;
     EffectsPresetsPanel *mEffectsPresetsPanel = nullptr;
+    QuickEffectSearchDialog *mQuickEffectSearch = nullptr;
 
     // JS plugin system (Scripts menu + console dock)
     ScriptManager *mScriptManager = nullptr;

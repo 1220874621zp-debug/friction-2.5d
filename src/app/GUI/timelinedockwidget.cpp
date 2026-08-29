@@ -250,6 +250,40 @@ TimelineDockWidget::TimelineDockWidget(Document& document,
         }
     });
 
+    mSetInPointAct = new QAction(QIcon::fromTheme("go-first"),
+                                  tr("Set Layer In Point (Alt+[)"),
+                                  this);
+    mSetInPointAct->setToolTip(tr("Set Layer In Point (Alt+[)"));
+    mSetInPointAct->setData(mSetInPointAct->toolTip());
+    connect(mSetInPointAct, &QAction::triggered, this, [this]() {
+        const auto scene = *mDocument.fActiveScene;
+        if (!scene) { return; }
+        scene->setSelectedBoxesInPoint();
+        mDocument.actionFinished();
+    });
+
+    mSetOutPointAct = new QAction(QIcon::fromTheme("go-last"),
+                                   tr("Set Layer Out Point (Alt+])"),
+                                   this);
+    mSetOutPointAct->setToolTip(tr("Set Layer Out Point (Alt+])"));
+    mSetOutPointAct->setData(mSetOutPointAct->toolTip());
+    connect(mSetOutPointAct, &QAction::triggered, this, [this]() {
+        const auto scene = *mDocument.fActiveScene;
+        if (!scene) { return; }
+        scene->setSelectedBoxesOutPoint();
+        mDocument.actionFinished();
+    });
+
+    mSplitClipAct = new QAction(QIcon::fromTheme("cut"),
+                                tr("Split Clip (Ctrl+Shift+D)"),
+                                this);
+    mSplitClipAct->setToolTip(tr("Split Clip at Current Frame"));
+    mSplitClipAct->setData(mSplitClipAct->toolTip());
+    connect(mSplitClipAct, &QAction::triggered, this, [this]() {
+        splitClip();
+        mDocument.actionFinished();
+    });
+
     mToolBar = new QToolBar(this);
     mToolBar->setMovable(false);
 
@@ -274,6 +308,12 @@ TimelineDockWidget::TimelineDockWidget(Document& document,
     mToolBar->addAction(mNextKeyframeAct);
     mToolBar->addAction(mFrameFastForwardAct);
 
+    mToolBar->addSeparator();
+    mToolBar->addAction(mSetInPointAct);
+    mToolBar->addAction(mSetOutPointAct);
+    mToolBar->addAction(mSplitClipAct);
+    mToolBar->addSeparator();
+
     mRenderProgressAct = mToolBar->addWidget(mRenderProgress);
     mCurrentFrameSpinAct = mToolBar->addWidget(mCurrentFrameSpin);
 
@@ -293,6 +333,9 @@ TimelineDockWidget::TimelineDockWidget(Document& document,
     mMainWindow->cmdAddAction(mPrevKeyframeAct);
     mMainWindow->cmdAddAction(mNextKeyframeAct);
     mMainWindow->cmdAddAction(mFrameFastForwardAct);
+    mMainWindow->cmdAddAction(mSetInPointAct);
+    mMainWindow->cmdAddAction(mSetOutPointAct);
+    mMainWindow->cmdAddAction(mSplitClipAct);
     mMainWindow->cmdAddAction(mPlayFromBeginningButton);
     mMainWindow->cmdAddAction(mPlayButton);
     mMainWindow->cmdAddAction(mStopButton);

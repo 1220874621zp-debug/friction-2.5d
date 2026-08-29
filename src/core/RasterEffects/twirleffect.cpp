@@ -32,7 +32,7 @@
 TwirlEffect::TwirlEffect() :
     RasterEffect("twirl",
                  AppSupport::getRasterEffectHardwareSupport("Twirl",
-                                                            HardwareSupport::cpuOnly),
+                                                            HardwareSupport::gpuPreffered),
                  true,
                  RasterEffectType::TWIRL)
 {

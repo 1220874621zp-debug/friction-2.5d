@@ -33,7 +33,7 @@
 TintEffect::TintEffect() :
     RasterEffect("tint",
                  AppSupport::getRasterEffectHardwareSupport("Tint",
-                                                            HardwareSupport::cpuOnly),
+                                                            HardwareSupport::gpuPreffered),
                  true,
                  RasterEffectType::TINT)
 {

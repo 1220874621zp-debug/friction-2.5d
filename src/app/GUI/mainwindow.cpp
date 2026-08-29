@@ -67,6 +67,7 @@
 #include "timelinedockwidget.h"
 #include "easingpresetspanel.h"
 #include "effectspresetspanel.h"
+#include "quickeffectsearchdialog.h"
 #include "scriptmanager.h"
 #include "scriptconsole.h"
 #include "GUI/keysview.h"

@@ -112,7 +112,7 @@
     <message>
         <location filename="../../ui/dialogs/adjustscenedialog.cpp" line="86" />
         <source>Scene</source>
-        <translation>场景/合成</translation>
+        <translation>场景</translation>
     </message>
     <message>
         <location filename="../../ui/dialogs/adjustscenedialog.cpp" line="88" />
@@ -491,7 +491,7 @@
     <message>
         <location filename="../../core/Boxes/boundingbox.cpp" line="1030" />
         <source>Raster Effects</source>
-        <translation>栅格效果</translation>
+        <translation>光栅特效 (Raster Effects)</translation>
     </message>
     <message>
         <location filename="../../core/Boxes/boundingbox.cpp" line="1554" />
@@ -526,7 +526,7 @@
         <location filename="../../core/Boxes/boundingbox.cpp" line="1487" />
         <location filename="../../core/Boxes/boundingbox.cpp" line="1617" />
         <source>Blend Effects</source>
-        <translation>混合特效 (Blend Effects)</translation>
+        <translation>混合特效</translation>
     </message>
     <message>
         <location filename="../../core/Boxes/boundingbox.cpp" line="1538" />
@@ -563,63 +563,63 @@
         <translation>变换</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="407" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="483" />
         <source>Set layer label color</source>
         <translation>设置图层标签颜色</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="712" />
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="840" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="788" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="916" />
         <source>Parent link (click to pick, drag onto a layer row)</source>
         <translation>父级链接（单击选择父级，或拖到目标图层行）</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="626" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="702" />
         <source>Toggle 3D layer (2.5D billboard: X/Y rotation, Z depth)</source>
         <translation>3D 图层开关（2.5D：X/Y 旋转、Z 深度）</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="588" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="664" />
         <source>Solo (show only soloed layers/sounds)</source>
         <translation>独奏（只显示开了独奏的图层/声音）</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="607" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="683" />
         <source>Shy (hide this row when 'Hide Shy Layers' is enabled in Filters)</source>
         <translation>隐藏条目（在筛选菜单开启“隐藏 Shy 图层”后，此行从时间轴消失）</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="653" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="729" />
         <source>Toggle all effects on this layer</source>
         <translation>开关此图层的全部特效</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="692" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="768" />
         <source>Preserve underlying transparency (paint only where layers below are opaque)</source>
         <translation>保留底层透明度（只画在下方图层的不透明区域）</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="1573" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="1649" />
         <source>Merge into Track</source>
         <translation>合并到轨道</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="1604" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="1680" />
         <source>Detach from Track</source>
         <translation>从轨道分离</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="673" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="749" />
         <source>Motion blur on this layer</source>
         <translation>此图层的运动模糊开关</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="878" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="954" />
         <source>Track matte layer</source>
         <translation>轨道遮罩层</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="908" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="984" />
         <source>Track matte mode</source>
         <translation>轨道遮罩模式（点击切换）</translation>
     </message>
@@ -969,217 +969,241 @@
         <translation>路径基础效果</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="212" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="159" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="160" />
+        <source>Raster Effects</source>
+        <translation>光栅特效 (Raster Effects)</translation>
+    </message>
+    <message>
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="161" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="162" />
+        <source>Path Effects</source>
+        <translation>路径特效</translation>
+    </message>
+    <message>
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="163" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="164" />
+        <source>Blend Effects</source>
+        <translation>混合特效</translation>
+    </message>
+    <message>
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="165" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="166" />
+        <source>Transform Effects</source>
+        <translation>变换特效</translation>
+    </message>
+    <message>
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="288" />
         <source>Clear</source>
         <translation>清除</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="213" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="289" />
         <source>Src</source>
         <translation>源</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="214" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="290" />
         <source>Dst</source>
         <translation>目标</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="215" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="291" />
         <source>SrcOver</source>
         <translation>源覆盖</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="216" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="292" />
         <source>DstOver</source>
         <translation>目标覆盖</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="217" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="293" />
         <source>SrcIn</source>
         <translation>源内</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="218" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="294" />
         <source>DstIn</source>
         <translation>目标内</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="219" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="295" />
         <source>SrcOut</source>
         <translation>源外</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="220" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="296" />
         <source>DstOut</source>
         <translation>目标外</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="221" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="297" />
         <source>SrcATop</source>
         <translation>源顶部</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="222" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="298" />
         <source>DstATop</source>
         <translation>目标顶部</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="223" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="299" />
         <source>Xor</source>
         <translation>异或</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="224" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="300" />
         <source>Plus</source>
         <translation>相加</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="225" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="301" />
         <source>Modulate</source>
         <translation>调制</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="226" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="302" />
         <source>Screen</source>
         <translation>滤色</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="227" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="303" />
         <source>Overlay</source>
         <translation>叠加</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="228" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="304" />
         <source>Darken</source>
         <translation>变暗</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="229" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="305" />
         <source>Lighten</source>
         <translation>变亮</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="230" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="306" />
         <source>ColorDodge</source>
         <translation>颜色减淡</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="231" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="307" />
         <source>ColorBurn</source>
         <translation>颜色加深</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="232" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="308" />
         <source>HardLight</source>
         <translation>强光</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="233" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="309" />
         <source>SoftLight</source>
         <translation>柔光</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="234" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="310" />
         <source>Difference</source>
         <translation>差值</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="235" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="311" />
         <source>Exclusion</source>
         <translation>排除</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="236" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="312" />
         <source>Multiply</source>
         <translation>正片叠底</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="237" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="313" />
         <source>Hue</source>
         <translation>色相</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="238" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="314" />
         <source>Saturation</source>
         <translation>饱和度</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="239" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="315" />
         <source>Color</source>
         <translation>颜色</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="240" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="316" />
         <source>Luminosity</source>
         <translation>明度</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="727" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="803" />
         <source>Adjust GPU/CPU Processing</source>
         <translation>调整 GPU/CPU 处理</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="762" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="838" />
         <source>Promote to Layer</source>
         <translation>切换为隔离轨道（整轨预合成，启用轨道混合模式）</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="789" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="865" />
         <source>Reset to default value</source>
         <translation>重置为默认值</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="942" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="1018" />
         <source>Normal</source>
         <translation>正常</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="943" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="1019" />
         <source>Add</source>
         <translation>添加</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="943" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="1019" />
         <source>Remove</source>
         <translation>移除</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="943" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="1019" />
         <source>Remove reverse</source>
         <translation>反向移除</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="944" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="1020" />
         <source>Intersect</source>
         <translation>相交</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="944" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="1020" />
         <source>Exclude</source>
         <translation>排除</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="944" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="1020" />
         <source>Divide</source>
         <translation>分割</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="951" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="1027" />
         <source>Winding</source>
         <translation>非零环绕</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="951" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="1027" />
         <source>Even-odd</source>
         <translation>奇偶</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="1323" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="1399" />
         <source>Scaling issues</source>
         <translation>缩放问题</translation>
     </message>
     <message>
-        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="1324" />
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="1400" />
         <source>&lt;p&gt;Requested icon size &lt;b&gt;%1&lt;/b&gt; is not available, expect blurry icons and possible UI size issues. This is usually related to font scaling.&lt;/p&gt;&lt;p&gt;Disable &lt;b&gt;'HiDPI PassThrough'&lt;/b&gt; in preferences, then restart Friction.&lt;/p&gt;</source>
         <translation>&lt;p&gt;请求的图标尺寸 &lt;b&gt;%1&lt;/b&gt; 不可用，图标可能模糊，界面尺寸也可能出现问题。这通常与字体缩放有关。&lt;/p&gt;&lt;p&gt;请在首选项中禁用 &lt;b&gt;“HiDPI PassThrough”&lt;/b&gt;，然后重启 Friction。&lt;/p&gt;</translation>
     </message>
@@ -1205,7 +1229,7 @@
     <message>
         <location filename="../../core/Boxes/boxwithpatheffects.cpp" line="66" />
         <source>Path Effects</source>
-        <translation>路径特效 (Path Effects)</translation>
+        <translation>路径特效</translation>
     </message>
     <message>
         <location filename="../../core/Boxes/boxwithpatheffects.cpp" line="74" />
@@ -1678,39 +1702,91 @@
 <context>
     <name>EffectsPresetsPanel</name>
     <message>
-        <location filename="../GUI/effectspresetspanel.cpp" line="49" />
+        <location filename="../GUI/effectspresetspanel.cpp" line="59" />
         <source>Search Effects &amp; Presets...</source>
         <translation>搜索特效与预设 (中英文)...</translation>
     </message>
     <message>
-        <location filename="../GUI/effectspresetspanel.cpp" line="118" />
+        <location filename="../GUI/effectspresetspanel.cpp" line="87" />
+        <source>Import...</source>
+        <translation>导入特效...</translation>
+    </message>
+    <message>
+        <location filename="../GUI/effectspresetspanel.cpp" line="88" />
+        <source>Import custom GLSL shader effect (.frag / .json)</source>
+        <translation>导入自定义 GLSL 着色器特效 (.frag / .json)</translation>
+    </message>
+    <message>
+        <location filename="../GUI/effectspresetspanel.cpp" line="92" />
+        <source>Folder</source>
+        <translation>打开目录</translation>
+    </message>
+    <message>
+        <location filename="../GUI/effectspresetspanel.cpp" line="93" />
+        <source>Open custom effects &amp; shaders directory</source>
+        <translation>打开自定义特效与着色器文件夹</translation>
+    </message>
+    <message>
+        <location filename="../GUI/effectspresetspanel.cpp" line="97" />
+        <source>Refresh</source>
+        <translation>刷新列表</translation>
+    </message>
+    <message>
+        <location filename="../GUI/effectspresetspanel.cpp" line="98" />
+        <source>Reload shader effects and presets</source>
+        <translation>重新加载自定义着色器特效与预设</translation>
+    </message>
+    <message>
+        <location filename="../GUI/effectspresetspanel.cpp" line="153" />
         <source>General</source>
         <translation>通用</translation>
     </message>
     <message>
-        <location filename="../GUI/effectspresetspanel.cpp" line="127" />
+        <location filename="../GUI/effectspresetspanel.cpp" line="162" />
         <source>Custom</source>
-        <translation>自定义特效 (Custom)</translation>
+        <translation>自定义</translation>
     </message>
     <message>
-        <location filename="../GUI/effectspresetspanel.cpp" line="136" />
+        <location filename="../GUI/effectspresetspanel.cpp" line="171" />
         <source>Shader</source>
-        <translation>着色器特效 (Shader)</translation>
+        <translation>着色器</translation>
     </message>
     <message>
-        <location filename="../GUI/effectspresetspanel.cpp" line="146" />
+        <location filename="../GUI/effectspresetspanel.cpp" line="181" />
         <source>Path Effects</source>
-        <translation>路径特效 (Path Effects)</translation>
+        <translation>路径特效</translation>
     </message>
     <message>
-        <location filename="../GUI/effectspresetspanel.cpp" line="155" />
+        <location filename="../GUI/effectspresetspanel.cpp" line="190" />
         <source>Blend Effects</source>
-        <translation>混合特效 (Blend Effects)</translation>
+        <translation>混合特效</translation>
     </message>
     <message>
-        <location filename="../GUI/effectspresetspanel.cpp" line="164" />
+        <location filename="../GUI/effectspresetspanel.cpp" line="199" />
         <source>Transform Effects</source>
-        <translation>变换特效 (Transform Effects)</translation>
+        <translation>变换特效</translation>
+    </message>
+    <message>
+        <location filename="../GUI/effectspresetspanel.cpp" line="257" />
+        <source>Import Custom GLSL Shader Effect</source>
+        <translation>导入自定义 GLSL 着色器特效</translation>
+    </message>
+    <message>
+        <location filename="../GUI/effectspresetspanel.cpp" line="259" />
+        <source>Shader Effects (*.frag *.json *.glsl);;All Files (*)</source>
+        <translation>着色器特效文件 (*.frag *.json *.glsl);;所有文件 (*)</translation>
+    </message>
+    <message>
+        <location filename="../GUI/effectspresetspanel.cpp" line="283" />
+        <source>Import Complete</source>
+        <translation>导入完成</translation>
+    </message>
+    <message>
+        <location filename="../GUI/effectspresetspanel.cpp" line="284" />
+        <source>Successfully imported %1 shader effect(s).
+Saved to: %2</source>
+        <translation>已成功导入 %1 个着色器特效
+保存至：%2</translation>
     </message>
 </context>
 <context>
@@ -1760,7 +1836,7 @@
         <location filename="../../ui/dialogs/exportsvgdialog.cpp" line="157" />
         <location filename="../../ui/dialogs/exportsvgdialog.cpp" line="199" />
         <source>Scene</source>
-        <translation>场景/合成</translation>
+        <translation>场景</translation>
     </message>
     <message>
         <location filename="../../ui/dialogs/exportsvgdialog.cpp" line="158" />
@@ -2315,7 +2391,7 @@ you can create a new one by clicking on the '+' button.</source>
     <message>
         <location filename="../../ui/widgets/alignwidget.cpp" line="94" />
         <source>Scene</source>
-        <translation>场景/合成</translation>
+        <translation>场景</translation>
     </message>
     <message>
         <location filename="../../ui/widgets/alignwidget.cpp" line="95" />
@@ -3408,71 +3484,71 @@ The scaling factor will then round up for .75 and above.</source>
     </message>
     <message>
         <source>Update Layer from Source PSD</source>
-        <translation>从源 PSD 更新当前图层</translation>
+        <translation type="vanished">从源 PSD 更新当前图层</translation>
     </message>
     <message>
         <source>Sync All Layers from Source PSD</source>
-        <translation>从源 PSD 同步所有图层</translation>
+        <translation type="vanished">从源 PSD 同步所有图层</translation>
     </message>
     <message>
         <source>PSD Update</source>
-        <translation>PSD 图层更新</translation>
+        <translation type="vanished">PSD 图层更新</translation>
     </message>
     <message>
         <source>PSD Sync</source>
-        <translation>PSD 整体同步</translation>
+        <translation type="vanished">PSD 整体同步</translation>
     </message>
     <message>
         <source>New Layers in Source PSD</source>
-        <translation>源 PSD 中发现新图层</translation>
+        <translation type="vanished">源 PSD 中发现新图层</translation>
     </message>
     <message>
         <source>The source PSD contains new layers.
 Select the layers you want to import:</source>
-        <translation>源 PSD 包含以下新图层，
+        <translation type="vanished">源 PSD 包含以下新图层，
 请选择您希望导入的图层：</translation>
     </message>
     <message>
         <source>Layer no longer exists in the source PSD.
 It is kept (marked as missing) with all animation data.</source>
-        <translation>该图层在源 PSD 中已不存在。
+        <translation type="vanished">该图层在源 PSD 中已不存在。
 已保留该图层（标记为缺失）及其全部动画数据。</translation>
     </message>
     <message>
         <source>Layer updated from source PSD.</source>
-        <translation>图层已从源 PSD 成功更新。</translation>
+        <translation type="vanished">图层已从源 PSD 成功更新。</translation>
     </message>
     <message>
         <source>Layer pixels unchanged.</source>
-        <translation>图层像素未发生变化。</translation>
+        <translation type="vanished">图层像素未发生变化。</translation>
     </message>
     <message>
         <source>Source PSD is missing:
 %1</source>
-        <translation>源 PSD 文件不存在：
+        <translation type="vanished">源 PSD 文件不存在：
 %1</translation>
     </message>
     <message>
         <source>Failed to parse source PSD:
 %1</source>
-        <translation>解析源 PSD 失败：
+        <translation type="vanished">解析源 PSD 失败：
 %1</translation>
     </message>
     <message>
         <source>Failed to write package:
 %1</source>
-        <translation>写入包失败：
+        <translation type="vanished">写入包失败：
 %1</translation>
     </message>
     <message>
         <source>All layers are up to date.</source>
-        <translation>所有图层均已是最新状态。</translation>
+        <translation type="vanished">所有图层均已是最新状态。</translation>
     </message>
     <message>
         <source>Updated layers: %1
 Missing layers: %2
 Added layers: %3</source>
-        <translation>已更新图层：%1
+        <translation type="vanished">已更新图层：%1
 已缺失图层：%2
 新增图层：%3</translation>
     </message>
@@ -3591,101 +3667,111 @@ Added layers: %3</source>
         <translation>无法创建目录：%1</translation>
     </message>
     <message>
-        <location filename="../GUI/effectactions.cpp" line="88" />
+        <location filename="../GUI/effectactions.cpp" line="96" />
         <source>Path Effects</source>
-        <translation>路径特效 (Path Effects)</translation>
+        <translation>路径特效</translation>
     </message>
     <message>
-        <location filename="../GUI/effectactions.cpp" line="89" />
+        <location filename="../GUI/effectactions.cpp" line="97" />
         <source>Fill Effects</source>
         <translation>填充效果</translation>
     </message>
     <message>
-        <location filename="../GUI/effectactions.cpp" line="90" />
+        <location filename="../GUI/effectactions.cpp" line="98" />
         <source>Outline Base Effects</source>
         <translation>描边基础效果</translation>
     </message>
     <message>
-        <location filename="../GUI/effectactions.cpp" line="91" />
+        <location filename="../GUI/effectactions.cpp" line="99" />
         <source>Outline Effects</source>
         <translation>描边效果</translation>
     </message>
     <message>
-        <location filename="../GUI/effectactions.cpp" line="51" />
-        <location filename="../GUI/effectactions.cpp" line="64" />
-        <location filename="../GUI/effectactions.cpp" line="77" />
-        <location filename="../GUI/effectactions.cpp" line="97" />
+        <location filename="../GUI/effectactions.cpp" line="59" />
+        <location filename="../GUI/effectactions.cpp" line="72" />
+        <location filename="../GUI/effectactions.cpp" line="85" />
         <location filename="../GUI/effectactions.cpp" line="105" />
         <location filename="../GUI/effectactions.cpp" line="113" />
         <location filename="../GUI/effectactions.cpp" line="121" />
-        <location filename="../GUI/effectactions.cpp" line="138" />
-        <location filename="../GUI/effectactions.cpp" line="154" />
+        <location filename="../GUI/effectactions.cpp" line="129" />
+        <location filename="../GUI/effectactions.cpp" line="146" />
+        <location filename="../GUI/effectactions.cpp" line="162" />
         <source>Add </source>
         <translation>添加 </translation>
     </message>
     <message>
         <location filename="../GUI/effectactions.cpp" line="37" />
+        <source>Quick Search Effects...</source>
+        <translation>快速搜索特效 (Ctrl+Space)...</translation>
+    </message>
+    <message>
+        <location filename="../GUI/effectactions.cpp" line="38" />
+        <source>Quick Search Effects (AE: FX Console)</source>
+        <translation>快速搜索特效 (AE: FX Console)</translation>
+    </message>
+    <message>
+        <location filename="../GUI/effectactions.cpp" line="45" />
         <source>General</source>
         <translation>通用</translation>
     </message>
     <message>
-        <location filename="../GUI/effectactions.cpp" line="62" />
+        <location filename="../GUI/effectactions.cpp" line="70" />
         <source>Custom</source>
-        <translation>自定义特效 (Custom)</translation>
+        <translation>自定义</translation>
     </message>
     <message>
-        <location filename="../GUI/effectactions.cpp" line="75" />
+        <location filename="../GUI/effectactions.cpp" line="83" />
         <source>Shader</source>
-        <translation>着色器特效 (Shader)</translation>
+        <translation>着色器</translation>
     </message>
     <message>
-        <location filename="../GUI/effectactions.cpp" line="97" />
+        <location filename="../GUI/effectactions.cpp" line="105" />
         <source> (Path Effect)</source>
         <translation>（路径效果）</translation>
     </message>
     <message>
-        <location filename="../GUI/effectactions.cpp" line="105" />
+        <location filename="../GUI/effectactions.cpp" line="113" />
         <source> (Fill Effect)</source>
         <translation>（填充效果）</translation>
     </message>
     <message>
-        <location filename="../GUI/effectactions.cpp" line="113" />
+        <location filename="../GUI/effectactions.cpp" line="121" />
         <source> (Outline Base Effect)</source>
         <translation>（描边基础效果）</translation>
     </message>
     <message>
-        <location filename="../GUI/effectactions.cpp" line="121" />
+        <location filename="../GUI/effectactions.cpp" line="129" />
         <source> (Outline Effect)</source>
         <translation>（描边效果）</translation>
     </message>
     <message>
-        <location filename="../GUI/effectactions.cpp" line="149" />
+        <location filename="../GUI/effectactions.cpp" line="157" />
         <source>Transform Effects</source>
-        <translation>变换特效 (Transform Effects)</translation>
+        <translation>变换特效</translation>
     </message>
     <message>
-        <location filename="../GUI/effectactions.cpp" line="154" />
+        <location filename="../GUI/effectactions.cpp" line="162" />
         <source> (Transform Effect)</source>
         <translation>（变换效果）</translation>
     </message>
     <message>
-        <location filename="../GUI/effectactions.cpp" line="133" />
+        <location filename="../GUI/effectactions.cpp" line="141" />
         <source>Blend Effects</source>
-        <translation>混合特效 (Blend Effects)</translation>
+        <translation>混合特效</translation>
     </message>
     <message>
-        <location filename="../GUI/effectactions.cpp" line="138" />
+        <location filename="../GUI/effectactions.cpp" line="146" />
         <source> (Blend Effect)</source>
         <translation>（混合效果）</translation>
     </message>
     <message>
         <source>Raster Effects</source>
-        <translation type="vanished">栅格效果</translation>
+        <translation>光栅特效 (Raster Effects)</translation>
     </message>
     <message>
-        <location filename="../GUI/effectactions.cpp" line="51" />
-        <location filename="../GUI/effectactions.cpp" line="64" />
-        <location filename="../GUI/effectactions.cpp" line="77" />
+        <location filename="../GUI/effectactions.cpp" line="59" />
+        <location filename="../GUI/effectactions.cpp" line="72" />
+        <location filename="../GUI/effectactions.cpp" line="85" />
         <source> (Raster Effect)</source>
         <translation>（栅格效果）</translation>
     </message>
@@ -3840,7 +3926,7 @@ Added layers: %3</source>
     <message>
         <location filename="../GUI/extraactions.cpp" line="170" />
         <source>Scene</source>
-        <translation>场景/合成</translation>
+        <translation>场景</translation>
     </message>
     <message>
         <location filename="../GUI/extraactions.cpp" line="171" />
@@ -3928,137 +4014,137 @@ Added layers: %3</source>
         <translation>已锁定</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="436" />
+        <location filename="../GUI/mainwindow.cpp" line="437" />
         <source>Auto Save canceled</source>
         <translation>自动保存已取消</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="437" />
+        <location filename="../GUI/mainwindow.cpp" line="438" />
         <source>Auto Save is not allowed to break project format compatibility (%1 vs. %2). Please save the project to confirm project format changes.</source>
         <translation>自动保存不允许破坏项目格式兼容性（%1 对 %2）。请手动保存项目以确认项目格式更改。</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="456" />
+        <location filename="../GUI/mainwindow.cpp" line="457" />
         <source>About</source>
         <translation>关于</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="473" />
-        <location filename="../GUI/mainwindow.cpp" line="1534" />
+        <location filename="../GUI/mainwindow.cpp" line="474" />
+        <location filename="../GUI/mainwindow.cpp" line="1535" />
         <source>Timeline</source>
         <translation>时间轴</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="517" />
+        <location filename="../GUI/mainwindow.cpp" line="518" />
         <source>Renderer</source>
         <translation>渲染器</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="539" />
-        <location filename="../GUI/mainwindow.cpp" line="1497" />
+        <location filename="../GUI/mainwindow.cpp" line="540" />
+        <location filename="../GUI/mainwindow.cpp" line="1498" />
         <source>Queue</source>
         <translation>队列</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="551" />
+        <location filename="../GUI/mainwindow.cpp" line="552" />
         <source>Restore default fill and stroke?</source>
         <translation>恢复默认填充和描边？</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="552" />
+        <location filename="../GUI/mainwindow.cpp" line="553" />
         <source>Are you sure you want to restore fill and stroke defaults?</source>
         <translation>确定要恢复默认填充和描边设置吗？</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="566" />
+        <location filename="../GUI/mainwindow.cpp" line="567" />
         <source>Restore default user interface?</source>
         <translation>恢复默认用户界面？</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="567" />
+        <location filename="../GUI/mainwindow.cpp" line="568" />
         <source>Are you sure you want to restore default user interface? You must restart Friction to apply.</source>
         <translation>确定要恢复默认用户界面吗？需重启 Friction 后生效。</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="576" />
+        <location filename="../GUI/mainwindow.cpp" line="577" />
         <source>Run Quick Setup on startup?</source>
         <translation>启动时运行快速设置？</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="577" />
+        <location filename="../GUI/mainwindow.cpp" line="578" />
         <source>Are you sure you want to run Quick Setup the next time you start Friction?</source>
         <translation>确定下次启动 Friction 时运行快速设置吗？</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="789" />
+        <location filename="../GUI/mainwindow.cpp" line="790" />
         <source>Toolbar</source>
         <translation>工具栏</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="813" />
+        <location filename="../GUI/mainwindow.cpp" line="814" />
         <source>Layout</source>
         <translation>布局</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="827" />
+        <location filename="../GUI/mainwindow.cpp" line="828" />
         <source>Changed audio output: %1</source>
         <translation>已更改音频输出：%1</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="948" />
+        <location filename="../GUI/mainwindow.cpp" line="949" />
         <source>Save</source>
         <comment>AskSaveDialog_Title</comment>
         <translation>保存</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="951" />
-        <location filename="../GUI/mainwindow.cpp" line="1613" />
+        <location filename="../GUI/mainwindow.cpp" line="952" />
+        <location filename="../GUI/mainwindow.cpp" line="1614" />
         <source>Untitled</source>
         <translation>未命名</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="953" />
+        <location filename="../GUI/mainwindow.cpp" line="954" />
         <source>Save changes to document "%1"?</source>
         <comment>AskSaveDialog_Question</comment>
         <translation>保存对文档“%1”的更改吗？</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="956" />
+        <location filename="../GUI/mainwindow.cpp" line="957" />
         <source>Close without saving</source>
         <comment>AskSaveDialog_Button</comment>
         <translation>不保存并关闭</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="958" />
+        <location filename="../GUI/mainwindow.cpp" line="959" />
         <source>Cancel</source>
         <comment>AskSaveDialog_Button</comment>
         <translation>取消</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="959" />
+        <location filename="../GUI/mainwindow.cpp" line="960" />
         <source>Save</source>
         <comment>AskSaveDialog_Button</comment>
         <translation>保存</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="1012" />
+        <location filename="../GUI/mainwindow.cpp" line="1013" />
         <location filename="../GUI/menu.cpp" line="50" />
         <source>New Project</source>
         <translation>新建项目</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="1013" />
+        <location filename="../GUI/mainwindow.cpp" line="1014" />
         <source>Are you sure you want to create a new project?</source>
         <translation>确定要新建项目吗？</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="1483" />
-        <location filename="../GUI/mainwindow.cpp" line="1538" />
+        <location filename="../GUI/mainwindow.cpp" line="1484" />
+        <location filename="../GUI/mainwindow.cpp" line="1539" />
         <source>Properties</source>
         <translation>属性</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="1493" />
+        <location filename="../GUI/mainwindow.cpp" line="1494" />
         <source>Assets</source>
         <translation>资产</translation>
     </message>
@@ -4067,44 +4153,44 @@ Added layers: %3</source>
         <translation type="vanished">查看器</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="1536" />
+        <location filename="../GUI/mainwindow.cpp" line="1537" />
         <source>Fill and Stroke</source>
         <translation>填充和描边</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="1548" />
+        <location filename="../GUI/mainwindow.cpp" line="1549" />
         <source>Easing Presets</source>
         <translation>缓动预设 (Easing Presets)</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="1616" />
+        <location filename="../GUI/mainwindow.cpp" line="1617" />
         <source>Save *</source>
         <translation>保存 *</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="1616" />
+        <location filename="../GUI/mainwindow.cpp" line="1617" />
         <source>Save</source>
         <translation>保存</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="1625" />
+        <location filename="../GUI/mainwindow.cpp" line="1626" />
         <source>Open File</source>
         <comment>OpenDialog_Title</comment>
         <translation>打开文件</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="1626" />
+        <location filename="../GUI/mainwindow.cpp" line="1627" />
         <source>Friction Files %1</source>
         <comment>OpenDialog_FileType</comment>
         <translation>Friction 文件 %1</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="1664" />
+        <location filename="../GUI/mainwindow.cpp" line="1665" />
         <source>Project version</source>
         <translation>项目版本</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="1665" />
+        <location filename="../GUI/mainwindow.cpp" line="1666" />
         <source>Saving this project file will change the project format from version %1 to version %2. This breaks compatibility with older versions of Friction.
 
 Are you sure you want to save this project file?</source>
@@ -4113,54 +4199,54 @@ Are you sure you want to save this project file?</source>
 确定要保存此项目文件吗？</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="1707" />
+        <location filename="../GUI/mainwindow.cpp" line="1708" />
         <source>Save File</source>
         <comment>SaveDialog_Title</comment>
         <translation>保存文件</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="1708" />
+        <location filename="../GUI/mainwindow.cpp" line="1709" />
         <source>Friction Files %1</source>
         <comment>SaveDialog_FileType</comment>
         <translation>Friction 文件 %1</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="1818" />
+        <location filename="../GUI/mainwindow.cpp" line="1819" />
         <source>Import File(s)</source>
         <comment>ImportDialog_Title</comment>
         <translation>导入文件</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="1819" />
+        <location filename="../GUI/mainwindow.cpp" line="1820" />
         <source>Files %1</source>
         <comment>ImportDialog_FileTypes</comment>
         <translation>文件 %1</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="1846" />
+        <location filename="../GUI/mainwindow.cpp" line="1847" />
         <source>Link File</source>
         <comment>LinkDialog_Title</comment>
         <translation>链接文件</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="1847" />
+        <location filename="../GUI/mainwindow.cpp" line="1848" />
         <source>Files %1</source>
         <comment>LinkDialog_FileType</comment>
         <translation>文件 %1</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="1870" />
+        <location filename="../GUI/mainwindow.cpp" line="1871" />
         <source>Import Image Sequence</source>
         <comment>ImportSequenceDialog_Title</comment>
         <translation>导入图像序列</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="1882" />
+        <location filename="../GUI/mainwindow.cpp" line="1883" />
         <source>Confirm revert</source>
         <translation>确认还原</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="1883" />
+        <location filename="../GUI/mainwindow.cpp" line="1884" />
         <source>Are you sure you want to revert current project?&lt;p&gt;&lt;b&gt;Any changes will be lost.&lt;/b&gt;&lt;/p&gt;</source>
         <translation>确定要还原当前项目吗？&lt;p&gt;&lt;b&gt;所有更改将丢失。&lt;/b&gt;&lt;/p&gt;</translation>
     </message>
@@ -4440,42 +4526,42 @@ Are you sure you want to save this project file?</source>
         <translation>工作区</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="1356" />
+        <location filename="../GUI/mainwindow.cpp" line="1357" />
         <source>Reset to Default Layout</source>
         <translation>重置为默认布局</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="1358" />
+        <location filename="../GUI/mainwindow.cpp" line="1359" />
         <source>Save Current Workspace...</source>
         <translation>保存当前工作区...</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="1369" />
+        <location filename="../GUI/mainwindow.cpp" line="1370" />
         <source>Delete Workspace</source>
         <translation>删除工作区</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="1378" />
+        <location filename="../GUI/mainwindow.cpp" line="1379" />
         <source>Panels</source>
         <translation>面板</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="1271" />
+        <location filename="../GUI/mainwindow.cpp" line="1272" />
         <source>Save Workspace</source>
         <translation>保存工作区</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="1272" />
+        <location filename="../GUI/mainwindow.cpp" line="1273" />
         <source>Workspace name:</source>
         <translation>工作区名称：</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="1282" />
+        <location filename="../GUI/mainwindow.cpp" line="1283" />
         <source>Overwrite Workspace</source>
         <translation>覆盖工作区</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="1283" />
+        <location filename="../GUI/mainwindow.cpp" line="1284" />
         <source>Workspace '%1' already exists. Overwrite it?</source>
         <translation>工作区“%1”已存在，是否覆盖？</translation>
     </message>
@@ -4633,10 +4719,10 @@ Are you sure you want to save this project file?</source>
         <translation>分离</translation>
     </message>
     <message>
-        <location filename="../GUI/mainwindow.cpp" line="1489" />
+        <location filename="../GUI/mainwindow.cpp" line="1490" />
         <location filename="../GUI/menu.cpp" line="508" />
         <source>Effects</source>
-        <translation>效果</translation>
+        <translation>特效</translation>
     </message>
     <message>
         <location filename="../GUI/menu.cpp" line="514" />
@@ -4747,13 +4833,13 @@ Are you sure you want to save this project file?</source>
         <location filename="../GUI/menu.cpp" line="685" />
         <source>Raster Effects</source>
         <comment>MenuBar_View</comment>
-        <translation>栅格效果</translation>
+        <translation>光栅特效 (Raster Effects)</translation>
     </message>
     <message>
         <location filename="../GUI/menu.cpp" line="699" />
         <source>Path Effects</source>
         <comment>MenuBar_View</comment>
-        <translation>路径特效 (Path Effects)</translation>
+        <translation>路径特效</translation>
     </message>
     <message>
         <location filename="../GUI/menu.cpp" line="707" />
@@ -4856,7 +4942,7 @@ Are you sure you want to save this project file?</source>
         <location filename="../GUI/menu.cpp" line="895" />
         <source>Scene</source>
         <comment>MenuBar</comment>
-        <translation>场景/合成</translation>
+        <translation>场景</translation>
     </message>
     <message>
         <location filename="../GUI/menu.cpp" line="898" />
@@ -4913,71 +4999,58 @@ Are you sure you want to save this project file?</source>
         <translation>对象</translation>
     </message>
     <message>
-        <location filename="../../skia/tools/mdbviz/mainwindow.cpp" line="71" />
         <source>MDB Viz</source>
-        <translation>MDB 可视化</translation>
+        <translation type="vanished">MDB 可视化</translation>
     </message>
     <message>
-        <location filename="../../skia/tools/mdbviz/mainwindow.cpp" line="72" />
         <source>Cannot read file %1:
 %2.</source>
-        <translation>无法读取文件 %1：
+        <translation type="vanished">无法读取文件 %1：
 %2。</translation>
     </message>
     <message>
-        <location filename="../../skia/tools/mdbviz/mainwindow.cpp" line="106" />
         <source>&amp;File</source>
-        <translation>文件(&amp;F)</translation>
+        <translation type="vanished">文件(&amp;F)</translation>
     </message>
     <message>
-        <location filename="../../skia/tools/mdbviz/mainwindow.cpp" line="107" />
         <source>File</source>
         <translation>文件</translation>
     </message>
     <message>
-        <location filename="../../skia/tools/mdbviz/mainwindow.cpp" line="110" />
         <source>&amp;Open...</source>
-        <translation>打开(&amp;O)...</translation>
+        <translation type="vanished">打开(&amp;O)...</translation>
     </message>
     <message>
-        <location filename="../../skia/tools/mdbviz/mainwindow.cpp" line="112" />
         <source>Open an existing file</source>
-        <translation>打开已有工程文件</translation>
+        <translation type="vanished">打开已有工程文件</translation>
     </message>
     <message>
-        <location filename="../../skia/tools/mdbviz/mainwindow.cpp" line="120" />
         <source>E&amp;xit</source>
-        <translation>退出(&amp;X)</translation>
+        <translation type="vanished">退出(&amp;X)</translation>
     </message>
     <message>
-        <location filename="../../skia/tools/mdbviz/mainwindow.cpp" line="122" />
         <source>Exit the application</source>
-        <translation>退出应用程序</translation>
+        <translation type="vanished">退出应用程序</translation>
     </message>
     <message>
-        <location filename="../../skia/tools/mdbviz/mainwindow.cpp" line="125" />
         <source>&amp;View</source>
-        <translation>视图(&amp;V)</translation>
+        <translation type="vanished">视图(&amp;V)</translation>
     </message>
     <message>
-        <location filename="../../skia/tools/mdbviz/mainwindow.cpp" line="130" />
         <source>&amp;Help</source>
-        <translation>帮助(&amp;H)</translation>
+        <translation type="vanished">帮助(&amp;H)</translation>
     </message>
     <message>
-        <location filename="../../skia/tools/mdbviz/mainwindow.cpp" line="132" />
         <source>&amp;About</source>
-        <translation>关于(&amp;A)</translation>
+        <translation type="vanished">关于(&amp;A)</translation>
     </message>
     <message>
-        <location filename="../../skia/tools/mdbviz/mainwindow.cpp" line="133" />
         <source>Show the application's About box</source>
-        <translation>显示关于对话框</translation>
+        <translation type="vanished">显示关于对话框</translation>
     </message>
     <message>
-        <location filename="../../skia/tools/mdbviz/mainwindow.cpp" line="143" />
         <source>Ready</source>
-        <translation>就绪</translation>
+        <translation type="vanished">就绪</translation>
     </message>
 </context>
 <context>
@@ -5440,7 +5513,7 @@ Are you sure you want to save this project file?</source>
     <message>
         <location filename="../../ui/widgets/performancesettingswidget.cpp" line="257" />
         <source>Raster Effects</source>
-        <translation>栅格效果</translation>
+        <translation>光栅特效 (Raster Effects)</translation>
     </message>
     <message>
         <location filename="../../ui/widgets/performancesettingswidget.cpp" line="267" />
@@ -5539,7 +5612,7 @@ Are you sure you want to save this project file?</source>
     <message>
         <location filename="../GUI/Settings/pluginssettingswidget.cpp" line="87" />
         <source>Shader</source>
-        <translation>着色器特效 (Shader)</translation>
+        <translation>着色器</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/pluginssettingswidget.cpp" line="87" />
@@ -5771,7 +5844,7 @@ Added layers: %3</source>
         <location filename="../../core/Boxes/patheffectsmenu.cpp" line="67" />
         <location filename="../../core/Boxes/patheffectsmenu.cpp" line="70" />
         <source>Path Effects</source>
-        <translation>路径特效 (Path Effects)</translation>
+        <translation>路径特效</translation>
     </message>
     <message>
         <location filename="../../core/Boxes/patheffectsmenu.cpp" line="75" />
@@ -5798,51 +5871,59 @@ Added layers: %3</source>
         <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="43" />
         <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="45" />
         <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="47" />
+        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="49" />
         <source>Blur</source>
         <translation>高斯模糊 (Blur)</translation>
     </message>
     <message>
-        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="49" />
+        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="51" />
         <source>Shadow</source>
         <translation>阴影 (Shadow)</translation>
     </message>
     <message>
-        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="50" />
+        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="54" />
         <source>Motion Blur</source>
         <translation>运动模糊 (Motion Blur)</translation>
     </message>
     <message>
-        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="51" />
+        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="55" />
         <source>Brightness-Contrast</source>
         <translation>亮度与对比度 (Brightness-Contrast)</translation>
     </message>
     <message>
-        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="53" />
+        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="57" />
         <source>Colorize</source>
         <translation>颜色替换 (Colorize)</translation>
     </message>
     <message>
-        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="89" />
+        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="99" />
         <source>Wipe</source>
         <translation>线性擦除 (Wipe)</translation>
     </message>
     <message>
-        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="91" />
+        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="101" />
+        <source>Stripe</source>
+        <translation>条纹百叶窗 (Stripe)</translation>
+    </message>
+    <message>
+        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="103" />
         <source>Noise Fade</source>
         <translation>噪波消隐 (Noise Fade)</translation>
     </message>
     <message>
-        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="51" />
-        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="53" />
         <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="55" />
         <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="57" />
         <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="59" />
+        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="61" />
+        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="63" />
+        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="65" />
         <source>Color</source>
         <translation>颜色</translation>
     </message>
     <message>
-        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="89" />
-        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="91" />
+        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="99" />
+        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="101" />
+        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="103" />
         <source>Transitions</source>
         <translation>转场过渡 (Transitions)</translation>
     </message>
@@ -5857,116 +5938,144 @@ Added layers: %3</source>
         <translation>径向模糊 (Radial Blur)</translation>
     </message>
     <message>
-        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="55" />
+        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="49" />
+        <source>Zoom Blur</source>
+        <translation>放射缩放模糊 (Zoom Blur)</translation>
+    </message>
+    <message>
+        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="52" />
+        <source>Drop Shadow</source>
+        <translation>柔和投影 (Drop Shadow)</translation>
+    </message>
+    <message>
+        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="59" />
+        <source>Color Grading</source>
+        <translation>专业调色 (Color Grading)</translation>
+    </message>
+    <message>
+        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="61" />
         <source>Invert</source>
         <translation>反色闪白 (Invert)</translation>
     </message>
     <message>
-        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="57" />
+        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="63" />
         <source>Tint</source>
         <translation>双色调色 (Tint)</translation>
     </message>
     <message>
-        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="61" />
+        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="67" />
         <source>Glow</source>
         <translation>辉光发光 (Glow)</translation>
     </message>
     <message>
-        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="63" />
+        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="69" />
         <source>Chromatic Aberration</source>
         <translation>RGB色差分离 (Chromatic Aberration)</translation>
     </message>
     <message>
-        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="65" />
+        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="71" />
         <source>Wave Warp</source>
         <translation>波浪扭曲 (Wave Warp)</translation>
     </message>
     <message>
-        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="67" />
+        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="73" />
         <source>Mirror</source>
         <translation>镜像对称 (Mirror)</translation>
     </message>
     <message>
-        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="71" />
+        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="77" />
+        <source>Shake</source>
+        <translation>画面震动 (Shake)</translation>
+    </message>
+    <message>
+        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="79" />
         <source>Vignette</source>
         <translation>暗角羽化 (Vignette)</translation>
     </message>
     <message>
-        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="73" />
+        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="81" />
         <source>Letterbox</source>
         <translation>电影遮幅黑边 (Letterbox)</translation>
     </message>
     <message>
-        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="75" />
+        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="83" />
         <source>Scanlines</source>
         <translation>CRT扫描线条纹 (Scanlines)</translation>
     </message>
     <message>
-        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="77" />
+        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="85" />
         <source>Edge Detect</source>
         <translation>边缘检测 (Edge Detect)</translation>
     </message>
     <message>
-        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="79" />
+        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="87" />
         <source>Pixelate</source>
         <translation>像素化马赛克 (Pixelate)</translation>
     </message>
     <message>
-        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="81" />
+        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="89" />
         <source>Noise</source>
         <translation>胶片颗粒噪点 (Noise)</translation>
     </message>
     <message>
-        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="87" />
+        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="95" />
+        <source>Motion Tile</source>
+        <translation>运动平铺 (Motion Tile)</translation>
+    </message>
+    <message>
+        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="97" />
         <source>Rain</source>
         <translation>程序化雨水 (Rain)</translation>
     </message>
     <message>
-        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="61" />
+        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="52" />
+        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="67" />
         <source>Light</source>
         <translation>光效 (Light)</translation>
     </message>
     <message>
-        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="63" />
-        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="65" />
-        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="67" />
         <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="69" />
-        <source>Distort</source>
-        <translation>扭曲变形 (Distort)</translation>
-    </message>
-    <message>
         <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="71" />
         <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="73" />
         <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="75" />
         <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="77" />
+        <source>Distort</source>
+        <translation>扭曲变形 (Distort)</translation>
+    </message>
+    <message>
         <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="79" />
         <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="81" />
         <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="83" />
         <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="85" />
+        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="87" />
+        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="89" />
+        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="91" />
+        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="93" />
+        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="95" />
         <source>Stylize</source>
         <translation>风格化 (Stylize)</translation>
     </message>
     <message>
-        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="87" />
+        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="97" />
         <source>Simulation</source>
         <translation>模拟 (Simulation)</translation>
     </message>
     <message>
         <source>Effects &amp; Presets</source>
-        <translation>特效与预设 (Effects &amp; Presets)</translation>
+        <translation type="vanished">特效与预设 (Effects &amp; Presets)</translation>
     </message>
     <message>
-        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="83" />
+        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="91" />
         <source>Glitch</source>
         <translation>故障艺术错位 (Glitch)</translation>
     </message>
     <message>
-        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="59" />
+        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="65" />
         <source>Posterize</source>
         <translation>色调分离 (Posterize)</translation>
     </message>
     <message>
-        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="69" />
+        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="75" />
         <source>Twirl</source>
         <translation>旋转扭曲 (Twirl)</translation>
     </message>
@@ -5976,13 +6085,13 @@ Added layers: %3</source>
         <translation>通道模糊 (Channel Blur)</translation>
     </message>
     <message>
-        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="85" />
+        <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="93" />
         <source>Halftone</source>
         <translation>半色调网点 (Halftone)</translation>
     </message>
     <message>
         <source>Search Effects &amp; Presets...</source>
-        <translation>搜索特效与预设 (中英文)...</translation>
+        <translation type="vanished">搜索特效与预设 (中英文)...</translation>
     </message>
     <message>
         <location filename="../main.cpp" line="401" />
@@ -6390,6 +6499,44 @@ Select the layers you want to import:</source>
     </message>
 </context>
 <context>
+    <name>QuickEffectSearchDialog</name>
+    <message>
+        <location filename="../GUI/quickeffectsearchdialog.cpp" line="111" />
+        <source>Search Effects (Ctrl+Space)...</source>
+        <translation>搜索特效与预设 (Ctrl+Space)...</translation>
+    </message>
+    <message>
+        <location filename="../GUI/quickeffectsearchdialog.cpp" line="143" />
+        <source>General</source>
+        <translation>通用</translation>
+    </message>
+    <message>
+        <location filename="../GUI/quickeffectsearchdialog.cpp" line="152" />
+        <source>Custom</source>
+        <translation>自定义</translation>
+    </message>
+    <message>
+        <location filename="../GUI/quickeffectsearchdialog.cpp" line="161" />
+        <source>Shader</source>
+        <translation>着色器</translation>
+    </message>
+    <message>
+        <location filename="../GUI/quickeffectsearchdialog.cpp" line="171" />
+        <source>Path Effects</source>
+        <translation>路径特效</translation>
+    </message>
+    <message>
+        <location filename="../GUI/quickeffectsearchdialog.cpp" line="180" />
+        <source>Blend Effects</source>
+        <translation>混合特效</translation>
+    </message>
+    <message>
+        <location filename="../GUI/quickeffectsearchdialog.cpp" line="189" />
+        <source>Transform Effects</source>
+        <translation>变换特效</translation>
+    </message>
+</context>
+<context>
     <name>RasterEffect</name>
     <message>
         <location filename="../../core/RasterEffects/rastereffect.cpp" line="63" />
@@ -6491,7 +6638,7 @@ Select the layers you want to import:</source>
     <message>
         <location filename="../GUI/RenderWidgets/rendersettingsdialog.cpp" line="21" />
         <source>Scene</source>
-        <translation>场景/合成</translation>
+        <translation>场景</translation>
     </message>
     <message>
         <location filename="../GUI/RenderWidgets/rendersettingsdialog.cpp" line="43" />
@@ -6893,7 +7040,6 @@ Select the layers you want to import:</source>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="57" />
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="58" />
-        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="81" />
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="82" />
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="83" />
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="84" />
@@ -6901,6 +7047,7 @@ Select the layers you want to import:</source>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="86" />
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="87" />
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="88" />
+        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="89" />
         <source>Timeline</source>
         <translation>时间轴</translation>
     </message>
@@ -6951,185 +7098,195 @@ Select the layers you want to import:</source>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="67" />
+        <source>Quick Search Effects (AE: FX Console)</source>
+        <translation>快速搜索特效 (AE: FX Console)</translation>
+    </message>
+    <message>
+        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="67" />
+        <source>Effects</source>
+        <translation>特效</translation>
+    </message>
+    <message>
+        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="68" />
         <source>Full Screen Preview</source>
         <translation>全屏预览 (Ctrl+` / F11)</translation>
     </message>
     <message>
-        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="67" />
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="68" />
+        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="69" />
         <source>View</source>
         <translation>视图</translation>
     </message>
     <message>
-        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="68" />
+        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="69" />
         <source>Command Palette</source>
         <translation>命令面板 (Ctrl+K / Ctrl+P)</translation>
     </message>
     <message>
-        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="69" />
+        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="70" />
         <source>Preview SVG</source>
         <translation>SVG 实时预览</translation>
     </message>
     <message>
-        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="69" />
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="70" />
+        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="71" />
         <source>File</source>
         <translation>文件</translation>
     </message>
     <message>
-        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="70" />
+        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="71" />
         <source>Export SVG</source>
         <translation>导出 SVG 文件</translation>
     </message>
     <message>
-        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="71" />
+        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="72" />
         <source>Add to Render Queue</source>
         <translation>添加到渲染队列 (Ctrl+M)</translation>
     </message>
     <message>
-        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="71" />
-        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="73" />
+        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="72" />
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="74" />
+        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="75" />
         <source>Scene</source>
-        <translation>场景/合成</translation>
+        <translation>场景</translation>
     </message>
     <message>
-        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="73" />
+        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="74" />
         <source>New Scene (AE: Composition)</source>
         <translation>新建场景/合成 (Ctrl+N)</translation>
     </message>
     <message>
-        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="74" />
+        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="75" />
         <source>Scene Settings (AE: Comp Settings)</source>
         <translation>场景设置 (Ctrl+K)</translation>
     </message>
     <message>
-        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="75" />
+        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="76" />
         <source>Duplicate Layer</source>
         <translation>复制图层 (Ctrl+D)</translation>
     </message>
     <message>
-        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="75" />
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="76" />
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="77" />
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="78" />
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="79" />
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="80" />
+        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="81" />
         <source>Layer</source>
         <translation>图层</translation>
     </message>
     <message>
-        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="76" />
+        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="77" />
         <source>Split Layer at Playhead</source>
         <translation>在当前播放指针处切分图层 (Ctrl+Shift+D)</translation>
     </message>
     <message>
-        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="77" />
+        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="78" />
         <source>Group Layers (AE: Pre-compose)</source>
         <translation>图层编组/预合成 (Ctrl+Shift+C)</translation>
     </message>
     <message>
-        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="78" />
+        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="79" />
         <source>Rename Layer</source>
         <translation>重命名图层 (Enter)</translation>
     </message>
     <message>
-        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="79" />
+        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="80" />
         <source>Raise Layer One Level</source>
         <translation>图层上移一层 (Ctrl+])</translation>
     </message>
     <message>
-        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="80" />
+        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="81" />
         <source>Lower Layer One Level</source>
         <translation>图层下移一层 (Ctrl+[)</translation>
     </message>
     <message>
-        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="81" />
+        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="82" />
         <source>Go to Next Keyframe</source>
         <translation>跳转到下一个关键帧 (K)</translation>
     </message>
     <message>
-        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="82" />
+        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="83" />
         <source>Go to Previous Keyframe</source>
         <translation>跳转到上一个关键帧 (J)</translation>
     </message>
     <message>
-        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="83" />
+        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="84" />
         <source>Go to Layer In-Point</source>
         <translation>跳转到图层入点 (I)</translation>
     </message>
     <message>
-        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="84" />
+        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="85" />
         <source>Go to Layer Out-Point</source>
         <translation>跳转到图层出点 (O)</translation>
     </message>
     <message>
-        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="85" />
+        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="86" />
         <source>Set Work Area Start</source>
         <translation>设置工作区起点 (B)</translation>
     </message>
     <message>
-        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="86" />
+        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="87" />
         <source>Set Work Area End</source>
         <translation>设置工作区终点 (N)</translation>
     </message>
     <message>
-        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="87" />
+        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="88" />
         <source>Step One Frame Back</source>
         <translation>后退一帧 (Page Up / Ctrl+Left)</translation>
     </message>
     <message>
-        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="88" />
+        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="89" />
         <source>Step One Frame Forward</source>
         <translation>前进一帧 (Page Down / Ctrl+Right)</translation>
     </message>
     <message>
-        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="100" />
+        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="101" />
         <source>Preset</source>
         <translation>预设方案</translation>
     </message>
     <message>
-        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="102" />
+        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="103" />
         <source>Default (Friction)</source>
         <translation>默认 (Friction)</translation>
     </message>
     <message>
-        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="103" />
+        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="104" />
         <source>AE (After Effects)</source>
         <translation>AE (After Effects 映射)</translation>
     </message>
     <message>
-        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="107" />
+        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="108" />
         <source>Apply Preset</source>
         <translation>应用预设</translation>
     </message>
     <message>
-        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="114" />
+        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="115" />
         <source>Action</source>
         <translation>动作/操作</translation>
     </message>
     <message>
-        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="115" />
+        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="116" />
         <source>Category</source>
         <translation>分类</translation>
     </message>
     <message>
-        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="116" />
+        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="117" />
         <source>AE Default</source>
         <translation>AE 默认键位</translation>
     </message>
     <message>
-        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="117" />
+        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="118" />
         <source>Shortcut</source>
-        <translation>快捷键</translation>
+        <translation>当前快捷键</translation>
     </message>
     <message>
-        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="126" />
+        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="127" />
         <source>Changes take effect after restart. Entries marked [reserved] are planned features and will be bound in a future version.</source>
         <translation>快捷键修改将在重启 Friction 后生效。标记为 [reserved] 的条目为预留功能，将在后续版本中绑定。</translation>
     </message>
     <message>
-        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="168" />
+        <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="169" />
         <source>reserved</source>
         <translation>预留</translation>
     </message>

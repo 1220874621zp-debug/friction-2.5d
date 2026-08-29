@@ -31,7 +31,7 @@
 PosterizeEffect::PosterizeEffect() :
     RasterEffect("posterize",
                  AppSupport::getRasterEffectHardwareSupport("Posterize",
-                                                            HardwareSupport::cpuOnly),
+                                                            HardwareSupport::gpuPreffered),
                  true,
                  RasterEffectType::POSTERIZE)
 {

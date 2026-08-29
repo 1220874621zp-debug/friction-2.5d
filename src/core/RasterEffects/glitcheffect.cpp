@@ -32,7 +32,7 @@
 GlitchEffect::GlitchEffect() :
     RasterEffect("glitch",
                  AppSupport::getRasterEffectHardwareSupport("Glitch",
-                                                            HardwareSupport::cpuOnly),
+                                                            HardwareSupport::gpuPreffered),
                  true,
                  RasterEffectType::GLITCH)
 {

@@ -32,7 +32,7 @@
 NoiseEffect::NoiseEffect() :
     RasterEffect("noise",
                  AppSupport::getRasterEffectHardwareSupport("Noise",
-                                                            HardwareSupport::cpuOnly),
+                                                            HardwareSupport::gpuPreffered),
                  true,
                  RasterEffectType::NOISE)
 {

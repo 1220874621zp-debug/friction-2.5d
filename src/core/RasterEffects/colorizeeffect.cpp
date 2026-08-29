@@ -37,7 +37,7 @@
 ColorizeEffect::ColorizeEffect() :
     RasterEffect("colorize",
                  AppSupport::getRasterEffectHardwareSupport("Colorize",
-                                                            HardwareSupport::cpuOnly),
+                                                            HardwareSupport::gpuPreffered),
                  true,
                  RasterEffectType::COLORIZE)
 {

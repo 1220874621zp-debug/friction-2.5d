@@ -27,6 +27,12 @@
         <file alias="twirleffect.frag">RasterEffects/twirleffect.frag</file>
         <file alias="channelblureffect.frag">RasterEffects/channelblureffect.frag</file>
         <file alias="halftoneeffect.frag">RasterEffects/halftoneeffect.frag</file>
+        <file alias="shakeeffect.frag">RasterEffects/shakeeffect.frag</file>
+        <file alias="dropshadoweffect.frag">RasterEffects/dropshadoweffect.frag</file>
+        <file alias="zoomblureffect.frag">RasterEffects/zoomblureffect.frag</file>
+        <file alias="colorgradingeffect.frag">RasterEffects/colorgradingeffect.frag</file>
+        <file alias="stripeeffect.frag">RasterEffects/stripeeffect.frag</file>
+        <file alias="motiontileeffect.frag">RasterEffects/motiontileeffect.frag</file>
         <file alias="alpha.frag">colorshaders/alpha.frag</file>
         <file alias="blue.frag">colorshaders/blue.frag</file>
         <file alias="border.frag">colorshaders/border.frag</file>

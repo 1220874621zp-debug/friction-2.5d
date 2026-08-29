@@ -35,7 +35,7 @@ private:
 ShadowEffect::ShadowEffect() :
     RasterEffect("shadow",
                  AppSupport::getRasterEffectHardwareSupport("Shadow",
-                                                            HardwareSupport::cpuOnly),
+                                                            HardwareSupport::gpuPreffered),
                  false,
                  RasterEffectType::SHADOW)
 {

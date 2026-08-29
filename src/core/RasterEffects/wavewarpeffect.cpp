@@ -32,7 +32,7 @@
 WaveWarpEffect::WaveWarpEffect() :
     RasterEffect("wave warp",
                  AppSupport::getRasterEffectHardwareSupport("WaveWarp",
-                                                            HardwareSupport::cpuOnly),
+                                                            HardwareSupport::gpuPreffered),
                  true,
                  RasterEffectType::WAVE_WARP)
 {

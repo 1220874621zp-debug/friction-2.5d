@@ -254,23 +254,39 @@ void DurationRectangle::draw(QPainter * const p,
         }
     }
 
-    p->fillRect(durRect.adjusted(0, 1, 0, -1), fillColor);
-    if (mHovered) {
-        p->setPen(QPen(Qt::white, .5));
-        p->drawRect(durRect);
+    const QRect clipRect = durRect.adjusted(0, 2, 0, -2);
+    p->fillRect(clipRect, fillColor);
+
+    // Draw outline
+    p->setPen(mHovered || isSelected() ? QPen(QColor(255, 255, 255, 180), 1) : QPen(QColor(0, 0, 0, 100), 1));
+    p->drawRect(clipRect);
+
+    // Left In-point bracket handle '['
+    const bool minHover = mMinFrame.isHovered();
+    p->setPen(minHover ? QPen(Qt::white, 2) : QPen(QColor(40, 40, 40), 2));
+    p->drawLine(clipRect.topLeft(), clipRect.bottomLeft());
+    p->drawLine(clipRect.left(), clipRect.top(), clipRect.left() + 4, clipRect.top());
+    p->drawLine(clipRect.left(), clipRect.bottom(), clipRect.left() + 4, clipRect.bottom());
+
+    // Right Out-point bracket handle ']'
+    const bool maxHover = mMaxFrame.isHovered();
+    p->setPen(maxHover ? QPen(Qt::white, 2) : QPen(QColor(40, 40, 40), 2));
+    p->drawLine(clipRect.topRight(), clipRect.bottomRight());
+    p->drawLine(clipRect.right(), clipRect.top(), clipRect.right() - 4, clipRect.top());
+    p->drawLine(clipRect.right(), clipRect.bottom(), clipRect.right() - 4, clipRect.bottom());
+
+    // Draw layer name label inside duration bar if wide enough
+    if (clipRect.width() > 30) {
+        if (const auto ebs = enve_cast<eBoxOrSound*>(&mParentProperty)) {
+            p->setPen(isSelected() ? Qt::white : QColor(240, 240, 240, 220));
+            QFont f = p->font();
+            f.setPointSize(qMax(7, f.pointSize() - 2));
+            p->setFont(f);
+            const QString text = ebs->prp_getName();
+            p->drawText(clipRect.adjusted(6, 0, -6, 0), Qt::AlignVCenter | Qt::AlignLeft,
+                        p->fontMetrics().elidedText(text, Qt::ElideRight, clipRect.width() - 12));
+        }
     }
-
-    if (mMinFrame.isHovered()) { p->setPen(QPen(Qt::white)); }
-    else { p->setPen(QPen(Qt::black)); }
-    p->drawLine(durRect.topLeft(), durRect.bottomLeft());
-
-    if (mMaxFrame.isHovered()) { p->setPen(QPen(Qt::white)); }
-    else { p->setPen(QPen(Qt::black)); }
-    p->drawLine(durRect.topRight(), durRect.bottomRight());
-
-//    p->setPen(Qt::black);
-//    p->setBrush(Qt::NoBrush);
-    //p->drawRect(drawRect);
 }
 
 TimelineMovable *DurationRectangle::getMovableAt(const int pressX,
@@ -279,8 +295,8 @@ TimelineMovable *DurationRectangle::getMovableAt(const int pressX,
 {
     const qreal startX = ((getMinAbsFrame() - minViewedFrame) + 0.5) * pixelsPerFrame;
     const qreal endX = ((getMaxAbsFrame() - minViewedFrame + 1) - 0.5) * pixelsPerFrame;
-    if (qAbs(pressX - startX) < 5) { return &mMinFrame; }
-    else if (qAbs(pressX - endX) < 5) { return &mMaxFrame; }
+    if (qAbs(pressX - startX) <= 8) { return &mMinFrame; }
+    else if (qAbs(pressX - endX) <= 8) { return &mMaxFrame; }
     else if (pressX > startX && pressX < endX) { return this; }
     return nullptr;
 }

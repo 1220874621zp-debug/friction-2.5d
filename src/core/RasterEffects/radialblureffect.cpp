@@ -27,66 +27,67 @@
 
 #include "Animators/qrealanimator.h"
 #include "appsupport.h"
+#include <QtMath>
 
 RadialBlurEffect::RadialBlurEffect() :
     RasterEffect("radial blur",
                  AppSupport::getRasterEffectHardwareSupport("RadialBlur",
-                                                            HardwareSupport::cpuOnly),
+                                                            HardwareSupport::gpuPreffered),
                  true,
                  RasterEffectType::RADIAL_BLUR)
 {
-    mAmount = enve::make_shared<QrealAnimator>(15.0, 0.0, 100.0, 0.5, "amount");
+    mAmount = enve::make_shared<QrealAnimator>(10.0, 0.0, 180.0, 0.5, "amount");
     ca_addChild(mAmount);
 
-    mCenterX = enve::make_shared<QrealAnimator>(0.5, 0.0, 1.0, 0.01, "center X");
+    mCenterX = enve::make_shared<QrealAnimator>(0.5, 0.0, 1.0, 0.01, "centerX");
     ca_addChild(mCenterX);
 
-    mCenterY = enve::make_shared<QrealAnimator>(0.5, 0.0, 1.0, 0.01, "center Y");
+    mCenterY = enve::make_shared<QrealAnimator>(0.5, 0.0, 1.0, 0.01, "centerY");
     ca_addChild(mCenterY);
 }
 
 class RadialBlurEffectCaller : public OpenGLRasterEffectCaller {
 public:
     RadialBlurEffectCaller(const HardwareSupport hwSupport,
-                          const qreal amount,
-                          const qreal centerX,
-                          const qreal centerY) :
+                           const qreal amount,
+                           const QPointF& center,
+                           const QMargins& margins) :
         OpenGLRasterEffectCaller(sInitialized, sProgramId,
                                  ":/shaders/radialblureffect.frag",
-                                 hwSupport),
+                                 hwSupport,
+                                 true,
+                                 margins),
         mAmount(amount),
-        mCenterX(centerX),
-        mCenterY(centerY) {}
+        mCenter(center) {}
 
     void processCpu(CpuRenderTools& renderTools,
                     const CpuRenderData& data);
 protected:
     void iniVars(QGL33 * const gl) const {
-        sAmountU = gl->glGetUniformLocation(sProgramId, "amount");
+        sAngleU = gl->glGetUniformLocation(sProgramId, "angle");
         sCenterU = gl->glGetUniformLocation(sProgramId, "center");
     }
 
     void setVars(QGL33 * const gl) const {
         gl->glUseProgram(sProgramId);
-        gl->glUniform1f(sAmountU, toSkScalar(mAmount / 100.0));
-        gl->glUniform2f(sCenterU, toSkScalar(mCenterX), toSkScalar(mCenterY));
+        gl->glUniform1f(sAngleU, toSkScalar(qDegreesToRadians(mAmount)));
+        gl->glUniform2f(sCenterU, toSkScalar(mCenter.x()), toSkScalar(mCenter.y()));
     }
 private:
     static bool sInitialized;
     static GLuint sProgramId;
 
-    static GLint sAmountU;
+    static GLint sAngleU;
     static GLint sCenterU;
 
     const qreal mAmount;
-    const qreal mCenterX;
-    const qreal mCenterY;
+    const QPointF mCenter;
 };
 
 bool RadialBlurEffectCaller::sInitialized = false;
 GLuint RadialBlurEffectCaller::sProgramId = 0;
 
-GLint RadialBlurEffectCaller::sAmountU = -1;
+GLint RadialBlurEffectCaller::sAngleU = -1;
 GLint RadialBlurEffectCaller::sCenterU = -1;
 
 stdsptr<RasterEffectCaller> RadialBlurEffect::getEffectCaller(
@@ -98,9 +99,10 @@ stdsptr<RasterEffectCaller> RadialBlurEffect::getEffectCaller(
     const qreal amount = mAmount->getEffectiveValue(relFrame) * influence;
     const qreal cx = mCenterX->getEffectiveValue(relFrame);
     const qreal cy = mCenterY->getEffectiveValue(relFrame);
+    const int m = qCeil(amount * 2.0);
 
     return enve::make_shared<RadialBlurEffectCaller>(
-                instanceHwSupport(), amount, cx, cy);
+                instanceHwSupport(), amount, QPointF(cx, cy), QMargins(m, m, m, m));
 }
 
 void RadialBlurEffectCaller::processCpu(CpuRenderTools& renderTools,
@@ -123,28 +125,36 @@ void RadialBlurEffectCaller::processCpu(CpuRenderTools& renderTools,
     const int yMin = std::max(0, data.fTexTile.top());
     const int yMax = std::min((int)data.fTexTile.bottom(), imgHeight - 1);
 
-    const qreal cx = mCenterX * imgWidth;
-    const qreal cy = mCenterY * imgHeight;
-    const qreal amt = mAmount / 100.0;
-    const int SAMPLES = 8;
+    const qreal radAngle = qDegreesToRadians(mAmount);
+    const int SAMPLES = 20;
 
     for(int yi = yMin; yi <= yMax; yi++) {
         auto dst = static_cast<uchar*>(dstBtmp.getAddr(0, yi - yMin));
+        const qreal ny = qreal(yi) / imgHeight - mCenter.y();
+
         for(int xi = xMin; xi <= xMax; xi++) {
-            const qreal dx = xi - cx;
-            const qreal dy = yi - cy;
+            const qreal nx = qreal(xi) / imgWidth - mCenter.x();
+            const qreal dist = std::sqrt(nx * nx + ny * ny);
+            const qreal baseAng = std::atan2(ny, nx);
+
             int sumR = 0, sumG = 0, sumB = 0, sumA = 0;
 
             for(int s = 0; s < SAMPLES; s++) {
-                const qreal scale = 1.0 - amt * (qreal(s) / (SAMPLES - 1));
-                const int sx = std::max(0, std::min(imgWidth - 1, qRound(cx + dx * scale)));
-                const int sy = std::max(0, std::min(imgHeight - 1, qRound(cy + dy * scale)));
-                const auto src = static_cast<const uchar*>(srcBtmp.getAddr(sx, sy));
-                sumR += src[0];
-                sumG += src[1];
-                sumB += src[2];
-                sumA += src[3];
+                const qreal t = (qreal(s) / (SAMPLES - 1)) - 0.5;
+                const qreal a = baseAng + radAngle * t;
+                const qreal rx = mCenter.x() + std::cos(a) * dist;
+                const qreal ry = mCenter.y() + std::sin(a) * dist;
+
+                const int sx = std::max(0, std::min(imgWidth - 1, int(std::round(rx * imgWidth))));
+                const int sy = std::max(0, std::min(imgHeight - 1, int(std::round(ry * imgHeight))));
+                const auto smp = static_cast<const uchar*>(srcBtmp.getAddr(sx, sy));
+
+                sumR += smp[0];
+                sumG += smp[1];
+                sumB += smp[2];
+                sumA += smp[3];
             }
+
             *dst++ = static_cast<uchar>(sumR / SAMPLES);
             *dst++ = static_cast<uchar>(sumG / SAMPLES);
             *dst++ = static_cast<uchar>(sumB / SAMPLES);

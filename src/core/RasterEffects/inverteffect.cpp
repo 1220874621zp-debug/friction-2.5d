@@ -31,7 +31,7 @@
 InvertEffect::InvertEffect() :
     RasterEffect("invert",
                  AppSupport::getRasterEffectHardwareSupport("Invert",
-                                                            HardwareSupport::cpuOnly),
+                                                            HardwareSupport::gpuPreffered),
                  true,
                  RasterEffectType::INVERT)
 {

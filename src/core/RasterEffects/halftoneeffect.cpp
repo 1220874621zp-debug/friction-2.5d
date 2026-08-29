@@ -32,7 +32,7 @@
 HalftoneEffect::HalftoneEffect() :
     RasterEffect("halftone",
                  AppSupport::getRasterEffectHardwareSupport("Halftone",
-                                                            HardwareSupport::cpuOnly),
+                                                            HardwareSupport::gpuPreffered),
                  true,
                  RasterEffectType::HALFTONE)
 {

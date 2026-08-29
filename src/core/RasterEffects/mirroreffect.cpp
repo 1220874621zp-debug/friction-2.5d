@@ -31,7 +31,7 @@
 MirrorEffect::MirrorEffect() :
     RasterEffect("mirror",
                  AppSupport::getRasterEffectHardwareSupport("Mirror",
-                                                            HardwareSupport::cpuOnly),
+                                                            HardwareSupport::gpuPreffered),
                  true,
                  RasterEffectType::MIRROR)
 {

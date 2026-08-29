@@ -32,7 +32,7 @@
 ChannelBlurEffect::ChannelBlurEffect() :
     RasterEffect("channel blur",
                  AppSupport::getRasterEffectHardwareSupport("Channel Blur",
-                                                            HardwareSupport::cpuOnly),
+                                                            HardwareSupport::gpuPreffered),
                  true,
                  RasterEffectType::CHANNEL_BLUR)
 {

@@ -27,10 +27,18 @@
 #include "BlendEffects/blendeffectmenucreator.h"
 #include "TransformEffects/transformeffectmenucreator.h"
 #include "PathEffects/patheffectmenucreator.h"
+#include "quickeffectsearchdialog.h"
 
 void MainWindow::setupMenuEffects()
 {
     const QIcon eIcon = QIcon::fromTheme("effect");
+
+    const QString fxKey = AppSupport::getSettings("shortcuts", "quickEffects", "Ctrl+Space").toString();
+    const auto quickAct = mEffectsMenu->addAction(eIcon, tr("Quick Search Effects..."), this, &MainWindow::showQuickEffectSearch, QKeySequence(fxKey));
+    quickAct->setData(tr("Quick Search Effects (AE: FX Console)"));
+    cmdAddAction(quickAct);
+    mEffectsMenu->addSeparator();
+
     QMap<QString, QMenu*> categoryMenus;
 
     const auto getCatMenu = [this, &categoryMenus, eIcon](const QString& category) -> QMenu* {
@@ -222,4 +230,12 @@ void MainWindow::addOutlinePathEffect(const qsptr<PathEffect> &effect)
 
     box->addOutlinePathEffect(effect);
     mDocument.actionFinished();
+}
+
+void MainWindow::showQuickEffectSearch()
+{
+    if (!mQuickEffectSearch) {
+        mQuickEffectSearch = new QuickEffectSearchDialog(this, this);
+    }
+    mQuickEffectSearch->showAtCursor();
 }

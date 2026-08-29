@@ -33,7 +33,7 @@
 EdgeDetectEffect::EdgeDetectEffect() :
     RasterEffect("edge detect",
                  AppSupport::getRasterEffectHardwareSupport("EdgeDetect",
-                                                            HardwareSupport::cpuOnly),
+                                                            HardwareSupport::gpuPreffered),
                  true,
                  RasterEffectType::EDGE_DETECT)
 {

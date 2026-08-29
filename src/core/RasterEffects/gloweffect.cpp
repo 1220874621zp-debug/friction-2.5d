@@ -23,7 +23,7 @@
 
 #include "gloweffect.h"
 #include "gpurendertools.h"
-#include "openglrastereffectcaller.h"
+#include "rastereffectcaller.h"
 
 #include "colorhelpers.h"
 #include "Animators/qrealanimator.h"
@@ -33,17 +33,17 @@
 GlowEffect::GlowEffect() :
     RasterEffect("glow",
                  AppSupport::getRasterEffectHardwareSupport("Glow",
-                                                            HardwareSupport::cpuOnly),
+                                                            HardwareSupport::gpuPreffered),
                  true,
                  RasterEffectType::GLOW)
 {
-    mThreshold = enve::make_shared<QrealAnimator>(0.6, 0.0, 1.0, 0.01, "threshold");
+    mThreshold = enve::make_shared<QrealAnimator>(0.1, 0.0, 1.0, 0.01, "threshold");
     ca_addChild(mThreshold);
 
-    mIntensity = enve::make_shared<QrealAnimator>(1.5, 0.0, 10.0, 0.1, "intensity");
+    mIntensity = enve::make_shared<QrealAnimator>(2.0, 0.0, 10.0, 0.1, "intensity");
     ca_addChild(mIntensity);
 
-    mRadius = enve::make_shared<QrealAnimator>(10.0, 1.0, 50.0, 0.5, "radius");
+    mRadius = enve::make_shared<QrealAnimator>(20.0, 1.0, 100.0, 0.5, "radius");
     ca_addChild(mRadius);
 
     mColor = enve::make_shared<ColorAnimator>("color");
@@ -51,78 +51,85 @@ GlowEffect::GlowEffect() :
     ca_addChild(mColor);
 }
 
-class GlowEffectCaller : public OpenGLRasterEffectCaller {
+class GlowEffectCaller : public RasterEffectCaller {
 public:
     GlowEffectCaller(const HardwareSupport hwSupport,
                      const qreal threshold,
                      const qreal intensity,
                      const qreal radius,
-                     const QColor& color) :
-        OpenGLRasterEffectCaller(sInitialized, sProgramId,
-                                 ":/shaders/gloweffect.frag",
-                                 hwSupport),
+                     const QColor& color,
+                     const QMargins& margins) :
+        RasterEffectCaller(hwSupport, true, margins),
         mThreshold(threshold),
         mIntensity(intensity),
         mRadius(radius),
         mColor(color) {}
 
-    void processCpu(CpuRenderTools& renderTools,
-                    const CpuRenderData& data);
-protected:
-    void iniVars(QGL33 * const gl) const {
-        sThresholdU = gl->glGetUniformLocation(sProgramId, "threshold");
-        sIntensityU = gl->glGetUniformLocation(sProgramId, "intensity");
-        sRadiusU = gl->glGetUniformLocation(sProgramId, "radius");
-        sGlowColorU = gl->glGetUniformLocation(sProgramId, "glowColor");
-    }
+    void processGpu(QGL33 * const gl, GpuRenderTools& renderTools) override;
+    void processCpu(CpuRenderTools& renderTools, const CpuRenderData& data) override;
 
-    void setVars(QGL33 * const gl) const {
-        gl->glUseProgram(sProgramId);
-        gl->glUniform1f(sThresholdU, mThreshold);
-        gl->glUniform1f(sIntensityU, mIntensity);
-        gl->glUniform1f(sRadiusU, toSkScalar(mRadius / 1000.0));
-        gl->glUniform4f(sGlowColorU,
-                        mColor.redF(),
-                        mColor.greenF(),
-                        mColor.blueF(),
-                        mColor.alphaF());
-    }
 private:
-    static bool sInitialized;
-    static GLuint sProgramId;
-
-    static GLint sThresholdU;
-    static GLint sIntensityU;
-    static GLint sRadiusU;
-    static GLint sGlowColorU;
-
     const qreal mThreshold;
     const qreal mIntensity;
     const qreal mRadius;
     const QColor mColor;
 };
 
-bool GlowEffectCaller::sInitialized = false;
-GLuint GlowEffectCaller::sProgramId = 0;
-
-GLint GlowEffectCaller::sThresholdU = -1;
-GLint GlowEffectCaller::sIntensityU = -1;
-GLint GlowEffectCaller::sRadiusU = -1;
-GLint GlowEffectCaller::sGlowColorU = -1;
-
 stdsptr<RasterEffectCaller> GlowEffect::getEffectCaller(
         const qreal relFrame, const qreal resolution,
         const qreal influence, BoxRenderData * const data) const {
-    Q_UNUSED(resolution)
     Q_UNUSED(data)
 
     const qreal threshold = mThreshold->getEffectiveValue(relFrame);
     const qreal intensity = mIntensity->getEffectiveValue(relFrame) * influence;
-    const qreal radius = mRadius->getEffectiveValue(relFrame);
+    const qreal radius = mRadius->getEffectiveValue(relFrame) * resolution;
     const QColor color = mColor->getColor(relFrame);
 
+    const int margin = qCeil(radius * 2.5);
+
     return enve::make_shared<GlowEffectCaller>(
-                instanceHwSupport(), threshold, intensity, radius, color);
+                instanceHwSupport(), threshold, intensity, radius, color,
+                QMargins(margin, margin, margin, margin));
+}
+
+void GlowEffectCaller::processGpu(QGL33 * const gl, GpuRenderTools &renderTools)
+{
+    Q_UNUSED(gl)
+
+    renderTools.switchToSkia();
+    const auto canvas = renderTools.requestTargetCanvas();
+    canvas->clear(SK_ColorTRANSPARENT);
+
+    const auto srcTex = renderTools.requestSrcTextureImageWrapper();
+    if (!srcTex) return;
+
+    // 1. Soft wide bloom pass
+    SkPaint bloomPaint;
+    const float sigma = std::max(0.5f, static_cast<float>(mRadius * 0.45));
+    bloomPaint.setImageFilter(SkImageFilters::Blur(sigma, sigma, nullptr));
+    const uint8_t a = static_cast<uint8_t>(qBound(0.0, 255.0 * (mColor.alphaF() * std::min(2.0, mIntensity) * 0.6), 255.0));
+    bloomPaint.setColorFilter(SkColorFilters::Blend(
+        SkColorSetARGB(a, mColor.red(), mColor.green(), mColor.blue()),
+        SkBlendMode::kSrcIn));
+    canvas->drawImage(srcTex, 0, 0, &bloomPaint);
+
+    // 2. Intense inner glow core
+    if (mRadius > 3.0) {
+        SkPaint corePaint;
+        const float coreSigma = std::max(0.3f, static_cast<float>(mRadius * 0.18));
+        corePaint.setImageFilter(SkImageFilters::Blur(coreSigma, coreSigma, nullptr));
+        const uint8_t coreA = static_cast<uint8_t>(qBound(0.0, 255.0 * (mColor.alphaF() * std::min(2.0, mIntensity) * 0.5), 255.0));
+        corePaint.setColorFilter(SkColorFilters::Blend(
+            SkColorSetARGB(coreA, mColor.red(), mColor.green(), mColor.blue()),
+            SkBlendMode::kSrcIn));
+        canvas->drawImage(srcTex, 0, 0, &corePaint);
+    }
+
+    // 3. Crisp source image on top
+    canvas->drawImage(srcTex, 0, 0);
+    canvas->flush();
+
+    renderTools.swapTextures();
 }
 
 void GlowEffectCaller::processCpu(CpuRenderTools& renderTools,
@@ -160,15 +167,13 @@ void GlowEffectCaller::processCpu(CpuRenderTools& renderTools,
             const uchar b = *src++;
             const uchar a = *src++;
 
-            qreal bloomR = 0;
-            qreal bloomG = 0;
-            qreal bloomB = 0;
+            qreal bloomR = 0, bloomG = 0, bloomB = 0;
             int samples = 0;
 
-            const int sx[4] = {-rad, rad, 0, 0};
-            const int sy[4] = {0, 0, -rad, rad};
+            const int sx[8] = {-rad, rad, 0, 0, -rad/2, rad/2, -rad/2, rad/2};
+            const int sy[8] = {0, 0, -rad, rad, -rad/2, -rad/2, rad/2, rad/2};
 
-            for(int s = 0; s < 4; s++) {
+            for(int s = 0; s < 8; s++) {
                 const int px = std::max(0, std::min(imgWidth - 1, xi + sx[s]));
                 const int py = std::max(0, std::min(imgHeight - 1, yi + sy[s]));
                 const auto smp = static_cast<const uchar*>(srcBtmp.getAddr(px, py));

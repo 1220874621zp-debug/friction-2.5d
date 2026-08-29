@@ -240,7 +240,9 @@ void eBoxOrSound::readBoxOrSoundXEV(XevReadBoxesHandler& boxReadHandler,
 TimelineMovable *eBoxOrSound::anim_getTimelineMovable(
         const int relX, const int minViewedFrame,
         const qreal pixelsPerFrame) {
-    if(!mDurationRectangle) return nullptr;
+    if(!mDurationRectangle) {
+        createDurationRectangle();
+    }
     return mDurationRectangle->getMovableAt(relX, pixelsPerFrame,
                                             minViewedFrame);
 }
@@ -248,16 +250,66 @@ TimelineMovable *eBoxOrSound::anim_getTimelineMovable(
 void eBoxOrSound::drawDurationRectangle(
         QPainter * const p, const qreal pixelsPerFrame,
         const FrameRange &absFrameRange, const int rowHeight) const {
+    p->save();
+    const int width = qCeil(absFrameRange.span()*pixelsPerFrame);
+    const QRect drawRect(0, 0, width, rowHeight);
+    const auto pScene = getParentScene();
+    const qreal fps = pScene ? pScene->getFps() : 1;
+
     if(mDurationRectangle) {
-        p->save();
-        const int width = qCeil(absFrameRange.span()*pixelsPerFrame);
-        const QRect drawRect(0, 0, width, rowHeight);
-        const auto pScene = getParentScene();
-        const qreal fps = pScene ? pScene->getFps() : 1;
         mDurationRectangle->draw(p, drawRect, fps,
                                  pixelsPerFrame, absFrameRange);
-        p->restore();
+    } else {
+        int sceneMin = absFrameRange.fMin;
+        int sceneMax = absFrameRange.fMax;
+        if (pScene) {
+            const auto fr = pScene->getFrameRange();
+            sceneMin = fr.fMin;
+            sceneMax = fr.fMax;
+        }
+        const int clampedMin = qMax(absFrameRange.fMin, sceneMin);
+        const int firstRelDrawFrame = clampedMin - absFrameRange.fMin;
+        const int clampedMax = qMin(absFrameRange.fMax, sceneMax);
+        const int lastRelDrawFrame = clampedMax - absFrameRange.fMin;
+        const int drawFrameSpan = lastRelDrawFrame - firstRelDrawFrame + 1;
+
+        if (drawFrameSpan >= 1) {
+            const QRect durRect(qFloor((firstRelDrawFrame + 0.5) * pixelsPerFrame),
+                                drawRect.y() + 2,
+                                qCeil((drawFrameSpan - 1.0) * pixelsPerFrame),
+                                drawRect.height() - 4);
+            QColor fillColor = ThemeSupport::getThemeRangeColor();
+            if (mLabelColor.isValid()) {
+                fillColor = isSelected() ? mLabelColor.lighter(135) : mLabelColor;
+            } else if (isSelected()) {
+                fillColor = fillColor.lighter(130);
+            }
+            fillColor.setAlpha(160);
+
+            p->fillRect(durRect, fillColor);
+            p->setPen(QPen(QColor(0, 0, 0, 80), 1));
+            p->drawRect(durRect);
+
+            p->setPen(QPen(QColor(40, 40, 40), 2));
+            p->drawLine(durRect.topLeft(), durRect.bottomLeft());
+            p->drawLine(durRect.left(), durRect.top(), durRect.left() + 4, durRect.top());
+            p->drawLine(durRect.left(), durRect.bottom(), durRect.left() + 4, durRect.bottom());
+
+            p->drawLine(durRect.topRight(), durRect.bottomRight());
+            p->drawLine(durRect.right(), durRect.top(), durRect.right() - 4, durRect.top());
+            p->drawLine(durRect.right(), durRect.bottom(), durRect.right() - 4, durRect.bottom());
+
+            if (durRect.width() > 30) {
+                p->setPen(QColor(230, 230, 230, 200));
+                QFont f = p->font();
+                f.setPointSize(qMax(7, f.pointSize() - 2));
+                p->setFont(f);
+                p->drawText(durRect.adjusted(6, 0, -6, 0), Qt::AlignVCenter | Qt::AlignLeft,
+                            p->fontMetrics().elidedText(prp_getName(), Qt::ElideRight, durRect.width() - 12));
+            }
+        }
     }
+    p->restore();
 }
 
 void eBoxOrSound::prp_drawTimelineControls(
@@ -426,10 +478,15 @@ DurationRectangle *eBoxOrSound::getDurationRectangle() const {
 
 void eBoxOrSound::createDurationRectangle() {
     const auto durRect = enve::make_shared<DurationRectangle>(*this);
-//    durRect->setMinFrame(0);
-//    if(mParentScene) durRect->setFramesDuration(mParentScene->getFrameCount());
-    durRect->setMinRelFrame(anim_getCurrentRelFrame() - 5);
-    durRect->setFramesDuration(10);
+    int minF = 0;
+    int spanF = 120;
+    if(const auto pScene = getParentScene()) {
+        const auto fr = pScene->getFrameRange();
+        minF = fr.fMin;
+        spanF = qMax(1, fr.span());
+    }
+    durRect->setMinRelFrame(minF);
+    durRect->setFramesDuration(spanF);
     setDurationRectangle(durRect);
 }
 

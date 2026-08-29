@@ -255,6 +255,12 @@ set(
     RasterEffects/twirleffect.cpp
     RasterEffects/channelblureffect.cpp
     RasterEffects/halftoneeffect.cpp
+    RasterEffects/shakeeffect.cpp
+    RasterEffects/dropshadoweffect.cpp
+    RasterEffects/zoomblureffect.cpp
+    RasterEffects/colorgradingeffect.cpp
+    RasterEffects/stripeeffect.cpp
+    RasterEffects/motiontileeffect.cpp
     RasterEffects/wipeeffect.cpp
     ReadWrite/ereadstream.cpp
     ReadWrite/ewritestream.cpp
@@ -600,6 +606,12 @@ set(
     RasterEffects/twirleffect.h
     RasterEffects/channelblureffect.h
     RasterEffects/halftoneeffect.h
+    RasterEffects/shakeeffect.h
+    RasterEffects/dropshadoweffect.h
+    RasterEffects/zoomblureffect.h
+    RasterEffects/colorgradingeffect.h
+    RasterEffects/stripeeffect.h
+    RasterEffects/motiontileeffect.h
     RasterEffects/wipeeffect.h
     ReadWrite/efuturepos.h
     ReadWrite/ereadstream.h

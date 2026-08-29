@@ -33,7 +33,7 @@
 VignetteEffect::VignetteEffect() :
     RasterEffect("vignette",
                  AppSupport::getRasterEffectHardwareSupport("Vignette",
-                                                            HardwareSupport::cpuOnly),
+                                                            HardwareSupport::gpuPreffered),
                  true,
                  RasterEffectType::VIGNETTE)
 {

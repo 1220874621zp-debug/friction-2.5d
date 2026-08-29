@@ -32,7 +32,7 @@
 ChromaticAberrationEffect::ChromaticAberrationEffect() :
     RasterEffect("chromatic aberration",
                  AppSupport::getRasterEffectHardwareSupport("ChromaticAberration",
-                                                            HardwareSupport::cpuOnly),
+                                                            HardwareSupport::gpuPreffered),
                  true,
                  RasterEffectType::CHROMATIC_ABERRATION)
 {

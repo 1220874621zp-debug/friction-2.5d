@@ -31,7 +31,7 @@
 PixelateEffect::PixelateEffect() :
     RasterEffect("pixelate",
                  AppSupport::getRasterEffectHardwareSupport("Pixelate",
-                                                            HardwareSupport::cpuOnly),
+                                                            HardwareSupport::gpuPreffered),
                  true,
                  RasterEffectType::PIXELATE)
 {

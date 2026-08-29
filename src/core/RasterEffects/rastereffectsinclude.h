@@ -28,5 +28,11 @@
 #include "twirleffect.h"
 #include "channelblureffect.h"
 #include "halftoneeffect.h"
+#include "shakeeffect.h"
+#include "dropshadoweffect.h"
+#include "zoomblureffect.h"
+#include "colorgradingeffect.h"
+#include "stripeeffect.h"
+#include "motiontileeffect.h"
 
 #endif // RASTEREFFECTSINCLUDE_H

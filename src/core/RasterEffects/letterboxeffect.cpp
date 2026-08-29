@@ -33,7 +33,7 @@
 LetterboxEffect::LetterboxEffect() :
     RasterEffect("letterbox",
                  AppSupport::getRasterEffectHardwareSupport("Letterbox",
-                                                            HardwareSupport::cpuOnly),
+                                                            HardwareSupport::gpuPreffered),
                  true,
                  RasterEffectType::LETTERBOX)
 {

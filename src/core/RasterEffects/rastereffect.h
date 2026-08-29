@@ -60,7 +60,13 @@ enum class RasterEffectType : short {
     POSTERIZE,
     TWIRL,
     CHANNEL_BLUR,
-    HALFTONE
+    HALFTONE,
+    SHAKE,
+    DROP_SHADOW,
+    ZOOM_BLUR,
+    COLOR_GRADING,
+    STRIPE,
+    MOTION_TILE
 };
 
 struct BoxRenderData;

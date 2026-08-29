@@ -82,7 +82,13 @@ int main(int argc, char *argv[])
             RasterEffectType::POSTERIZE,
             RasterEffectType::TWIRL,
             RasterEffectType::CHANNEL_BLUR,
-            RasterEffectType::HALFTONE
+            RasterEffectType::HALFTONE,
+            RasterEffectType::SHAKE,
+            RasterEffectType::DROP_SHADOW,
+            RasterEffectType::ZOOM_BLUR,
+            RasterEffectType::COLOR_GRADING,
+            RasterEffectType::STRIPE,
+            RasterEffectType::MOTION_TILE
         };
 
         for (const auto t : types) {
@@ -123,7 +129,13 @@ int main(int argc, char *argv[])
             RasterEffectType::POSTERIZE,
             RasterEffectType::TWIRL,
             RasterEffectType::CHANNEL_BLUR,
-            RasterEffectType::HALFTONE
+            RasterEffectType::HALFTONE,
+            RasterEffectType::SHAKE,
+            RasterEffectType::DROP_SHADOW,
+            RasterEffectType::ZOOM_BLUR,
+            RasterEffectType::COLOR_GRADING,
+            RasterEffectType::STRIPE,
+            RasterEffectType::MOTION_TILE
         };
 
         SkBitmap srcBtmp;

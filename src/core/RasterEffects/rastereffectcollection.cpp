@@ -207,6 +207,18 @@ qsptr<RasterEffect> createRasterEffectForNonCustomType(const RasterEffectType ty
             return enve::make_shared<ChannelBlurEffect>();
         case(RasterEffectType::HALFTONE):
             return enve::make_shared<HalftoneEffect>();
+        case(RasterEffectType::SHAKE):
+            return enve::make_shared<ShakeEffect>();
+        case(RasterEffectType::DROP_SHADOW):
+            return enve::make_shared<DropShadowEffect>();
+        case(RasterEffectType::ZOOM_BLUR):
+            return enve::make_shared<ZoomBlurEffect>();
+        case(RasterEffectType::COLOR_GRADING):
+            return enve::make_shared<ColorGradingEffect>();
+        case(RasterEffectType::STRIPE):
+            return enve::make_shared<StripeEffect>();
+        case(RasterEffectType::MOTION_TILE):
+            return enve::make_shared<MotionTileEffect>();
         default: return nullptr;
     }
 }

@@ -236,6 +236,7 @@ set(
     GUI/animationdockwidget.cpp
     GUI/easingpresetspanel.cpp
     GUI/effectspresetspanel.cpp
+    GUI/quickeffectsearchdialog.cpp
     GUI/scriptmanager.cpp
     GUI/scriptconsole.cpp
     GUI/canvaswindow.cpp
@@ -291,6 +292,7 @@ set(
     GUI/animationdockwidget.h
     GUI/easingpresetspanel.h
     GUI/effectspresetspanel.h
+    GUI/quickeffectsearchdialog.h
     GUI/scriptmanager.h
     GUI/scriptconsole.h
     GUI/canvaswindow.h
