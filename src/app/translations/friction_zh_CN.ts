@@ -6535,6 +6535,26 @@ Are you sure you want to save this project file?</source>
         <translation>循环预览</translation>
     </message>
     <message>
+        <source>Snapshot PNG</source>
+        <translation>快照 PNG</translation>
+    </message>
+    <message>
+        <source>Export the current frame as PNG (saved next to the project or in Pictures)</source>
+        <translation>将当前帧导出为 PNG（保存在工程旁或图片文件夹）</translation>
+    </message>
+    <message>
+        <source>No rendered frame available yet - wait for the preview to render this frame</source>
+        <translation>当前帧尚未渲染完成，请等待预览渲染后重试</translation>
+    </message>
+    <message>
+        <source>Snapshot saved: %1</source>
+        <translation>快照已保存：%1</translation>
+    </message>
+    <message>
+        <source>Failed to save snapshot: %1</source>
+        <translation>快照保存失败：%1</translation>
+    </message>
+    <message>
         <location filename="../GUI/timelinedockwidget.cpp" line="165" />
         <source>Scene frame start</source>
         <translation>场景起始帧</translation>

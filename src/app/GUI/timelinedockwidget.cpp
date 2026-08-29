@@ -28,6 +28,14 @@
 #include <QKeyEvent>
 #include <QScrollBar>
 #include <QShortcut>
+#include <QPainter>
+#include <QDir>
+#include <QFileInfo>
+#include <QRegularExpression>
+#include <QStandardPaths>
+#include <QTime>
+#include <QStatusBar>
+#include <QSvgRenderer>
 
 #include <functional>
 
@@ -37,6 +45,8 @@
 #include "GUI/BoxesList/boxsinglewidget.h"
 #include "GUI/keysview.h"
 #include "Boxes/boundingbox.h"
+#include "CacheHandlers/sceneframecontainer.h"
+#include "skia/skiahelpers.h"
 #include "Animators/transformanimator.h"
 #include "Animators/complexanimator.h"
 #include "Animators/animator.h"
@@ -165,6 +175,24 @@ TimelineDockWidget::TimelineDockWidget(Document& document,
     connect(mLoopButton, &QAction::triggered,
             this, &TimelineDockWidget::setLoop);
 
+    // snapshot: quick PNG export of the current canvas frame
+    {
+        QPixmap pm(64, 64);
+        pm.fill(Qt::transparent);
+        QPainter g(&pm);
+        g.setRenderHint(QPainter::Antialiasing);
+        QSvgRenderer renderer(
+                    QStringLiteral(":/icons/camera_tool.svg"));
+        renderer.render(&g, QRectF(0, 0, 64, 64));
+        g.end();
+        mSnapshotButton = new QAction(pm, tr("Snapshot PNG"), this);
+        mSnapshotButton->setToolTip(tr(
+                "Export the current frame as PNG "
+                "(saved next to the project or in Pictures)"));
+        connect(mSnapshotButton, &QAction::triggered,
+                this, &TimelineDockWidget::snapshotCurrentFrame);
+    }
+
     mStepPreviewTimer = new QTimer(this);
 
     mFrameStartSpin = new FrameSpinBox(this);
@@ -281,6 +309,7 @@ TimelineDockWidget::TimelineDockWidget(Document& document,
     mToolBar->addAction(mPlayButton);
     mToolBar->addAction(mStopButton);
     mToolBar->addAction(mLoopButton);
+    mToolBar->addAction(mSnapshotButton);
 
     addSpacer();
 
@@ -370,6 +399,52 @@ void TimelineDockWidget::addBlankAction()
 void TimelineDockWidget::setLoop(const bool loop)
 {
     RenderHandler::sInstance->setLoop(loop);
+}
+
+// quick PNG export of the current frame: takes the cached scene frame
+// (the preview-resolution image the canvas is showing) and writes it
+// next to the project file (Pictures/Friction when unsaved)
+void TimelineDockWidget::snapshotCurrentFrame()
+{
+    const auto scene = *mDocument.fActiveScene;
+    if(!scene) return;
+    const int frame = scene->getCurrentFrame();
+    CacheContainer* const contRaw =
+            scene->getSceneFramesHandler().atFrame(frame);
+    const auto frameCont = dynamic_cast<SceneFrameContainer*>(contRaw);
+    const sk_sp<SkImage> img = frameCont ? frameCont->getImage() : nullptr;
+    const auto status = [this](const QString& msg) {
+        mMainWindow->statusBar()->showMessage(msg, 5000);
+    };
+    if(!img) {
+        status(tr("No rendered frame available yet - wait for the "
+                  "preview to render this frame"));
+        return;
+    }
+    QString dir;
+    const QFileInfo info(mDocument.fEvFile);
+    if(!mDocument.fEvFile.isEmpty() && info.dir().exists()) {
+        dir = info.dir().absolutePath();
+    } else {
+        dir = QStandardPaths::writableLocation(
+                    QStandardPaths::PicturesLocation) + "/Friction";
+        QDir().mkpath(dir);
+    }
+    static const QRegularExpression badChars(
+                QStringLiteral("[\\\\/:*?\"<>|]"));
+    QString sceneName = scene->prp_getName();
+    sceneName.replace(badChars, QStringLiteral("_"));
+    const QString name = QStringLiteral("%1_f%2_%3.png")
+            .arg(sceneName)
+            .arg(frame)
+            .arg(QTime::currentTime().toString(QStringLiteral("HHmmss")));
+    const QString path = dir + QStringLiteral("/") + name;
+    SkiaHelpers::saveImage(path, img, SkEncodedImageFormat::kPNG, 100);
+    if(QFile::exists(path)) {
+        status(tr("Snapshot saved: %1").arg(path));
+    } else {
+        status(tr("Failed to save snapshot: %1").arg(path));
+    }
 }
 
 bool TimelineDockWidget::processKeyPress(QKeyEvent *event)

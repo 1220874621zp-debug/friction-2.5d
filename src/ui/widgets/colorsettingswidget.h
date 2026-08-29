@@ -37,6 +37,7 @@
 
 #include "widgets/colorvaluerect.h"
 #include "widgets/qrealanimatorvalueslider.h"
+#include "widgets/colorwheelwidget.h"
 #include "Animators/coloranimator.h"
 #include "Animators/paintsettingsanimator.h"
 #include "paintsettingsapplier.h"
@@ -154,6 +155,10 @@ private:
 
     QWidget *mRGBWidget = new QWidget();
     QVBoxLayout *mRGBLayout = new QVBoxLayout();
+    // color wheel tab ("Wheel")
+    QWidget* mWheelWidget = nullptr;
+    QVBoxLayout* mWheelLayout = nullptr;
+    ColorWheelWidget* mWheel = nullptr;
     QHBoxLayout *rLayout = new QHBoxLayout();
     QLabel *rLabel = new QLabel("R");
     ColorValueRect *rRect = nullptr;
