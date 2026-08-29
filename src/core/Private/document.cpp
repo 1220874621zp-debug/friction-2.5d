@@ -480,13 +480,30 @@ void Document::clear()
         removeBookmarkBrush(brush);
     }
     fBrushes.clear();
+    // snapshot the GLOBAL favorites BEFORE the removal loop: every
+    // removeBookmarkColor syncs the shrinking list back to the app
+    // settings, which would wipe the global store empty
+    const QStringList globalFavorites = AppSupport::getSettings(
+                QStringLiteral("colors"),
+                QStringLiteral("bookmarks")).toStringList();
     const auto iColors = fColors;
     for (const auto& color : iColors) {
         removeBookmarkColor(color);
     }
     fColors.clear();
-    // new project: keep the global favorites
-    restoreGlobalBookmarkColors();
+    // new project: re-seed from the pre-clear snapshot (bypasses the
+    // just-wiped settings copy)
+    for(const auto& name : globalFavorites) {
+        const QColor c(name);
+        if(!c.isValid()) continue;
+        bool present = false;
+        for(const auto& existing : fColors) {
+            if(existing.rgba() == c.rgba()) { present = true; break; }
+        }
+        if(present) continue;
+        fColors << c;
+        emit bookmarkColorAdded(c);
+    }
 
     mGrid->setSettings(eSettings::instance().fGrid);
 }

@@ -449,7 +449,7 @@ ColorSettingsWidget::ColorSettingsWidget(QWidget *parent)
     mTabWidget->addTab(mRGBWidget, "RGB");
     mTabWidget->addTab(mHSVWidget, "HSV");
     mTabWidget->addTab(mHSLWidget, "HSL");
-    mTabWidget->addTab(mWheelWidget, "Wheel");
+    mTabWidget->addTab(mWheelWidget, tr("Wheel"));
     mWidgetsLayout->addWidget(mTabWidget);
     mRGBLayout->addLayout(aLayout);
 

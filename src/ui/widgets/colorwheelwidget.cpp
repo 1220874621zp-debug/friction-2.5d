@@ -80,8 +80,14 @@ void ColorWheelWidget::renderTriangle() {
             const qreal gamma = (d00*d21 - d01*d20)/den;  // weight of C
             const qreal alpha = 1. - beta - gamma;        // weight of A
             if(alpha < 0. || beta < 0. || gamma < 0.) continue;
+            // the triangle is a LINEAR RGB interpolation between the
+            // vertices A = full color, B = white, C = black:
+            //   v = 1 - gamma,  s = alpha/(alpha + beta)
+            const qreal sum = alpha + beta;
+            const qreal sat = sum > 0.00001 ? alpha/sum : 0.;
             const QColor c = QColor::fromHsvF(
-                        mHue, qBound(0., alpha, 1.), qBound(0., beta, 1.));
+                        mHue, qBound(0., sat, 1.),
+                        qBound(0., 1. - gamma, 1.));
             mTriangle.setPixel(x, y, c.rgba());
         }
     }
@@ -130,8 +136,9 @@ void ColorWheelWidget::applyFromPosition(const QPointF& p) {
     const qreal gamma = (d00*d21 - d01*d20)/den;
     const qreal alpha = 1. - beta - gamma;
     if(alpha < -0.02 || beta < -0.02 || gamma < -0.02) return; // outside
-    mSat = qBound(0., alpha, 1.);
-    mVal = qBound(0., beta, 1.);
+    const qreal sum = alpha + beta;
+    mSat = sum > 0.00001 ? qBound(0., alpha/sum, 1.) : 0.;
+    mVal = qBound(0., 1. - gamma, 1.);
     update();
 }
 
@@ -177,11 +184,12 @@ void ColorWheelWidget::paintEvent(QPaintEvent*) {
     pen.setColor(Qt::black);
     pen.setWidthF(1.);
     p.drawEllipse(c + ringDir*rMid, 5.5, 5.5);
-    // triangle cursor: P = s*A + v*B + (1-s-v)*C
+    // triangle cursor: P = s*v*A + (1-s)*v*B + (1-v)*C
     const QPointF A = triVertex(0);
     const QPointF B = triVertex(1);
     const QPointF C = triVertex(2);
-    const QPointF pos = mSat*A + mVal*B + (1. - mSat - mVal)*C;
+    const QPointF pos = mSat*mVal*A
+            + (1. - mSat)*mVal*B + (1. - mVal)*C;
     p.setBrush(Qt::NoBrush);
     pen.setColor(Qt::white);
     pen.setWidthF(2.);

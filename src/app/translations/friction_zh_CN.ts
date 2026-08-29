@@ -1430,6 +1430,10 @@
 <context>
     <name>ColorSettingsWidget</name>
     <message>
+        <source>Wheel</source>
+        <translation>色轮</translation>
+    </message>
+    <message>
         <location filename="../../ui/widgets/colorsettingswidget.cpp" line="413" />
         <source>Pick Color</source>
         <translation>拾取颜色</translation>
@@ -3187,6 +3191,26 @@ you can create a new one by clicking on the '+' button.</source>
     <message>
         <source>Clear PSD Cache</source>
         <translation>清除 PSD 缓存</translation>
+    </message>
+    <message>
+        <source>Snapshots</source>
+        <translation>快照</translation>
+    </message>
+    <message>
+        <source>Snapshot folder</source>
+        <translation>快照保存文件夹</translation>
+    </message>
+    <message>
+        <source>Browse...</source>
+        <translation>浏览……</translation>
+    </message>
+    <message>
+        <source>Choose Snapshot Folder</source>
+        <translation>选择快照文件夹</translation>
+    </message>
+    <message>
+        <source>Snapshot PNGs are exported at 100% resolution. Empty folder means the Desktop is used.</source>
+        <translation>快照 PNG 以 100% 分辨率导出。文件夹留空时使用桌面。</translation>
     </message>
     <message>
         <source>Removed %1 cache file(s). Re-extracted %2 layer(s) currently in use.</source>
@@ -6539,8 +6563,16 @@ Are you sure you want to save this project file?</source>
         <translation>快照 PNG</translation>
     </message>
     <message>
-        <source>Export the current frame as PNG (saved next to the project or in Pictures)</source>
-        <translation>将当前帧导出为 PNG（保存在工程旁或图片文件夹）</translation>
+        <source>Export the current frame as a 100% resolution PNG (snapshot path is configurable in Preferences, default: Desktop)</source>
+        <translation>将当前帧导出为 100% 分辨率 PNG（路径可在首选项设置，默认桌面）</translation>
+    </message>
+    <message>
+        <source>Rendering snapshot at 100% resolution...</source>
+        <translation>正在以 100% 分辨率渲染快照……</translation>
+    </message>
+    <message>
+        <source>Snapshot timed out - the frame did not render in time</source>
+        <translation>快照超时：该帧未能及时渲染完成</translation>
     </message>
     <message>
         <source>No rendered frame available yet - wait for the preview to render this frame</source>

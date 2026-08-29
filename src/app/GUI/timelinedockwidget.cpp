@@ -35,6 +35,7 @@
 #include <QStandardPaths>
 #include <QTime>
 #include <QStatusBar>
+#include <QTimer>
 #include <QSvgRenderer>
 
 #include <functional>
@@ -187,8 +188,9 @@ TimelineDockWidget::TimelineDockWidget(Document& document,
         g.end();
         mSnapshotButton = new QAction(pm, tr("Snapshot PNG"), this);
         mSnapshotButton->setToolTip(tr(
-                "Export the current frame as PNG "
-                "(saved next to the project or in Pictures)"));
+                "Export the current frame as a 100%% resolution PNG "
+                "(snapshot path is configurable in Preferences, "
+                "default: Desktop)"));
         connect(mSnapshotButton, &QAction::triggered,
                 this, &TimelineDockWidget::snapshotCurrentFrame);
     }
@@ -401,34 +403,25 @@ void TimelineDockWidget::setLoop(const bool loop)
     RenderHandler::sInstance->setLoop(loop);
 }
 
-// quick PNG export of the current frame: takes the cached scene frame
-// (the preview-resolution image the canvas is showing) and writes it
-// next to the project file (Pictures/Friction when unsaved)
+// quick PNG export of the current frame at FULL (100%) resolution:
+// when the preview runs at a lower resolution (default 50%), the
+// scene resolution is bumped to 1.0, the fresh frame is awaited and
+// the previous resolution restored. Destination: the snapshot path
+// from the preferences (default: Desktop)
 void TimelineDockWidget::snapshotCurrentFrame()
 {
     const auto scene = *mDocument.fActiveScene;
     if(!scene) return;
     const int frame = scene->getCurrentFrame();
-    CacheContainer* const contRaw =
-            scene->getSceneFramesHandler().atFrame(frame);
-    const auto frameCont = dynamic_cast<SceneFrameContainer*>(contRaw);
-    const sk_sp<SkImage> img = frameCont ? frameCont->getImage() : nullptr;
     const auto status = [this](const QString& msg) {
         mMainWindow->statusBar()->showMessage(msg, 5000);
     };
-    if(!img) {
-        status(tr("No rendered frame available yet - wait for the "
-                  "preview to render this frame"));
-        return;
-    }
-    QString dir;
-    const QFileInfo info(mDocument.fEvFile);
-    if(!mDocument.fEvFile.isEmpty() && info.dir().exists()) {
-        dir = info.dir().absolutePath();
-    } else {
+    // destination: preferences setting, fallback Desktop
+    QString dir = AppSupport::getSettings(QStringLiteral("snapshots"),
+                                          QStringLiteral("dir")).toString();
+    if(dir.isEmpty() || !QDir(dir).exists()) {
         dir = QStandardPaths::writableLocation(
-                    QStandardPaths::PicturesLocation) + "/Friction";
-        QDir().mkpath(dir);
+                    QStandardPaths::DesktopLocation);
     }
     static const QRegularExpression badChars(
                 QStringLiteral("[\\\\/:*?\"<>|]"));
@@ -439,12 +432,67 @@ void TimelineDockWidget::snapshotCurrentFrame()
             .arg(frame)
             .arg(QTime::currentTime().toString(QStringLiteral("HHmmss")));
     const QString path = dir + QStringLiteral("/") + name;
-    SkiaHelpers::saveImage(path, img, SkEncodedImageFormat::kPNG, 100);
-    if(QFile::exists(path)) {
-        status(tr("Snapshot saved: %1").arg(path));
-    } else {
-        status(tr("Failed to save snapshot: %1").arg(path));
+
+    const qreal savedRes = scene->getResolution();
+    const auto saveAndReport = [status, path](const sk_sp<SkImage>& img) {
+        SkiaHelpers::saveImage(path, img,
+                               SkEncodedImageFormat::kPNG, 100);
+        if(QFile::exists(path)) {
+            status(tr("Snapshot saved: %1").arg(path));
+        } else {
+            status(tr("Failed to save snapshot: %1").arg(path));
+        }
+    };
+
+    const auto contRaw = scene->getSceneFramesHandler().atFrame(frame);
+    const auto frameCont = dynamic_cast<SceneFrameContainer*>(contRaw);
+    const sk_sp<SkImage> img = frameCont ? frameCont->getImage() : nullptr;
+    if(img && (savedRes > 0.999 || frameCont->fResolution > 0.999)) {
+        // already at full resolution
+        saveAndReport(img);
+        return;
     }
+    if(savedRes > 0.999) {
+        status(tr("No rendered frame available yet - wait for the "
+                  "preview to render this frame"));
+        return;
+    }
+    // bump the scene to 100% and wait for the fresh full-res frame
+    scene->setResolution(1.);
+    QPointer<Canvas> sceneQ(scene);
+    const bool restoreRes = true;
+    const qreal resToRestore = savedRes;
+    auto* const timer = new QTimer(this);
+    auto tries = std::make_shared<int>(0);
+    connect(timer, &QTimer::timeout, this,
+            [this, timer, sceneQ, frame, path, restoreRes, resToRestore,
+             tries, status, saveAndReport]() {
+        if(!sceneQ) {
+            timer->stop();
+            timer->deleteLater();
+            return;
+        }
+        const auto cont = sceneQ->getSceneFramesHandler().atFrame(frame);
+        const auto fc = dynamic_cast<SceneFrameContainer*>(cont);
+        const bool ready = fc && fc->getImage() &&
+                           fc->fResolution > 0.999;
+        if(!ready) {
+            if(++(*tries) > 100) { // ~10s timeout
+                timer->stop();
+                timer->deleteLater();
+                sceneQ->setResolution(resToRestore);
+                status(tr("Snapshot timed out - the frame did not "
+                          "render in time"));
+            }
+            return;
+        }
+        timer->stop();
+        timer->deleteLater();
+        saveAndReport(fc->getImage());
+        sceneQ->setResolution(resToRestore);
+    });
+    timer->start(100);
+    status(tr("Rendering snapshot at 100% resolution..."));
 }
 
 bool TimelineDockWidget::processKeyPress(QKeyEvent *event)

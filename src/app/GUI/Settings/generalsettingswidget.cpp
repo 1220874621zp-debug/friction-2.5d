@@ -30,6 +30,8 @@
 #include <QGroupBox>
 #include <QScrollArea>
 #include <QPushButton>
+#include <QLineEdit>
+#include <QStandardPaths>
 #include <QDesktopServices>
 #include <QDir>
 #include <QMessageBox>
@@ -279,6 +281,53 @@ GeneralSettingsWidget::GeneralSettingsWidget(QWidget *parent)
     });
 
     mGeneralLayout->addWidget(mCacheWidget);
+
+    // snapshot export destination (timeline camera button)
+    const auto mSnapshotWidget = new QGroupBox(this);
+    mSnapshotWidget->setObjectName("BlueBox");
+    mSnapshotWidget->setTitle(tr("Snapshots"));
+    mSnapshotWidget->setContentsMargins(0, 0, 0, 0);
+    const auto mSnapshotLayout = new QVBoxLayout(mSnapshotWidget);
+
+    const auto snapDirRow = new QWidget(this);
+    snapDirRow->setContentsMargins(0, 0, 0, 0);
+    const auto snapDirLayout = new QHBoxLayout(snapDirRow);
+    snapDirLayout->setContentsMargins(0, 0, 0, 0);
+    const auto snapDirLabel = new QLabel(tr("Snapshot folder"), this);
+    const auto snapDirEdit = new QLineEdit(this);
+    snapDirEdit->setReadOnly(true);
+    {
+        QString dir = AppSupport::getSettings(QStringLiteral("snapshots"),
+                                              QStringLiteral("dir")).toString();
+        if(dir.isEmpty()) {
+            dir = QStandardPaths::writableLocation(
+                        QStandardPaths::DesktopLocation);
+        }
+        snapDirEdit->setText(dir);
+    }
+    const auto snapDirBrowse = new QPushButton(tr("Browse..."), this);
+    snapDirLayout->addWidget(snapDirLabel);
+    snapDirLayout->addWidget(snapDirEdit, 1);
+    snapDirLayout->addWidget(snapDirBrowse);
+    mSnapshotLayout->addWidget(snapDirRow);
+
+    const auto snapInfoLabel = new QLabel(tr(
+            "Snapshot PNGs are exported at 100% resolution. "
+            "Empty folder means the Desktop is used."), this);
+    snapInfoLabel->setWordWrap(true);
+    mSnapshotLayout->addWidget(snapInfoLabel);
+
+    connect(snapDirBrowse, &QPushButton::clicked, this, [this, snapDirEdit]() {
+        const QString dir = AppSupport::getExistingDirectory(
+                    this, tr("Choose Snapshot Folder"),
+                    snapDirEdit->text());
+        if(dir.isEmpty()) return;
+        snapDirEdit->setText(dir);
+        AppSupport::setSettings(QStringLiteral("snapshots"),
+                                QStringLiteral("dir"), dir);
+    });
+
+    mGeneralLayout->addWidget(mSnapshotWidget);
     mGeneralLayout->addStretch();
     addWidget(mGeneralWidget);
 
