@@ -396,9 +396,9 @@ qsptr<BoundingBox> loadPSDFile(
     qWarning() << "PSD import: package written" << packagePath
                << "with" << imagesCreated << "layer(s)";
 
+    if (progress) progress(totalLayers, totalLayers);
     if (root->getContainedBoxesCount() == 1 && imagesCreated == 1) {
         return qSharedPointerCast<BoundingBox>(root->takeContained_k(0));
-    if (progress) progress(totalLayers, totalLayers);
     }
     root->planCenterPivotPosition();
     return root;
