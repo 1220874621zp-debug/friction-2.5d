@@ -35,7 +35,8 @@ private:
     static qsptr<BoundingBox> buildLayer(const QJsonObject& layerJson,
                                          const QDir& ocaDir,
                                          ContainerBox* const parent,
-                                         Canvas* const scene);
+                                         Canvas* const scene,
+                                         const QDir& manifestDir);
     static SkBlendMode blendModeFromOca(const QString& mode);
 };
 

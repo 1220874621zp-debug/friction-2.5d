@@ -14,40 +14,50 @@
 #include "Animators/qpointfanimator.h"
 
 QJsonObject ImportOCA::readManifest(const QDir& ocaDir) {
-    // the manifest shares the folder name (with .oca or .json
-    // extension) and sits at the root; fall back to any *.json
-    QStringList candidates;
-    const QString base = ocaDir.dirName();
-    if(base.endsWith(QStringLiteral(".oca"), Qt::CaseInsensitive)) {
-        candidates << base;
-        candidates << base.chopped(4) + QStringLiteral(".json");
-    }
-    for(const auto& c : candidates) {
-        const QFileInfo f(ocaDir.filePath(c));
-        if(f.isFile()) {
-            QFile file(f.absoluteFilePath());
-            if(file.open(QIODevice::ReadOnly)) {
-                const auto doc = QJsonDocument::fromJson(file.readAll());
-                if(doc.isObject()) return doc.object();
-            }
-        }
-    }
-    const auto jsons = ocaDir.entryInfoList(
-                QStringList() << QStringLiteral("*.json"),
-                QDir::Files, QDir::Name);
-    for(const auto& f : jsons) {
-        if(f.fileName().endsWith(QStringLiteral("_meta.json"))) continue;
-        QFile file(f.absoluteFilePath());
+    // the manifest is a JSON file; the OCA-Krita reference exporter
+    // names it <docname>.oca (JSON content despite the extension) and
+    // puts it in a subfolder named after the document inside the
+    // .oca folder - so search the root first, then immediate
+    // subfolders
+    const auto tryLoad = [](const QString& path) -> QJsonObject {
+        QFile file(path);
         if(file.open(QIODevice::ReadOnly)) {
             const auto doc = QJsonDocument::fromJson(file.readAll());
             if(doc.isObject()) return doc.object();
         }
+        return QJsonObject();
+    };
+    // root: .oca / .json named like the folder, or any non-_meta json
+    const auto rootEntries = ocaDir.entryInfoList(
+                QStringList() << QStringLiteral("*.json")
+                              << QStringLiteral("*.oca"),
+                QDir::Files, QDir::Name);
+    for(const auto& f : rootEntries) {
+        if(f.fileName().endsWith(QStringLiteral("_meta.json"))) continue;
+        const auto obj = tryLoad(f.absoluteFilePath());
+        if(!obj.isEmpty()) return obj;
     }
-    RuntimeThrow("No OCA manifest JSON found in " + ocaDir.absolutePath());
+    // immediate subfolders (Krita layout: <folder>.oca/<docname>/...)
+    const auto subDirs = ocaDir.entryInfoList(
+                QStringList(), QDir::Dirs | QDir::NoDotAndDotDot);
+    for(const auto& d : subDirs) {
+        const QDir sub(d.absoluteFilePath());
+        const auto subEntries = sub.entryInfoList(
+                    QStringList() << QStringLiteral("*.json")
+                                  << QStringLiteral("*.oca"),
+                    QDir::Files, QDir::Name);
+        for(const auto& f : subEntries) {
+            if(f.fileName().endsWith(QStringLiteral("_meta.json"))) continue;
+            const auto obj = tryLoad(f.absoluteFilePath());
+            if(!obj.isEmpty()) return obj;
+        }
+    }
+    RuntimeThrow("No OCA manifest found in " + ocaDir.absolutePath());
 }
 
 SkBlendMode ImportOCA::blendModeFromOca(const QString& mode) {
-    // OCA blendingMode values (spec) -> skia
+    // OCA blendingMode values as exported by the reference OCA-Krita
+    // plugin (snake_case; spec also lists hyphenated variants)
     if(mode == QLatin1String("multiply"))   { return SkBlendMode::kMultiply; }
     if(mode == QLatin1String("screen"))     { return SkBlendMode::kScreen; }
     if(mode == QLatin1String("overlay"))    { return SkBlendMode::kOverlay; }
@@ -55,18 +65,22 @@ SkBlendMode ImportOCA::blendModeFromOca(const QString& mode) {
     if(mode == QLatin1String("lighten"))    { return SkBlendMode::kLighten; }
     if(mode == QLatin1String("difference")) { return SkBlendMode::kDifference; }
     if(mode == QLatin1String("exclusion"))  { return SkBlendMode::kExclusion; }
-    if(mode == QLatin1String("colorodge") ||
-       mode == QLatin1String("color-dodge") ||
-       mode == QLatin1String("dodge"))
+    if(mode == QLatin1String("dodge") ||
+       mode == QLatin1String("color_dodge") ||
+       mode == QLatin1String("colorodge") ||
+       mode == QLatin1String("color-dodge"))
                                               { return SkBlendMode::kColorDodge; }
-    if(mode == QLatin1String("colorburn") ||
-       mode == QLatin1String("color-burn") ||
-       mode == QLatin1String("burn"))
+    if(mode == QLatin1String("burn") ||
+       mode == QLatin1String("color_burn") ||
+       mode == QLatin1String("colorburn") ||
+       mode == QLatin1String("color-burn"))
                                               { return SkBlendMode::kColorBurn; }
-    if(mode == QLatin1String("hardlight") ||
+    if(mode == QLatin1String("hard_light") ||
+       mode == QLatin1String("hardlight") ||
        mode == QLatin1String("hard-light"))
                                               { return SkBlendMode::kHardLight; }
-    if(mode == QLatin1String("softlight") ||
+    if(mode == QLatin1String("soft_light") ||
+       mode == QLatin1String("softlight") ||
        mode == QLatin1String("soft-light"))
                                               { return SkBlendMode::kSoftLight; }
     if(mode == QLatin1String("hue"))        { return SkBlendMode::kHue; }
@@ -75,23 +89,26 @@ SkBlendMode ImportOCA::blendModeFromOca(const QString& mode) {
     if(mode == QLatin1String("luminosity") ||
        mode == QLatin1String("value"))
                                               { return SkBlendMode::kLuminosity; }
-    if(mode == QLatin1String("dstin") ||
+    if(mode == QLatin1String("dissolve"))   { return SkBlendMode::kSrcOver; }
+    if(mode == QLatin1String("dst_in") ||
        mode == QLatin1String("destination-in"))
                                               { return SkBlendMode::kDstIn; }
-    if(mode == QLatin1String("dstout") ||
+    if(mode == QLatin1String("dst_out") ||
        mode == QLatin1String("destination-out"))
                                               { return SkBlendMode::kDstOut; }
-    if(mode == QLatin1String("srcatop") ||
+    if(mode == QLatin1String("src_atop") ||
        mode == QLatin1String("source-atop"))
                                               { return SkBlendMode::kSrcATop; }
-    // "normal" and unknown
+    // "normal" and unknown (incl. the many Krita-specific modes with
+    // no direct skia equivalent - fall back to normal)
     return SkBlendMode::kSrcOver;
 }
 
 qsptr<BoundingBox> ImportOCA::buildLayer(const QJsonObject& layerJson,
                                          const QDir& ocaDir,
                                          ContainerBox* const parent,
-                                         Canvas* const scene) {
+                                         Canvas* const scene,
+                                         const QDir& manifestDir) {
     Q_UNUSED(scene)
     const QString type = layerJson[QStringLiteral("type")].toString(
                 QStringLiteral("paintlayer"));
@@ -110,7 +127,8 @@ qsptr<BoundingBox> ImportOCA::buildLayer(const QJsonObject& layerJson,
         // OCA stores layers bottom-to-top; addContained PREPENDS, so
         // iterating in order keeps the stacking correct
         for(const auto& child : children) {
-            buildLayer(child.toObject(), ocaDir, group.get(), scene);
+            buildLayer(child.toObject(), ocaDir, group.get(), scene,
+                       manifestDir);
         }
         const qreal opacity = layerJson[QStringLiteral("opacity")].toDouble(1.);
         group->setOpacity(opacity);
@@ -130,7 +148,7 @@ qsptr<BoundingBox> ImportOCA::buildLayer(const QJsonObject& layerJson,
         const auto frameJson = f.toObject();
         const QString fileName = frameJson[QStringLiteral("fileName")].toString();
         if(fileName.isEmpty()) continue; // "_blank" placeholder frame
-        const QString absPath = ocaDir.absoluteFilePath(fileName);
+        const QString absPath = manifestDir.absoluteFilePath(fileName);
         if(!QFile::exists(absPath)) {
             qWarning() << "OCA import: missing frame file" << absPath;
             continue;
@@ -208,6 +226,41 @@ qsptr<ContainerBox> ImportOCA::loadOCAFolder(const QString& folderPath,
                                              Canvas* const scene) {
     const QDir ocaDir(folderPath);
     const auto manifest = readManifest(ocaDir);
+    // frame fileName paths are relative to the MANIFEST's folder (the
+    // Krita exporter puts the manifest in a subfolder next to the
+    // images); find which directory held it
+    QDir manifestDir = ocaDir;
+    {
+        const auto rootEntries = ocaDir.entryInfoList(
+                    QStringList() << QStringLiteral("*.json")
+                                  << QStringLiteral("*.oca"),
+                    QDir::Files, QDir::Name);
+        bool foundAtRoot = false;
+        for(const auto& f : rootEntries) {
+            if(f.fileName().endsWith(QStringLiteral("_meta.json"))) continue;
+            foundAtRoot = true;
+            break;
+        }
+        if(!foundAtRoot) {
+            // search immediate subfolders
+            const auto subs = ocaDir.entryInfoList(
+                        QStringList(), QDir::Dirs | QDir::NoDotAndDotDot);
+            for(const auto& d : subs) {
+                const QDir sub(d.absoluteFilePath());
+                const auto entries = sub.entryInfoList(
+                            QStringList() << QStringLiteral("*.json")
+                                          << QStringLiteral("*.oca"),
+                            QDir::Files, QDir::Name);
+                for(const auto& f : entries) {
+                    if(f.fileName().endsWith(
+                                QStringLiteral("_meta.json"))) continue;
+                    manifestDir = sub;
+                    break;
+                }
+                if(manifestDir != ocaDir) break;
+            }
+        }
+    }
 
     // the whole document becomes one group named after the OCA doc
     const auto rootGroup = enve::make_shared<ContainerBox>(
@@ -219,7 +272,8 @@ qsptr<ContainerBox> ImportOCA::loadOCAFolder(const QString& folderPath,
     // OCA stores layers bottom-to-top; addContained prepends so the
     // final stacking order matches the manifest
     for(const auto& layer : layers) {
-        buildLayer(layer.toObject(), ocaDir, rootGroup.get(), scene);
+        buildLayer(layer.toObject(), ocaDir, rootGroup.get(), scene,
+                   manifestDir);
     }
     return rootGroup;
 }

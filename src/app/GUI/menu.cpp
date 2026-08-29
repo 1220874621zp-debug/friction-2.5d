@@ -861,23 +861,12 @@ void MainWindow::setupMenuBar()
     mToolbar->addAction(mSaveAct);
     mToolbar->addAction(mImportAct);
 
-    // OCA quick-import: text-icon button right next to the generic
-    // import (OCA folders are a distinct workflow, worth one click)
-    {
-        QPixmap pm(64, 64);
-        pm.fill(Qt::transparent);
-        QPainter p(&pm);
-        p.setRenderHint(QPainter::Antialiasing);
-        QFont f = qApp->font();
-        f.setPixelSize(26);
-        f.setBold(true);
-        p.setFont(f);
-        p.setPen(Qt::white);
-        p.drawText(pm.rect(), Qt::AlignCenter, QStringLiteral("OCA"));
-        p.end();
-        mToolbar->addAction(pm, tr("Import OCA"),
-                            this, &MainWindow::importOCA);
-    }
+    // OCA quick-import next to the generic import; just the themed
+    // icon + text label - no custom "OCA" text pixmap (that read as
+    // duplicated text next to the button label)
+    mToolbar->addAction(QIcon::fromTheme("file_import"),
+                        tr("Import OCA"),
+                        this, &MainWindow::importOCA);
 
     mToolbar->addAction(mLinkedAct);
 
