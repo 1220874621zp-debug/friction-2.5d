@@ -1104,6 +1104,7 @@ void BoxSingleWidget::setTargetAbstraction(SWT_Abstraction *abs) {
 
     const auto boolProperty = enve_cast<BoolProperty*>(prop);
     const auto boolPropertyContainer = enve_cast<BoolPropertyContainer*>(prop);
+    const auto boolAnimator = enve_cast<BoolAnimator*>(prop);
     const auto boxTargetProperty = enve_cast<BoxTargetProperty*>(prop);
     const auto comboBoxProperty = enve_cast<ComboBoxProperty*>(prop);
     const auto animator = enve_cast<Animator*>(prop);
@@ -1154,7 +1155,8 @@ void BoxSingleWidget::setTargetAbstraction(SWT_Abstraction *abs) {
         }
     }
     mBoxTargetWidget->setVisible(boxTargetProperty);
-    mCheckBox->setVisible(boolProperty || boolPropertyContainer);
+    mCheckBox->setVisible(boolProperty || boolPropertyContainer ||
+                         boolAnimator);
 
     mPropertyComboBox->setVisible(comboBoxProperty);
 
@@ -1220,6 +1222,17 @@ void BoxSingleWidget::setTargetAbstraction(SWT_Abstraction *abs) {
                                this, [this]() { mCheckBox->update(); });
     } else if(comboBoxProperty) {
         setComboProperty(comboBoxProperty);
+    } else if(boolAnimator) {
+        // a 0/1 channel with no meaningful transition - a checkbox
+        // matches the semantics (the value slider implies continuous
+        // interpolation); repaint when the frame changes so the check
+        // follows the keys during playback/scrubbing
+        mCheckBox->setTarget(boolAnimator);
+        mTargetConn << connect(boolAnimator,
+                               &Property::prp_currentFrameChanged,
+                               this, [this](const UpdateReason) {
+            mCheckBox->update();
+        });
     } else if(const auto qra = enve_cast<QrealAnimator*>(prop)) {
         mValueSlider->setTarget(qra);
         valueSliderVisible = true;

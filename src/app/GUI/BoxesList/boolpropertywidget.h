@@ -29,6 +29,7 @@
 #include <QWidget>
 #include "Properties/boolproperty.h"
 #include "Properties/boolpropertycontainer.h"
+#include "Animators/boolanimator.h"
 
 class BoolPropertyWidget : public QWidget {
     Q_OBJECT
@@ -37,6 +38,9 @@ public:
 
     void setTarget(BoolProperty *property);
     void setTarget(BoolPropertyContainer *property);
+    // keyframable bool (IntAnimator-based): checked = effective value
+    // at the current frame; clicking keys when keys exist/recording
+    void setTarget(BoolAnimator * const animator);
 protected:
     void mousePressEvent(QMouseEvent *);
     void paintEvent(QPaintEvent *);
@@ -46,6 +50,7 @@ private:
     bool mHovered = false;
     qptr<BoolProperty> mTarget;
     qptr<BoolPropertyContainer> mTargetContainer;
+    qptr<BoolAnimator> mTargetAnimator;
 };
 
 #endif // BOOLPROPERTYWIDGET_H

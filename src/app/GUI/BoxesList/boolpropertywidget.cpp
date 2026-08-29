@@ -38,11 +38,19 @@ BoolPropertyWidget::BoolPropertyWidget(QWidget *parent) :
 void BoolPropertyWidget::setTarget(BoolProperty *property) {
     mTarget = property;
     mTargetContainer = nullptr;
+    mTargetAnimator = nullptr;
 }
 
 void BoolPropertyWidget::setTarget(BoolPropertyContainer *property) {
     mTargetContainer = property;
     mTarget = nullptr;
+    mTargetAnimator = nullptr;
+}
+
+void BoolPropertyWidget::setTarget(BoolAnimator * const animator) {
+    mTargetAnimator = animator;
+    mTarget = nullptr;
+    mTargetContainer = nullptr;
 }
 
 void BoolPropertyWidget::mousePressEvent(QMouseEvent *) {
@@ -52,16 +60,32 @@ void BoolPropertyWidget::mousePressEvent(QMouseEvent *) {
     if(mTarget) {
         mTarget->setValue(!mTarget->getValue());
     }
+    if(mTargetAnimator) {
+        // 0/1 channel with no meaningful transition: when keyed (or
+        // recording) write a KEY at the current frame, otherwise the
+        // base value
+        const bool newVal = !mTargetAnimator->getBoolValue();
+        if(mTargetAnimator->anim_hasKeys() ||
+           mTargetAnimator->anim_isRecording()) {
+            mTargetAnimator->saveValueToKey(
+                        mTargetAnimator->anim_getCurrentRelFrame(),
+                        newVal ? 1 : 0);
+        } else {
+            mTargetAnimator->setCurrentBoolValue(newVal);
+        }
+    }
     Document::sInstance->actionFinished();
 }
 
 void BoolPropertyWidget::paintEvent(QPaintEvent *) {
-    if(!mTarget && !mTargetContainer) return;
+    if(!mTarget && !mTargetContainer && !mTargetAnimator) return;
     QPainter p(this);
     if(mTarget) {
         if(mTarget->SWT_isDisabled()) p.setOpacity(.5);
     } else if(mTargetContainer) {
         if(mTargetContainer->SWT_isDisabled()) p.setOpacity(.5);
+    } else if(mTargetAnimator) {
+        if(mTargetAnimator->SWT_isDisabled()) p.setOpacity(.5);
     }
 
     p.setRenderHint(QPainter::Antialiasing);
@@ -77,6 +101,8 @@ void BoolPropertyWidget::paintEvent(QPaintEvent *) {
     bool value;
     if(mTargetContainer) {
         value = mTargetContainer->getValue();
+    } else if(mTargetAnimator) {
+        value = mTargetAnimator->getBoolValue();
     } else {
         value = mTarget->getValue();
     }
