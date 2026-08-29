@@ -800,9 +800,9 @@ eBoxOrSound *Actions::importFile(const QString &path,
 
     if (fInfo.isDir()) {
         // OCA folders (Open Cel Animation) build a full layer tree
-        // from the manifest instead of a plain image sequence
-        if (path.endsWith(QStringLiteral(".oca"),
-                          Qt::CaseInsensitive)) {
+        // from the manifest instead of a plain image sequence;
+        // detected by manifest presence, not by folder name
+        if(ImportOCA::looksLikeOCA(path)) {
             try {
                 result = ImportOCA::loadOCAFolder(path, scene);
                 target->insertContained(insertId, result);

@@ -4971,6 +4971,14 @@ Are you sure you want to save this project file?</source>
         <source>Import OCA</source>
         <translation>导入 OCA</translation>
     </message>
+    <message>
+        <source>No OCA manifest found in this folder.
+An OCA package is a folder containing a JSON manifest and frame images (PNG).
+Export OCA from Krita/Blender/Animation Paper first.</source>
+        <translation>此文件夹中没有找到 OCA 清单文件。
+OCA 包是一个包含 JSON 清单和帧图片（PNG）的文件夹。
+请先从 Krita/Blender/Animation Paper 导出 OCA。</translation>
+    </message>
 </context>
 <context>
     <name>OutputProfilesDialog</name>

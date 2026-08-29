@@ -190,6 +190,20 @@ qsptr<BoundingBox> ImportOCA::buildLayer(const QJsonObject& layerJson,
     return firstBox->ref<BoundingBox>();
 }
 
+bool ImportOCA::looksLikeOCA(const QString& folderPath) {
+    const QDir dir(folderPath);
+    if(!dir.isReadable()) return false;
+    const auto entries = dir.entryInfoList(
+                QStringList() << QStringLiteral("*.json")
+                              << QStringLiteral("*.oca"),
+                QDir::Files, QDir::Name);
+    for(const auto& f : entries) {
+        if(f.fileName().endsWith(QStringLiteral("_meta.json"))) continue;
+        return true;
+    }
+    return false;
+}
+
 qsptr<ContainerBox> ImportOCA::loadOCAFolder(const QString& folderPath,
                                              Canvas* const scene) {
     const QDir ocaDir(folderPath);

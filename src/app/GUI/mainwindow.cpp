@@ -1880,11 +1880,20 @@ void MainWindow::importOCA()
                                                      defPath);
     enableEventFilter();
     if(folder.isEmpty()) return;
-    if(!folder.endsWith(QStringLiteral(".oca"),
-                        Qt::CaseInsensitive)) {
-        statusBar()->showMessage(
-                    tr("Not an OCA folder (the folder name must end "
-                       "with .oca)"), 5000);
+    // any folder is accepted as long as it holds an OCA manifest; a
+    // clear dialog explains the problem when it does not (a status
+    // bar message proved invisible during testing)
+    const QDir dir(folder);
+    const bool hasJson = !dir.entryList(
+                QStringList() << QStringLiteral("*.json")
+                              << QStringLiteral("*.oca"),
+                QDir::Files).isEmpty();
+    if(!hasJson) {
+        QMessageBox::warning(this, tr("Import OCA"),
+            tr("No OCA manifest found in this folder.\n"
+               "An OCA package is a folder containing a JSON manifest "
+               "and frame images (PNG).\n"
+               "Export OCA from Krita/Blender/Animation Paper first."));
         return;
     }
     try {

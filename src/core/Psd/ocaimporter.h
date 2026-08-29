@@ -23,6 +23,9 @@ class Canvas;
 //   frame: fileName/frameNumber/duration/opacity/position
 class ImportOCA {
 public:
+    // cheap check: does the folder hold anything resembling an OCA
+    // manifest (any .json / .oca file at the root)?
+    static bool looksLikeOCA(const QString& folderPath);
     // loads the manifest from an .oca FOLDER; the caller hands the
     // folder path (not the json). Throws enve exceptions on bad data
     static qsptr<ContainerBox> loadOCAFolder(const QString& folderPath,
