@@ -315,8 +315,7 @@ void ToolBox::setupMainActions()
                                                          "F2").toString()),
                     {CanvasMode::pointTransform},
                     false);
-    setupMainAction(svgToolIcon(QStringLiteral(":/icons/pen_tool.svg"),
-                              ThemeSupport::getIconSize(64).width()),
+    setupMainAction(QIcon::fromTheme("pathCreate"),
                     tr("Add Path"),
                     QKeySequence(AppSupport::getSettings("shortcuts",
                                                          "pathCreate",
@@ -441,21 +440,12 @@ void ToolBox::setupMainActions()
     // mask pen: draw DstIn mask shapes right above bitmap layers
     // (AE-style clipping); glyph U+29EA for the icon
     {
-        QPixmap pm(64, 64);
-        pm.fill(Qt::transparent);
-        QPainter p(&pm);
-        p.setRenderHint(QPainter::TextAntialiasing);
-        QFont f = qApp->font();
-        f.setPixelSize(46);
-        f.setBold(true);
-        p.setFont(f);
-        p.setPen(qApp->palette().color(QPalette::WindowText));
-        p.drawText(QRect(0, 0, 64, 64), Qt::AlignCenter, QChar(0x29EA));
-        p.end();
-
-        mMaskPen = new QAction(QIcon(pm),
-                               tr("Mask Pen (draw shapes that clip layers below)"),
-                               mMain);
+        // user-provided white pen-nib svg
+        mMaskPen = new QAction(
+                    svgToolIcon(QStringLiteral(":/icons/pen_tool.svg"),
+                                ThemeSupport::getIconSize(64).width()),
+                    tr("Mask Pen (draw shapes that clip layers below)"),
+                    mMain);
         mMaskPen->setCheckable(true);
         connect(mMaskPen, &QAction::toggled,
                 this, [this](const bool checked) {
