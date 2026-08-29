@@ -92,7 +92,10 @@ int main(int argc, char *argv[])
             RasterEffectType::FRACTAL_NOISE,
             RasterEffectType::LIGHT_SWEEP,
             RasterEffectType::DISPLACEMENT_WARP,
-            RasterEffectType::FILM_GRAIN
+            RasterEffectType::FILM_GRAIN,
+            RasterEffectType::BLACK_WHITE_FLASH,
+            RasterEffectType::LIQUID_GLASS,
+            RasterEffectType::PIXEL_ART
         };
 
         for (const auto t : types) {
@@ -143,7 +146,10 @@ int main(int argc, char *argv[])
             RasterEffectType::FRACTAL_NOISE,
             RasterEffectType::LIGHT_SWEEP,
             RasterEffectType::DISPLACEMENT_WARP,
-            RasterEffectType::FILM_GRAIN
+            RasterEffectType::FILM_GRAIN,
+            RasterEffectType::BLACK_WHITE_FLASH,
+            RasterEffectType::LIQUID_GLASS,
+            RasterEffectType::PIXEL_ART
         };
 
         SkBitmap srcBtmp;

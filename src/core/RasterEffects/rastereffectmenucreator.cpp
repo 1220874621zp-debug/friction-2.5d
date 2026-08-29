@@ -102,6 +102,12 @@ void RasterEffectMenuCreator::forEveryEffectCore(const EffectAdder &add)
         []() { return enve::make_shared<DisplacementWarpEffect>(); });
     add(QObject::tr("Film Grain"), QObject::tr("Stylize"),
         []() { return enve::make_shared<FilmGrainEffect>(); });
+    add(QObject::tr("Black-White Flash"), QObject::tr("Stylize"),
+        []() { return enve::make_shared<BlackWhiteFlashEffect>(); });
+    add(QObject::tr("Liquid Glass"), QObject::tr("Distort"),
+        []() { return enve::make_shared<LiquidGlassEffect>(); });
+    add(QObject::tr("Pixel Art"), QObject::tr("Stylize"),
+        []() { return enve::make_shared<PixelArtEffect>(); });
     add(QObject::tr("Rain"), QObject::tr("Simulation"),
         []() { return enve::make_shared<RainEffect>(); });
     add(QObject::tr("Wipe"), QObject::tr("Transitions"),

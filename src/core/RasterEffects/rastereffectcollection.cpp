@@ -227,6 +227,12 @@ qsptr<RasterEffect> createRasterEffectForNonCustomType(const RasterEffectType ty
             return enve::make_shared<DisplacementWarpEffect>();
         case(RasterEffectType::FILM_GRAIN):
             return enve::make_shared<FilmGrainEffect>();
+        case(RasterEffectType::BLACK_WHITE_FLASH):
+            return enve::make_shared<BlackWhiteFlashEffect>();
+        case(RasterEffectType::LIQUID_GLASS):
+            return enve::make_shared<LiquidGlassEffect>();
+        case(RasterEffectType::PIXEL_ART):
+            return enve::make_shared<PixelArtEffect>();
         default: return nullptr;
     }
 }

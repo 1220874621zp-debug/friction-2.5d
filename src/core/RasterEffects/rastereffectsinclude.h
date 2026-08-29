@@ -38,5 +38,8 @@
 #include "lightsweepeffect.h"
 #include "displacementwarpeffect.h"
 #include "filmgraineffect.h"
+#include "blackwhiteflasheffect.h"
+#include "liquidglasseffect.h"
+#include "pixelarteffect.h"
 
 #endif // RASTEREFFECTSINCLUDE_H

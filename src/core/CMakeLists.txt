@@ -265,6 +265,9 @@ set(
     RasterEffects/lightsweepeffect.cpp
     RasterEffects/displacementwarpeffect.cpp
     RasterEffects/filmgraineffect.cpp
+    RasterEffects/blackwhiteflasheffect.cpp
+    RasterEffects/liquidglasseffect.cpp
+    RasterEffects/pixelarteffect.cpp
     RasterEffects/wipeeffect.cpp
     ReadWrite/ereadstream.cpp
     ReadWrite/ewritestream.cpp
@@ -620,6 +623,9 @@ set(
     RasterEffects/lightsweepeffect.h
     RasterEffects/displacementwarpeffect.h
     RasterEffects/filmgraineffect.h
+    RasterEffects/blackwhiteflasheffect.h
+    RasterEffects/liquidglasseffect.h
+    RasterEffects/pixelarteffect.h
     RasterEffects/wipeeffect.h
     ReadWrite/efuturepos.h
     ReadWrite/ereadstream.h

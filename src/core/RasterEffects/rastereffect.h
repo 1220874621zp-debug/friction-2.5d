@@ -70,7 +70,10 @@ enum class RasterEffectType : short {
     FRACTAL_NOISE,
     LIGHT_SWEEP,
     DISPLACEMENT_WARP,
-    FILM_GRAIN
+    FILM_GRAIN,
+    BLACK_WHITE_FLASH,
+    LIQUID_GLASS,
+    PIXEL_ART
 };
 
 struct BoxRenderData;
