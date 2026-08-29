@@ -3,7 +3,7 @@
 #include "Animators/outlinesettingsanimator.h"
 
 SolidLayer::SolidLayer() :
-    RectangleBox(QStringLiteral("\u56FA\u6001\u5C42"), eBoxType::solid) {
+    RectangleBox(QObject::tr("Solid Layer"), eBoxType::solid) {
     // a solid is always a filled plane - force flat paint regardless
     // of the last-used fill mode, classic AE default color
     getFillSettings()->setPaintType(PaintType::FLATPAINT);

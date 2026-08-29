@@ -80,7 +80,7 @@ void Canvas::addActionsToMenu(QMenu *const menu)
 {
     // new adjustment layer (applies its raster effects to the layers
     // below inside the same parent)
-    menu->addAction(QStringLiteral("\u65B0\u5EFA\u8C03\u6574\u56FE\u5C42"), [this]() {
+    menu->addAction(QObject::tr("New Adjustment Layer"), [this]() {
         const auto adj = enve::make_shared<AdjustmentLayer>();
         mCurrentContainer->addContained(adj);
         adj->planUpdate(UpdateReason::userChange);
@@ -88,14 +88,14 @@ void Canvas::addActionsToMenu(QMenu *const menu)
     });
 
     // new bone layer (FK rig container; use the bone tool inside it)
-    menu->addAction(QStringLiteral("\u65B0\u5EFA\u9AA8\u9ABC\u5C42"), [this]() {
+    menu->addAction(QObject::tr("New Bone Layer"), [this]() {
         const auto layer = enve::make_shared<BoneLayer>();
         mCurrentContainer->addContained(layer);
         Document::sInstance->actionFinished();
     });
 
     // new solid layer (AE-style flat-color plane, canvas-sized)
-    menu->addAction(QStringLiteral("\u65B0\u5EFA\u56FA\u6001\u5C42"), [this]() {
+    menu->addAction(QObject::tr("New Solid Layer"), [this]() {
         addSolidLayerAction();
     });
 

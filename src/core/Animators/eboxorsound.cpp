@@ -41,7 +41,7 @@ eBoxOrSound::eBoxOrSound(const QString &name) :
     // keyframable "可见" row: an extra visibility gate AND-ed with the
     // row eye; base value true = legacy behavior until keyed
     mVisibleAnim = enve::make_shared<BoolAnimator>(
-                QStringLiteral("\u53EF\u89C1"));
+                QObject::tr("Visible"));
     mVisibleAnim->setCurrentBoolValue(true);
     ca_addChild(mVisibleAnim);
     connect(this, &Property::prp_nameChanged, this,

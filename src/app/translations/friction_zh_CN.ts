@@ -546,6 +546,14 @@
         <source>Actions</source>
         <translation>操作</translation>
     </message>
+    <message>
+        <source>Bind Selected Layers to This Bone</source>
+        <translation>绑定选中图层到此骨骼</translation>
+    </message>
+    <message>
+        <source>Unbind Layers</source>
+        <translation>解绑图层</translation>
+    </message>
 </context>
 <context>
     <name>BoxSingleWidget</name>
@@ -1156,6 +1164,94 @@
         <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="761" />
         <source>&lt;p&gt;Requested icon size &lt;b&gt;%1&lt;/b&gt; is not available, expect blurry icons and possible UI size issues. This is usually related to font scaling.&lt;/p&gt;&lt;p&gt;Disable &lt;b&gt;'HiDPI PassThrough'&lt;/b&gt; in preferences, then restart Friction.&lt;/p&gt;</source>
         <translation>&lt;p&gt;请求的图标尺寸 &lt;b&gt;%1&lt;/b&gt; 不可用，图标可能模糊，界面尺寸也可能出现问题。这通常与字体缩放有关。&lt;/p&gt;&lt;p&gt;请在首选项中禁用 &lt;b&gt;“HiDPI PassThrough”&lt;/b&gt;，然后重启 Friction。&lt;/p&gt;</translation>
+    </message>
+    <message>
+        <source>3D Rotation X</source>
+        <translation>3D 旋转 X</translation>
+    </message>
+    <message>
+        <source>3D Rotation Y</source>
+        <translation>3D 旋转 Y</translation>
+    </message>
+    <message>
+        <source>3D Position Z</source>
+        <translation>3D 位移 Z</translation>
+    </message>
+    <message>
+        <source>3D Perspective</source>
+        <translation>3D 透视</translation>
+    </message>
+    <message>
+        <source>Blur</source>
+        <translation>模糊</translation>
+    </message>
+    <message>
+        <source>Radius</source>
+        <translation>半径</translation>
+    </message>
+    <message>
+        <source>Effects</source>
+        <translation>特效</translation>
+    </message>
+    <message>
+        <source>Mask: </source>
+        <translation>蒙版: </translation>
+    </message>
+    <message>
+        <source>Red</source>
+        <translation>红</translation>
+    </message>
+    <message>
+        <source>Orange</source>
+        <translation>橙</translation>
+    </message>
+    <message>
+        <source>Yellow</source>
+        <translation>黄</translation>
+    </message>
+    <message>
+        <source>Green</source>
+        <translation>绿</translation>
+    </message>
+    <message>
+        <source>Cyan</source>
+        <translation>青</translation>
+    </message>
+    <message>
+        <source>Blue</source>
+        <translation>蓝</translation>
+    </message>
+    <message>
+        <source>Purple</source>
+        <translation>紫</translation>
+    </message>
+    <message>
+        <source>Gray</source>
+        <translation>灰</translation>
+    </message>
+    <message>
+        <source>No Color</source>
+        <translation>无颜色</translation>
+    </message>
+    <message>
+        <source>No Parent</source>
+        <translation>无父级</translation>
+    </message>
+    <message>
+        <source>None</source>
+        <translation>无</translation>
+    </message>
+    <message>
+        <source>Convert to Bone Layer</source>
+        <translation>转换为骨骼层</translation>
+    </message>
+    <message>
+        <source>Unbind from Bone</source>
+        <translation>解绑骨骼</translation>
+    </message>
+    <message>
+        <source>Bind to Bone</source>
+        <translation>绑定到骨骼</translation>
     </message>
 </context>
 <context>
@@ -4815,6 +4911,46 @@ Are you sure you want to save this project file?</source>
         <source>Edit Markers</source>
         <translation>编辑标记</translation>
     </message>
+    <message>
+        <source>Click</source>
+        <translation>点击</translation>
+    </message>
+    <message>
+        <source>Menu</source>
+        <translation>菜单</translation>
+    </message>
+    <message>
+        <source>Key Press</source>
+        <translation>按键</translation>
+    </message>
+    <message>
+        <source>Debug Log</source>
+        <translation>调试日志</translation>
+    </message>
+    <message>
+        <source>Copy Log</source>
+        <translation>复制日志</translation>
+    </message>
+    <message>
+        <source>Clear Log</source>
+        <translation>清除日志</translation>
+    </message>
+    <message>
+        <source>Close</source>
+        <translation>关闭</translation>
+    </message>
+    <message>
+        <source>Copied</source>
+        <translation>已复制</translation>
+    </message>
+    <message>
+        <source>Log file: %1</source>
+        <translation>日志文件: %1</translation>
+    </message>
+    <message>
+        <source>Even if the window freezes, this file can be opened in Notepad to read the log</source>
+        <translation>即使窗口卡死，也可用记事本打开此文件查看日志</translation>
+    </message>
 </context>
 <context>
     <name>OutputProfilesDialog</name>
@@ -5862,6 +5998,82 @@ Are you sure you want to save this project file?</source>
         <location filename="../../core/TransformEffects/transformeffectmenucreator.cpp" line="42" />
         <source>Parent</source>
         <translation>父级</translation>
+    </message>
+    <message>
+        <source>New Adjustment Layer</source>
+        <translation>新建调整图层</translation>
+    </message>
+    <message>
+        <source>New Bone Layer</source>
+        <translation>新建骨骼层</translation>
+    </message>
+    <message>
+        <source>New Solid Layer</source>
+        <translation>新建固态层</translation>
+    </message>
+    <message>
+        <source>Cannot merge into this track</source>
+        <translation>无法合并到该轨道</translation>
+    </message>
+    <message>
+        <source>My Computer</source>
+        <translation>我的电脑</translation>
+    </message>
+    <message>
+        <source>Adjustment Layer</source>
+        <translation>调整图层</translation>
+    </message>
+    <message>
+        <source>Bone Layer</source>
+        <translation>骨骼层</translation>
+    </message>
+    <message>
+        <source>Solid Layer</source>
+        <translation>固态层</translation>
+    </message>
+    <message>
+        <source>Bone</source>
+        <translation>骨骼</translation>
+    </message>
+    <message>
+        <source>Length</source>
+        <translation>长度</translation>
+    </message>
+    <message>
+        <source>Camera</source>
+        <translation>摄像机</translation>
+    </message>
+    <message>
+        <source>Pan X</source>
+        <translation>平移 X</translation>
+    </message>
+    <message>
+        <source>Pan Y</source>
+        <translation>平移 Y</translation>
+    </message>
+    <message>
+        <source>Zoom</source>
+        <translation>缩放</translation>
+    </message>
+    <message>
+        <source>Rotate</source>
+        <translation>旋转</translation>
+    </message>
+    <message>
+        <source>Tilt X</source>
+        <translation>倾斜 X</translation>
+    </message>
+    <message>
+        <source>Tilt Y</source>
+        <translation>倾斜 Y</translation>
+    </message>
+    <message>
+        <source>Focal Length</source>
+        <translation>焦距</translation>
+    </message>
+    <message>
+        <source>Visible</source>
+        <translation>可见</translation>
     </message>
 </context>
 <context>

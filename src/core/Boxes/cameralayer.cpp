@@ -4,21 +4,21 @@
 #include "Private/document.h"
 
 CameraLayer::CameraLayer() :
-    BoundingBox(QStringLiteral("\u6444\u50CF\u673A"), eBoxType::cameraLayer) {
+    BoundingBox(QObject::tr("Camera"), eBoxType::cameraLayer) {
     mPanX = enve::make_shared<QrealAnimator>(0., -100000., 100000., 1.,
-                QStringLiteral("\u5E73\u79FB X"));
+                QObject::tr("Pan X"));
     mPanY = enve::make_shared<QrealAnimator>(0., -100000., 100000., 1.,
-                QStringLiteral("\u5E73\u79FB Y"));
+                QObject::tr("Pan Y"));
     mZoom = enve::make_shared<QrealAnimator>(1., 0.01, 100., 0.01,
-                QStringLiteral("\u7F29\u653E"));
+                QObject::tr("Zoom"));
     mRotZ = enve::make_shared<QrealAnimator>(0., -36000., 36000., 1.,
-                QStringLiteral("\u65CB\u8F6C"));
+                QObject::tr("Rotate"));
     mRotX = enve::make_shared<QrealAnimator>(0., -89., 89., 1.,
-                QStringLiteral("\u503E\u659C X"));
+                QObject::tr("Tilt X"));
     mRotY = enve::make_shared<QrealAnimator>(0., -89., 89., 1.,
-                QStringLiteral("\u503E\u659C Y"));
+                QObject::tr("Tilt Y"));
     mFocal = enve::make_shared<QrealAnimator>(800., 1., 100000., 1.,
-                QStringLiteral("\u7126\u8DDD"));
+                QObject::tr("Focal Length"));
     ca_addChild(mPanX);
     ca_addChild(mPanY);
     ca_addChild(mZoom);
