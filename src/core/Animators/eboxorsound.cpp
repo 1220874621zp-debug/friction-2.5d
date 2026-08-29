@@ -47,7 +47,7 @@ void eBoxOrSound::setParentGroup(ContainerBox * const parent) {
     // capture before reassignment: needed for the track enforce below
     // (after a removal the parent chain no longer resolves the scene)
     const QPointer<Canvas> scene = getParentScene();
-    const QPointer<ContainerBox> oldParent = mParentGroup;
+    const QPointer<ContainerBox> oldParent = mParentGroup.data();
     emit aboutToChangeAncestor();
 
     prp_afterWholeInfluenceRangeChanged();
@@ -65,7 +65,7 @@ void eBoxOrSound::setParentGroup(ContainerBox * const parent) {
     // both the old and the new sibling group (queued: we may be inside
     // an insert/remove that must finish before rows are rebuilt)
     if(mTrackId >= 0 && scene) {
-        const QPointer<ContainerBox> newParent = mParentGroup;
+        const QPointer<ContainerBox> newParent = mParentGroup.data();
         const int tid = mTrackId;
         QMetaObject::invokeMethod(this, [scene, oldParent, newParent, tid]() {
             if(!scene) return;
@@ -643,7 +643,7 @@ void eBoxOrSound::applyTrackId(const int id) {
     // may run inside an undo/redo or a drag&drop reparent)
     if(oldId >= 0 || id >= 0) {
         const QPointer<Canvas> scene = getParentScene();
-        const QPointer<ContainerBox> parent = mParentGroup;
+        const QPointer<ContainerBox> parent = mParentGroup.data();
         QMetaObject::invokeMethod(this, [scene, parent, oldId, id]() {
             if(!scene || !parent) return;
             if(oldId >= 0) scene->enforceTrack(parent, oldId);
@@ -709,7 +709,7 @@ eBoxOrSound *eBoxOrSound::trackMemberAtX(
 
 void eBoxOrSound::scheduleTrackEnforce() const {
     const QPointer<Canvas> scene = getParentScene();
-    const QPointer<ContainerBox> parent = mParentGroup;
+    const QPointer<ContainerBox> parent = mParentGroup.data();
     const int tid = mTrackId;
     // const_cast: invokeMethod needs a non-const context object;
     // the lambda only reschedules a UI refresh, it does not mutate

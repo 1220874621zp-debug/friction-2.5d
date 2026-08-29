@@ -34,8 +34,11 @@ public:
     bool operator==(T* const t) const { return mPtr == t;}
     T* operator->() const { return mPtr; }
     operator T*() const { return mPtr; }
+    operator QPointer<T>() const { return mPtr; }
     operator bool() const { return mPtr; }
     T* operator*() const { return mPtr; }
+    T* data() const { return mPtr; }
+    T* get() const { return mPtr; }
     ConnContext& operator<<(const QMetaObject::Connection& connection)
     { return mConnContext << connection; }
 
