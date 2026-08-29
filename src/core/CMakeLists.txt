@@ -326,6 +326,7 @@ set(
     svgimporter.cpp
     Psd/psdfile.cpp
     Psd/psdimporter.cpp
+    Psd/ocaimporter.cpp
     Psd/fpsdpackage.cpp
     Psd/psdimagebox.cpp
     switchablecontext.cpp

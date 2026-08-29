@@ -33,6 +33,7 @@
 #include <QDesktopServices>
 #include <QClipboard>
 #include <QStatusBar>
+#include <QPainter>
 
 using namespace Friction;
 
@@ -86,6 +87,13 @@ void MainWindow::setupMenuBar()
                                          this, &MainWindow::importImageSequence);
     mImportSeqAct->setEnabled(false);
     cmdAddAction(mImportSeqAct);
+
+    mImportOCAAct = mFileMenu->addAction(QIcon::fromTheme("file_import"),
+                                         tr("Import OCA", "MenuBar_File"),
+                                         this, &MainWindow::importOCA);
+    mImportOCAAct->setEnabled(false);
+    mImportOCAAct->setObjectName("ImportOCAAct");
+    cmdAddAction(mImportOCAAct);
 
     mRevertAct = mFileMenu->addAction(QIcon::fromTheme("loop_back"),
                                       tr("Revert", "MenuBar_File"),
@@ -852,6 +860,25 @@ void MainWindow::setupMenuBar()
     mToolbar->addAction(openAct);
     mToolbar->addAction(mSaveAct);
     mToolbar->addAction(mImportAct);
+
+    // OCA quick-import: text-icon button right next to the generic
+    // import (OCA folders are a distinct workflow, worth one click)
+    {
+        QPixmap pm(64, 64);
+        pm.fill(Qt::transparent);
+        QPainter p(&pm);
+        p.setRenderHint(QPainter::Antialiasing);
+        QFont f = qApp->font();
+        f.setPixelSize(26);
+        f.setBold(true);
+        p.setFont(f);
+        p.setPen(Qt::white);
+        p.drawText(pm.rect(), Qt::AlignCenter, QStringLiteral("OCA"));
+        p.end();
+        mToolbar->addAction(pm, tr("Import OCA"),
+                            this, &MainWindow::importOCA);
+    }
+
     mToolbar->addAction(mLinkedAct);
 
     mRenderVideoAct = mToolbar->addAction(QIcon::fromTheme("render_animation"),

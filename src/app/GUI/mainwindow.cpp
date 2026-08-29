@@ -753,6 +753,7 @@ void MainWindow::updateSettingsForCurrentCanvas(Canvas* const scene)
     if (mLinkedAct) { mLinkedAct->setEnabled(scene); }
     if (mImportAct) { mImportAct->setEnabled(scene); }
     if (mImportSeqAct) { mImportSeqAct->setEnabled(scene); }
+    if (mImportOCAAct) { mImportOCAAct->setEnabled(scene); }
     if (mRevertAct) { mRevertAct->setEnabled(scene); }
     if (mSelectAllAct) { mSelectAllAct->setEnabled(scene); }
     if (mInvertSelAct) { mInvertSelAct->setEnabled(scene); }
@@ -1866,6 +1867,31 @@ void MainWindow::importImageSequence()
                                                      defPath);
     enableEventFilter();
     if (!folder.isEmpty()) { mActions.importFile(folder); }
+}
+
+void MainWindow::importOCA()
+{
+    disableEventFilter();
+    const QString defPath = mDocument.fEvFile.isEmpty() ?
+                QDir::homePath() : mDocument.fEvFile;
+    const QString title = tr("Import OCA Folder", "ImportOCADialog_Title");
+    const auto folder = AppSupport::getOpenDirectory(this,
+                                                     title,
+                                                     defPath);
+    enableEventFilter();
+    if(folder.isEmpty()) return;
+    if(!folder.endsWith(QStringLiteral(".oca"),
+                        Qt::CaseInsensitive)) {
+        statusBar()->showMessage(
+                    tr("Not an OCA folder (the folder name must end "
+                       "with .oca)"), 5000);
+        return;
+    }
+    try {
+        mActions.importFile(folder);
+    } catch(const std::exception& e) {
+        gPrintExceptionCritical(e);
+    }
 }
 
 void MainWindow::revert()

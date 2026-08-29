@@ -4959,6 +4959,18 @@ Are you sure you want to save this project file?</source>
         <source>Even if the window freezes, this file can be opened in Notepad to read the log</source>
         <translation>即使窗口卡死，也可用记事本打开此文件查看日志</translation>
     </message>
+    <message>
+        <source>Import OCA Folder</source>
+        <translation>导入 OCA 文件夹</translation>
+    </message>
+    <message>
+        <source>Not an OCA folder (the folder name must end with .oca)</source>
+        <translation>不是 OCA 文件夹（文件夹名必须以 .oca 结尾）</translation>
+    </message>
+    <message>
+        <source>Import OCA</source>
+        <translation>导入 OCA</translation>
+    </message>
 </context>
 <context>
     <name>OutputProfilesDialog</name>
