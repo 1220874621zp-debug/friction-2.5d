@@ -492,7 +492,9 @@ void Document::clear()
     }
     fColors.clear();
     // new project: re-seed from the pre-clear snapshot (bypasses the
-    // just-wiped settings copy)
+    // just-wiped settings copy) AND write it back - the removal loop
+    // above left an empty list in the settings file, so without this
+    // re-write the favorites died on app close (clear runs at exit)
     for(const auto& name : globalFavorites) {
         const QColor c(name);
         if(!c.isValid()) continue;
@@ -504,6 +506,7 @@ void Document::clear()
         fColors << c;
         emit bookmarkColorAdded(c);
     }
+    if(!globalFavorites.isEmpty()) syncGlobalBookmarkColors();
 
     mGrid->setSettings(eSettings::instance().fGrid);
 }

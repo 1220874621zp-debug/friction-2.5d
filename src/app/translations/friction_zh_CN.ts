@@ -6567,6 +6567,22 @@ Are you sure you want to save this project file?</source>
         <translation>将当前帧导出为 100% 分辨率 PNG（路径可在首选项设置，默认桌面）</translation>
     </message>
     <message>
+        <source>Safe Frames</source>
+        <translation>安全框</translation>
+    </message>
+    <message>
+        <source>Show action/title safe frames (90%/80%)</source>
+        <translation>显示动作/字幕安全框（90%%/80%%）</translation>
+    </message>
+    <message>
+        <source>Transparency Grid</source>
+        <translation>透明网格</translation>
+    </message>
+    <message>
+        <source>Toggle the transparency grid background</source>
+        <translation>切换画布背景为透明网格</translation>
+    </message>
+    <message>
         <source>Rendering snapshot at 100% resolution...</source>
         <translation>正在以 100% 分辨率渲染快照……</translation>
     </message>

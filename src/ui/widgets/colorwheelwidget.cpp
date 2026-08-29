@@ -40,9 +40,17 @@ QPointF ColorWheelWidget::triVertex(const int i) const {
 }
 
 void ColorWheelWidget::setDisplayedColor(const QColor& color) {
-    mHue = qBound(0., color.hueF(), 1.);
-    mSat = qBound(0., color.hsvSaturationF(), 1.);
-    mVal = qBound(0., color.valueF(), 1.);
+    // keep the current hue for achromatic colors: QColor::hueF is
+    // undefined (negative) when saturation or value is 0, which made
+    // the triangle jump and spin wildly while dragging near the
+    // white/black edge
+    const qreal s = color.hsvSaturationF();
+    const qreal v = color.valueF();
+    if(s > 0.001 && v > 0.001) {
+        mHue = qBound(0., color.hueF(), 1.);
+    }
+    mSat = qBound(0., s, 1.);
+    mVal = qBound(0., v, 1.);
     update();
 }
 

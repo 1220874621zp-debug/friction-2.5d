@@ -142,6 +142,8 @@ private:
     QAction *mStopButton;
     QAction *mLoopButton;
     QAction *mSnapshotButton = nullptr;
+    QAction *mSafeFramesButton = nullptr;
+    QAction *mTransparencyGridButton = nullptr;
 
     FrameSpinBox *mFrameStartSpin;
     FrameSpinBox *mFrameEndSpin;

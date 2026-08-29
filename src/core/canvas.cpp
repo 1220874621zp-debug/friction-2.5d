@@ -86,6 +86,12 @@ Canvas::Canvas(Document &document,
     mFps = fps;
 
     mBackgroundColor->setColor(QColor(75, 75, 75));
+    mShowSafeFrames = AppSupport::getSettings(
+                QStringLiteral("view"), QStringLiteral("safeFrames"),
+                false).toBool();
+    mTransparencyGrid = AppSupport::getSettings(
+                QStringLiteral("view"), QStringLiteral("transparencyGrid"),
+                false).toBool();
     ca_addChild(mBackgroundColor);
     mSoundComposition = qsptr<SoundComposition>::create(this);
 
@@ -140,6 +146,22 @@ Canvas::~Canvas()
 qreal Canvas::getResolution() const
 {
     return mResolution;
+}
+
+void Canvas::setSafeFramesVisible(const bool visible) {
+    if(mShowSafeFrames == visible) return;
+    mShowSafeFrames = visible;
+    AppSupport::setSettings(QStringLiteral("view"),
+                            QStringLiteral("safeFrames"), visible);
+    emit requestUpdate();
+}
+
+void Canvas::setTransparencyGrid(const bool grid) {
+    if(mTransparencyGrid == grid) return;
+    mTransparencyGrid = grid;
+    AppSupport::setSettings(QStringLiteral("view"),
+                            QStringLiteral("transparencyGrid"), grid);
+    emit requestUpdate();
 }
 
 void Canvas::setResolution(const qreal percent)
@@ -347,7 +369,8 @@ void Canvas::renderSk(SkCanvas* const canvas,
         canvas->drawRect(toSkRect(getCurrentBounds()), paint);
     }
     if (!mClipToCanvasSize || !drawCanvas) {
-        if (bgColor.alpha() == 255 && skViewTrans.mapRect(canvasRect).contains(toSkRect(drawRect))) {
+        if (bgColor.alpha() == 255 && !mTransparencyGrid &&
+                skViewTrans.mapRect(canvasRect).contains(toSkRect(drawRect))) {
             canvas->clear(toSkColor(bgColor));
         } else {
             SkPaint bgPaint;
@@ -363,13 +386,33 @@ void Canvas::renderSk(SkCanvas* const canvas,
                                       gridPixelRatio);
     }
 
+    if (mShowSafeFrames) {
+        // AE-style guides: action safe 90%, title safe 80% of the
+        // canvas, centered (edit view only - renderSk never feeds the
+        // scene frame cache or exports)
+        SkPaint sfPaint;
+        sfPaint.setStyle(SkPaint::kStroke_Style);
+        sfPaint.setColor(SkColorSetARGB(170, 255, 70, 70));
+        sfPaint.setStrokeWidth(invZoom);
+        sfPaint.setPathEffect(dashPathEffect);
+        const auto mkRect = [canvasRect](const qreal f) {
+            const SkScalar w = canvasRect.width()*f;
+            const SkScalar h = canvasRect.height()*f;
+            return SkRect::MakeXYWH(canvasRect.centerX() - w/2,
+                                    canvasRect.centerY() - h/2, w, h);
+        };
+        canvas->drawRect(mkRect(0.9), sfPaint);  // action safe
+        sfPaint.setColor(SkColorSetARGB(170, 255, 220, 60));
+        canvas->drawRect(mkRect(0.8), sfPaint);  // title safe
+    }
+
     canvas->save();
 
     if (mClipToCanvasSize) {
         canvas->clipRect(canvasRect);
     }
 
-    if (bgColor.alpha() != 255) {
+    if (bgColor.alpha() != 255 || mTransparencyGrid) {
         drawTransparencyMesh(canvas, canvasRect);
     }
 

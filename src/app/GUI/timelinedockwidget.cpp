@@ -186,6 +186,11 @@ TimelineDockWidget::TimelineDockWidget(Document& document,
                     QStringLiteral(":/icons/camera_tool.svg"));
         renderer.render(&g, QRectF(0, 0, 64, 64));
         g.end();
+        // white version (toolbar icon convention)
+        QPainter w(&pm);
+        w.setCompositionMode(QPainter::CompositionMode_SourceIn);
+        w.fillRect(pm.rect(), Qt::white);
+        w.end();
         mSnapshotButton = new QAction(pm, tr("Snapshot PNG"), this);
         mSnapshotButton->setToolTip(tr(
                 "Export the current frame as a 100%% resolution PNG "
@@ -193,6 +198,57 @@ TimelineDockWidget::TimelineDockWidget(Document& document,
                 "default: Desktop)"));
         connect(mSnapshotButton, &QAction::triggered,
                 this, &TimelineDockWidget::snapshotCurrentFrame);
+    }
+
+    // AE-style view toggles: action/title safe guides + transparency
+    // checkerboard background (view only, never rendered/exported)
+    {
+        QPixmap sf(64, 64);
+        sf.fill(Qt::transparent);
+        QPainter p(&sf);
+        p.setRenderHint(QPainter::Antialiasing);
+        QPen pen(QColor(255, 255, 255, 220));
+        pen.setWidthF(4.);
+        pen.setStyle(Qt::DashLine);
+        p.setPen(pen);
+        p.drawRect(QRectF(6, 14, 52, 36));
+        pen.setColor(QColor(255, 220, 90, 220));
+        pen.setWidthF(4.);
+        p.setPen(pen);
+        p.drawRect(QRectF(14, 21, 36, 22));
+        p.end();
+        mSafeFramesButton = new QAction(sf, tr("Safe Frames"), this);
+        mSafeFramesButton->setCheckable(true);
+        mSafeFramesButton->setToolTip(tr(
+                "Show action/title safe frames (90%%/80%%)"));
+        connect(mSafeFramesButton, &QAction::triggered,
+                this, [this](const bool checked) {
+            const auto scene = *mDocument.fActiveScene;
+            if(scene) scene->setSafeFramesVisible(checked);
+        });
+
+        QPixmap tg(64, 64);
+        tg.fill(Qt::transparent);
+        QPainter t(&tg);
+        t.setPen(Qt::NoPen);
+        for(int y = 0; y < 8; y++) {
+            for(int x = 0; x < 8; x++) {
+                t.fillRect(x*8, y*8, 8, 8,
+                           (x + y)%2 ? QColor(255, 255, 255)
+                                     : QColor(160, 160, 160));
+            }
+        }
+        t.end();
+        mTransparencyGridButton = new QAction(tg, tr("Transparency Grid"),
+                                              this);
+        mTransparencyGridButton->setCheckable(true);
+        mTransparencyGridButton->setToolTip(tr(
+                "Toggle the transparency grid background"));
+        connect(mTransparencyGridButton, &QAction::triggered,
+                this, [this](const bool checked) {
+            const auto scene = *mDocument.fActiveScene;
+            if(scene) scene->setTransparencyGrid(checked);
+        });
     }
 
     mStepPreviewTimer = new QTimer(this);
@@ -312,6 +368,8 @@ TimelineDockWidget::TimelineDockWidget(Document& document,
     mToolBar->addAction(mStopButton);
     mToolBar->addAction(mLoopButton);
     mToolBar->addAction(mSnapshotButton);
+    mToolBar->addAction(mSafeFramesButton);
+    mToolBar->addAction(mTransparencyGridButton);
 
     addSpacer();
 
@@ -457,8 +515,11 @@ void TimelineDockWidget::snapshotCurrentFrame()
                   "preview to render this frame"));
         return;
     }
-    // bump the scene to 100% and wait for the fresh full-res frame
+    // bump the scene to 100% and wait for the fresh full-res frame;
+    // actionFinished() actually SCHEDULES the re-render (the video
+    // export does the same setResolution + actionFinished dance)
     scene->setResolution(1.);
+    mDocument.actionFinished();
     QPointer<Canvas> sceneQ(scene);
     const bool restoreRes = true;
     const qreal resToRestore = savedRes;
@@ -481,6 +542,7 @@ void TimelineDockWidget::snapshotCurrentFrame()
                 timer->stop();
                 timer->deleteLater();
                 sceneQ->setResolution(resToRestore);
+                mDocument.actionFinished();
                 status(tr("Snapshot timed out - the frame did not "
                           "render in time"));
             }
@@ -490,6 +552,7 @@ void TimelineDockWidget::snapshotCurrentFrame()
         timer->deleteLater();
         saveAndReport(fc->getImage());
         sceneQ->setResolution(resToRestore);
+        mDocument.actionFinished();
     });
     timer->start(100);
     status(tr("Rendering snapshot at 100% resolution..."));

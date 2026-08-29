@@ -219,6 +219,10 @@ public:
                          const bool startTrans);
 
     qreal getResolution() const;
+    void setSafeFramesVisible(const bool visible);
+    bool safeFramesVisible() const { return mShowSafeFrames; }
+    void setTransparencyGrid(const bool grid);
+    bool transparencyGrid() const { return mTransparencyGrid; }
     void setWorldToScreen(const QTransform& transform,
                           qreal devicePixelRatio);
     void setResolution(const qreal percent);
@@ -1036,6 +1040,11 @@ protected:
     FrameRange mRange{0, 200};
 
     qreal mResolution = 0.5;
+
+    // view-only toggles (edit canvas, never part of renders/exports):
+    // AE-style action/title safe guides + transparency checkerboard
+    bool mShowSafeFrames = false;
+    bool mTransparencyGrid = false;
 
     qptr<BoundingBox> mCurrentBox;
     qptr<Circle> mCurrentCircle;
