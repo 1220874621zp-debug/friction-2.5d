@@ -109,6 +109,7 @@ void KeysView::setGraphViewed(const bool bT) {
     if(mHighlighter) mHighlighter->setHidden(bT);
     mGraphViewed = bT;
     if(bT) {
+        graphUpdateVisible();
         graphResetValueScaleAndMinShown();
         mValueInput.setForce1D(false);
     } else {

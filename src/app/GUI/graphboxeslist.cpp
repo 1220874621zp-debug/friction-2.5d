@@ -592,9 +592,7 @@ void KeysView::graphResetValueScaleAndMinShown() {
 
 bool KeysView::graphValidateVisible(GraphAnimator* const animator)
 {
-    if (animator->prp_isSelected() &&
-        animator->prp_isParentBoxContained()) { return true; }
-    return false;
+    return animator != nullptr;
 }
 
 void KeysView::graphAddToViewedAnimatorList(GraphAnimator * const animator) {
@@ -608,18 +606,14 @@ void KeysView::graphAddToViewedAnimatorList(GraphAnimator * const animator) {
 
 void KeysView::graphUpdateVisible()
 {
-    qDebug() << "graphUpdateVisible";
-    //mGraphAnimators.clear();
+    mGraphAnimators.clear();
     if (mCurrentScene) {
         const int id = mBoxesListWidget->getId();
         const auto all = mCurrentScene->getSelectedForGraph(id);
         if (all) {
-            qDebug() << "selected for graph" << all->count();
             for (auto anim : *all) {
-                if (graphValidateVisible(anim)) { graphAddToViewedAnimatorList(anim); }
-                else {
-                    anim->prp_setSelected(false);
-                    graphRemoveViewedAnimator(anim);
+                if (graphValidateVisible(anim)) {
+                    graphAddToViewedAnimatorList(anim);
                 }
             }
         }
