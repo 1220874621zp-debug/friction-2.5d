@@ -42,5 +42,6 @@
 #include "liquidglasseffect.h"
 #include "pixelarteffect.h"
 #include "chromakeyeffect.h"
+#include "liquidglasseffect.h"
 
 #endif // RASTEREFFECTSINCLUDE_H

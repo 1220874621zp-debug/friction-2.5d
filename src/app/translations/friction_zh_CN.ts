@@ -5729,6 +5729,46 @@ Are you sure you want to save this project file?</source>
         <translation>不支持的图层类型 %1</translation>
     </message>
     <message>
+        <source>Liquid Glass</source>
+        <translation>液态玻璃</translation>
+    </message>
+    <message>
+        <source>Distort</source>
+        <translation>扭曲</translation>
+    </message>
+    <message>
+        <source>center x</source>
+        <translation>中心 X</translation>
+    </message>
+    <message>
+        <source>center y</source>
+        <translation>中心 Y</translation>
+    </message>
+    <message>
+        <source>size</source>
+        <translation>大小</translation>
+    </message>
+    <message>
+        <source>shape exponent</source>
+        <translation>形状指数</translation>
+    </message>
+    <message>
+        <source>refraction</source>
+        <translation>折射强度</translation>
+    </message>
+    <message>
+        <source>noise</source>
+        <translation>噪点</translation>
+    </message>
+    <message>
+        <source>glow weight</source>
+        <translation>辉光权重</translation>
+    </message>
+    <message>
+        <source>glow bias</source>
+        <translation>辉光偏移</translation>
+    </message>
+    <message>
         <source>Path Effects</source>
         <translation>路径特效</translation>
     </message>

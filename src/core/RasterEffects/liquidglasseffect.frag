@@ -1,70 +1,136 @@
-#version 330 core
-in vec2 texCoord;
-out vec4 fragColor;
-uniform sampler2D tex;
-uniform float blurRadius;
-uniform float refraction;
-uniform float surfaceNoise;
-uniform float thickness;
-uniform float highlightIntensity;
-uniform float lightAngle;
-uniform float highlightSize;
-uniform float edgeSoftness;
-uniform float magnification;
-uniform vec4 glassTint;
-uniform float tintOpacity;
+/*
+#
+# Friction - https://friction.graphics
+#
+# Copyright (c) Ole-André Rodlie and contributors
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# See 'README.md' for more information.
+#
+*/
 
-void main(void) {
-    vec4 src = texture(tex, texCoord);
-    if (src.a < 0.001) {
-        fragColor = vec4(0.0);
+// Liquid glass (magnifier) distortion ported from a Shadertoy shader
+// https://gist.github.com/emmachase/25af1fb66daebf0f9989c93d3c8c5fa6
+// The CPU path mirrors this file step by step; the input texture is
+// premultiplied alpha, so the glow multiplier is clamped against the
+// alpha to keep the premultiplied invariant rgb <= a.
+//
+// Coordinate convention: texCoord (0,0) is the BOTTOM-left of the
+// layer surface (GL). The C++ side flips the panel-facing "center y"
+// (0 = top) accordingly before it reaches uCenter.
+
+#version 330 core
+layout(location = 0) out vec4 fragColor;
+
+in vec2 texCoord;
+
+uniform sampler2D tex;
+
+uniform vec2 uCenter;      // GL uv space: y up
+uniform vec2 uTexSize;     // render surface size in pixels
+uniform float uSize;       // effect size (fraction of the height)
+uniform float uShapeN;     // superellipse exponent (2 = ellipse .. 8 = squarish)
+uniform float uRefraction; // distortion power
+uniform float uNoise;
+uniform float uGlowWeight;
+uniform float uGlowBias;
+
+const float M_E = 2.718281828459045;
+
+// The f() function from the original (constants hardcoded)
+float f_func(float x)
+{
+    float u_a = 0.7;
+    float u_b = 2.3;
+    float u_c = 5.2;
+    float u_d = 6.9;
+    return 1.0 - u_b * pow(u_c * M_E, -u_d * x - u_a);
+}
+
+float rand(in vec2 co)
+{
+    return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453);
+}
+
+// Signed distance function for a superellipse (gradient-normalized,
+// exactly as in the original)
+float sdSuperellipse(vec2 p, float n, float r)
+{
+    vec2 p_abs = abs(p);
+    float numerator = pow(p_abs.x, n) + pow(p_abs.y, n) - pow(r, n);
+
+    float den_x = pow(p_abs.x, 2.0 * n - 2.0);
+    float den_y = pow(p_abs.y, 2.0 * n - 2.0);
+
+    float denominator = n * sqrt(den_x + den_y) + 1e-5;
+    return numerator / denominator;
+}
+
+// Angular rim pattern; fades out near the center to avoid the
+// atan singularity (as in the original Glow())
+float glowPattern(vec2 localUV)
+{
+    vec2 centered = localUV * 2.0 - 1.0;
+    float radius = length(centered);
+    float angleFactor = smoothstep(0.0, 0.9, radius);
+    return sin(atan(centered.y, centered.x) - 0.5) * angleFactor;
+}
+
+void main(void)
+{
+    // aspect correction as in the original: x scaled by width/height
+    vec2 aspectRatio = vec2(uTexSize.x / uTexSize.y, 1.0);
+
+    // local space centered on the effect, aspect corrected
+    vec2 p = (texCoord - uCenter) * aspectRatio / uSize;
+
+    float r = 1.0;
+    float d = sdSuperellipse(p, uShapeN, r);
+
+    // outside the shape -> pass the source pixel through untouched
+    if (d > 0.0) {
+        fragColor = texture(tex, texCoord);
         return;
     }
 
-    vec2 center = vec2(0.5, 0.5);
-    vec2 offset = texCoord - center;
+    float dist = -d;
+    float fval = max(f_func(dist), 0.001);
+    vec2 sampleP = p * pow(fval, uRefraction);
 
-    // Magnification (subtle lens zoom)
-    float mag = max(magnification, 0.1);
-    vec2 uvLens = center + offset / mag;
+    // scale back to uv space
+    vec2 targetUV = sampleP * uSize / aspectRatio + uCenter;
+    // the original samples at targetUV + 0.1 (author's tuned offset);
+    // out-of-bounds samples clamp to the edge instead of the debug
+    // magenta the shadertoy version returned
+    targetUV = clamp(targetUV + 0.1, 0.0, 1.0);
 
-    // Liquid surface wave normal distortion (subtle harmonic waves)
-    float freq = 8.0 + surfaceNoise * 0.15;
-    vec2 waveNorm = vec2(
-        sin(texCoord.y * freq + texCoord.x * 4.0),
-        cos(texCoord.x * freq - texCoord.y * 4.0)
-    ) * (surfaceNoise * 0.0015);
+    vec4 color = texture(tex, targetUV);
 
-    // Subtle lens curvature refraction
-    vec2 lensCurv = offset * (thickness * 0.001);
-    vec2 totalDisp = (lensCurv + waveNorm) * (refraction * 0.05);
-    vec2 sampleUV = clamp(uvLens + totalDisp, 0.0, 1.0);
+    // static grain (screen-space, as in the original)
+    vec3 noise = vec3(rand(gl_FragCoord.xy * 1e-3) - 0.5) * uNoise;
 
-    // 25-tap frosted glass diffusion blur
-    vec4 blurredCol = vec4(0.0);
-    float bRadius = max(blurRadius, 0.0) * 0.0008;
-    float totalWeight = 0.0;
-    for (int x = -2; x <= 2; ++x) {
-        for (int y = -2; y <= 2; ++y) {
-            float w = 1.0 / (1.0 + float(x*x + y*y) * 0.5);
-            vec2 bUV = clamp(sampleUV + vec2(float(x), float(y)) * bRadius, 0.0, 1.0);
-            blurredCol += texture(tex, bUV) * w;
-            totalWeight += w;
-        }
-    }
-    blurredCol /= totalWeight;
+    // glow multiplier: angular pattern near the rim + bias
+    vec2 localUV = (texCoord - uCenter) / uSize + 0.5;
+    float glowFactor = glowPattern(localUV) * uGlowWeight *
+            smoothstep(0.0, 0.06, dist) + 1.0 + uGlowBias;
 
-    // Specular highlight on wave ridges & glass surface
-    float rad = radians(lightAngle);
-    vec2 lightDir = vec2(cos(rad), sin(rad));
-    vec2 surfaceGrad = normalize(waveNorm * 100.0 + lensCurv * 50.0 + vec2(0.0001));
-    float waveDot = max(0.0, dot(surfaceGrad, lightDir));
-    float hlPow = max(highlightSize * 0.5, 2.0);
-    float highlight = pow(waveDot, hlPow) * (highlightIntensity * 0.005);
+    vec3 rgb = color.rgb * glowFactor + noise;
+    // keep the premultiplied invariant (glow can push rgb past alpha)
+    rgb = clamp(rgb, 0.0, color.a);
+    fragColor = vec4(rgb, color.a);
 
-    // Glass tinting & opacity
-    vec3 tinted = mix(blurredCol.rgb, glassTint.rgb, (tintOpacity * 0.01) * glassTint.a);
-    vec3 finalRgb = tinted + vec3(highlight);
-
-    fragColor = vec4(clamp(finalRgb, 0.0, 1.0), src.a * blurredCol.a);
+    // safe fallback
+    if (any(isnan(fragColor.rgb))) fragColor = vec4(1.0, 0.0, 1.0, 1.0);
 }

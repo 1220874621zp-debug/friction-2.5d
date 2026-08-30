@@ -4,272 +4,352 @@
 #
 # Copyright (c) Ole-André Rodlie and contributors
 #
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
 # See 'README.md' for more information.
 #
 */
 
+// Liquid glass (magnifier) distortion ported from a Shadertoy shader
+// https://gist.github.com/emmachase/25af1fb66daebf0f9989c93d3c8c5fa6
+// The CPU path mirrors liquidglasseffect.frag step by step; colors stay
+// premultiplied and the glow result is clamped against the alpha.
+
 #include "liquidglasseffect.h"
+
 #include "gpurendertools.h"
 #include "openglrastereffectcaller.h"
-#include "Animators/qrealanimator.h"
-#include "Animators/coloranimator.h"
+
+#include "Boxes/boxrenderdata.h"
 #include "appsupport.h"
+
+#include <algorithm>
 #include <cmath>
 
+namespace {
+
+const float kM_E = 2.718281828459045f;
+
+float sat1(const float v) { return v < 0.f ? 0.f : (v > 1.f ? 1.f : v); }
+
+// Mirrors f_func() in liquidglasseffect.frag
+float f_func(const float x)
+{
+    const float u_a = 0.7f;
+    const float u_b = 2.3f;
+    const float u_c = 5.2f;
+    const float u_d = 6.9f;
+    return 1.f - u_b * std::pow(u_c * kM_E, -u_d * x - u_a);
+}
+
+// Mirrors rand() in liquidglasseffect.frag
+float rand2d(const float x, const float y)
+{
+    const float d = 12.9898f * x + 78.233f * y;
+    float v = std::sin(d) * 43758.5453f;
+    v = v - std::floor(v);
+    return v;
+}
+
+// Mirrors sdSuperellipse() in liquidglasseffect.frag
+float sdSuperellipse(const float px, const float py,
+                     const float n, const float r)
+{
+    const float ax = std::abs(px);
+    const float ay = std::abs(py);
+    const float numerator = std::pow(ax, n) + std::pow(ay, n) - std::pow(r, n);
+    const float den_x = std::pow(ax, 2.f * n - 2.f);
+    const float den_y = std::pow(ay, 2.f * n - 2.f);
+    const float denominator = n * std::sqrt(den_x + den_y) + 1e-5f;
+    return numerator / denominator;
+}
+
+float smoothstepf(const float e0, const float e1, const float x)
+{
+    const float t = sat1((x - e0) / (e1 - e0));
+    return t * t * (3.f - 2.f * t);
+}
+
+// Mirrors glowPattern() in liquidglasseffect.frag
+float glowPattern(const float lu, const float lv)
+{
+    const float cx = lu * 2.f - 1.f;
+    const float cy = lv * 2.f - 1.f;
+    const float radius = std::sqrt(cx * cx + cy * cy);
+    const float angleFactor = smoothstepf(0.f, 0.9f, radius);
+    return std::sin(std::atan2(cy, cx) - 0.5f) * angleFactor;
+}
+
+// bilinear sample of a premultiplied src bitmap; uv is in GL space
+// (y up), bitmap row 0 is the top; coords clamp to the edge
+void sampleBilinear(const SkBitmap& src, const int w, const int h,
+                    const float u, const float v,
+                    float& r, float& g, float& b, float& a)
+{
+    float fx = u * float(w) - 0.5f;
+    float fy = (1.f - v) * float(h) - 0.5f;
+    fx = std::min(std::max(fx, 0.f), float(w - 1));
+    fy = std::min(std::max(fy, 0.f), float(h - 1));
+    int x0 = int(std::floor(fx));
+    int y0 = int(std::floor(fy));
+    int x1 = std::min(x0 + 1, w - 1);
+    int y1 = std::min(y0 + 1, h - 1);
+    const float tx = fx - float(x0);
+    const float ty = fy - float(y0);
+    const uchar* s00 = static_cast<const uchar*>(src.getAddr(x0, y0));
+    const uchar* s10 = static_cast<const uchar*>(src.getAddr(x1, y0));
+    const uchar* s01 = static_cast<const uchar*>(src.getAddr(x0, y1));
+    const uchar* s11 = static_cast<const uchar*>(src.getAddr(x1, y1));
+    const uchar* chans[4] = {s00, s10, s01, s11};
+    float out[4];
+    for (int c = 0; c < 4; c++) {
+        const float top = chans[0][c] / 255.f +
+                (chans[1][c] - chans[0][c]) / 255.f * tx;
+        const float bot = chans[2][c] / 255.f +
+                (chans[3][c] - chans[2][c]) / 255.f * tx;
+        out[c] = top + (bot - top) * ty;
+    }
+    r = out[0]; g = out[1]; b = out[2]; a = out[3];
+}
+
+// Mirrors main() in liquidglasseffect.frag step by step
+void processPixel(const LiquidGlassEffectData& d,
+                  const SkBitmap& src, const int w, const int h,
+                  const float u, const float v,
+                  const float noiseX, const float noiseY,
+                  const float srcR, const float srcG,
+                  const float srcB, const float srcA,
+                  float& rOut, float& gOut, float& bOut, float& aOut)
+{
+    const float aspectX = float(w) / float(h);
+
+    // local space centered on the effect, aspect corrected
+    const float px = (u - d.mCenterX) * aspectX / d.mSize;
+    const float py = (v - d.mCenterY) / d.mSize;
+
+    const float dd = sdSuperellipse(px, py, d.mShapeN, 1.f);
+
+    // outside the shape -> pass the source pixel through untouched
+    if (dd > 0.f) {
+        rOut = srcR; gOut = srcG; bOut = srcB; aOut = srcA;
+        return;
+    }
+
+    const float dist = -dd;
+    float fval = f_func(dist);
+    if (fval < 0.001f) fval = 0.001f;
+    const float scale = std::pow(fval, d.mRefraction);
+    const float sampleX = px * scale;
+    const float sampleY = py * scale;
+
+    // scale back to uv space; +0.1 offset and edge clamping as in the
+    // original (out-of-bounds returned debug magenta there)
+    float targetU = sampleX * d.mSize / aspectX + d.mCenterX + 0.1f;
+    float targetV = sampleY * d.mSize + d.mCenterY + 0.1f;
+    targetU = sat1(targetU);
+    targetV = sat1(targetV);
+
+    float cr, cg, cb, ca;
+    sampleBilinear(src, w, h, targetU, targetV, cr, cg, cb, ca);
+
+    // static grain (screen-space, as in the original)
+    const float noise = (rand2d(noiseX, noiseY) - 0.5f) * d.mNoise;
+
+    // glow multiplier: angular pattern near the rim + bias
+    const float localU = (u - d.mCenterX) / d.mSize + 0.5f;
+    const float localV = (v - d.mCenterY) / d.mSize + 0.5f;
+    const float glowFactor = glowPattern(localU, localV) * d.mGlowWeight *
+            smoothstepf(0.f, 0.06f, dist) + 1.f + d.mGlowBias;
+
+    // keep the premultiplied invariant (glow can push rgb past alpha)
+    const float r = cr * glowFactor + noise;
+    const float g = cg * glowFactor + noise;
+    const float b = cb * glowFactor + noise;
+    rOut = std::min(std::max(r, 0.f), ca);
+    gOut = std::min(std::max(g, 0.f), ca);
+    bOut = std::min(std::max(b, 0.f), ca);
+    aOut = ca;
+}
+
+} // namespace
+
 LiquidGlassEffect::LiquidGlassEffect() :
-    RasterEffect("liquidGlass",
+    RasterEffect("liquid-glass",
                  AppSupport::getRasterEffectHardwareSupport("LiquidGlass",
                                                             HardwareSupport::gpuPreffered),
                  true,
                  RasterEffectType::LIQUID_GLASS)
 {
-    mBlurRadius = enve::make_shared<QrealAnimator>(15.0, 0.0, 100.0, 1.0, "blur radius");
-    ca_addChild(mBlurRadius);
-
-    mRefraction = enve::make_shared<QrealAnimator>(20.0, 0.0, 100.0, 1.0, "displacement");
+    mCenterX = enve::make_shared<QrealAnimator>(0.5, 0, 1, 0.01,
+                                                QObject::tr("center x"));
+    ca_addChild(mCenterX);
+    // panel-facing y is 0 = top (friction y grows downward)
+    mCenterY = enve::make_shared<QrealAnimator>(0.5, 0, 1, 0.01,
+                                                QObject::tr("center y"));
+    ca_addChild(mCenterY);
+    mSize = enve::make_shared<QrealAnimator>(0.15, 0.05, 0.5, 0.01,
+                                             QObject::tr("size"));
+    ca_addChild(mSize);
+    mShapeN = enve::make_shared<QrealAnimator>(3, 2, 8, 0.1,
+                                              QObject::tr("shape exponent"));
+    ca_addChild(mShapeN);
+    mRefraction = enve::make_shared<QrealAnimator>(3, 0, 6, 0.05,
+                                                   QObject::tr("refraction"));
     ca_addChild(mRefraction);
-
-    mSurfaceNoise = enve::make_shared<QrealAnimator>(20.0, 0.0, 100.0, 1.0, "roughness");
-    ca_addChild(mSurfaceNoise);
-
-    mThickness = enve::make_shared<QrealAnimator>(10.0, 0.0, 50.0, 1.0, "thickness");
-    ca_addChild(mThickness);
-
-    mHighlightIntensity = enve::make_shared<QrealAnimator>(60.0, 0.0, 200.0, 1.0, "intensity");
-    ca_addChild(mHighlightIntensity);
-
-    mLightAngle = enve::make_shared<QrealAnimator>(45.0, -180.0, 180.0, 1.0, "angle");
-    ca_addChild(mLightAngle);
-
-    mHighlightSize = enve::make_shared<QrealAnimator>(25.0, 1.0, 100.0, 1.0, "size");
-    ca_addChild(mHighlightSize);
-
-    mEdgeSoftness = enve::make_shared<QrealAnimator>(10.0, 0.0, 100.0, 1.0, "feather");
-    ca_addChild(mEdgeSoftness);
-
-    mMagnification = enve::make_shared<QrealAnimator>(1.0, 0.2, 3.0, 0.05, "scale");
-    ca_addChild(mMagnification);
-
-    mGlassTint = enve::make_shared<ColorAnimator>("color");
-    mGlassTint->setColor(QColor(230, 245, 255, 255));
-    ca_addChild(mGlassTint);
-
-    mTintOpacity = enve::make_shared<QrealAnimator>(10.0, 0.0, 100.0, 1.0, "opacity");
-    ca_addChild(mTintOpacity);
+    mNoise = enve::make_shared<QrealAnimator>(0.06, 0, 0.2, 0.005,
+                                              QObject::tr("noise"));
+    ca_addChild(mNoise);
+    mGlowWeight = enve::make_shared<QrealAnimator>(0.35, 0, 1, 0.01,
+                                                   QObject::tr("glow weight"));
+    ca_addChild(mGlowWeight);
+    mGlowBias = enve::make_shared<QrealAnimator>(0, -1, 1, 0.01,
+                                                 QObject::tr("glow bias"));
+    ca_addChild(mGlowBias);
 }
 
 class LiquidGlassEffectCaller : public OpenGLRasterEffectCaller {
 public:
     LiquidGlassEffectCaller(const HardwareSupport hwSupport,
-                            qreal blurRadius,
-                            qreal refraction,
-                            qreal surfaceNoise,
-                            qreal thickness,
-                            qreal highlightIntensity,
-                            qreal lightAngle,
-                            qreal highlightSize,
-                            qreal edgeSoftness,
-                            qreal magnification,
-                            const QColor& glassTint,
-                            qreal tintOpacity) :
+                            const LiquidGlassEffectData& data) :
         OpenGLRasterEffectCaller(sInitialized, sProgramId,
                                  ":/shaders/liquidglasseffect.frag",
                                  hwSupport),
-        mBlurRadius(blurRadius),
-        mRefraction(refraction),
-        mSurfaceNoise(surfaceNoise),
-        mThickness(thickness),
-        mHighlightIntensity(highlightIntensity),
-        mLightAngle(lightAngle),
-        mHighlightSize(highlightSize),
-        mEdgeSoftness(edgeSoftness),
-        mMagnification(magnification),
-        mGlassTint(glassTint),
-        mTintOpacity(tintOpacity) {}
+        mData(data) {}
 
-    void processCpu(CpuRenderTools& renderTools, const CpuRenderData& data) override;
+    void processCpu(CpuRenderTools& renderTools,
+                    const CpuRenderData& data);
 protected:
-    void iniVars(QGL33 * const gl) const override {
-        sBlurRadiusU = gl->glGetUniformLocation(sProgramId, "blurRadius");
-        sRefractionU = gl->glGetUniformLocation(sProgramId, "refraction");
-        sSurfaceNoiseU = gl->glGetUniformLocation(sProgramId, "surfaceNoise");
-        sThicknessU = gl->glGetUniformLocation(sProgramId, "thickness");
-        sHighlightIntensityU = gl->glGetUniformLocation(sProgramId, "highlightIntensity");
-        sLightAngleU = gl->glGetUniformLocation(sProgramId, "lightAngle");
-        sHighlightSizeU = gl->glGetUniformLocation(sProgramId, "highlightSize");
-        sEdgeSoftnessU = gl->glGetUniformLocation(sProgramId, "edgeSoftness");
-        sMagnificationU = gl->glGetUniformLocation(sProgramId, "magnification");
-        sGlassTintU = gl->glGetUniformLocation(sProgramId, "glassTint");
-        sTintOpacityU = gl->glGetUniformLocation(sProgramId, "tintOpacity");
+    void iniVars(QGL33 * const gl) const {
+        sCenterU = gl->glGetUniformLocation(sProgramId, "uCenter");
+        sTexSizeU = gl->glGetUniformLocation(sProgramId, "uTexSize");
+        sSizeU = gl->glGetUniformLocation(sProgramId, "uSize");
+        sShapeNU = gl->glGetUniformLocation(sProgramId, "uShapeN");
+        sRefractionU = gl->glGetUniformLocation(sProgramId, "uRefraction");
+        sNoiseU = gl->glGetUniformLocation(sProgramId, "uNoise");
+        sGlowWeightU = gl->glGetUniformLocation(sProgramId, "uGlowWeight");
+        sGlowBiasU = gl->glGetUniformLocation(sProgramId, "uGlowBias");
     }
 
-    void setVars(QGL33 * const gl) const override {
+    void setVars(QGL33 * const gl) const {
         gl->glUseProgram(sProgramId);
-        gl->glUniform1f(sBlurRadiusU, toSkScalar(mBlurRadius));
-        gl->glUniform1f(sRefractionU, toSkScalar(mRefraction));
-        gl->glUniform1f(sSurfaceNoiseU, toSkScalar(mSurfaceNoise));
-        gl->glUniform1f(sThicknessU, toSkScalar(mThickness));
-        gl->glUniform1f(sHighlightIntensityU, toSkScalar(mHighlightIntensity));
-        gl->glUniform1f(sLightAngleU, toSkScalar(mLightAngle));
-        gl->glUniform1f(sHighlightSizeU, toSkScalar(mHighlightSize));
-        gl->glUniform1f(sEdgeSoftnessU, toSkScalar(mEdgeSoftness));
-        gl->glUniform1f(sMagnificationU, toSkScalar(mMagnification));
-        gl->glUniform4f(sGlassTintU, mGlassTint.redF(), mGlassTint.greenF(), mGlassTint.blueF(), mGlassTint.alphaF());
-        gl->glUniform1f(sTintOpacityU, toSkScalar(mTintOpacity));
+        gl->glUniform2f(sCenterU, mData.mCenterX, mData.mCenterY);
+        gl->glUniform2f(sTexSizeU, mData.mTexW, mData.mTexH);
+        gl->glUniform1f(sSizeU, mData.mSize);
+        gl->glUniform1f(sShapeNU, mData.mShapeN);
+        gl->glUniform1f(sRefractionU, mData.mRefraction);
+        gl->glUniform1f(sNoiseU, mData.mNoise);
+        gl->glUniform1f(sGlowWeightU, mData.mGlowWeight);
+        gl->glUniform1f(sGlowBiasU, mData.mGlowBias);
     }
 private:
     static bool sInitialized;
     static GLuint sProgramId;
 
-    static GLint sBlurRadiusU;
+    static GLint sCenterU;
+    static GLint sTexSizeU;
+    static GLint sSizeU;
+    static GLint sShapeNU;
     static GLint sRefractionU;
-    static GLint sSurfaceNoiseU;
-    static GLint sThicknessU;
-    static GLint sHighlightIntensityU;
-    static GLint sLightAngleU;
-    static GLint sHighlightSizeU;
-    static GLint sEdgeSoftnessU;
-    static GLint sMagnificationU;
-    static GLint sGlassTintU;
-    static GLint sTintOpacityU;
+    static GLint sNoiseU;
+    static GLint sGlowWeightU;
+    static GLint sGlowBiasU;
 
-    const qreal mBlurRadius;
-    const qreal mRefraction;
-    const qreal mSurfaceNoise;
-    const qreal mThickness;
-    const qreal mHighlightIntensity;
-    const qreal mLightAngle;
-    const qreal mHighlightSize;
-    const qreal mEdgeSoftness;
-    const qreal mMagnification;
-    const QColor mGlassTint;
-    const qreal mTintOpacity;
+    const LiquidGlassEffectData mData;
 };
 
 bool LiquidGlassEffectCaller::sInitialized = false;
 GLuint LiquidGlassEffectCaller::sProgramId = 0;
 
-GLint LiquidGlassEffectCaller::sBlurRadiusU = -1;
+GLint LiquidGlassEffectCaller::sCenterU = -1;
+GLint LiquidGlassEffectCaller::sTexSizeU = -1;
+GLint LiquidGlassEffectCaller::sSizeU = -1;
+GLint LiquidGlassEffectCaller::sShapeNU = -1;
 GLint LiquidGlassEffectCaller::sRefractionU = -1;
-GLint LiquidGlassEffectCaller::sSurfaceNoiseU = -1;
-GLint LiquidGlassEffectCaller::sThicknessU = -1;
-GLint LiquidGlassEffectCaller::sHighlightIntensityU = -1;
-GLint LiquidGlassEffectCaller::sLightAngleU = -1;
-GLint LiquidGlassEffectCaller::sHighlightSizeU = -1;
-GLint LiquidGlassEffectCaller::sEdgeSoftnessU = -1;
-GLint LiquidGlassEffectCaller::sMagnificationU = -1;
-GLint LiquidGlassEffectCaller::sGlassTintU = -1;
-GLint LiquidGlassEffectCaller::sTintOpacityU = -1;
+GLint LiquidGlassEffectCaller::sNoiseU = -1;
+GLint LiquidGlassEffectCaller::sGlowWeightU = -1;
+GLint LiquidGlassEffectCaller::sGlowBiasU = -1;
 
 stdsptr<RasterEffectCaller> LiquidGlassEffect::getEffectCaller(
         const qreal relFrame, const qreal resolution,
         const qreal influence, BoxRenderData * const data) const {
     Q_UNUSED(resolution)
-    Q_UNUSED(data)
 
-    const qreal blurRadius = mBlurRadius->getEffectiveValue(relFrame);
-    const qreal refraction = mRefraction->getEffectiveValue(relFrame) * influence;
-    const qreal surfaceNoise = mSurfaceNoise->getEffectiveValue(relFrame);
-    const qreal thickness = mThickness->getEffectiveValue(relFrame);
-    const qreal highlightIntensity = mHighlightIntensity->getEffectiveValue(relFrame);
-    const qreal lightAngle = mLightAngle->getEffectiveValue(relFrame);
-    const qreal highlightSize = mHighlightSize->getEffectiveValue(relFrame);
-    const qreal edgeSoftness = mEdgeSoftness->getEffectiveValue(relFrame);
-    const qreal magnification = mMagnification->getEffectiveValue(relFrame);
-    const QColor glassTint = mGlassTint->getColor(relFrame);
-    const qreal tintOpacity = mTintOpacity->getEffectiveValue(relFrame);
+    LiquidGlassEffectData effData;
+    // surface size for the aspect correction (uTexSize); setVars has
+    // no access to the render tools, so it travels with the data
+    if (data) {
+        effData.mTexW = float(data->fGlobalRect.width());
+        effData.mTexH = float(data->fGlobalRect.height());
+    }
+    effData.mCenterX = mCenterX->getEffectiveValue(relFrame);
+    // panel 0 = top -> GL uv y up
+    effData.mCenterY = 1. - mCenterY->getEffectiveValue(relFrame);
+    effData.mSize = mSize->getEffectiveValue(relFrame);
+    effData.mShapeN = mShapeN->getEffectiveValue(relFrame);
+    effData.mRefraction = mRefraction->getEffectiveValue(relFrame);
+    effData.mNoise = mNoise->getEffectiveValue(relFrame);
+    effData.mGlowWeight = mGlowWeight->getEffectiveValue(relFrame);
+    effData.mGlowBias = mGlowBias->getEffectiveValue(relFrame);
 
     return enve::make_shared<LiquidGlassEffectCaller>(
-                instanceHwSupport(), blurRadius, refraction, surfaceNoise,
-                thickness, highlightIntensity, lightAngle, highlightSize,
-                edgeSoftness, magnification, glassTint, tintOpacity);
+                instanceHwSupport(), effData);
 }
 
-void LiquidGlassEffectCaller::processCpu(CpuRenderTools& renderTools, const CpuRenderData& data) {
+void LiquidGlassEffectCaller::processCpu(CpuRenderTools& renderTools,
+                                         const CpuRenderData& data)
+{
     const auto& srcBtmp = renderTools.fSrcBtmp;
     const auto& dstBtmp = renderTools.fDstBtmp;
-    if (srcBtmp.empty() || dstBtmp.empty()) return;
+
+    if (srcBtmp.empty() || srcBtmp.getPixels() == nullptr ||
+        dstBtmp.empty() || dstBtmp.getPixels() == nullptr) {
+        return;
+    }
 
     const int imgWidth = srcBtmp.width();
     const int imgHeight = srcBtmp.height();
-    if (imgWidth <= 0 || imgHeight <= 0) return;
 
     const int xMin = std::max(0, data.fTexTile.left());
     const int xMax = std::min((int)data.fTexTile.right(), imgWidth - 1);
     const int yMin = std::max(0, data.fTexTile.top());
     const int yMax = std::min((int)data.fTexTile.bottom(), imgHeight - 1);
 
-    const auto sampleSrc = [&srcBtmp, imgWidth, imgHeight](int x, int y, int ch) -> uchar {
-        x = std::max(0, std::min(imgWidth - 1, x));
-        y = std::max(0, std::min(imgHeight - 1, y));
-        const auto p = static_cast<const uchar*>(srcBtmp.getAddr(x, y));
-        return p[ch];
-    };
-
-    const qreal tr = mGlassTint.redF() * 255.0;
-    const qreal tg = mGlassTint.greenF() * 255.0;
-    const qreal tb = mGlassTint.blueF() * 255.0;
-    const qreal topac = (mTintOpacity * 0.01) * mGlassTint.alphaF();
-
-    const qreal bRad = std::max(0.0, mBlurRadius) * 0.15;
-    const int bRadius = qRound(bRad);
-
-    for(int yi = yMin; yi <= yMax; yi++) {
+    for (int yi = yMin; yi <= yMax; yi++) {
         auto dst = static_cast<uchar*>(dstBtmp.getAddr(0, yi - yMin));
-        const qreal uvy = (qreal(yi) / imgHeight) - 0.5;
+        auto src = static_cast<uchar*>(srcBtmp.getAddr(xMin, yi));
+        for (int xi = xMin; xi <= xMax; xi++) {
+            const float r = *src++ / 255.f;
+            const float g = *src++ / 255.f;
+            const float b = *src++ / 255.f;
+            const float a = *src++ / 255.f;
 
-        for(int xi = xMin; xi <= xMax; xi++) {
-            const qreal uvx = (qreal(xi) / imgWidth) - 0.5;
+            // texCoord convention: y up, bitmap row 0 is the top
+            const float u = (xi + 0.5f) / float(imgWidth);
+            const float v = 1.f - (yi + 0.5f) / float(imgHeight);
+            // gl_FragCoord origin is the bottom-left
+            const float noiseX = float(xi) * 1e-3f;
+            const float noiseY = float(imgHeight - yi) * 1e-3f;
 
-            const qreal freq = 8.0 + mSurfaceNoise * 0.15;
-            const qreal waveX = std::sin(yi * 0.03 * freq + xi * 0.01) * (mSurfaceNoise * 0.1);
-            const qreal waveY = std::cos(xi * 0.03 * freq - yi * 0.01) * (mSurfaceNoise * 0.1);
+            float rOut, gOut, bOut, aOut;
+            processPixel(mData, srcBtmp, imgWidth, imgHeight,
+                         u, v, noiseX, noiseY,
+                         r, g, b, a, rOut, gOut, bOut, aOut);
 
-            const int dispX = qRound((uvx * (mThickness * 0.2) + waveX) * (mRefraction * 0.2));
-            const int dispY = qRound((uvy * (mThickness * 0.2) + waveY) * (mRefraction * 0.2));
-
-            const int sampleX = xi + dispX;
-            const int sampleY = yi + dispY;
-
-            qreal sumR = 0, sumG = 0, sumB = 0, sumA = 0;
-            int count = 0;
-
-            if (bRadius > 0) {
-                for(int dy = -bRadius; dy <= bRadius; dy += std::max(1, bRadius / 2)) {
-                    for(int dx = -bRadius; dx <= bRadius; dx += std::max(1, bRadius / 2)) {
-                        sumR += sampleSrc(sampleX + dx, sampleY + dy, 0);
-                        sumG += sampleSrc(sampleX + dx, sampleY + dy, 1);
-                        sumB += sampleSrc(sampleX + dx, sampleY + dy, 2);
-                        sumA += sampleSrc(sampleX + dx, sampleY + dy, 3);
-                        count++;
-                    }
-                }
-            } else {
-                sumR = sampleSrc(sampleX, sampleY, 0);
-                sumG = sampleSrc(sampleX, sampleY, 1);
-                sumB = sampleSrc(sampleX, sampleY, 2);
-                sumA = sampleSrc(sampleX, sampleY, 3);
-                count = 1;
-            }
-
-            const qreal r = sumR / count;
-            const qreal g = sumG / count;
-            const qreal b = sumB / count;
-            const qreal a = sumA / count;
-
-            if (a < 1.0) {
-                *dst++ = 0; *dst++ = 0; *dst++ = 0; *dst++ = 0;
-                continue;
-            }
-
-            const qreal outR = r * (1.0 - topac) + tr * topac;
-            const qreal outG = g * (1.0 - topac) + tg * topac;
-            const qreal outB = b * (1.0 - topac) + tb * topac;
-
-            *dst++ = static_cast<uchar>(std::max(0.0, std::min(255.0, outR)));
-            *dst++ = static_cast<uchar>(std::max(0.0, std::min(255.0, outG)));
-            *dst++ = static_cast<uchar>(std::max(0.0, std::min(255.0, outB)));
-            *dst++ = static_cast<uchar>(a);
+            *dst++ = static_cast<uchar>(rOut * 255.f + 0.5f);
+            *dst++ = static_cast<uchar>(gOut * 255.f + 0.5f);
+            *dst++ = static_cast<uchar>(bOut * 255.f + 0.5f);
+            *dst++ = static_cast<uchar>(aOut * 255.f + 0.5f);
         }
     }
 }
