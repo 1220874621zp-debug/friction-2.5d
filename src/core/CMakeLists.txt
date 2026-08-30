@@ -876,6 +876,16 @@ target_link_libraries(
     ${SKIA_LIBRARIES}
 )
 
+if(WIN32)
+    # GDI font enumeration / GetFontData for the CJK typeface fallback
+    target_link_libraries(
+        ${PROJECT_NAME}
+        PRIVATE
+        gdi32
+        user32
+    )
+endif()
+
 if(APPLE)
     target_link_libraries(
         ${PROJECT_NAME}

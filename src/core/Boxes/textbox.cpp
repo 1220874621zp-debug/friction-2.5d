@@ -45,6 +45,16 @@
 #include "svgexporter.h"
 #include "Private/esettings.h"
 
+#ifdef Q_OS_WIN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
+
 TextBox::TextBox()
     : PathBox("Text", eBoxType::text)
 {
@@ -248,6 +258,80 @@ void logTypefaceStep(const char* const stage,
 }
 }
 
+#ifdef Q_OS_WIN
+// Krita-style last resort (KoFontRegistry does the same with
+// fontconfig+FreeType): resolve the family through GDI enumeration
+// and build the typeface straight from the font file bytes - never
+// ask the system font manager to match a name again.
+struct GdiFamilyEntry {
+    QString name;
+    LOGFONT lf;
+};
+
+int CALLBACK gdiFontEnumProc(const LOGFONT* lf,
+                             const TEXTMETRIC*,
+                             DWORD,
+                             LPARAM lParam)
+{
+    auto* out = reinterpret_cast<QVector<GdiFamilyEntry>*>(lParam);
+    GdiFamilyEntry entry;
+    entry.name = QString::fromLocal8Bit(lf->lfFaceName);
+    entry.lf = *lf;
+    out->append(entry);
+    return 1;
+}
+
+const QVector<GdiFamilyEntry>& gdiFontFamilies()
+{
+    static const QVector<GdiFamilyEntry> cache = [] {
+        QVector<GdiFamilyEntry> out;
+        LOGFONT lf;
+        memset(&lf, 0, sizeof(lf));
+        lf.lfCharSet = DEFAULT_CHARSET;
+        const HDC hdc = GetDC(nullptr);
+        EnumFontFamiliesEx(hdc, &lf, gdiFontEnumProc,
+                           reinterpret_cast<LPARAM>(&out), 0);
+        ReleaseDC(nullptr, hdc);
+        return out;
+    }();
+    return cache;
+}
+
+sk_sp<SkTypeface> typefaceFromGdiFontBytes(const QString& family,
+                                           const SkFontStyle& style)
+{
+    const LOGFONT* selected = nullptr;
+    for (const auto& entry : gdiFontFamilies()) {
+        if (familyNamesCompatible(entry.name, family)) {
+            selected = &entry.lf;
+            break;
+        }
+    }
+    if (!selected) { return nullptr; }
+    LOGFONT lf = *selected;
+    lf.lfHeight = 0;
+    lf.lfWeight = style.weight();
+    lf.lfItalic = style.slant() == SkFontStyle::kUpright_Slant ?
+                FALSE : TRUE;
+    const HFONT hfont = CreateFontIndirect(&lf);
+    if (!hfont) { return nullptr; }
+    const HDC hdc = CreateCompatibleDC(nullptr);
+    const HGDIOBJ oldFont = SelectObject(hdc, hfont);
+    sk_sp<SkTypeface> typeface;
+    const DWORD size = GetFontData(hdc, 0, 0, nullptr, 0);
+    if (size != GDI_ERROR && size > 0) {
+        auto data = SkData::MakeUninitialized(size);
+        if (GetFontData(hdc, 0, 0, data->writable_data(), size) == size) {
+            typeface = SkTypeface::MakeFromData(std::move(data));
+        }
+    }
+    SelectObject(hdc, oldFont);
+    DeleteObject(hfont);
+    DeleteDC(hdc);
+    return typeface;
+}
+#endif
+
 sk_sp<SkTypeface> makeTypefaceForFamily(const QString& family,
                                         const SkFontStyle& style)
 {
@@ -301,8 +385,18 @@ sk_sp<SkTypeface> makeTypefaceForFamily(const QString& family,
             logTypefaceStep("gdi-enum", enumTypeface);
             if (enumTypeface) { return enumTypeface; }
         }
-        // no enumerated family matched - try GDI's own name mapping
-        // but only trust it when the family name comes back right
+    }
+    // last resort: load the font file bytes via GDI and build the
+    // typeface from data (Krita's approach - no name matching left)
+    {
+        auto bytesTypeface = typefaceFromGdiFontBytes(lookupFamily,
+                                                      lookupStyle);
+        logTypefaceStep("gdi-bytes", bytesTypeface);
+        if (bytesTypeface) { return bytesTypeface; }
+    }
+    // GDI's own name mapping - only trust it when the family name
+    // comes back right
+    if (gdiFontMgr) {
         auto gdiTypeface = gdiFontMgr->legacyMakeTypeface(
                     stdName.c_str(), lookupStyle);
         logTypefaceStep("gdi", gdiTypeface);
@@ -400,6 +494,18 @@ const QString& TextBox::getFontFamily() const {
 
 const QString& TextBox::getCurrentValue() const {
     return mText->getCurrentValue();
+}
+
+qreal TextBox::getLetterSpacingAt(const qreal relFrame) const {
+    return mLetterSpacing->getEffectiveValue(relFrame);
+}
+
+qreal TextBox::getWordSpacingAt(const qreal relFrame) const {
+    return mWordSpacing->getEffectiveValue(relFrame);
+}
+
+qreal TextBox::getLineSpacingAt(const qreal relFrame) const {
+    return mLineSpacing->getEffectiveValue(relFrame);
 }
 
 void TextBox::setupCanvasMenu(PropertyMenu * const menu)

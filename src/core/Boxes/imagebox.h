@@ -81,11 +81,15 @@ public:
     bool hasLoadedImage() const;
 
     void reload();
+
+    // derived PSD box guards its pixel cache against disk cleanup
+protected:
+    FileHandlerObjRef<ImageFileHandler> mFileHandler;
+
 private:
     void fileHandlerConnector(ConnContext& conn, ImageFileHandler* obj);
     void fileHandlerAfterAssigned(ImageFileHandler* obj);
 
-    FileHandlerObjRef<ImageFileHandler> mFileHandler;
     QString mPath;
 };
 
