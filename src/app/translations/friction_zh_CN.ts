@@ -3726,7 +3726,7 @@ you can create a new one by clicking on the &apos;+&apos; button.</source>
     <message>
         <location filename="../GUI/Settings/generalsettingswidget.cpp" line="255"/>
         <source>PSD layer pixel cache. Safe to clear - layers currently in use are re-extracted from their .fpsd packages.</source>
-        <translation>PSD 分层像素缓存。可随时清除——正在使用的图层会自动从 .fpsd 包重新提取。</translation>
+        <translation>PSD 图层像素缓存。可放心清除——正在使用的图层会从各自的 .fpsd 包中重新提取。</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/generalsettingswidget.cpp" line="265"/>
@@ -3761,12 +3761,12 @@ you can create a new one by clicking on the &apos;+&apos; button.</source>
     <message>
         <location filename="../GUI/Settings/generalsettingswidget.cpp" line="348"/>
         <source>Snapshot PNGs are exported at 100% resolution. Empty folder means the Desktop is used.</source>
-        <translation>快照 PNG 以 100% 分辨率导出。文件夹留空时使用桌面。</translation>
+        <translation>快照 PNG 以 100% 分辨率导出。文件夹留空表示使用桌面。</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/generalsettingswidget.cpp" line="313"/>
         <source>Removed %1 cache file(s). Re-extracted %2 layer(s) currently in use.</source>
-        <translation>已删除 %1 个缓存文件。已重新提取 %2 个正在使用的图层。</translation>
+        <translation>已删除 %1 个缓存文件。正在使用的 %2 个图层已重新提取。</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/generalsettingswidget.cpp" line="72"/>
@@ -3783,9 +3783,9 @@ you can create a new one by clicking on the &apos;+&apos; button.</source>
         <source>Creates a backup file after each successful save.
 
 Backup files are stored in a folder called PROJECT.friction_backup.</source>
-        <translation>每次成功保存后都会创建备份文件。
+        <translation>每次成功保存后创建备份文件。
 
-备份文件存储在名为 PROJECT.friction_backup 的文件夹中。</translation>
+备份文件存放在名为 PROJECT.friction_backup 的文件夹中。</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/generalsettingswidget.cpp" line="93"/>
@@ -3797,9 +3797,9 @@ Backup files are stored in a folder called PROJECT.friction_backup.</source>
         <source>Will auto save each X min if project is unsaved.
 
 Enable Backup on Save for incremental saves (and as a failsafe).</source>
-        <translation>若项目未保存，将每隔 X 分钟自动保存一次。
+        <translation>工程有未保存更改时每隔 X 分钟自动保存。
 
-启用“保存时备份”可实现增量保存（也是一种保险措施）。</translation>
+建议同时开启“保存时备份”，既可增量备份也是一道保险。</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/generalsettingswidget.cpp" line="100"/>
@@ -3831,9 +3831,9 @@ Enable Backup on Save for incremental saves (and as a failsafe).</source>
         <source>If enabled the scaling factor for the UI will not be rounded, recommended for HiDPI displays.
 If you use a negative font/display system scaling and/or see artifacts on UI elements then disable this option.
 The scaling factor will then round up for .75 and above.</source>
-        <translation>启用后界面缩放系数将不被取整，推荐 HiDPI 显示器使用。
-如果使用负数的字体/显示系统缩放，且/或界面元素出现异常，请禁用此选项。
-禁用后缩放系数将对 .75 及以上进位取整。</translation>
+        <translation>开启后 UI 缩放系数不做取整，推荐 HiDPI 显示器使用。
+如果你使用负数的字体/显示系统缩放，或在界面元素上看到渲染瑕疵，请关闭此选项。
+关闭后缩放系数将对 0.75 及以上向上取整。</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/generalsettingswidget.cpp" line="162"/>
@@ -6994,29 +6994,29 @@ Added layers: %3</source>
     <message>
         <location filename="../GUI/Settings/themesettingswidget.cpp" line="43"/>
         <source>Default</source>
-        <translation type="unfinished">默认</translation>
+        <translation>默认</translation>
     </message>
     <message>
         <location filename="../../core/Psd/psdimagebox.cpp" line="73"/>
         <source>New Layers in Source PSD</source>
-        <translation type="unfinished">源 PSD 中的新图层</translation>
+        <translation>源 PSD 中的新图层</translation>
     </message>
     <message>
         <location filename="../../core/Psd/psdimagebox.cpp" line="75"/>
         <source>The source PSD contains new layers.
 Select the layers you want to import:</source>
-        <translation type="unfinished">源 PSD 包含新图层。
+        <translation>源 PSD 包含新图层。
 请选择要导入的图层：</translation>
     </message>
     <message>
         <location filename="../../core/Psd/psdimagebox.cpp" line="91"/>
         <source>OK</source>
-        <translation type="unfinished"></translation>
+        <translation>确定</translation>
     </message>
     <message>
         <location filename="../../core/Psd/psdimagebox.cpp" line="93"/>
         <source>Cancel</source>
-        <translation type="unfinished">取消</translation>
+        <translation>取消</translation>
     </message>
 </context>
 <context>
@@ -7530,7 +7530,7 @@ Select the layers you want to import:</source>
     <message>
         <location filename="../GUI/Settings/settingsdialog.cpp" line="41"/>
         <source>Theme &amp; Appearance</source>
-        <translation type="unfinished"></translation>
+        <translation>主题与外观</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/settingsdialog.cpp" line="44"/>
@@ -7550,7 +7550,7 @@ Select the layers you want to import:</source>
     <message>
         <location filename="../GUI/Settings/settingsdialog.cpp" line="53"/>
         <source>Shortcuts</source>
-        <translation type="unfinished">快捷键</translation>
+        <translation>快捷键</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/settingsdialog.cpp" line="57"/>
@@ -7580,7 +7580,7 @@ Select the layers you want to import:</source>
     <message>
         <location filename="../GUI/Settings/settingsdialog.cpp" line="122"/>
         <source>Settings saved successfully</source>
-        <translation type="unfinished"></translation>
+        <translation>设置已成功保存</translation>
     </message>
     <message>
         <source>Settings saved, you might have to restart</source>
@@ -7592,7 +7592,7 @@ Select the layers you want to import:</source>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="45"/>
         <source>Object Mode (Select Tool)</source>
-        <translation type="unfinished"></translation>
+        <translation>对象模式（选择工具）</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="45"/>
@@ -7607,62 +7607,62 @@ Select the layers you want to import:</source>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="54"/>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="55"/>
         <source>Tools</source>
-        <translation type="unfinished"></translation>
+        <translation>工具</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="46"/>
         <source>Point Mode (Edit Points)</source>
-        <translation type="unfinished"></translation>
+        <translation>点模式（编辑节点）</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="47"/>
         <source>Add Path (Pen Tool)</source>
-        <translation type="unfinished"></translation>
+        <translation>添加路径（钢笔工具）</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="48"/>
         <source>Draw Path (Freehand)</source>
-        <translation type="unfinished"></translation>
+        <translation>绘制路径（手绘）</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="49"/>
         <source>Add Circle (Shape)</source>
-        <translation type="unfinished"></translation>
+        <translation>添加圆（形状）</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="50"/>
         <source>Add Rectangle (Shape)</source>
-        <translation type="unfinished"></translation>
+        <translation>添加矩形（形状）</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="51"/>
         <source>Add Text</source>
-        <translation type="unfinished">添加文本</translation>
+        <translation>添加文本</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="52"/>
         <source>Add Null Object</source>
-        <translation type="unfinished">添加空对象</translation>
+        <translation>添加空对象</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="53"/>
         <source>Color Pick Mode (Eyedropper)</source>
-        <translation type="unfinished"></translation>
+        <translation>取色模式（吸管）</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="54"/>
         <source>Pivot Global / Local</source>
-        <translation type="unfinished">轴心 全局/局部</translation>
+        <translation>轴心 全局/局部</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="55"/>
         <source>Bookmark Current Color</source>
-        <translation type="unfinished"></translation>
+        <translation>收藏当前颜色</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="57"/>
         <source>Go to First Frame</source>
-        <translation type="unfinished">跳到第一帧</translation>
+        <translation>跳到第一帧</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="57"/>
@@ -7676,17 +7676,17 @@ Select the layers you want to import:</source>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="88"/>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="89"/>
         <source>Timeline</source>
-        <translation type="unfinished">时间轴</translation>
+        <translation>时间轴</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="58"/>
         <source>Go to Last Frame</source>
-        <translation type="unfinished">跳到最后一帧</translation>
+        <translation>跳到最后一帧</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="60"/>
         <source>Show Anchor Point Property</source>
-        <translation type="unfinished"></translation>
+        <translation>显示锚点属性</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="60"/>
@@ -7696,101 +7696,101 @@ Select the layers you want to import:</source>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="64"/>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="65"/>
         <source>Properties</source>
-        <translation type="unfinished">属性</translation>
+        <translation>属性</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="61"/>
         <source>Show Position Property</source>
-        <translation type="unfinished"></translation>
+        <translation>显示位置属性</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="62"/>
         <source>Show Scale Property</source>
-        <translation type="unfinished"></translation>
+        <translation>显示缩放属性</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="63"/>
         <source>Show Rotation Property</source>
-        <translation type="unfinished"></translation>
+        <translation>显示旋转属性</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="64"/>
         <source>Show Opacity Property</source>
-        <translation type="unfinished"></translation>
+        <translation>显示不透明度属性</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="65"/>
         <source>Show Animated Properties (U)</source>
-        <translation type="unfinished"></translation>
+        <translation>显示已动画属性（U）</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="67"/>
         <source>Quick Search Effects (AE: FX Console)</source>
-        <translation type="unfinished"></translation>
+        <translation>快速搜索特效（AE：FX 控制台）</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="67"/>
         <source>Effects</source>
-        <translation type="unfinished"></translation>
+        <translation>特效</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="68"/>
         <source>Full Screen Preview</source>
-        <translation type="unfinished"></translation>
+        <translation>全屏预览</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="68"/>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="69"/>
         <source>View</source>
-        <translation type="unfinished">视图</translation>
+        <translation>视图</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="69"/>
         <source>Command Palette</source>
-        <translation type="unfinished">命令面板</translation>
+        <translation>命令面板</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="70"/>
         <source>Preview SVG</source>
-        <translation type="unfinished">预览 SVG</translation>
+        <translation>预览 SVG</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="70"/>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="71"/>
         <source>File</source>
-        <translation type="unfinished">文件</translation>
+        <translation>文件</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="71"/>
         <source>Export SVG</source>
-        <translation type="unfinished">导出 SVG</translation>
+        <translation>导出 SVG</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="72"/>
         <source>Add to Render Queue</source>
-        <translation type="unfinished">添加到渲染队列</translation>
+        <translation>添加到渲染队列</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="72"/>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="74"/>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="75"/>
         <source>Scene</source>
-        <translation type="unfinished">场景</translation>
+        <translation>场景</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="74"/>
         <source>New Scene (AE: Composition)</source>
-        <translation type="unfinished"></translation>
+        <translation>新建场景（AE：合成）</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="75"/>
         <source>Scene Settings (AE: Comp Settings)</source>
-        <translation type="unfinished"></translation>
+        <translation>场景设置（AE：合成设置）</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="76"/>
         <source>Duplicate Layer</source>
-        <translation type="unfinished"></translation>
+        <translation>复制图层</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="76"/>
@@ -7800,122 +7800,122 @@ Select the layers you want to import:</source>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="80"/>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="81"/>
         <source>Layer</source>
-        <translation type="unfinished"></translation>
+        <translation>图层</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="77"/>
         <source>Split Layer at Playhead</source>
-        <translation type="unfinished"></translation>
+        <translation>在播放头处拆分图层</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="78"/>
         <source>Group Layers (AE: Pre-compose)</source>
-        <translation type="unfinished"></translation>
+        <translation>图层编组（AE：预合成）</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="79"/>
         <source>Rename Layer</source>
-        <translation type="unfinished"></translation>
+        <translation>重命名图层</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="80"/>
         <source>Raise Layer One Level</source>
-        <translation type="unfinished"></translation>
+        <translation>图层上移一层</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="81"/>
         <source>Lower Layer One Level</source>
-        <translation type="unfinished"></translation>
+        <translation>图层下移一层</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="82"/>
         <source>Go to Next Keyframe</source>
-        <translation type="unfinished"></translation>
+        <translation>跳到下一关键帧</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="83"/>
         <source>Go to Previous Keyframe</source>
-        <translation type="unfinished"></translation>
+        <translation>跳到上一关键帧</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="84"/>
         <source>Go to Layer In-Point</source>
-        <translation type="unfinished"></translation>
+        <translation>跳到图层入点</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="85"/>
         <source>Go to Layer Out-Point</source>
-        <translation type="unfinished"></translation>
+        <translation>跳到图层出点</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="86"/>
         <source>Set Work Area Start</source>
-        <translation type="unfinished"></translation>
+        <translation>设置工作区起点</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="87"/>
         <source>Set Work Area End</source>
-        <translation type="unfinished"></translation>
+        <translation>设置工作区终点</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="88"/>
         <source>Step One Frame Back</source>
-        <translation type="unfinished"></translation>
+        <translation>后退一帧</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="89"/>
         <source>Step One Frame Forward</source>
-        <translation type="unfinished"></translation>
+        <translation>前进一帧</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="101"/>
         <source>Preset</source>
-        <translation type="unfinished">预设</translation>
+        <translation>预设</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="103"/>
         <source>Default (Friction)</source>
-        <translation type="unfinished"></translation>
+        <translation>默认（Friction）</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="104"/>
         <source>AE (After Effects)</source>
-        <translation type="unfinished"></translation>
+        <translation>AE（After Effects）</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="108"/>
         <source>Apply Preset</source>
-        <translation type="unfinished"></translation>
+        <translation>应用预设</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="115"/>
         <source>Action</source>
-        <translation type="unfinished"></translation>
+        <translation>操作</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="116"/>
         <source>Category</source>
-        <translation type="unfinished"></translation>
+        <translation>分类</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="117"/>
         <source>AE Default</source>
-        <translation type="unfinished"></translation>
+        <translation>AE 默认</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="118"/>
         <source>Shortcut</source>
-        <translation type="unfinished"></translation>
+        <translation>快捷键</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="127"/>
         <source>Changes take effect after restart. Entries marked [reserved] are planned features and will be bound in a future version.</source>
-        <translation type="unfinished"></translation>
+        <translation>改动重启后生效。标记为 [reserved] 的条目是规划中的功能，将在后续版本绑定。</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/shortcutsettingswidget.cpp" line="169"/>
         <source>reserved</source>
-        <translation type="unfinished"></translation>
+        <translation>保留</translation>
     </message>
 </context>
 <context>
@@ -8150,212 +8150,216 @@ Select the layers you want to import:</source>
     <message>
         <location filename="../GUI/Settings/themesettingswidget.cpp" line="83"/>
         <source>Live Preview Theme</source>
-        <translation type="unfinished"></translation>
+        <translation>实时预览主题</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/themesettingswidget.cpp" line="105"/>
         <source>Select any Morandi, Blender, or Friction theme card to apply full palette and styling:</source>
-        <translation type="unfinished"></translation>
+        <translation>选择任意 Morandi、Blender 或 Friction 主题卡片，即可应用整套配色与样式：</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/themesettingswidget.cpp" line="140"/>
         <source>Base</source>
-        <translation type="unfinished"></translation>
+        <translation>基础</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/themesettingswidget.cpp" line="140"/>
         <source>Alt</source>
-        <translation type="unfinished"></translation>
+        <translation>交替</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/themesettingswidget.cpp" line="140"/>
         <source>Dark</source>
-        <translation type="unfinished"></translation>
+        <translation>深色</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/themesettingswidget.cpp" line="140"/>
         <source>Accent</source>
-        <translation type="unfinished"></translation>
+        <translation>强调</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/themesettingswidget.cpp" line="150"/>
         <source>Apply Theme</source>
-        <translation type="unfinished"></translation>
+        <translation>应用主题</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/themesettingswidget.cpp" line="169"/>
         <source>Theme Gallery</source>
-        <translation type="unfinished"></translation>
+        <translation>主题画廊</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/themesettingswidget.cpp" line="179"/>
         <source>Theme Preset</source>
-        <translation type="unfinished"></translation>
+        <translation>主题预设</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/themesettingswidget.cpp" line="189"/>
         <source>Active Theme:</source>
-        <translation type="unfinished"></translation>
+        <translation>当前主题：</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/themesettingswidget.cpp" line="193"/>
         <source>Accent &amp; Highlight Color</source>
-        <translation type="unfinished"></translation>
+        <translation>强调与高亮颜色</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/themesettingswidget.cpp" line="204"/>
         <source>Pick Custom...</source>
-        <translation type="unfinished"></translation>
+        <translation>自定义颜色...</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/themesettingswidget.cpp" line="210"/>
         <source>Accent Preset:</source>
-        <translation type="unfinished"></translation>
+        <translation>强调色预设：</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/themesettingswidget.cpp" line="214"/>
         <source>Background Tones (Custom Overrides)</source>
-        <translation type="unfinished"></translation>
+        <translation>背景色调（自定义覆盖）</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/themesettingswidget.cpp" line="220"/>
         <source>Window Base Color:</source>
-        <translation type="unfinished"></translation>
+        <translation>窗口基础色：</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/themesettingswidget.cpp" line="224"/>
         <source>Panel Alternate Color:</source>
-        <translation type="unfinished"></translation>
+        <translation>面板交替色：</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/themesettingswidget.cpp" line="228"/>
         <source>Input / Darker Color:</source>
-        <translation type="unfinished"></translation>
+        <translation>输入框/更深色：</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/themesettingswidget.cpp" line="230"/>
         <source>Reset Colors to Preset Defaults</source>
-        <translation type="unfinished"></translation>
+        <translation>颜色重置为预设默认值</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/themesettingswidget.cpp" line="236"/>
         <source>Colors &amp; Tones</source>
-        <translation type="unfinished"></translation>
+        <translation>颜色与色调</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/themesettingswidget.cpp" line="245"/>
         <source>UI Geometry &amp; Components</source>
-        <translation type="unfinished"></translation>
+        <translation>界面几何与组件</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/themesettingswidget.cpp" line="250"/>
         <source>Sharp Corners (0px)</source>
-        <translation type="unfinished"></translation>
+        <translation>直角（0px）</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/themesettingswidget.cpp" line="251"/>
         <source>Minimal Radius (2px)</source>
-        <translation type="unfinished"></translation>
+        <translation>极小圆角（2px）</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/themesettingswidget.cpp" line="252"/>
         <source>Compact Radius (4px)</source>
-        <translation type="unfinished"></translation>
+        <translation>紧凑圆角（4px）</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/themesettingswidget.cpp" line="253"/>
         <source>Standard Radius (6px)</source>
-        <translation type="unfinished"></translation>
+        <translation>标准圆角（6px）</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/themesettingswidget.cpp" line="254"/>
         <source>Soft Rounded (8px)</source>
-        <translation type="unfinished"></translation>
+        <translation>柔和圆角（8px）</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/themesettingswidget.cpp" line="255"/>
         <source>Large Radius (12px)</source>
-        <translation type="unfinished"></translation>
+        <translation>大圆角（12px）</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/themesettingswidget.cpp" line="256"/>
         <source>Corner Radius:</source>
-        <translation type="unfinished"></translation>
+        <translation>圆角半径：</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/themesettingswidget.cpp" line="259"/>
         <source>Hidden Scrollbar (0px)</source>
-        <translation type="unfinished"></translation>
+        <translation>隐藏滚动条（0px）</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/themesettingswidget.cpp" line="260"/>
         <source>Slim Scrollbar (4px)</source>
-        <translation type="unfinished"></translation>
+        <translation>纤细滚动条（4px）</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/themesettingswidget.cpp" line="261"/>
         <source>Standard Scrollbar (6px)</source>
-        <translation type="unfinished"></translation>
+        <translation>标准滚动条（6px）</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/themesettingswidget.cpp" line="262"/>
         <source>Medium Scrollbar (8px)</source>
-        <translation type="unfinished"></translation>
+        <translation>中等滚动条（8px）</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/themesettingswidget.cpp" line="263"/>
         <source>Large Scrollbar (12px)</source>
-        <translation type="unfinished"></translation>
+        <translation>宽滚动条（12px）</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/themesettingswidget.cpp" line="264"/>
         <source>Scrollbar Width:</source>
-        <translation type="unfinished"></translation>
+        <translation>滚动条宽度：</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/themesettingswidget.cpp" line="268"/>
         <source>UI &amp; Controls</source>
-        <translation type="unfinished"></translation>
+        <translation>界面与控件</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/themesettingswidget.cpp" line="277"/>
         <source>Custom Stylesheet (QSS Injection)</source>
-        <translation type="unfinished"></translation>
+        <translation>自定义样式表（QSS 注入）</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/themesettingswidget.cpp" line="281"/>
         <source>Enter custom Qt Stylesheet (QSS) rules below to override or extend the active theme:</source>
-        <translation type="unfinished"></translation>
+        <translation>在下方输入自定义 Qt 样式表（QSS）规则，覆盖或扩展现行主题：</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/themesettingswidget.cpp" line="291"/>
         <source>Clear Custom QSS</source>
-        <translation type="unfinished"></translation>
+        <translation>清除自定义 QSS</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/themesettingswidget.cpp" line="298"/>
         <source>Custom QSS</source>
-        <translation type="unfinished"></translation>
+        <translation>自定义 QSS</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/themesettingswidget.cpp" line="361"/>
         <source>Select Accent Color</source>
-        <translation type="unfinished"></translation>
+        <translation>选择强调色</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/themesettingswidget.cpp" line="374"/>
         <source>Select Base Window Color</source>
-        <translation type="unfinished"></translation>
+        <translation>选择窗口基础色</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/themesettingswidget.cpp" line="385"/>
         <source>Select Alternate Panel Color</source>
-        <translation type="unfinished"></translation>
+        <translation>选择面板交替色</translation>
     </message>
     <message>
         <location filename="../GUI/Settings/themesettingswidget.cpp" line="396"/>
         <source>Select Input / Darker Color</source>
-        <translation type="unfinished"></translation>
+        <translation>选择输入框/更深色</translation>
+    </message>
+    <message>
+        <source>Click 'Live Preview' to inspect changes immediately without restarting.</source>
+        <translation>点击“实时预览”可立即查看改动效果，无需重启。</translation>
     </message>
 </context>
 <context>
