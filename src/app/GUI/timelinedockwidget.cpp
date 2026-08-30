@@ -38,6 +38,7 @@
 #include <QStatusBar>
 #include <QTimer>
 #include <QSvgRenderer>
+#include <QFile>
 
 #include <functional>
 
@@ -88,6 +89,28 @@ void collectKeyedQrealAnimators(Property* const prop,
             collectKeyedQrealAnimators(ca->ca_getChildAt<Property>(i), out);
         }
     }
+}
+
+// user-supplied SVG loop glyphs rasterized via QSvgRenderer (the
+// iconengines plugin is not deployed, a plain QIcon on .svg would
+// not render)
+QIcon svgLoopIcon(const QString& qrcPath)
+{
+    QIcon result;
+    QFile f(qrcPath);
+    if (!f.open(QIODevice::ReadOnly)) { return result; }
+    QSvgRenderer renderer(f.readAll());
+    if (!renderer.isValid()) { return result; }
+    for (const int size : {64, 32, 24, 16}) {
+        QPixmap pm(size, size);
+        pm.fill(Qt::transparent);
+        QPainter p(&pm);
+        p.setRenderHint(QPainter::Antialiasing);
+        renderer.render(&p, QRectF(0, 0, size, size));
+        p.end();
+        result.addPixmap(pm);
+    }
+    return result;
 }
 }
 
@@ -341,34 +364,11 @@ TimelineDockWidget::TimelineDockWidget(Document& document,
             act->blockSignals(false);
         };
 
-        QPen loopPen(QColor(255, 255, 255, 230));
-        loopPen.setWidthF(3.5);
-        loopPen.setCapStyle(Qt::RoundCap);
-        const QColor loopFill(255, 255, 255, 230);
-
-        // forward cycle: open ring with an arrow head
-        QPixmap lFwd(64, 64);
-        lFwd.fill(Qt::transparent);
-        {
-            QPainter p(&lFwd);
-            p.setRenderHint(QPainter::Antialiasing);
-            p.setPen(loopPen);
-            const QRectF r(15, 15, 34, 34);
-            // gap of ~40 degrees at the top, arrow at its right side
-            p.drawArc(r, 70*16, 290*16);
-            const qreal a = qDegreesToRadians(70.);
-            const QPointF tip(32 + qCos(a - 0.45)*17,
-                              32 - qSin(a - 0.45)*17);
-            QPolygonF head;
-            head << tip
-                 << tip + QPointF(qCos(a + 0.9)*11, -qSin(a + 0.9)*11)
-                 << tip + QPointF(qCos(a - 1.6)*11, -qSin(a - 1.6)*11);
-            p.setPen(Qt::NoPen);
-            p.setBrush(loopFill);
-            p.drawPolygon(head);
-            p.end();
-        }
-        mLoopPoseFwdButton = new QAction(lFwd, tr("Loop Keys"), this);
+        // user-supplied SVG glyphs: forward = single cycle arrow,
+        // ping-pong = swap arrows, skip = loop with a jump bar
+        mLoopPoseFwdButton = new QAction(
+                    svgLoopIcon(QStringLiteral(":/icons/loop_fwd.svg")),
+                    tr("Loop Keys"), this);
         mLoopPoseFwdButton->setCheckable(true);
         mLoopPoseFwdButton->setToolTip(tr(
                 "Cycle keyframed animation forward after the last key "
@@ -385,25 +385,9 @@ TimelineDockWidget::TimelineDockWidget(Document& document,
         });
 
         // ping-pong: two opposing arrows
-        QPixmap lPP(64, 64);
-        lPP.fill(Qt::transparent);
-        {
-            QPainter p(&lPP);
-            p.setRenderHint(QPainter::Antialiasing);
-            p.setPen(loopPen);
-            p.drawLine(14, 24, 44, 24);
-            p.drawLine(20, 40, 50, 40);
-            p.setPen(Qt::NoPen);
-            p.setBrush(loopFill);
-            QPolygonF h1;
-            h1 << QPointF(44, 24) << QPointF(34, 17) << QPointF(34, 31);
-            p.drawPolygon(h1);
-            QPolygonF h2;
-            h2 << QPointF(20, 40) << QPointF(30, 33) << QPointF(30, 47);
-            p.drawPolygon(h2);
-            p.end();
-        }
-        mLoopPosePingPongButton = new QAction(lPP, tr("Ping-Pong Loop"), this);
+        mLoopPosePingPongButton = new QAction(
+                    svgLoopIcon(QStringLiteral(":/icons/loop_pingpong.svg")),
+                    tr("Ping-Pong Loop"), this);
         mLoopPosePingPongButton->setCheckable(true);
         mLoopPosePingPongButton->setToolTip(tr(
                 "Bounce keyframed animation back and forth after the "
@@ -419,33 +403,10 @@ TimelineDockWidget::TimelineDockWidget(Document& document,
             } else clearLoopExpressions();
         });
 
-        // skip cycle: open ring with a cross marking the skipped keys
-        QPixmap lSkip(64, 64);
-        lSkip.fill(Qt::transparent);
-        {
-            QPainter p(&lSkip);
-            p.setRenderHint(QPainter::Antialiasing);
-            p.setPen(loopPen);
-            const QRectF r(19, 19, 30, 30);
-            p.drawArc(r, 70*16, 290*16);
-            const qreal a = qDegreesToRadians(70.);
-            const QPointF tip(35.5 + qCos(a - 0.45)*15,
-                              35.5 - qSin(a - 0.45)*15);
-            QPolygonF head;
-            head << tip
-                 << tip + QPointF(qCos(a + 0.9)*10, -qSin(a + 0.9)*10)
-                 << tip + QPointF(qCos(a - 1.6)*10, -qSin(a - 1.6)*10);
-            p.setPen(Qt::NoPen);
-            p.setBrush(loopFill);
-            p.drawPolygon(head);
-            // small cross over the leading (skipped) keys
-            p.setBrush(Qt::NoBrush);
-            p.setPen(loopPen);
-            p.drawLine(12, 50, 24, 62);
-            p.drawLine(24, 50, 12, 62);
-            p.end();
-        }
-        mLoopPoseSkipButton = new QAction(lSkip, tr("Skip Loop"), this);
+        // skip cycle: loop with a jump bar over the skipped keys
+        mLoopPoseSkipButton = new QAction(
+                    svgLoopIcon(QStringLiteral(":/icons/loop_skip.svg")),
+                    tr("Skip Loop"), this);
         mLoopPoseSkipButton->setCheckable(true);
         mLoopPoseSkipButton->setToolTip(tr(
                 "Cycle keyframed animation skipping the given number of "
