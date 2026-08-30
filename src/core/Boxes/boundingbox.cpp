@@ -1953,12 +1953,6 @@ void BoundingBox::renderDataFinished(BoxRenderData *renderData) {
     }
     if(newerSate || closerFrame) {
         mDrawRenderContainer.setSrcRenderData(renderData);
-        // dense one-shot diagnostic for backdrop-effect debugging
-        static int sFinLog = 0;
-        if (renderData->fBackdropCallers.count() > 0 && sFinLog++ < 12) {
-            qWarning() << "[LG] renderDataFinished -> container, callers="
-                       << renderData->fBackdropCallers.count();
-        }
         const bool currentFrame = isZero4Dec(relFrame - anim_getCurrentRelFrame());
         const bool expired = !currentState || !currentFrame;
         mDrawRenderContainer.setExpired(expired);

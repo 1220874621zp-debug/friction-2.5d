@@ -95,18 +95,6 @@ void RasterEffectCollection::addEffects(const qreal relFrame,
         // they are applied against the canvas snapshot below the layer
         // at composite time (adjustment-layer machinery)
         if(effectRenderData->samplesBackdrop()) {
-            static int sDivLog = 0;
-            if (sDivLog++ < 12) {
-                const auto box = data->fParentBox.data();
-                qWarning() << "[LG] caller diverted; box="
-                           << (box ? box->prp_getName()
-                                   : QStringLiteral("?"))
-                           << "visible="
-                           << (box ? box->visibleForScene() : false)
-                           << "inDur="
-                           << (box ? box->isVisibleAndInVisibleDurationRect()
-                                   : false);
-            }
             data->fBackdropCallers.append(effectRenderData);
         } else data->addEffect(effectRenderData);
     }

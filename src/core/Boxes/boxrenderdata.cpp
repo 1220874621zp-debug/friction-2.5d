@@ -105,23 +105,6 @@ void BoxRenderData::drawOnParentLayer(SkCanvas * const canvas) {
 
 void BoxRenderData::drawOnParentLayer(SkCanvas * const canvas,
                                       SkPaint& paint) {
-    // burn-proof diagnostic: calls WITH backdrop callers always log
-    // (the view composites many caller-less draws that would exhaust
-    // a shared budget before the effect exists)
-    static int sDrawLogAll = 0;
-    static int sDrawLogCallers = 0;
-    if (!fBackdropCallers.isEmpty()) {
-        if (sDrawLogCallers++ < 30) {
-            qWarning() << "[LG] drawOnParentLayer WITH callers="
-                       << fBackdropCallers.count()
-                       << "state=" << fBoxStateId
-                       << "img=" << bool(fRenderedImage)
-                       << "canvas=" << canvas;
-        }
-    } else if (sDrawLogAll++ < 4) {
-        qWarning() << "[LG] drawOnParentLayer callers=0 state="
-                   << fBoxStateId;
-    }
     // backdrop-sampling effects REPLACE the layer pixels with the
     // treated backdrop: the layer's alpha is the glass shape, its own
     // content does not draw. The preview path reaches this same code

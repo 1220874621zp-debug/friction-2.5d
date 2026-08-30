@@ -21,17 +21,19 @@
 #
 */
 
-// Liquid glass (water-droplet) backdrop effect, ported from a
-// Shadertoy shader https://gist.github.com/emmachase/25af1fb66daebf0f9989c93d3c8c5fa6
+// Liquid glass backdrop effect, ported from the liquid-glass
+// fragment shader of BatchRenderer2D.glsl (Shadertoy adaptation).
 //
 // The LAYER ITSELF is the glass: whatever the layer draws (vector
 // shape or bitmap, at its actual pixel size and position) becomes the
 // glass footprint through its alpha. At composite time the backdrop
 // below is snapshotted, and inside the footprint the backdrop is
-// refracted along the shape-edge inward normals (distance-field
-// driven, like light bending through a water droplet) with an angular
-// rim glow and grain. The layer's own semi-transparent content then
-// composites on top as the glass tint.
+// resampled with the reference shader's radial remap: sample position
+// = shape center + (pixel - center) * f_func(edge depth)^refraction.
+// The factor is ~0.26 at the rim (strong magnifying edge) and 1.0
+// within ~20% depth (flat center), plus an angular rim glow and
+// grain. The layer's own pixels are REPLACED by the treated backdrop;
+// its alpha only shapes the glass.
 
 #ifndef LIQUIDGLASSEFFECT_H
 #define LIQUIDGLASSEFFECT_H
