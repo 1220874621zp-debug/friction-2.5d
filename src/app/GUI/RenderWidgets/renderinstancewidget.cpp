@@ -205,7 +205,7 @@ void RenderInstanceWidget::iniGUI()
         mOutputDestinationLineEdit->setFixedHeight(eSizesUI::button);
     });
 
-    // horizontal queue row: all buttons in one top row, the
+    // horizontal queue row: all buttons in one tight top row, the
     // destination path box under them, read-only info at the bottom
     const auto buttonsRow = new QHBoxLayout();
     buttonsRow->setContentsMargins(0, 0, 0, 0);
@@ -213,9 +213,9 @@ void RenderInstanceWidget::iniGUI()
     buttonsRow->addWidget(renderSettingsButton);
     buttonsRow->addWidget(mOutputSettingsProfilesButton);
     buttonsRow->addWidget(mOutputSettingsButton);
-    buttonsRow->addStretch();
     buttonsRow->addWidget(outputDestinationButton);
     buttonsRow->addWidget(mPlayButton);
+    buttonsRow->addStretch();
 
     const auto infoRow = new QHBoxLayout();
     infoRow->setContentsMargins(0, 0, 0, 0);

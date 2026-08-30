@@ -204,6 +204,22 @@ const QList<ThemePresetInfo> sThemePresets = {
         6
     },
     {
+        // ported from the tvp_timeline (TVPaint-style timeline) palette:
+        // near-black neutral greys with the signature #22c55e green
+        QStringLiteral("tvp"),
+        QStringLiteral("TVP 时间轴 (TVP Timeline)"),
+        QStringLiteral("TVPaint 式时间轴配色：近黑中性灰底、亮绿强调与播放头"),
+        QColor(15, 15, 15),      // #0f0f0f (layer bg even)
+        QColor(26, 26, 26),      // #1a1a1a (selected layer / menu bg)
+        QColor(10, 10, 10),      // #0a0a0a (canvas bg / toolbar)
+        QColor(34, 197, 94),     // #22c55e (playhead / selection green)
+        QColor(38, 38, 38),      // #262626 (grid / button base)
+        QColor(68, 68, 68),      // #444444 (thumb border / button border)
+        QColor(51, 51, 51),      // #333333 (hover)
+        QColor(10, 10, 10),      // #0a0a0a
+        4
+    },
+    {
         QStringLiteral("custom"),
         QStringLiteral("自定义主题 (Custom)"),
         QStringLiteral("由用户完全自由定制的调色板与外观"),
@@ -234,6 +250,7 @@ const QList<AccentPresetInfo> sAccentPresets = {
     {QStringLiteral("sage"), QStringLiteral("鼠尾草青 (Sage)"), QColor(143, 163, 130)},     // #8fa382
     {QStringLiteral("blender_blue"), QStringLiteral("Blender 经典蓝 (Blender Blue)"), QColor(71, 114, 179)}, // #4772b3
     {QStringLiteral("friction_blue"), QStringLiteral("Friction 默认蓝 (Friction Blue)"), QColor(104, 144, 206)}, // #6890ce
+    {QStringLiteral("tvp_green"), QStringLiteral("TVP 亮绿 (TVP Green)"), QColor(34, 197, 94)}, // #22c55e
     {QStringLiteral("custom"), QStringLiteral("自定义强调色 (Custom)"), QColor()}
 };
 
@@ -455,6 +472,7 @@ const QString ThemeSupport::themeId()
     case Theme::MorandiMidnight: return QStringLiteral("morandi_midnight");
     case Theme::MorandiMocha: return QStringLiteral("morandi_mocha");
     case Theme::MorandiSlate: return QStringLiteral("morandi_slate");
+    case Theme::TVP: return QStringLiteral("tvp");
     case Theme::Custom: return QStringLiteral("custom");
     }
     return QStringLiteral("friction");
@@ -472,6 +490,7 @@ void ThemeSupport::setThemeFromId(const QString &id)
     else if (id == QStringLiteral("morandi_midnight")) { sTheme = Theme::MorandiMidnight; }
     else if (id == QStringLiteral("morandi_mocha")) { sTheme = Theme::MorandiMocha; }
     else if (id == QStringLiteral("morandi_slate")) { sTheme = Theme::MorandiSlate; }
+    else if (id == QStringLiteral("tvp")) { sTheme = Theme::TVP; }
     else if (id == QStringLiteral("custom")) { sTheme = Theme::Custom; }
     else { sTheme = Theme::Friction; }
 }

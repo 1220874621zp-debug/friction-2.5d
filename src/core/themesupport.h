@@ -74,6 +74,7 @@ public:
         MorandiMidnight,
         MorandiMocha,
         MorandiSlate,
+        TVP,
         Custom
     };
 
