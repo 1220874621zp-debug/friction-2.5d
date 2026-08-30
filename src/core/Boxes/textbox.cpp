@@ -252,15 +252,17 @@ sk_sp<SkTypeface> makeTypefaceForFamily(const QString& family,
                                         const SkFontStyle& style)
 {
     // Qt lists multi-weight CJK fonts as composite "family style"
-    // entries ("阿里巴巴普惠体 B", "联想小新黑体 常规"); neither
-    // DirectWrite nor GDI match those names (each silently picks an
-    // unrelated fallback). Let Qt resolve its own entry back to the
-    // real family + weight, then look THAT up.
+    // entries ("阿里巴巴普惠体 B", "联想小新黑体 常规"); let Qt resolve
+    // its own entry back to the real family + weight first.
     QString lookupFamily = family;
     SkFontStyle lookupStyle = style;
     {
         const QRawFont raw = QRawFont::fromFont(QFont(family));
         const QString real = raw.familyName();
+        qWarning() << "[TF] qt entry=" << family
+                   << "family=" << real
+                   << "styleName=" << raw.styleName()
+                   << "weight=" << raw.weight();
         if (!real.isEmpty() && real != family &&
                 familyNamesCompatible(real, family)) {
             const int skWeight = qBound(100, qRound(raw.weight() * 9.0),
@@ -273,10 +275,6 @@ sk_sp<SkTypeface> makeTypefaceForFamily(const QString& family,
                         SkFontStyle::kUpright_Slant;
             lookupFamily = real;
             lookupStyle = SkFontStyle(skWeight, style.width(), slant);
-            qWarning() << "[TF] qt entry=" << family
-                       << "family=" << real
-                       << "styleName=" << raw.styleName()
-                       << "weight=" << raw.weight();
         }
     }
     const auto stdName = lookupFamily.toStdString();
@@ -285,11 +283,26 @@ sk_sp<SkTypeface> makeTypefaceForFamily(const QString& family,
     if (typefaceMatchesFamily(typeface, lookupFamily)) { return typeface; }
 
 #ifdef Q_OS_WIN
-    // DirectWrite swapped in an unrelated fallback font - retry
-    // through GDI: its enumeration carries localized family names
-    // and also sees AddFontResourceEx (Qt-installed) fonts
+    // DirectWrite swapped in an unrelated fallback. Enumerate the GDI
+    // table (the very source Qt's font list came from) and pick the
+    // family by its enumerated name - a typeface created from the
+    // exact style set cannot be a substitution.
     static const sk_sp<SkFontMgr> gdiFontMgr = SkFontMgr_New_GDI();
     if (gdiFontMgr) {
+        const int familyCount = gdiFontMgr->countFamilies();
+        for (int i = 0; i < familyCount; i++) {
+            SkString enumName;
+            gdiFontMgr->getFamilyName(i, &enumName);
+            const QString name = QString::fromUtf8(enumName.c_str());
+            if (!familyNamesCompatible(name, lookupFamily)) { continue; }
+            const auto styleSet = gdiFontMgr->createStyleSet(i);
+            if (!styleSet) { continue; }
+            sk_sp<SkTypeface> enumTypeface(styleSet->matchStyle(lookupStyle));
+            logTypefaceStep("gdi-enum", enumTypeface);
+            if (enumTypeface) { return enumTypeface; }
+        }
+        // no enumerated family matched - try GDI's own name mapping
+        // but only trust it when the family name comes back right
         auto gdiTypeface = gdiFontMgr->legacyMakeTypeface(
                     stdName.c_str(), lookupStyle);
         logTypefaceStep("gdi", gdiTypeface);
