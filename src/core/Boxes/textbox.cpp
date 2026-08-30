@@ -192,14 +192,58 @@ namespace {
 // some localized family names) silently resolve to a fallback
 // typeface there - CJK text then renders as tofu.
 
+bool familyNamesCompatible(const QString& candidate,
+                           const QString& requested)
+{
+    if (candidate.isEmpty() || requested.isEmpty()) { return false; }
+    const auto norm = [](const QString& s) {
+        QString t = s;
+        t.remove(QChar(' '));
+        t.remove(QChar(0x3000)); // full-width space
+        return t.toLower();
+    };
+    const QString a = norm(candidate);
+    const QString b = norm(requested);
+    if (a == b) { return true; }
+    // Qt lists multi-weight CJK families as "family style" entries
+    // ("阿里巴巴普惠体 B") while the real family name is just the
+    // prefix - accept a prefix relation in either direction
+    return b.startsWith(a) || a.startsWith(b);
+}
+
 bool typefaceMatchesFamily(const sk_sp<SkTypeface>& typeface,
                            const QString& family)
 {
     if (!typeface) { return false; }
     SkString got;
     typeface->getFamilyName(&got);
-    return QString::compare(QString::fromUtf8(got.c_str()),
-                             family, Qt::CaseInsensitive) == 0;
+    return familyNamesCompatible(QString::fromUtf8(got.c_str()),
+                                 family);
+}
+
+namespace {
+// glyph probe: does the typeface actually carry CJK outlines?
+// (0x4E2D = 中)
+SkGlyphID cjkGlyphId(const sk_sp<SkTypeface>& typeface)
+{
+    return typeface ? typeface->unicharToGlyph(0x4E2D) : 0;
+}
+
+QString typefaceFamilyOf(const sk_sp<SkTypeface>& typeface)
+{
+    if (!typeface) { return QStringLiteral("(null)"); }
+    SkString got;
+    typeface->getFamilyName(&got);
+    return QString::fromUtf8(got.c_str());
+}
+
+void logTypefaceStep(const char* const stage,
+                     const sk_sp<SkTypeface>& typeface)
+{
+    qWarning() << "[TF]" << stage
+               << "family=" << typefaceFamilyOf(typeface)
+               << "cjkGlyph=" << (cjkGlyphId(typeface) != 0);
+}
 }
 
 sk_sp<SkTypeface> makeTypefaceForFamily(const QString& family,
@@ -207,6 +251,7 @@ sk_sp<SkTypeface> makeTypefaceForFamily(const QString& family,
 {
     const auto stdName = family.toStdString();
     auto typeface = SkTypeface::MakeFromName(stdName.c_str(), style);
+    logTypefaceStep("dw", typeface);
     if (typefaceMatchesFamily(typeface, family)) { return typeface; }
 
 #ifdef Q_OS_WIN
@@ -217,6 +262,7 @@ sk_sp<SkTypeface> makeTypefaceForFamily(const QString& family,
     if (gdiFontMgr) {
         auto gdiTypeface = gdiFontMgr->legacyMakeTypeface(
                     stdName.c_str(), style);
+        logTypefaceStep("gdi", gdiTypeface);
         if (typefaceMatchesFamily(gdiTypeface, family)) {
             return gdiTypeface;
         }
@@ -249,6 +295,10 @@ void TextBox::setFontFamilyAndStyle(const QString &fontFamily,
     mStyle = style;
     SkFont newFont = mFont;
     const auto newTypeface = makeTypefaceForFamily(fontFamily, style);
+    qWarning() << "[TF] apply requested=" << fontFamily
+               << "resolved=" << typefaceFamilyOf(newTypeface)
+               << "cjkGlyph=" << (cjkGlyphId(newTypeface) != 0)
+               << "text=" << mText->getCurrentValue();
     newFont.setTypeface(newTypeface);
     setFont(newFont);
 }
