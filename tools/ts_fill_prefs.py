@@ -159,7 +159,7 @@ TABLE = {
         '在最后一个关键帧后往复循环动画（1,2,3 -> 1,2,3,2,1,...）；为选中图层的所有已打帧属性应用循环表达式（含骨骼）；再次点击可移除',
     'Cycle keyframed animation skipping the given number of leading keys (keys 1,2,3, skip 1 -> cycles 2,3); the amount is asked for when enabled; applies a loop expression to every keyed property of the selected layers, bones included; click again to remove':
         '跳过开头指定数量的关键帧后循环（帧 1,2,3，跳过 1 -> 循环 2,3）；启用时会询问跳过数量；为选中图层的所有已打帧属性应用循环表达式（含骨骼）；再次点击可移除',
-    'Set Layer In Point (Alt+[': '设置图层入点 (Alt+[',
+    'Set Layer In Point (Alt+[)': '设置图层入点 (Alt+[',
     'Set Layer Out Point (Alt+])': '设置图层出点 (Alt+])',
     'Split Clip (Ctrl+Shift+D)': '拆分片段 (Ctrl+Shift+D)',
     'Split Clip at Current Frame': '在当前帧拆分片段',

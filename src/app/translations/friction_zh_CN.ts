@@ -8440,7 +8440,7 @@ Select the layers you want to import:</source>
         <location filename="../GUI/timelinedockwidget.cpp" line="564"/>
         <location filename="../GUI/timelinedockwidget.cpp" line="566"/>
         <source>Set Layer In Point (Alt+[)</source>
-        <translation type="unfinished"></translation>
+        <translation>设置图层入点 (Alt+[)</translation>
     </message>
     <message>
         <location filename="../GUI/timelinedockwidget.cpp" line="576"/>
@@ -8568,10 +8568,6 @@ Select the layers you want to import:</source>
         <location filename="../GUI/timelinedockwidget.cpp" line="467"/>
         <source>Number of leading keys to skip:</source>
         <translation>跳过左侧关键帧的数量：</translation>
-    </message>
-    <message>
-        <source>Set Layer In Point (Alt+[</source>
-        <translation>设置图层入点 (Alt+[</translation>
     </message>
 </context>
 <context>

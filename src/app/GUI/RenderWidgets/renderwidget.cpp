@@ -58,14 +58,9 @@ RenderWidget::RenderWidget(QWidget *parent)
     topWidget->setContentsMargins(0, 0, 0, 0);
     const auto topLayout = new QHBoxLayout(topWidget);
 
-    const auto bottomWidget = new QWidget(this);
-    bottomWidget->setContentsMargins(0, 0, 0, 0);
-    const auto bottomLayout = new QHBoxLayout(bottomWidget);
-
     setPalette(ThemeSupport::getDarkPalette());
     setAutoFillBackground(true);
 
-    bottomWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
     topWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
 
     mRenderProgressBar = new QProgressBar(this);
@@ -81,6 +76,23 @@ RenderWidget::RenderWidget(QWidget *parent)
     mStartRenderButton->setFocusPolicy(Qt::NoFocus);
     mStartRenderButton->setSizePolicy(QSizePolicy::Preferred,
                                       QSizePolicy::Preferred);
+    // the one affirmative action of the queue reads as "go"
+    mStartRenderButton->setStyleSheet(
+                QStringLiteral(
+                    "QPushButton {"
+                    "  background-color: #2f9e44;"
+                    "  color: #ffffff;"
+                    "  font-weight: bold;"
+                    "  border: none;"
+                    "  border-radius: 3px;"
+                    "  padding: 2px 12px;"
+                    "}"
+                    "QPushButton:hover { background-color: #37b24d; }"
+                    "QPushButton:pressed { background-color: #2b8a3e; }"
+                    "QPushButton:disabled {"
+                    "  background-color: #3d4a41;"
+                    "  color: #96a79d;"
+                    "}"));
     connect(mStartRenderButton, &QPushButton::pressed,
             this, qOverload<>(&RenderWidget::render));
 
@@ -139,17 +151,19 @@ RenderWidget::RenderWidget(QWidget *parent)
     mScrollArea->setWidgetResizable(true);
     mScrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 
+    // single toolbar: all actions grouped left, the progress/state
+    // readout right (the old split top/bottom rows fragmented both)
     topLayout->addWidget(mAddRenderButton);
-    topLayout->addStretch();
+    topLayout->addWidget(mStartRenderButton);
+    topLayout->addWidget(mStopRenderButton);
     topLayout->addWidget(mClearQueueButton);
-
-    bottomLayout->addWidget(mStartRenderButton);
-    bottomLayout->addWidget(mRenderProgressBar);
-    bottomLayout->addWidget(mStopRenderButton);
+    topLayout->addStretch();
+    mRenderProgressBar->setTextVisible(true);
+    mRenderProgressBar->setMaximumWidth(180);
+    topLayout->addWidget(mRenderProgressBar);
 
     mMainLayout->addWidget(topWidget);
     mMainLayout->addWidget(mScrollArea);
-    mMainLayout->addWidget(bottomWidget);
 
     const auto vidEmitter = VideoEncoder::sInstance->getEmitter();
     connect(vidEmitter, &VideoEncoderEmitter::encodingStarted,
