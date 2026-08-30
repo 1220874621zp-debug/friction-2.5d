@@ -79,8 +79,7 @@ class ObjectSettingsWidget;
 class BoxScrollWidget;
 class ScrollArea;
 class ScriptManager;
-class EffectsPresetsPanel;
-class QuickEffectSearchDialog;
+class ProjectPanel;
 
 class MainWindow : public QMainWindow
 {
@@ -170,15 +169,6 @@ public:
     void saveBackup();
     const QString checkBeforeExportSVG();
     void exportSVG(const bool &preview = false);
-
-    void addRasterEffect(const qsptr<RasterEffect> &effect);
-    void addBlendEffect(const qsptr<BlendEffect> &effect);
-    void addTransformEffect(const qsptr<TransformEffect> &effect);
-    void addPathEffect(const qsptr<PathEffect> &effect);
-    void addFillPathEffect(const qsptr<PathEffect> &effect);
-    void addOutlineBasePathEffect(const qsptr<PathEffect> &effect);
-    void addOutlinePathEffect(const qsptr<PathEffect> &effect);
-    void showQuickEffectSearch();
     void updateLastOpenDir(const QString &path);
     void updateLastSaveDir(const QString &path);
     const QString getLastOpenDir();
@@ -254,8 +244,8 @@ private:
     QDockWidget *mFillStrokeDock = nullptr;
     QDockWidget *mPropertiesDock = nullptr;
     QDockWidget *mEasingDock = nullptr;
-    EffectsPresetsPanel *mEffectsPresetsPanel = nullptr;
-    QuickEffectSearchDialog *mQuickEffectSearch = nullptr;
+    QDockWidget *mProjectDock = nullptr;
+    ProjectPanel *mProjectPanel = nullptr;
 
     // JS plugin system (Scripts menu + console dock)
     ScriptManager *mScriptManager = nullptr;
@@ -343,7 +333,6 @@ private:
 
     BoxScrollWidget *mObjectSettingsWidget;
     ScrollArea *mObjectSettingsScrollArea;
-    class AEPropertiesInspector *mPropertiesInspector;
 
     void setupMainWidgets();
     void setupStackWidgets();
@@ -359,6 +348,14 @@ private:
 
     BoundingBox* getCurrentBox();
 
+    void addRasterEffect(const qsptr<RasterEffect> &effect);
+    void addBlendEffect(const qsptr<BlendEffect> &effect);
+    void addTransformEffect(const qsptr<TransformEffect> &effect);
+    void addPathEffect(const qsptr<PathEffect> &effect);
+    void addFillPathEffect(const qsptr<PathEffect> &effect);
+    void addOutlineBasePathEffect(const qsptr<PathEffect> &effect);
+    void addOutlinePathEffect(const qsptr<PathEffect> &effect);
+
     QList<SceneBoundGradient*> mLoadedGradientsList;
 
     int mStackIndexScene;
@@ -367,7 +364,6 @@ private:
     int mTabColorIndex;
     int mTabTextIndex;
     int mTabPropertiesIndex;
-    int mTabEffectsIndex;
     int mTabAssetsIndex;
     int mTabQueueIndex;
 

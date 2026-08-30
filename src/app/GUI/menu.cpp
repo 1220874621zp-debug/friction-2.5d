@@ -857,6 +857,17 @@ void MainWindow::setupMenuBar()
 
     // toolbar actions
     mToolbar->addAction(newAct);
+    // quick new scene next to new project (pairs with the project
+    // panel workflow); reuses the MenuBar_Scene translation entry
+    {
+        const auto act = mToolbar->addAction(
+                    QIcon::fromTheme("file_new"),
+                    tr("New Scene", "MenuBar_Scene"),
+                    this, [this]() {
+            SceneSettingsDialog::sNewSceneDialog(mDocument, this);
+        });
+        act->setObjectName("NewSceneToolAct");
+    }
     mToolbar->addAction(openAct);
     mToolbar->addAction(mSaveAct);
     mToolbar->addAction(mImportAct);

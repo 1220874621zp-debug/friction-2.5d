@@ -567,6 +567,18 @@
         <translation>变换</translation>
     </message>
     <message>
+        <source>Toggle expression editor</source>
+        <translation>展开/收起表达式编辑器</translation>
+    </message>
+    <message>
+        <source>Expression script - click away or press Ctrl+Return to apply, Escape to close</source>
+        <translation>表达式脚本——点击别处或按 Ctrl+回车 应用，Esc 关闭</translation>
+    </message>
+    <message>
+        <source>Remove expression</source>
+        <translation>移除表达式</translation>
+    </message>
+    <message>
         <source>Set layer label color</source>
         <translation>设置图层标签颜色</translation>
     </message>
@@ -1529,6 +1541,14 @@
         <location filename="../../ui/widgets/colorlabel.cpp" line="54" />
         <source>Bookmark Color</source>
         <translation>收藏颜色</translation>
+    </message>
+</context>
+<context>
+    <name>CanvasWindow</name>
+    <message>
+        <location filename="../GUI/canvaswindow.cpp" line="754" />
+        <source>Cannot link a scene to itself</source>
+        <translation>无法将场景链接到自身</translation>
     </message>
 </context>
 <context>
@@ -4107,6 +4127,21 @@ Added layers: %3</source>
         <translation>填充和描边</translation>
     </message>
     <message>
+        <location filename="../GUI/mainwindow.cpp" line="1544" />
+        <source>Project</source>
+        <translation>项目</translation>
+    </message>
+    <message>
+        <location filename="../GUI/mainwindow.cpp" line="1378" />
+        <source>Panels</source>
+        <translation>面板</translation>
+    </message>
+    <message>
+        <location filename="../GUI/mainwindow.cpp" line="1538" />
+        <source>Easing Presets</source>
+        <translation>缓动预设</translation>
+    </message>
+    <message>
         <location filename="../GUI/mainwindow.cpp" line="1036" />
         <source>Save *</source>
         <translation>保存 *</translation>
@@ -5550,6 +5585,39 @@ Are you sure you want to save this project file?</source>
         <location filename="../GUI/Settings/pluginssettingswidget.cpp" line="98" />
         <source>Also note that shader effects are still considered experimental</source>
         <translation>另请注意，着色器效果仍处于实验阶段</translation>
+    </message>
+</context>
+<context>
+    <name>ProjectPanel</name>
+    <message>
+        <location filename="../GUI/projectpanel.cpp" line="96" />
+        <source>Scene</source>
+        <translation>场景</translation>
+    </message>
+    <message>
+        <location filename="../GUI/projectpanel.cpp" line="97" />
+        <source>Info</source>
+        <translation>信息</translation>
+    </message>
+    <message>
+        <location filename="../GUI/projectpanel.cpp" line="217" />
+        <source>New Scene</source>
+        <translation>新建场景</translation>
+    </message>
+    <message>
+        <location filename="../GUI/projectpanel.cpp" line="224" />
+        <source>Open Scene</source>
+        <translation>打开场景</translation>
+    </message>
+    <message>
+        <location filename="../GUI/projectpanel.cpp" line="229" />
+        <source>Link to Active Canvas</source>
+        <translation>链接到当前画布</translation>
+    </message>
+    <message>
+        <location filename="../GUI/projectpanel.cpp" line="236" />
+        <source>Scene Properties...</source>
+        <translation>场景属性...</translation>
     </message>
 </context>
 <context>
@@ -7068,6 +7136,34 @@ Are you sure you want to save this project file?</source>
     <message>
         <source>Auto freeze pose: key ALL bone channels on every pose edit (pinned poses, no drift)</source>
         <translation>自动冻结姿势：每次摆姿势记录骨骼全部通道（姿势钉死不漂移）</translation>
+    </message>
+    <message>
+        <source>Loop Keys</source>
+        <translation>正向循环</translation>
+    </message>
+    <message>
+        <source>Cycle keyframed animation forward after the last key (1,2,3 -&gt; 1,2,3,1,...); applies a loop expression to every keyed property of the selected layers, bones included; click again to remove</source>
+        <translation>最后一个关键帧之后正向循环关键帧动画（1,2,3 → 1,2,3,1,...）；给选中图层的所有带关键帧属性（含骨骼）加循环表达式；再点一次移除</translation>
+    </message>
+    <message>
+        <source>Ping-Pong Loop</source>
+        <translation>乒乓循环（往复）</translation>
+    </message>
+    <message>
+        <source>Bounce keyframed animation back and forth after the last key (1,2,3 -&gt; 1,2,3,2,1,...); applies a loop expression to every keyed property of the selected layers, bones included; click again to remove</source>
+        <translation>最后一个关键帧之后往复循环关键帧动画（1,2,3 → 1,2,3,2,1,...）；给选中图层的所有带关键帧属性（含骨骼）加循环表达式；再点一次移除</translation>
+    </message>
+    <message>
+        <source>Skip Loop</source>
+        <translation>跳帧循环</translation>
+    </message>
+    <message>
+        <source>Cycle keyframed animation skipping the given number of leading keys (keys 1,2,3, skip 1 -&gt; cycles 2,3); the amount is asked for when enabled; applies a loop expression to every keyed property of the selected layers, bones included; click again to remove</source>
+        <translation>跳过左侧指定数量的关键帧后循环关键帧动画（关键帧 1,2,3、跳过 1 → 循环 2,3）；启用时会询问跳过数量；给选中图层的所有带关键帧属性（含骨骼）加循环表达式；再点一次移除</translation>
+    </message>
+    <message>
+        <source>Number of leading keys to skip:</source>
+        <translation>跳过左侧关键帧的数量：</translation>
     </message>
 </context>
 <context>

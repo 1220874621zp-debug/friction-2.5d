@@ -28,6 +28,7 @@
 
 #include <QComboBox>
 #include <QApplication>
+#include <QStatusBar>
 #include <QTransform>
 
 #include "mainwindow.h"
@@ -45,6 +46,7 @@
 #include "eevent.h"
 #include "glhelpers.h"
 #include "themesupport.h"
+#include "projectpanel.h"
 
 CanvasWindow::CanvasWindow(Document &document,
                            QWidget * const parent)
@@ -751,15 +753,57 @@ int CanvasWindow::getMaxFrame()
     return mCurrentCanvas->getMaxFrame();
 }
 
+bool CanvasWindow::handleSceneDrop(QDropEvent * const event)
+{
+    const auto mimeData = event->mimeData();
+    if (!mimeData->hasFormat(ProjectPanel::sMimeFormat())) { return false; }
+    // always consume our scene mime, even on rejection, so it never
+    // falls through to the file-import drop path
+    event->acceptProposedAction();
+    if (!mCurrentCanvas) { return true; }
+
+    const auto raw = reinterpret_cast<Canvas*>(
+                mimeData->data(ProjectPanel::sMimeFormat()).toULongLong());
+    // validate the raw pointer against the live scene list
+    Canvas* scene = nullptr;
+    for (const auto& scenePtr : mDocument.fScenes) {
+        if (scenePtr.get() == raw) { scene = raw; break; }
+    }
+    if (!scene) { return true; }
+
+    const auto mwd = MainWindow::sGetInstance();
+    if (scene == mCurrentCanvas) {
+        if (mwd && mwd->statusBar()) {
+            mwd->statusBar()->showMessage(
+                        tr("Cannot link a scene to itself"), 5000);
+        }
+        return true;
+    }
+
+    // same link the canvas right-click "Link Scene" menu creates,
+    // placed with its pivot on the drop point
+    const QPointF pos = mapToCanvasCoord(event->posF());
+    const auto newLink = scene->createLink(false);
+    mCurrentCanvas->getCurrentGroup()->addContained(newLink);
+    newLink->centerPivotPosition();
+    newLink->startPosTransform();
+    newLink->moveByAbs(pos - newLink->getPivotAbsPos());
+    newLink->finishTransform();
+    Document::sInstance->actionFinished();
+    return true;
+}
+
 void CanvasWindow::dropEvent(QDropEvent *event)
 {
+    if (handleSceneDrop(event)) { return; }
     const QPointF pos = mapToCanvasCoord(event->posF());
     mActions.handleDropEvent(event, pos);
 }
 
 void CanvasWindow::dragEnterEvent(QDragEnterEvent *event)
 {
-    if (event->mimeData()->hasUrls() ||
+    if (event->mimeData()->hasFormat(ProjectPanel::sMimeFormat()) ||
+        event->mimeData()->hasUrls() ||
         event->mimeData()->hasFormat("application/x-qabstractitemmodeldatalist"))
     {
         event->acceptProposedAction();
@@ -769,7 +813,8 @@ void CanvasWindow::dragEnterEvent(QDragEnterEvent *event)
 
 void CanvasWindow::dragMoveEvent(QDragMoveEvent *event)
 {
-    if (event->mimeData()->hasUrls()) {
+    if (event->mimeData()->hasFormat(ProjectPanel::sMimeFormat()) ||
+        event->mimeData()->hasUrls()) {
         event->acceptProposedAction();
     }
 }
