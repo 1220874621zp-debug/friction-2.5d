@@ -21,29 +21,36 @@
 #
 */
 
-// Liquid glass (magnifier) distortion ported from a Shadertoy shader
-// https://gist.github.com/emmachase/25af1fb66daebf0f9989c93d3c8c5fa6
-// The CPU path mirrors liquidglasseffect.frag step by step; colors stay
-// premultiplied and the glow result is clamped against the alpha.
+// Liquid glass (water-droplet) backdrop effect, ported from a
+// Shadertoy shader https://gist.github.com/emmachase/25af1fb66daebf0f9989c93d3c8c5fa6
+//
+// The layer's own alpha (rasterized in device space, exactly where the
+// layer is about to be drawn) is the glass shape. A chamfer distance
+// field over that mask drives the refraction: pixels near the shape
+// edge sample the backdrop from deeper inside (strong bending at the
+// rim, identity at the very edge), like looking through a water
+// droplet. The angular rim glow uses the field-gradient angle, the
+// grain matches the original shader's screen-space noise, and the
+// layer's own semi-transparent content composites on top as tint.
 
 #include "liquidglasseffect.h"
 
-#include "gpurendertools.h"
-#include "openglrastereffectcaller.h"
-
 #include "Boxes/boxrenderdata.h"
+#include "skia/skqtconversions.h"
+
 #include "appsupport.h"
 
+#include <QRect>
 #include <algorithm>
 #include <cmath>
+#include <cstring>
+#include <vector>
 
 namespace {
 
 const float kM_E = 2.718281828459045f;
 
-float sat1(const float v) { return v < 0.f ? 0.f : (v > 1.f ? 1.f : v); }
-
-// Mirrors f_func() in liquidglasseffect.frag
+// Mirrors f_func() of the original shader (constants hardcoded there)
 float f_func(const float x)
 {
     const float u_a = 0.7f;
@@ -53,7 +60,7 @@ float f_func(const float x)
     return 1.f - u_b * std::pow(u_c * kM_E, -u_d * x - u_a);
 }
 
-// Mirrors rand() in liquidglasseffect.frag
+// Mirrors rand() of the original shader
 float rand2d(const float x, const float y)
 {
     const float d = 12.9898f * x + 78.233f * y;
@@ -62,124 +69,89 @@ float rand2d(const float x, const float y)
     return v;
 }
 
-// Mirrors sdSuperellipse() in liquidglasseffect.frag
-float sdSuperellipse(const float px, const float py,
-                     const float n, const float r)
+float smoothstepf(const float t)
 {
-    const float ax = std::abs(px);
-    const float ay = std::abs(py);
-    const float numerator = std::pow(ax, n) + std::pow(ay, n) - std::pow(r, n);
-    const float den_x = std::pow(ax, 2.f * n - 2.f);
-    const float den_y = std::pow(ay, 2.f * n - 2.f);
-    const float denominator = n * std::sqrt(den_x + den_y) + 1e-5f;
-    return numerator / denominator;
+    const float c = t < 0.f ? 0.f : (t > 1.f ? 1.f : t);
+    return c * c * (3.f - 2.f * c);
 }
 
-float smoothstepf(const float e0, const float e1, const float x)
+float sat1(const float v) { return v < 0.f ? 0.f : (v > 1.f ? 1.f : v); }
+
+// chamfer 3-4 distance transform, inside-positive, in pixels: inside
+// pixels start at infinity, outside at zero, two sweeps propagate the
+// distance from every inside pixel to the nearest shape edge
+void distanceField(const SkBitmap& mask, const int x0, const int y0,
+                   const int w, const int h, std::vector<float>& field)
 {
-    const float t = sat1((x - e0) / (e1 - e0));
-    return t * t * (3.f - 2.f * t);
+    const float kInf = 1e9f;
+    field.assign(size_t(w) * h, kInf);
+    for (int y = 0; y < h; y++) {
+        const uchar* row = static_cast<const uchar*>(
+                    mask.getAddr(x0, y0 + y));
+        for (int x = 0; x < w; x++) {
+            if (row[x * 4 + 3] <= 127) field[size_t(y) * w + x] = 0.f;
+        }
+    }
+    // forward sweep (top-left -> bottom-right)
+    for (int y = 0; y < h; y++) {
+        float* row = field.data() + size_t(y) * w;
+        for (int x = 0; x < w; x++) {
+            float d = row[x];
+            if (x > 0)     d = std::min(d, row[x - 1] + 3.f);
+            if (y > 0) {
+                const float* up = field.data() + size_t(y - 1) * w;
+                d = std::min(d, up[x] + 3.f);
+                if (x > 0)     d = std::min(d, up[x - 1] + 4.f);
+                if (x < w - 1) d = std::min(d, up[x + 1] + 4.f);
+            }
+            row[x] = d;
+        }
+    }
+    // backward sweep
+    for (int y = h - 1; y >= 0; y--) {
+        float* row = field.data() + size_t(y) * w;
+        for (int x = w - 1; x >= 0; x--) {
+            float d = row[x];
+            if (x < w - 1) d = std::min(d, row[x + 1] + 3.f);
+            if (y < h - 1) {
+                const float* dn = field.data() + size_t(y + 1) * w;
+                d = std::min(d, dn[x] + 3.f);
+                if (x < w - 1) d = std::min(d, dn[x + 1] + 4.f);
+                if (x > 0)     d = std::min(d, dn[x - 1] + 4.f);
+            }
+            row[x] = d;
+        }
+    }
+    for (auto& v : field) v = v / 3.f; // chamfer units -> pixels
 }
 
-// Mirrors glowPattern() in liquidglasseffect.frag
-float glowPattern(const float lu, const float lv)
-{
-    const float cx = lu * 2.f - 1.f;
-    const float cy = lv * 2.f - 1.f;
-    const float radius = std::sqrt(cx * cx + cy * cy);
-    const float angleFactor = smoothstepf(0.f, 0.9f, radius);
-    return std::sin(std::atan2(cy, cx) - 0.5f) * angleFactor;
-}
-
-// bilinear sample of a premultiplied src bitmap; uv is in GL space
-// (y up), bitmap row 0 is the top; coords clamp to the edge
+// bilinear premultiplied sample of a bitmap at pixel coordinates
 void sampleBilinear(const SkBitmap& src, const int w, const int h,
-                    const float u, const float v,
+                    float fx, float fy,
                     float& r, float& g, float& b, float& a)
 {
-    float fx = u * float(w) - 0.5f;
-    float fy = (1.f - v) * float(h) - 0.5f;
     fx = std::min(std::max(fx, 0.f), float(w - 1));
     fy = std::min(std::max(fy, 0.f), float(h - 1));
     int x0 = int(std::floor(fx));
     int y0 = int(std::floor(fy));
-    int x1 = std::min(x0 + 1, w - 1);
-    int y1 = std::min(y0 + 1, h - 1);
+    const int x1 = std::min(x0 + 1, w - 1);
+    const int y1 = std::min(y0 + 1, h - 1);
+    x0 = std::max(x0, 0);
+    y0 = std::max(y0, 0);
     const float tx = fx - float(x0);
     const float ty = fy - float(y0);
-    const uchar* s00 = static_cast<const uchar*>(src.getAddr(x0, y0));
-    const uchar* s10 = static_cast<const uchar*>(src.getAddr(x1, y0));
-    const uchar* s01 = static_cast<const uchar*>(src.getAddr(x0, y1));
-    const uchar* s11 = static_cast<const uchar*>(src.getAddr(x1, y1));
-    const uchar* chans[4] = {s00, s10, s01, s11};
+    const uchar* p00 = static_cast<const uchar*>(src.getAddr(x0, y0));
+    const uchar* p10 = static_cast<const uchar*>(src.getAddr(x1, y0));
+    const uchar* p01 = static_cast<const uchar*>(src.getAddr(x0, y1));
+    const uchar* p11 = static_cast<const uchar*>(src.getAddr(x1, y1));
     float out[4];
-    for (int c = 0; c < 4; c++) {
-        const float top = chans[0][c] / 255.f +
-                (chans[1][c] - chans[0][c]) / 255.f * tx;
-        const float bot = chans[2][c] / 255.f +
-                (chans[3][c] - chans[2][c]) / 255.f * tx;
-        out[c] = top + (bot - top) * ty;
+    const uchar* c[4] = {p00, p10, p01, p11};
+    for (int i = 0; i < 4; i++) {
+        const float top = c[0][i] / 255.f + (c[1][i] - c[0][i]) / 255.f * tx;
+        const float bot = c[2][i] / 255.f + (c[3][i] - c[2][i]) / 255.f * tx;
+        out[i] = top + (bot - top) * ty;
     }
     r = out[0]; g = out[1]; b = out[2]; a = out[3];
-}
-
-// Mirrors main() in liquidglasseffect.frag step by step
-void processPixel(const LiquidGlassEffectData& d,
-                  const SkBitmap& src, const int w, const int h,
-                  const float u, const float v,
-                  const float noiseX, const float noiseY,
-                  const float srcR, const float srcG,
-                  const float srcB, const float srcA,
-                  float& rOut, float& gOut, float& bOut, float& aOut)
-{
-    const float aspectX = float(w) / float(h);
-
-    // local space centered on the effect, aspect corrected
-    const float px = (u - d.mCenterX) * aspectX / d.mSize;
-    const float py = (v - d.mCenterY) / d.mSize;
-
-    const float dd = sdSuperellipse(px, py, d.mShapeN, 1.f);
-
-    // outside the shape -> pass the source pixel through untouched
-    if (dd > 0.f) {
-        rOut = srcR; gOut = srcG; bOut = srcB; aOut = srcA;
-        return;
-    }
-
-    const float dist = -dd;
-    float fval = f_func(dist);
-    if (fval < 0.001f) fval = 0.001f;
-    const float scale = std::pow(fval, d.mRefraction);
-    const float sampleX = px * scale;
-    const float sampleY = py * scale;
-
-    // scale back to uv space; +0.1 offset and edge clamping as in the
-    // original (out-of-bounds returned debug magenta there)
-    float targetU = sampleX * d.mSize / aspectX + d.mCenterX + 0.1f;
-    float targetV = sampleY * d.mSize + d.mCenterY + 0.1f;
-    targetU = sat1(targetU);
-    targetV = sat1(targetV);
-
-    float cr, cg, cb, ca;
-    sampleBilinear(src, w, h, targetU, targetV, cr, cg, cb, ca);
-
-    // static grain (screen-space, as in the original)
-    const float noise = (rand2d(noiseX, noiseY) - 0.5f) * d.mNoise;
-
-    // glow multiplier: angular pattern near the rim + bias
-    const float localU = (u - d.mCenterX) / d.mSize + 0.5f;
-    const float localV = (v - d.mCenterY) / d.mSize + 0.5f;
-    const float glowFactor = glowPattern(localU, localV) * d.mGlowWeight *
-            smoothstepf(0.f, 0.06f, dist) + 1.f + d.mGlowBias;
-
-    // keep the premultiplied invariant (glow can push rgb past alpha)
-    const float r = cr * glowFactor + noise;
-    const float g = cg * glowFactor + noise;
-    const float b = cb * glowFactor + noise;
-    rOut = std::min(std::max(r, 0.f), ca);
-    gOut = std::min(std::max(g, 0.f), ca);
-    bOut = std::min(std::max(b, 0.f), ca);
-    aOut = ca;
 }
 
 } // namespace
@@ -191,19 +163,6 @@ LiquidGlassEffect::LiquidGlassEffect() :
                  true,
                  RasterEffectType::LIQUID_GLASS)
 {
-    mCenterX = enve::make_shared<QrealAnimator>(0.5, 0, 1, 0.01,
-                                                QObject::tr("center x"));
-    ca_addChild(mCenterX);
-    // panel-facing y is 0 = top (friction y grows downward)
-    mCenterY = enve::make_shared<QrealAnimator>(0.5, 0, 1, 0.01,
-                                                QObject::tr("center y"));
-    ca_addChild(mCenterY);
-    mSize = enve::make_shared<QrealAnimator>(0.15, 0.05, 0.5, 0.01,
-                                             QObject::tr("size"));
-    ca_addChild(mSize);
-    mShapeN = enve::make_shared<QrealAnimator>(3, 2, 8, 0.1,
-                                              QObject::tr("shape exponent"));
-    ca_addChild(mShapeN);
     mRefraction = enve::make_shared<QrealAnimator>(3, 0, 6, 0.05,
                                                    QObject::tr("refraction"));
     ca_addChild(mRefraction);
@@ -218,247 +177,186 @@ LiquidGlassEffect::LiquidGlassEffect() :
     ca_addChild(mGlowBias);
 }
 
-// Inherits RasterEffectCaller (not OpenGLRasterEffectCaller) because the
-// surface size is only known once the render tools exist, and the base
-// class seals processGpu. The GPU flow replicates
-// OpenGLRasterEffectCaller::processGpu with the size captured before
-// the uniform dispatch.
 class LiquidGlassEffectCaller : public RasterEffectCaller {
 public:
     LiquidGlassEffectCaller(const HardwareSupport hwSupport,
                             const LiquidGlassEffectData& data) :
         RasterEffectCaller(hwSupport),
         mData(data) {
-        // the glass refracts the composition BELOW the layer, so the
-        // effect is diverted to the composite-time backdrop treatment
-        // (adjustment-layer machinery) instead of the box-image phase
+        // the glass refracts the composition BELOW the layer: diverted
+        // to the composite-time backdrop treatment, never the box-image
+        // phase
         fSamplesBackdrop = true;
     }
 
-    void processGpu(QGL33 * const gl, GpuRenderTools& renderTools) {
-        renderTools.switchToOpenGL(gl);
+    void processBackdrop(SkCanvas * const canvas,
+                         const BoxRenderData& box,
+                         const SkPaint& paint) {
+        Q_UNUSED(paint)
+        if(!canvas || !box.fRenderedImage) return;
+        const SkIRect dev = canvas->getDeviceClipBounds();
+        if(dev.isEmpty()) return;
+        auto* surf = canvas->getSurface();
+        if(!surf) return;
 
-        if (!sInitialized) {
-            iniProgram(gl);
-            sInitialized = true;
+        canvas->flush();
+        const auto snap = surf->makeImageSnapshot(dev);
+        if(!snap) return;
+
+        // 1) the layer's shape: rasterize its own image into a
+        //    device-space mask, replicating the standard placement
+        //    (this covers both the render and preview paths since both
+        //    end up in drawOnParentLayer with the full transform
+        //    already on the canvas)
+        const auto info = SkImageInfo::MakeN32Premul(dev.width(),
+                                                     dev.height());
+        SkBitmap maskB;
+        maskB.allocPixels(info);
+        maskB.eraseColor(SK_ColorTRANSPARENT);
+        {
+            SkCanvas mc(maskB);
+            SkMatrix m = canvas->getTotalMatrix();
+            m.postTranslate(-float(dev.left()), -float(dev.top()));
+            mc.setMatrix(m);
+            if(box.fUseRenderTransform) {
+                mc.concat(toSkMatrix(box.fRenderTransform));
+            }
+            SkPaint mp;
+            mp.setAntiAlias(box.fAntiAlias);
+            mc.drawImage(box.fRenderedImage,
+                         box.fGlobalRect.x(), box.fGlobalRect.y(), &mp);
         }
 
-        renderTools.requestTargetFbo().bind(gl);
-        gl->glClear(GL_COLOR_BUFFER_BIT);
-
-        gl->glUseProgram(sProgramId);
-
-        // capture the real surface size for uTexSize (BoxRenderData::
-        // fGlobalRect is still 0x0 when getEffectCaller runs)
-        const auto& srcTex = renderTools.getSrcTexture();
-        mRTexW = float(srcTex.fWidth);
-        mRTexH = float(srcTex.fHeight);
-
-        setVars(gl);
-
-        gl->glActiveTexture(GL_TEXTURE0);
-        renderTools.getSrcTexture().bind(gl);
-
-        gl->glBindVertexArray(renderTools.getSquareVAO());
-        gl->glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-
-        renderTools.swapTextures();
-    }
-
-    void processCpu(CpuRenderTools& renderTools,
-                    const CpuRenderData& data);
-private:
-    void iniProgram(QGL33 * const gl) {
-        try {
-            gIniProgram(gl, sProgramId, GL_TEXTURED_VERT,
-                        QStringLiteral(":/shaders/liquidglasseffect.frag"));
-        } catch(...) {
-            RuntimeThrow("Could not initialize a program for "
-                         "'liquidglasseffect.frag'");
+        // shape bounding box (device space, relative to dev origin)
+        int bxMin = dev.width(), bxMax = -1, byMin = dev.height(), byMax = -1;
+        for (int y = 0; y < maskB.height(); y++) {
+            const uchar* row = static_cast<const uchar*>(
+                        maskB.getAddr(0, y));
+            for (int x = 0; x < maskB.width(); x++) {
+                if (row[x * 4 + 3] > 0) {
+                    if (x < bxMin) bxMin = x;
+                    if (x > bxMax) bxMax = x;
+                    if (y < byMin) byMin = y;
+                    if (y > byMax) byMax = y;
+                }
+            }
         }
+        if (bxMax < bxMin) return; // empty shape
 
-        gl->glUseProgram(sProgramId);
+        // 2) distance field inside the shape
+        const int bw = bxMax - bxMin + 1;
+        const int bh = byMax - byMin + 1;
+        std::vector<float> field;
+        distanceField(maskB, bxMin, byMin, bw, bh, field);
+        float maxDist = 0.f;
+        for (const float v : field) maxDist = std::max(maxDist, v);
+        if (maxDist < 0.5f) maxDist = 0.5f;
 
-        const auto texLocation = gl->glGetUniformLocation(sProgramId, "tex");
-        gl->glUniform1i(texLocation, 0);
+        // 3) backdrop snapshot as a raster bitmap
+        SkBitmap backB;
+        backB.allocPixels(info);
+        backB.eraseColor(SK_ColorTRANSPARENT);
+        if (!snap->readPixels(backB.pixmap(), 0, 0)) return;
 
-        iniVars(gl);
-    }
-
-    void iniVars(QGL33 * const gl) const {
-        sCenterU = gl->glGetUniformLocation(sProgramId, "uCenter");
-        sTexSizeU = gl->glGetUniformLocation(sProgramId, "uTexSize");
-        sSizeU = gl->glGetUniformLocation(sProgramId, "uSize");
-        sShapeNU = gl->glGetUniformLocation(sProgramId, "uShapeN");
-        sRefractionU = gl->glGetUniformLocation(sProgramId, "uRefraction");
-        sNoiseU = gl->glGetUniformLocation(sProgramId, "uNoise");
-        sGlowWeightU = gl->glGetUniformLocation(sProgramId, "uGlowWeight");
-        sGlowBiasU = gl->glGetUniformLocation(sProgramId, "uGlowBias");
-    }
-
-    void setVars(QGL33 * const gl) const {
-        gl->glUseProgram(sProgramId);
-        gl->glUniform2f(sCenterU, mData.mCenterX, mData.mCenterY);
-        gl->glUniform2f(sTexSizeU, mRTexW, mRTexH);
-        gl->glUniform1f(sSizeU, mData.mSize);
-        gl->glUniform1f(sShapeNU, mData.mShapeN);
-        gl->glUniform1f(sRefractionU, mData.mRefraction);
-        gl->glUniform1f(sNoiseU, mData.mNoise);
-        gl->glUniform1f(sGlowWeightU, mData.mGlowWeight);
-        gl->glUniform1f(sGlowBiasU, mData.mGlowBias);
         // throttled diagnostic for the runtime debug log
-        static int sVarLog = 0;
-        if (sVarLog++ < 8) {
-            qWarning() << "[LG] gpu setVars prog=" << sProgramId
-                       << "locs center/texsize/size/shape/refr/noise/gw/gb ="
-                       << sCenterU << sTexSizeU << sSizeU << sShapeNU
-                       << sRefractionU << sNoiseU << sGlowWeightU << sGlowBiasU
-                       << "vals c=" << mData.mCenterX << mData.mCenterY
-                       << "tex=" << mRTexW << mRTexH
-                       << "size=" << mData.mSize << "n=" << mData.mShapeN
+        static int sLog = 0;
+        if (sLog++ < 8) {
+            qWarning() << "[LG] backdrop dev=" << dev.width() << "x"
+                       << dev.height() << "shape=" << bw << "x" << bh
+                       << "maxDist=" << int(maxDist)
                        << "refr=" << mData.mRefraction;
         }
+
+        // 4) droplet shading inside the shape
+        SkBitmap dstB;
+        dstB.allocPixels(info);
+        dstB.eraseColor(SK_ColorTRANSPARENT);
+        const float rimW = 0.06f * maxDist; // as in the original
+        for (int y = byMin; y <= byMax; y++) {
+            const int fy = y - byMin;
+            const uchar* mrow = static_cast<const uchar*>(
+                        maskB.getAddr(bxMin, y));
+            uchar* drow = static_cast<uchar*>(dstB.getAddr(bxMin, y));
+            for (int x = bxMin; x <= bxMax; x++, mrow += 4, drow += 4) {
+                const float alpha = mrow[3] / 255.f;
+                if (alpha <= 0.001f) continue;
+                const int fx = x - bxMin;
+                const float dist = field[size_t(fy) * bw + fx];
+                if (dist <= 0.f) {
+                    // anti-aliased fringe outside the hard mask: leave
+                    // the backdrop untouched there
+                    continue;
+                }
+                // inward normal from the field gradient
+                const float dl = field[size_t(fy) * bw + std::max(fx - 1, 0)];
+                const float dr = field[size_t(fy) * bw + std::min(fx + 1, bw - 1)];
+                const float du = field[size_t(std::max(fy - 1, 0)) * bw + fx];
+                const float ddn = field[size_t(std::min(fy + 1, bh - 1)) * bw + fx];
+                float nx = dr - dl;
+                float ny = ddn - du;
+                const float nlen = std::sqrt(nx * nx + ny * ny);
+                if (nlen > 0.001f) { nx /= nlen; ny /= nlen; }
+                else { nx = 0.f; ny = 0.f; }
+
+                // refraction: sample deeper inside, zero at the edge,
+                // curve follows the original f_func over dist/maxDist
+                const float fval = f_func(dist / maxDist);
+                const float disp = dist * (1.f - std::pow(fval,
+                                                          mData.mRefraction));
+                const float sx = float(x) + nx * disp;
+                const float sy = float(y) + ny * disp;
+
+                float r, g, b, a;
+                sampleBilinear(backB, dev.width(), dev.height(),
+                               sx, sy, r, g, b, a);
+
+                // angular rim glow using the normal angle (the original
+                // used the angle around the shape center; silhouette
+                // normals rotate around the outline the same way)
+                const float glowFactor = std::sin(std::atan2(ny, nx) - 0.5f) *
+                        mData.mGlowWeight *
+                        smoothstepf(dist / std::max(rimW, 0.001f)) +
+                        1.f + mData.mGlowBias;
+                const float noise = (rand2d(float(x + dev.left()) * 1e-3f,
+                                            float(y + dev.top()) * 1e-3f) - 0.5f) *
+                        mData.mNoise;
+
+                float rr = r * glowFactor + noise;
+                float gg = g * glowFactor + noise;
+                float bb2 = b * glowFactor + noise;
+                // keep the premultiplied invariant against the aa alpha
+                drow[0] = static_cast<uchar>(
+                            sat1(std::min(std::max(rr, 0.f), alpha)) * 255.f + 0.5f);
+                drow[1] = static_cast<uchar>(
+                            sat1(std::min(std::max(gg, 0.f), alpha)) * 255.f + 0.5f);
+                drow[2] = static_cast<uchar>(
+                            sat1(std::min(std::max(bb2, 0.f), alpha)) * 255.f + 0.5f);
+                drow[3] = mrow[3];
+            }
+        }
+
+        // 5) draw the glass over the backdrop, device space
+        canvas->save();
+        canvas->resetMatrix(); // the snapshot is in device space
+        canvas->drawImage(SkImage::MakeFromBitmap(dstB), 0, 0);
+        canvas->restore();
     }
-
-    static bool sInitialized;
-    static GLuint sProgramId;
-
-    static GLint sCenterU;
-    static GLint sTexSizeU;
-    static GLint sSizeU;
-    static GLint sShapeNU;
-    static GLint sRefractionU;
-    static GLint sNoiseU;
-    static GLint sGlowWeightU;
-    static GLint sGlowBiasU;
-
+private:
     const LiquidGlassEffectData mData;
-    mutable float mRTexW = 1.f;
-    mutable float mRTexH = 1.f;
 };
-
-bool LiquidGlassEffectCaller::sInitialized = false;
-GLuint LiquidGlassEffectCaller::sProgramId = 0;
-
-GLint LiquidGlassEffectCaller::sCenterU = -1;
-GLint LiquidGlassEffectCaller::sTexSizeU = -1;
-GLint LiquidGlassEffectCaller::sSizeU = -1;
-GLint LiquidGlassEffectCaller::sShapeNU = -1;
-GLint LiquidGlassEffectCaller::sRefractionU = -1;
-GLint LiquidGlassEffectCaller::sNoiseU = -1;
-GLint LiquidGlassEffectCaller::sGlowWeightU = -1;
-GLint LiquidGlassEffectCaller::sGlowBiasU = -1;
 
 stdsptr<RasterEffectCaller> LiquidGlassEffect::getEffectCaller(
         const qreal relFrame, const qreal resolution,
         const qreal influence, BoxRenderData * const data) const {
     Q_UNUSED(resolution)
+    Q_UNUSED(data)
 
     LiquidGlassEffectData effData;
-    // NOTE: data->fGlobalRect is still 0x0 here (updateGlobalRect runs
-    // later, in BoxRenderData::process); the surface size is captured
-    // from the render tools in processGpu instead
-    effData.mCenterX = mCenterX->getEffectiveValue(relFrame);
-    // panel 0 = top -> GL uv y up
-    effData.mCenterY = 1. - mCenterY->getEffectiveValue(relFrame);
-    effData.mSize = mSize->getEffectiveValue(relFrame);
-    effData.mShapeN = mShapeN->getEffectiveValue(relFrame);
     effData.mRefraction = mRefraction->getEffectiveValue(relFrame);
     effData.mNoise = mNoise->getEffectiveValue(relFrame);
     effData.mGlowWeight = mGlowWeight->getEffectiveValue(relFrame);
     effData.mGlowBias = mGlowBias->getEffectiveValue(relFrame);
 
-    // throttled diagnostic for the runtime debug log
-    static int sCallerLog = 0;
-    if (sCallerLog++ < 5) {
-        qWarning() << "[LG] getEffectCaller center=" << effData.mCenterX
-                   << effData.mCenterY << "size=" << effData.mSize
-                   << "refr=" << effData.mRefraction;
-    }
-
     return enve::make_shared<LiquidGlassEffectCaller>(
                 instanceHwSupport(), effData);
-}
-
-void LiquidGlassEffectCaller::processCpu(CpuRenderTools& renderTools,
-                                         const CpuRenderData& data)
-{
-    const auto& srcBtmp = renderTools.fSrcBtmp;
-    const auto& dstBtmp = renderTools.fDstBtmp;
-
-    if (srcBtmp.empty() || srcBtmp.getPixels() == nullptr ||
-        dstBtmp.empty() || dstBtmp.getPixels() == nullptr) {
-        return;
-    }
-
-    const int imgWidth = srcBtmp.width();
-    const int imgHeight = srcBtmp.height();
-
-    // throttled diagnostic for the runtime debug log
-    static int sCpuLog = 0;
-    if (sCpuLog++ < 5) {
-        qWarning() << "[LG] cpu path" << imgWidth << "x" << imgHeight
-                   << "tile" << data.fTexTile.left() << data.fTexTile.top()
-                   << data.fTexTile.right() << data.fTexTile.bottom();
-    }
-
-    const int xMin = std::max(0, data.fTexTile.left());
-    const int xMax = std::min((int)data.fTexTile.right(), imgWidth - 1);
-    const int yMin = std::max(0, data.fTexTile.top());
-    const int yMax = std::min((int)data.fTexTile.bottom(), imgHeight - 1);
-
-    // everything outside the shape (a pixel circle of radius
-    // size*imgHeight around the center, plus a glow margin) is a
-    // straight pass-through - memcpy it and restrict the per-pixel
-    // math to that box (the backdrop treatment covers whole-canvas
-    // surfaces, this keeps it fast)
-    const float halfPx = mData.mSize * float(imgHeight) * 1.2f + 3.f;
-    const int cxPix = int(mData.mCenterX * float(imgWidth));
-    const int cyPix = int((1.f - mData.mCenterY) * float(imgHeight));
-    const int gxMin = std::max(xMin, cxPix - int(halfPx) - 1);
-    const int gxMax = std::min(xMax, cxPix + int(halfPx) + 1);
-    const int gyMin = std::max(yMin, cyPix - int(halfPx) - 1);
-    const int gyMax = std::min(yMax, cyPix + int(halfPx) + 1);
-    const size_t rowBytes = size_t(xMax - xMin + 1) * 4;
-
-    for (int yi = yMin; yi <= yMax; yi++) {
-        auto dst = static_cast<uchar*>(dstBtmp.getAddr(0, yi - yMin));
-        auto src = static_cast<uchar*>(srcBtmp.getAddr(xMin, yi));
-        if (yi < gyMin || yi > gyMax) {
-            memcpy(dst, src, rowBytes);
-            continue;
-        }
-        if (gxMin > xMin) {
-            memcpy(dst, src, size_t(gxMin - xMin) * 4);
-        }
-        if (gxMax < xMax) {
-            const size_t tail = size_t(gxMax + 1 - xMin) * 4;
-            memcpy(dst + tail, src + tail, rowBytes - tail);
-        }
-        for (int xi = gxMin; xi <= gxMax; xi++) {
-            const uchar* s = src + size_t(xi - xMin) * 4;
-            const float r = s[0] / 255.f;
-            const float g = s[1] / 255.f;
-            const float b = s[2] / 255.f;
-            const float a = s[3] / 255.f;
-
-            // texCoord convention: y up, bitmap row 0 is the top
-            const float u = (xi + 0.5f) / float(imgWidth);
-            const float v = 1.f - (yi + 0.5f) / float(imgHeight);
-            // gl_FragCoord origin is the bottom-left
-            const float noiseX = float(xi) * 1e-3f;
-            const float noiseY = float(imgHeight - yi) * 1e-3f;
-
-            float rOut, gOut, bOut, aOut;
-            processPixel(mData, srcBtmp, imgWidth, imgHeight,
-                         u, v, noiseX, noiseY,
-                         r, g, b, a, rOut, gOut, bOut, aOut);
-
-            uchar* d = dst + size_t(xi - xMin) * 4;
-            d[0] = static_cast<uchar>(rOut * 255.f + 0.5f);
-            d[1] = static_cast<uchar>(gOut * 255.f + 0.5f);
-            d[2] = static_cast<uchar>(bOut * 255.f + 0.5f);
-            d[3] = static_cast<uchar>(aOut * 255.f + 0.5f);
-        }
-    }
 }

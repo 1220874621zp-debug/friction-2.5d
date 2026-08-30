@@ -21,10 +21,17 @@
 #
 */
 
-// Liquid glass (magnifier) distortion ported from a Shadertoy shader
-// https://gist.github.com/emmachase/25af1fb66daebf0f9989c93d3c8c5fa6
-// The CPU path mirrors liquidglasseffect.frag step by step, colors are
-// premultiplied throughout (clamped against alpha after the glow).
+// Liquid glass (water-droplet) backdrop effect, ported from a
+// Shadertoy shader https://gist.github.com/emmachase/25af1fb66daebf0f9989c93d3c8c5fa6
+//
+// The LAYER ITSELF is the glass: whatever the layer draws (vector
+// shape or bitmap, at its actual pixel size and position) becomes the
+// glass footprint through its alpha. At composite time the backdrop
+// below is snapshotted, and inside the footprint the backdrop is
+// refracted along the shape-edge inward normals (distance-field
+// driven, like light bending through a water droplet) with an angular
+// rim glow and grain. The layer's own semi-transparent content then
+// composites on top as the glass tint.
 
 #ifndef LIQUIDGLASSEFFECT_H
 #define LIQUIDGLASSEFFECT_H
@@ -33,12 +40,6 @@
 #include "Animators/qrealanimator.h"
 
 struct LiquidGlassEffectData {
-    // center in GL uv space (y is UP; the panel-facing animator is
-    // 0 = top and flipped by getEffectCaller)
-    float mCenterX = 0.5f;
-    float mCenterY = 0.5f;
-    float mSize = 0.15f;
-    float mShapeN = 3.f;
     float mRefraction = 3.f;
     float mNoise = 0.06f;
     float mGlowWeight = 0.35f;
@@ -53,10 +54,6 @@ public:
             const qreal relFrame, const qreal resolution,
             const qreal influence, BoxRenderData * const data) const;
 private:
-    qsptr<QrealAnimator> mCenterX;
-    qsptr<QrealAnimator> mCenterY;
-    qsptr<QrealAnimator> mSize;
-    qsptr<QrealAnimator> mShapeN;
     qsptr<QrealAnimator> mRefraction;
     qsptr<QrealAnimator> mNoise;
     qsptr<QrealAnimator> mGlowWeight;

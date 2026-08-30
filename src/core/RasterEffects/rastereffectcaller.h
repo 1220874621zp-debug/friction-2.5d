@@ -33,6 +33,10 @@
 
 enum class HardwareSupport : short;
 
+class SkCanvas;
+class SkPaint;
+struct BoxRenderData;
+
 class CORE_EXPORT RasterEffectCaller : public StdSelfRef {
     e_OBJECT
 public:
@@ -50,6 +54,17 @@ public:
                             const CpuRenderData& data){
         Q_UNUSED(renderTools)
         Q_UNUSED(data)
+    }
+
+    // backdrop-sampling effects: run at composite time with the canvas
+    // snapshot below the layer available; the box's own rendered image
+    // (its alpha = the glass shape) is passed via boxData
+    virtual void processBackdrop(SkCanvas * const canvas,
+                                 const BoxRenderData& boxData,
+                                 const SkPaint& paint) {
+        Q_UNUSED(canvas)
+        Q_UNUSED(boxData)
+        Q_UNUSED(paint)
     }
 
     virtual int cpuThreads(const int available, const int area) const;
