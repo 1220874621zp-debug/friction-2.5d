@@ -84,14 +84,14 @@ const QString& ProjectPanel::sMimeFormat()
 ProjectPanel::ProjectPanel(Document& doc, QWidget* const parent) :
     QWidget(parent), mDocument(doc)
 {
-    setPalette(ThemeSupport::getDarkPalette());
+    setPalette(ThemeSupport::getDefaultPalette());
     setAutoFillBackground(true);
 
     mTree = new SceneTreeWidget(this);
-    mTree->setPalette(ThemeSupport::getDarkPalette());
+    mTree->setPalette(ThemeSupport::getDefaultPalette());
     mTree->setAutoFillBackground(true);
     if (mTree->viewport()) {
-        mTree->viewport()->setPalette(ThemeSupport::getDarkPalette());
+        mTree->viewport()->setPalette(ThemeSupport::getDefaultPalette());
         mTree->viewport()->setAutoFillBackground(true);
     }
     mTree->setColumnCount(2);

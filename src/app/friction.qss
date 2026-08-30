@@ -848,7 +848,7 @@ QTreeView,
 QTreeWidget,
 QListView,
 QListWidget {
-    background-color: %5;
+    background-color: %16;
     color: #e0e0e4;
     border: none;
     outline: none;
