@@ -47,6 +47,10 @@ signals:
 
 protected:
     void resizeEvent(QResizeEvent* const e) override;
+    // let the row shrink below the content size (the overflow logic
+    // then collapses breadcrumbs); the default would force the whole
+    // menu row to the full content width
+    QSize minimumSizeHint() const override;
 
 private:
     // all scenes the given scene links to (recursively through

@@ -94,7 +94,10 @@ void setupFlatBtn(QPushButton* const btn) {
 SceneNavigatorBar::SceneNavigatorBar(Document& doc,
                                      QWidget* const parent) :
     QWidget(parent), mDocument(doc) {
-    setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+    // Preferred (NOT Ignored - Ignored squeezed the bar to zero
+    // width in the menu row) + a zero minimumSizeHint so the row can
+    // still shrink and engage the breadcrumb overflow collapse
+    setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     eSizesUI::widget.add(this, [this](const int size) {
         setFixedHeight(size);
     });
@@ -118,6 +121,8 @@ QList<Canvas*> SceneNavigatorBar::linkedScenes(Canvas* const scene) {
 
 void SceneNavigatorBar::onActiveScene(Canvas* const scene) {
     prunePath(sPath, mDocument);
+    qWarning() << "NAV: activeScene"
+               << (scene ? scene->prp_getName() : QString("null"));
     if (scene) {
         if (sPath.isEmpty() || sPath.last() != scene) {
             // entering a scene nested in the current one extends the
@@ -249,6 +254,9 @@ void SceneNavigatorBar::rebuild() {
         }
     }
     updateOverflow();
+    qWarning() << "NAV: rebuild crumbs=" << mCrumbBtns.count()
+               << "path=" << sPath.count()
+               << "w=" << width() << "visible=" << isVisible();
 }
 
 void SceneNavigatorBar::updateOverflow() {
@@ -304,4 +312,8 @@ void SceneNavigatorBar::updateOverflow() {
 void SceneNavigatorBar::resizeEvent(QResizeEvent* const e) {
     QWidget::resizeEvent(e);
     updateOverflow();
+}
+
+QSize SceneNavigatorBar::minimumSizeHint() const {
+    return QSize(0, QWidget::minimumSizeHint().height());
 }
