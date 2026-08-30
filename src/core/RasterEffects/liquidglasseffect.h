@@ -43,10 +43,6 @@ struct LiquidGlassEffectData {
     float mNoise = 0.06f;
     float mGlowWeight = 0.35f;
     float mGlowBias = 0.f;
-    // render surface size in pixels (from BoxRenderData::fGlobalRect,
-    // needed for the aspect correction; setVars has no other access)
-    float mTexW = 1.f;
-    float mTexH = 1.f;
 };
 
 class LiquidGlassEffect : public RasterEffect {

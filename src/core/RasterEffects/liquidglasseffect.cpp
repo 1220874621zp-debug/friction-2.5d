@@ -218,18 +218,68 @@ LiquidGlassEffect::LiquidGlassEffect() :
     ca_addChild(mGlowBias);
 }
 
-class LiquidGlassEffectCaller : public OpenGLRasterEffectCaller {
+// Inherits RasterEffectCaller (not OpenGLRasterEffectCaller) because the
+// surface size is only known once the render tools exist, and the base
+// class seals processGpu. The GPU flow replicates
+// OpenGLRasterEffectCaller::processGpu with the size captured before
+// the uniform dispatch.
+class LiquidGlassEffectCaller : public RasterEffectCaller {
 public:
     LiquidGlassEffectCaller(const HardwareSupport hwSupport,
                             const LiquidGlassEffectData& data) :
-        OpenGLRasterEffectCaller(sInitialized, sProgramId,
-                                 ":/shaders/liquidglasseffect.frag",
-                                 hwSupport),
+        RasterEffectCaller(hwSupport),
         mData(data) {}
+
+    void processGpu(QGL33 * const gl, GpuRenderTools& renderTools) {
+        renderTools.switchToOpenGL(gl);
+
+        if (!sInitialized) {
+            iniProgram(gl);
+            sInitialized = true;
+        }
+
+        renderTools.requestTargetFbo().bind(gl);
+        gl->glClear(GL_COLOR_BUFFER_BIT);
+
+        gl->glUseProgram(sProgramId);
+
+        // capture the real surface size for uTexSize (BoxRenderData::
+        // fGlobalRect is still 0x0 when getEffectCaller runs)
+        const auto& srcTex = renderTools.getSrcTexture();
+        mRTexW = float(srcTex.fWidth);
+        mRTexH = float(srcTex.fHeight);
+
+        setVars(gl);
+
+        gl->glActiveTexture(GL_TEXTURE0);
+        renderTools.getSrcTexture().bind(gl);
+
+        gl->glBindVertexArray(renderTools.getSquareVAO());
+        gl->glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+        renderTools.swapTextures();
+    }
 
     void processCpu(CpuRenderTools& renderTools,
                     const CpuRenderData& data);
-protected:
+private:
+    void iniProgram(QGL33 * const gl) {
+        try {
+            gIniProgram(gl, sProgramId, GL_TEXTURED_VERT,
+                        QStringLiteral(":/shaders/liquidglasseffect.frag"));
+        } catch(...) {
+            RuntimeThrow("Could not initialize a program for "
+                         "'liquidglasseffect.frag'");
+        }
+
+        gl->glUseProgram(sProgramId);
+
+        const auto texLocation = gl->glGetUniformLocation(sProgramId, "tex");
+        gl->glUniform1i(texLocation, 0);
+
+        iniVars(gl);
+    }
+
     void iniVars(QGL33 * const gl) const {
         sCenterU = gl->glGetUniformLocation(sProgramId, "uCenter");
         sTexSizeU = gl->glGetUniformLocation(sProgramId, "uTexSize");
@@ -244,15 +294,27 @@ protected:
     void setVars(QGL33 * const gl) const {
         gl->glUseProgram(sProgramId);
         gl->glUniform2f(sCenterU, mData.mCenterX, mData.mCenterY);
-        gl->glUniform2f(sTexSizeU, mData.mTexW, mData.mTexH);
+        gl->glUniform2f(sTexSizeU, mRTexW, mRTexH);
         gl->glUniform1f(sSizeU, mData.mSize);
         gl->glUniform1f(sShapeNU, mData.mShapeN);
         gl->glUniform1f(sRefractionU, mData.mRefraction);
         gl->glUniform1f(sNoiseU, mData.mNoise);
         gl->glUniform1f(sGlowWeightU, mData.mGlowWeight);
         gl->glUniform1f(sGlowBiasU, mData.mGlowBias);
+        // throttled diagnostic for the runtime debug log
+        static int sVarLog = 0;
+        if (sVarLog++ < 8) {
+            qWarning() << "[LG] gpu setVars prog=" << sProgramId
+                       << "locs center/texsize/size/shape/refr/noise/gw/gb ="
+                       << sCenterU << sTexSizeU << sSizeU << sShapeNU
+                       << sRefractionU << sNoiseU << sGlowWeightU << sGlowBiasU
+                       << "vals c=" << mData.mCenterX << mData.mCenterY
+                       << "tex=" << mRTexW << mRTexH
+                       << "size=" << mData.mSize << "n=" << mData.mShapeN
+                       << "refr=" << mData.mRefraction;
+        }
     }
-private:
+
     static bool sInitialized;
     static GLuint sProgramId;
 
@@ -266,6 +328,8 @@ private:
     static GLint sGlowBiasU;
 
     const LiquidGlassEffectData mData;
+    mutable float mRTexW = 1.f;
+    mutable float mRTexH = 1.f;
 };
 
 bool LiquidGlassEffectCaller::sInitialized = false;
@@ -286,12 +350,9 @@ stdsptr<RasterEffectCaller> LiquidGlassEffect::getEffectCaller(
     Q_UNUSED(resolution)
 
     LiquidGlassEffectData effData;
-    // surface size for the aspect correction (uTexSize); setVars has
-    // no access to the render tools, so it travels with the data
-    if (data) {
-        effData.mTexW = float(data->fGlobalRect.width());
-        effData.mTexH = float(data->fGlobalRect.height());
-    }
+    // NOTE: data->fGlobalRect is still 0x0 here (updateGlobalRect runs
+    // later, in BoxRenderData::process); the surface size is captured
+    // from the render tools in processGpu instead
     effData.mCenterX = mCenterX->getEffectiveValue(relFrame);
     // panel 0 = top -> GL uv y up
     effData.mCenterY = 1. - mCenterY->getEffectiveValue(relFrame);
@@ -301,6 +362,14 @@ stdsptr<RasterEffectCaller> LiquidGlassEffect::getEffectCaller(
     effData.mNoise = mNoise->getEffectiveValue(relFrame);
     effData.mGlowWeight = mGlowWeight->getEffectiveValue(relFrame);
     effData.mGlowBias = mGlowBias->getEffectiveValue(relFrame);
+
+    // throttled diagnostic for the runtime debug log
+    static int sCallerLog = 0;
+    if (sCallerLog++ < 5) {
+        qWarning() << "[LG] getEffectCaller center=" << effData.mCenterX
+                   << effData.mCenterY << "size=" << effData.mSize
+                   << "refr=" << effData.mRefraction;
+    }
 
     return enve::make_shared<LiquidGlassEffectCaller>(
                 instanceHwSupport(), effData);
@@ -319,6 +388,14 @@ void LiquidGlassEffectCaller::processCpu(CpuRenderTools& renderTools,
 
     const int imgWidth = srcBtmp.width();
     const int imgHeight = srcBtmp.height();
+
+    // throttled diagnostic for the runtime debug log
+    static int sCpuLog = 0;
+    if (sCpuLog++ < 5) {
+        qWarning() << "[LG] cpu path" << imgWidth << "x" << imgHeight
+                   << "tile" << data.fTexTile.left() << data.fTexTile.top()
+                   << data.fTexTile.right() << data.fTexTile.bottom();
+    }
 
     const int xMin = std::max(0, data.fTexTile.left());
     const int xMax = std::min((int)data.fTexTile.right(), imgWidth - 1);
