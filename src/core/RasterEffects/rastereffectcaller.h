@@ -56,6 +56,12 @@ public:
 
     virtual bool srcDstSeparation() const { return true; }
 
+    // backdrop-sampling effects (e.g. liquid glass) are diverted by
+    // RasterEffectCollection to BoxRenderData::fBackdropCallers and run
+    // at composite time against the canvas snapshot below the layer
+    // (adjustment-layer machinery) instead of the box-image phase
+    bool samplesBackdrop() const { return fSamplesBackdrop; }
+
     HardwareSupport hardwareSupport() const {
         return fHwSupport;
     }
@@ -77,6 +83,7 @@ protected:
     const bool fForceMargin;
     const HardwareSupport fHwSupport;
     const QMargins fMargin;
+    bool fSamplesBackdrop = false;
     SkIRect fSrcRect;
     SkIRect fDstRect;
 };

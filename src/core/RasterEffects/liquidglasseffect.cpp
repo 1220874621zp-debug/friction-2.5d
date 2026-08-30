@@ -228,7 +228,12 @@ public:
     LiquidGlassEffectCaller(const HardwareSupport hwSupport,
                             const LiquidGlassEffectData& data) :
         RasterEffectCaller(hwSupport),
-        mData(data) {}
+        mData(data) {
+        // the glass refracts the composition BELOW the layer, so the
+        // effect is diverted to the composite-time backdrop treatment
+        // (adjustment-layer machinery) instead of the box-image phase
+        fSamplesBackdrop = true;
+    }
 
     void processGpu(QGL33 * const gl, GpuRenderTools& renderTools) {
         renderTools.switchToOpenGL(gl);
@@ -402,14 +407,40 @@ void LiquidGlassEffectCaller::processCpu(CpuRenderTools& renderTools,
     const int yMin = std::max(0, data.fTexTile.top());
     const int yMax = std::min((int)data.fTexTile.bottom(), imgHeight - 1);
 
+    // everything outside the shape (a pixel circle of radius
+    // size*imgHeight around the center, plus a glow margin) is a
+    // straight pass-through - memcpy it and restrict the per-pixel
+    // math to that box (the backdrop treatment covers whole-canvas
+    // surfaces, this keeps it fast)
+    const float halfPx = mData.mSize * float(imgHeight) * 1.2f + 3.f;
+    const int cxPix = int(mData.mCenterX * float(imgWidth));
+    const int cyPix = int((1.f - mData.mCenterY) * float(imgHeight));
+    const int gxMin = std::max(xMin, cxPix - int(halfPx) - 1);
+    const int gxMax = std::min(xMax, cxPix + int(halfPx) + 1);
+    const int gyMin = std::max(yMin, cyPix - int(halfPx) - 1);
+    const int gyMax = std::min(yMax, cyPix + int(halfPx) + 1);
+    const size_t rowBytes = size_t(xMax - xMin + 1) * 4;
+
     for (int yi = yMin; yi <= yMax; yi++) {
         auto dst = static_cast<uchar*>(dstBtmp.getAddr(0, yi - yMin));
         auto src = static_cast<uchar*>(srcBtmp.getAddr(xMin, yi));
-        for (int xi = xMin; xi <= xMax; xi++) {
-            const float r = *src++ / 255.f;
-            const float g = *src++ / 255.f;
-            const float b = *src++ / 255.f;
-            const float a = *src++ / 255.f;
+        if (yi < gyMin || yi > gyMax) {
+            memcpy(dst, src, rowBytes);
+            continue;
+        }
+        if (gxMin > xMin) {
+            memcpy(dst, src, size_t(gxMin - xMin) * 4);
+        }
+        if (gxMax < xMax) {
+            const size_t tail = size_t(gxMax + 1 - xMin) * 4;
+            memcpy(dst + tail, src + tail, rowBytes - tail);
+        }
+        for (int xi = gxMin; xi <= gxMax; xi++) {
+            const uchar* s = src + size_t(xi - xMin) * 4;
+            const float r = s[0] / 255.f;
+            const float g = s[1] / 255.f;
+            const float b = s[2] / 255.f;
+            const float a = s[3] / 255.f;
 
             // texCoord convention: y up, bitmap row 0 is the top
             const float u = (xi + 0.5f) / float(imgWidth);
@@ -423,10 +454,11 @@ void LiquidGlassEffectCaller::processCpu(CpuRenderTools& renderTools,
                          u, v, noiseX, noiseY,
                          r, g, b, a, rOut, gOut, bOut, aOut);
 
-            *dst++ = static_cast<uchar>(rOut * 255.f + 0.5f);
-            *dst++ = static_cast<uchar>(gOut * 255.f + 0.5f);
-            *dst++ = static_cast<uchar>(bOut * 255.f + 0.5f);
-            *dst++ = static_cast<uchar>(aOut * 255.f + 0.5f);
+            uchar* d = dst + size_t(xi - xMin) * 4;
+            d[0] = static_cast<uchar>(rOut * 255.f + 0.5f);
+            d[1] = static_cast<uchar>(gOut * 255.f + 0.5f);
+            d[2] = static_cast<uchar>(bOut * 255.f + 0.5f);
+            d[3] = static_cast<uchar>(aOut * 255.f + 0.5f);
         }
     }
 }

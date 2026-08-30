@@ -25,6 +25,7 @@
 
 #include "boxrenderdata.h"
 #include "RasterEffects/trackmattecaller.h"
+#include "Boxes/adjustmentlayer.h"
 #include "boundingbox.h"
 #include "skia/skiahelpers.h"
 #include "efiltersettings.h"
@@ -105,6 +106,13 @@ void BoxRenderData::drawOnParentLayer(SkCanvas * const canvas) {
 
 void BoxRenderData::drawOnParentLayer(SkCanvas * const canvas,
                                       SkPaint& paint) {
+    // backdrop-sampling effects run before anything else so the layer's
+    // own (semi-transparent) content composites over the treated
+    // backdrop; runs even at zero opacity since the distortion is not
+    // part of the layer image
+    if(!fBackdropCallers.isEmpty()) {
+        adjustmentApplyBackdrop(canvas, fBackdropCallers);
+    }
     if(isZero4Dec(fOpacity) || !fRenderedImage) return;
     if(fUseRenderTransform) canvas->concat(toSkMatrix(fRenderTransform));
     if(fBlendMode == SkBlendMode::kDstIn ||

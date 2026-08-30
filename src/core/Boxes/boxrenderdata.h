@@ -148,6 +148,10 @@ public:
     }
     // direct access for special pipelines (adjustment layer backdrop)
     QList<stdsptr<RasterEffectCaller>> fEffectCallers;
+    // backdrop-sampling effects (samplesBackdrop()): diverted here by
+    // RasterEffectCollection, applied against the canvas snapshot in
+    // drawOnParentLayer/drawPixmapSk instead of the box-image phase
+    QList<stdsptr<RasterEffectCaller>> fBackdropCallers;
 protected:
     bool hasEffects() const { return !mEffectsRenderer.isEmpty(); }
 

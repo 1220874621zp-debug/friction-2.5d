@@ -90,7 +90,13 @@ void RasterEffectCollection::addEffects(const qreal relFrame,
         if(zeroInfluence && rEffect->skipZeroInfluence(relFrame)) continue;
         const auto effectRenderData = rEffect->getEffectCaller(
                     relFrame, data->fResolution, influence, data);
-        if(effectRenderData) data->addEffect(effectRenderData);
+        if(!effectRenderData) continue;
+        // backdrop-sampling effects do not run in the box-image phase:
+        // they are applied against the canvas snapshot below the layer
+        // at composite time (adjustment-layer machinery)
+        if(effectRenderData->samplesBackdrop()) {
+            data->fBackdropCallers.append(effectRenderData);
+        } else data->addEffect(effectRenderData);
     }
 }
 

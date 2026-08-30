@@ -26,6 +26,7 @@
 #include "Boxes/boundingbox.h"
 #include "Boxes/bone.h"
 #include "Animators/motionpathhandler.h"
+#include "Boxes/adjustmentlayer.h"
 #include "Boxes/containerbox.h"
 #include "TransformEffects/followpatheffect.h"
 #include "TransformEffects/parenteffect.h"
@@ -421,6 +422,15 @@ void BoundingBox::drawPixmapSk(SkCanvas * const canvas,
                                const SkFilterQuality filter) const {
     const qreal opacity = getOpacity(anim_getCurrentRelFrame());
     if(isZero4Dec(opacity) || !mVisibleInScene) return;
+    // interactive path: backdrop-sampling effects from the cached
+    // render data treat the canvas snapshot below the layer (mirrors
+    // the final-render hook in BoxRenderData::drawOnParentLayer)
+    {
+        const auto rd = mDrawRenderContainer.getSrcRenderData();
+        if(rd && !rd->fBackdropCallers.isEmpty()) {
+            adjustmentApplyBackdrop(canvas, rd->fBackdropCallers);
+        }
+    }
     mDrawRenderContainer.drawSk(canvas, filter);
 }
 
