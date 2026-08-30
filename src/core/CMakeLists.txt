@@ -829,6 +829,9 @@ if(NOT WIN32)
     add_library(${PROJECT_NAME} STATIC ${HEADERS} ${SOURCES} coreresources.qrc)
 else()
     add_library(${PROJECT_NAME} SHARED ${HEADERS} ${SOURCES} coreresources.qrc)
+    # all sources are UTF-8; without this MSVC reads Chinese string
+    # literals as GBK and fails with C2001 (newline in constant)
+    target_compile_options(${PROJECT_NAME} PRIVATE /utf-8)
 endif()
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE
