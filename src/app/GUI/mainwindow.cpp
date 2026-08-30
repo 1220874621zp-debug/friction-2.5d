@@ -103,6 +103,10 @@
 #include "dialogs/adjustscenedialog.h"
 #include "dialogs/commandpalette.h"
 #include "wizards/installpresets.h"
+#include "Boxes/videobox.h"
+#include <QProcess>
+#include <QFileInfo>
+#include <QDir>
 
 using namespace Friction;
 
@@ -1390,6 +1394,12 @@ void MainWindow::rebuildWorkspaceMenu()
     if (mScriptManager && mScriptManager->console()) {
         panelsMenu->addAction(mScriptManager->console()->toggleViewAction());
     }
+
+    // external AI roto bridge (Mocha-style: launch + file hand-off)
+    mWorkspaceMenu->addSeparator();
+    mWorkspaceMenu->addAction(QIcon::fromTheme("plugin"),
+                              tr("Sammie Roto AI 抠像…"),
+                              this, &MainWindow::openSammieRoto);
 }
 
 void MainWindow::setupMainWidgets()
@@ -1925,6 +1935,94 @@ void MainWindow::importOCA()
         } catch(const std::exception& e) {
             gPrintExceptionCritical(e);
         }
+    }
+}
+
+void MainWindow::openSammieRoto()
+{
+    // Sammie Roto is an independent AI roto/matting tool by the same
+    // author as Friction; we only bridge to it (Mocha-style), never
+    // embed it. The stored path points at its launcher (run_sammie.bat
+    // or an installed exe).
+    QString sammiePath = AppSupport::getSettings("settings",
+                                                 "SammieRotoPath").toString();
+    if (!QFileInfo::exists(sammiePath)) {
+        QMessageBox box(this);
+        box.setWindowTitle(tr("Sammie Roto"));
+        box.setIcon(QMessageBox::Information);
+        box.setText(tr("<b>未检测到 Sammie Roto。</b><br/>"
+                       "它是与 Friction 同一作者的独立 AI 抠像工具"
+                       "（分割 / 抠像精修 / 物体移除），需单独安装，无需编译："
+                       "<ol><li>点击「去官网下载」打开 GitHub 发布页</li>"
+                       "<li>下载 Windows 压缩包并解压到任意可写位置</li>"
+                       "<li>运行一次 install.bat 自动安装依赖</li>"
+                       "<li>回到这里点击「浏览本地」选中 run_sammie.bat</li></ol>"
+                       "安装完成后即可从 Friction 一键启动并自动传入视频。"));
+        const auto downloadBtn = box.addButton(tr("去官网下载"),
+                                               QMessageBox::AcceptRole);
+        const auto browseBtn = box.addButton(tr("浏览本地"),
+                                             QMessageBox::ActionRole);
+        box.addButton(QMessageBox::Cancel);
+        box.exec();
+        const auto clicked = box.clickedButton();
+        if (clicked == downloadBtn) {
+            AppSupport::openUrl(QUrl("https://github.com/Zarxrax/"
+                                     "Sammie-Roto-2/releases"));
+            return;
+        } else if (clicked == browseBtn) {
+            disableEventFilter();
+            sammiePath = AppSupport::getOpenFile(
+                    this,
+                    tr("选择 Sammie Roto 启动程序"),
+                    QDir::homePath(),
+                    tr("Sammie 启动程序 (*.bat *.cmd *.exe)"));
+            enableEventFilter();
+            if (sammiePath.isEmpty()) { return; }
+            AppSupport::setSettings("settings", "SammieRotoPath", sammiePath);
+        } else {
+            return;
+        }
+    }
+
+    // AE-style hand-off: if a video layer is selected, pass its source
+    // file so Sammie opens it right away (it accepts a file argument).
+    QString videoArg;
+    const auto scene = *mDocument.fActiveScene;
+    if (scene) {
+        const auto selected = scene->getSelectedBoxesList();
+        for (const auto &box : selected) {
+            const auto videoBox = dynamic_cast<VideoBox*>(box);
+            if (!videoBox) { continue; }
+            const QString path = videoBox->getFilePath();
+            if (!path.isEmpty()) {
+                videoArg = path;
+                break;
+            }
+        }
+    }
+
+    QStringList args;
+    if (!videoArg.isEmpty()) { args << videoArg; }
+    bool started = false;
+    const QString suffix = QFileInfo(sammiePath).suffix().toLower();
+    if (suffix == "bat" || suffix == "cmd") {
+        // batch launchers must go through the command interpreter
+        QStringList cmdArgs;
+        cmdArgs << "/c" << sammiePath << args;
+        started = QProcess::startDetached("cmd.exe", cmdArgs);
+    } else {
+        started = QProcess::startDetached(sammiePath, args);
+    }
+
+    if (started) {
+        statusBar()->showMessage(
+                    videoArg.isEmpty() ?
+                        tr("已启动 Sammie Roto") :
+                        tr("已启动 Sammie Roto（已传入视频 %1）").arg(videoArg),
+                    5000);
+    } else {
+        QMessageBox::warning(this, tr("Sammie Roto"),
+                             tr("无法启动 Sammie Roto：%1").arg(sammiePath));
     }
 }
 

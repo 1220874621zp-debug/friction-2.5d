@@ -190,6 +190,7 @@ public:
     void importImageSequence();
     void importOCA();
     void importFile();
+    void openSammieRoto();
     void revert();
     void updateAutoSaveBackupState();
     void openRendererWindow();
