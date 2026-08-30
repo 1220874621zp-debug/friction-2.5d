@@ -518,12 +518,12 @@ void AEPropertiesInspector::buildBoxProperties(BoundingBox *box)
     nameEdit->setStyleSheet(QStringLiteral(
         "QLineEdit {"
         "  background-color: %1;"
-        "  color: #ececf0;"
+        "  color: #ffffff;"
         "  border: 1px solid %2;"
         "  border-radius: %3px;"
         "  padding: 2px 6px;"
         "  font-weight: bold;"
-        "  font-size: 11px;"
+        "  font-size: 12px;"
         "}"
         "QLineEdit:focus {"
         "  border-color: %4;"
@@ -724,7 +724,7 @@ void AEPropertiesInspector::setupTransformControls(QGridLayout *grid, BoundingBo
         resetBtn->setObjectName(QStringLiteral("FlatButton"));
         resetBtn->setText(QStringLiteral("↺"));
         resetBtn->setFixedSize(14, 16);
-        resetBtn->setStyleSheet(QStringLiteral("font-size: 10px; color: #707078; padding: 0; border: none; background: transparent;"));
+        resetBtn->setStyleSheet(QStringLiteral("font-size: 9px; color: #c8c8d0; padding: 0; border: none; background: transparent;"));
         resetBtn->setToolTip(tr("重置为默认值"));
         connect(resetBtn, &QToolButton::clicked, [animX, animY, defaultVal, this]() {
             if (animX) { animX->setCurrentBaseValue(defaultVal); }
@@ -760,7 +760,7 @@ void AEPropertiesInspector::setupTransformControls(QGridLayout *grid, BoundingBo
         resetBtn->setObjectName(QStringLiteral("FlatButton"));
         resetBtn->setText(QStringLiteral("↺"));
         resetBtn->setFixedSize(14, 16);
-        resetBtn->setStyleSheet(QStringLiteral("font-size: 10px; color: #707078; padding: 0; border: none; background: transparent;"));
+        resetBtn->setStyleSheet(QStringLiteral("font-size: 9px; color: #c8c8d0; padding: 0; border: none; background: transparent;"));
         resetBtn->setToolTip(tr("重置为默认值"));
         connect(resetBtn, &QToolButton::clicked, [anim, defaultVal, this]() {
             if (anim) { anim->setCurrentBaseValue(defaultVal); }
@@ -813,7 +813,7 @@ void AEPropertiesInspector::setupPathStyleControls(QGridLayout *grid, PathBox *p
 
             auto lbl = new QLabel(tr("填充"));
             lbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-            lbl->setStyleSheet(QStringLiteral("color: %1; font-size: 10px;").arg(ThemeSupport::getThemeColorTextDisabled().name()));
+            lbl->setStyleSheet(QStringLiteral("color: #ffffff; font-size: 12px;"));
             grid->addWidget(lbl, rowIdx, 1);
 
             auto colorBtn = new InspectorColorButton(colAnim, mScene);
@@ -825,7 +825,7 @@ void AEPropertiesInspector::setupPathStyleControls(QGridLayout *grid, PathBox *p
             resetBtn->setObjectName(QStringLiteral("FlatButton"));
             resetBtn->setText(QStringLiteral("↺"));
             resetBtn->setFixedSize(14, 16);
-            resetBtn->setStyleSheet(QStringLiteral("font-size: 10px; color: #707078; padding: 0; border: none; background: transparent;"));
+            resetBtn->setStyleSheet(QStringLiteral("font-size: 9px; color: #c8c8d0; padding: 0; border: none; background: transparent;"));
             resetBtn->setToolTip(tr("重置为白色"));
             connect(resetBtn, &QToolButton::clicked, [colAnim, colorBtn, this]() {
                 if (colAnim) { colAnim->setColor(Qt::white); }
@@ -845,7 +845,7 @@ void AEPropertiesInspector::setupPathStyleControls(QGridLayout *grid, PathBox *p
 
             auto lbl = new QLabel(tr("描边"));
             lbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-            lbl->setStyleSheet(QStringLiteral("color: %1; font-size: 10px;").arg(ThemeSupport::getThemeColorTextDisabled().name()));
+            lbl->setStyleSheet(QStringLiteral("color: #ffffff; font-size: 12px;"));
             grid->addWidget(lbl, rowIdx, 1);
 
             auto colorBtn = new InspectorColorButton(colAnim, mScene);
@@ -857,7 +857,7 @@ void AEPropertiesInspector::setupPathStyleControls(QGridLayout *grid, PathBox *p
             resetBtn->setObjectName(QStringLiteral("FlatButton"));
             resetBtn->setText(QStringLiteral("↺"));
             resetBtn->setFixedSize(14, 16);
-            resetBtn->setStyleSheet(QStringLiteral("font-size: 10px; color: #707078; padding: 0; border: none; background: transparent;"));
+            resetBtn->setStyleSheet(QStringLiteral("font-size: 9px; color: #c8c8d0; padding: 0; border: none; background: transparent;"));
             resetBtn->setToolTip(tr("重置为黑色"));
             connect(resetBtn, &QToolButton::clicked, [colAnim, colorBtn, this]() {
                 if (colAnim) { colAnim->setColor(Qt::black); }
@@ -874,7 +874,7 @@ void AEPropertiesInspector::setupPathStyleControls(QGridLayout *grid, PathBox *p
 
             auto lbl = new QLabel(tr("线宽"));
             lbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-            lbl->setStyleSheet(QStringLiteral("color: %1; font-size: 10px;").arg(ThemeSupport::getThemeColorTextDisabled().name()));
+            lbl->setStyleSheet(QStringLiteral("color: #ffffff; font-size: 12px;"));
             grid->addWidget(lbl, rowIdx, 1);
 
             auto slider = new QrealAnimatorValueSlider(thickAnim, nullptr);
@@ -888,7 +888,7 @@ void AEPropertiesInspector::setupPathStyleControls(QGridLayout *grid, PathBox *p
             resetBtn->setObjectName(QStringLiteral("FlatButton"));
             resetBtn->setText(QStringLiteral("↺"));
             resetBtn->setFixedSize(14, 16);
-            resetBtn->setStyleSheet(QStringLiteral("font-size: 10px; color: #707078; padding: 0; border: none; background: transparent;"));
+            resetBtn->setStyleSheet(QStringLiteral("font-size: 9px; color: #c8c8d0; padding: 0; border: none; background: transparent;"));
             resetBtn->setToolTip(tr("重置为默认宽度"));
             connect(resetBtn, &QToolButton::clicked, [thickAnim, this]() {
                 if (thickAnim) { thickAnim->setCurrentBaseValue(10.0); }
@@ -913,8 +913,7 @@ void AEPropertiesInspector::setupEffectsControls(QVBoxLayout *layout, BoundingBo
     topBarLayout->setSpacing(3);
 
     auto title = new QLabel(tr("特效管线"), topBar);
-    title->setStyleSheet(QStringLiteral("font-weight: bold; color: %1; font-size: 10px;")
-                         .arg(ThemeSupport::getThemeHighlightColor().name()));
+    title->setStyleSheet(QStringLiteral("font-weight: bold; color: #ffffff; font-size: 13px;"));
     topBarLayout->addWidget(title);
     topBarLayout->addStretch(1);
 
@@ -927,7 +926,7 @@ void AEPropertiesInspector::setupEffectsControls(QVBoxLayout *layout, BoundingBo
         "  border-radius: %3px;"
         "  padding: 2px 6px;"
         "  font-weight: bold;"
-        "  font-size: 9px;"
+        "  font-size: 12px;"
         "}"
         "QPushButton#FlatButton:hover {"
         "  background-color: %4;"
@@ -975,8 +974,7 @@ void AEPropertiesInspector::setupEffectsControls(QVBoxLayout *layout, BoundingBo
     const int numEffects = coll->ca_getNumberOfChildren();
     if (numEffects == 0) {
         auto emptyLbl = new QLabel(tr("当前图层未添加任何特效"), this);
-        emptyLbl->setStyleSheet(QStringLiteral("color: %1; font-style: italic; font-size: 10px; padding: 2px;")
-                                .arg(ThemeSupport::getThemeColorTextDisabled().name()));
+        emptyLbl->setStyleSheet(QStringLiteral("color: #ffffff; font-style: italic; font-size: 12px; padding: 2px;"));
         layout->addWidget(emptyLbl);
         return;
     }
@@ -997,8 +995,7 @@ void AEPropertiesInspector::setupEffectsControls(QVBoxLayout *layout, BoundingBo
 
         const QString effTitle = translatePropertyName(effect->prp_getName());
         auto titleLbl = new QLabel(effTitle, eHeader);
-        titleLbl->setStyleSheet(QStringLiteral("font-weight: bold; color: %1; font-size: 10px;")
-                                .arg(ThemeSupport::getThemeHighlightColor().name()));
+        titleLbl->setStyleSheet(QStringLiteral("font-weight: bold; color: #ffffff; font-size: 12px;"));
         ehLayout->addWidget(titleLbl, 1);
 
         auto delBtn = new QToolButton(eHeader);
@@ -1049,7 +1046,7 @@ void AEPropertiesInspector::setupEffectPropertyControl(QGridLayout *grid, int ro
 
         auto lbl = new QLabel(propName);
         lbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-        lbl->setStyleSheet(QStringLiteral("color: %1; font-size: 10px;").arg(ThemeSupport::getThemeColorTextDisabled().name()));
+        lbl->setStyleSheet(QStringLiteral("color: #ffffff; font-size: 12px;"));
         grid->addWidget(lbl, rowIdx, 1);
 
         auto slider = new QrealAnimatorValueSlider(qrealAnim, nullptr);
@@ -1063,7 +1060,7 @@ void AEPropertiesInspector::setupEffectPropertyControl(QGridLayout *grid, int ro
         resetBtn->setObjectName(QStringLiteral("FlatButton"));
         resetBtn->setText(QStringLiteral("↺"));
         resetBtn->setFixedSize(14, 16);
-        resetBtn->setStyleSheet(QStringLiteral("font-size: 10px; color: #707078; padding: 0; border: none; background: transparent;"));
+        resetBtn->setStyleSheet(QStringLiteral("font-size: 9px; color: #c8c8d0; padding: 0; border: none; background: transparent;"));
         resetBtn->setToolTip(tr("重置"));
         connect(resetBtn, &QToolButton::clicked, [qrealAnim, this]() {
             if (qrealAnim) { qrealAnim->setCurrentBaseValue(0.0); }
@@ -1076,7 +1073,7 @@ void AEPropertiesInspector::setupEffectPropertyControl(QGridLayout *grid, int ro
 
         auto lbl = new QLabel(propName);
         lbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-        lbl->setStyleSheet(QStringLiteral("color: %1; font-size: 10px;").arg(ThemeSupport::getThemeColorTextDisabled().name()));
+        lbl->setStyleSheet(QStringLiteral("color: #ffffff; font-size: 12px;"));
         grid->addWidget(lbl, rowIdx, 1);
 
         auto colorBtn = new InspectorColorButton(colAnim, mScene);
@@ -1088,7 +1085,7 @@ void AEPropertiesInspector::setupEffectPropertyControl(QGridLayout *grid, int ro
         resetBtn->setObjectName(QStringLiteral("FlatButton"));
         resetBtn->setText(QStringLiteral("↺"));
         resetBtn->setFixedSize(14, 16);
-        resetBtn->setStyleSheet(QStringLiteral("font-size: 10px; color: #707078; padding: 0; border: none; background: transparent;"));
+        resetBtn->setStyleSheet(QStringLiteral("font-size: 9px; color: #c8c8d0; padding: 0; border: none; background: transparent;"));
         resetBtn->setToolTip(tr("重置"));
         connect(resetBtn, &QToolButton::clicked, [colAnim, colorBtn, this]() {
             if (colAnim) { colAnim->setColor(Qt::white); }
