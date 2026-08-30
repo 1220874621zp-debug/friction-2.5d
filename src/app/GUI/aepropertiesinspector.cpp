@@ -561,6 +561,28 @@ void AEPropertiesInspector::buildBoxProperties(BoundingBox *box)
     });
     hLayout->addWidget(eyeBtn);
 
+    auto lockBtn = new QToolButton(headerWidget);
+    lockBtn->setObjectName(QStringLiteral("FlatButton"));
+    lockBtn->setIcon(QIcon::fromTheme(box->isLocked() ? QStringLiteral("locked") : QStringLiteral("unlocked")));
+    lockBtn->setToolTip(box->isLocked() ? tr("已锁定图层 (点击解锁)") : tr("未锁定图层 (点击锁定)"));
+    lockBtn->setCheckable(true);
+    lockBtn->setChecked(box->isLocked());
+    if (box->isLocked()) {
+        lockBtn->setStyleSheet(QStringLiteral("background-color: %1; border-radius: 3px;").arg(ThemeSupport::getThemeHighlightColor(120).name(QColor::HexArgb)));
+    }
+    connect(lockBtn, &QToolButton::clicked, [box, lockBtn, this](bool checked) {
+        box->setLocked(checked);
+        lockBtn->setIcon(QIcon::fromTheme(checked ? QStringLiteral("locked") : QStringLiteral("unlocked")));
+        lockBtn->setToolTip(checked ? tr("已锁定图层 (点击解锁)") : tr("未锁定图层 (点击锁定)"));
+        if (checked) {
+            lockBtn->setStyleSheet(QStringLiteral("background-color: %1; border-radius: 3px;").arg(ThemeSupport::getThemeHighlightColor(120).name(QColor::HexArgb)));
+        } else {
+            lockBtn->setStyleSheet(QString());
+        }
+        if (mScene) { mScene->requestUpdate(); }
+    });
+    hLayout->addWidget(lockBtn);
+
     const auto advTrans = enve_cast<AdvancedTransformAnimator*>(box->getTransformAnimator());
     if (advTrans) {
         auto cube3DBtn = new QToolButton(headerWidget);
@@ -640,8 +662,36 @@ void AEPropertiesInspector::setupTransformControls(QGridLayout *grid, BoundingBo
             linkBtn->setCheckable(true);
             linkBtn->setChecked(true);
             linkBtn->setIcon(QIcon::fromTheme(QStringLiteral("linked")));
-            linkBtn->setFixedSize(14, 16);
-            linkBtn->setToolTip(tr("锁定等比缩放 (Constrain Proportions)"));
+            linkBtn->setFixedSize(16, 16);
+
+            auto updateLinkBtnStyle = [linkBtn](bool locked) {
+                if (locked) {
+                    linkBtn->setStyleSheet(QStringLiteral(
+                        "QToolButton {"
+                        "  background-color: %1;"
+                        "  border: 1px solid %2;"
+                        "  border-radius: 3px;"
+                        "  padding: 1px;"
+                        "}"
+                    ).arg(ThemeSupport::getThemeHighlightColor(120).name(QColor::HexArgb),
+                          ThemeSupport::getThemeHighlightColor().name()));
+                    linkBtn->setToolTip(tr("等比缩放已锁定 (点击解锁独立缩放)"));
+                } else {
+                    linkBtn->setStyleSheet(QStringLiteral(
+                        "QToolButton {"
+                        "  background-color: transparent;"
+                        "  border: 1px dashed %1;"
+                        "  border-radius: 3px;"
+                        "  padding: 1px;"
+                        "  opacity: 0.5;"
+                        "}"
+                    ).arg(ThemeSupport::getThemeColorTextDisabled().name()));
+                    linkBtn->setToolTip(tr("等比缩放已解锁 (点击锁定等比缩放)"));
+                }
+            };
+            updateLinkBtnStyle(true);
+            connect(linkBtn, &QToolButton::toggled, updateLinkBtnStyle);
+
             ih->addWidget(linkBtn);
         }
 

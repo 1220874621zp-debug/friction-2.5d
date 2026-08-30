@@ -1188,20 +1188,39 @@ void BoxSingleWidget::setComboProperty(ComboBoxProperty* const combo) {
 
 void BoxSingleWidget::handlePropertySelectedChanged(const Property *prop)
 {
+    const auto bsvt = static_cast<BoxScroller*>(mParent);
+    const auto keysView = bsvt ? bsvt->getKeysView() : nullptr;
+    if (!keysView || !prop) { return; }
+
+    const bool isSelected = prop->prp_isSelected();
+
+    auto updateGraphForAnim = [keysView, isSelected](GraphAnimator *graph) {
+        if (!graph) { return; }
+        const bool graphSelected = keysView->graphIsSelected(graph);
+        if (graphSelected) {
+            if (!isSelected) { keysView->graphRemoveViewedAnimator(graph); }
+        } else {
+            if (isSelected) { keysView->graphAddViewedAnimator(graph); }
+        }
+    };
+
     if (const auto graph = enve_cast<GraphAnimator*>(prop)) {
-        const auto bsvt = static_cast<BoxScroller*>(mParent);
-        const auto keysView = bsvt->getKeysView();
-        if (keysView) {
-            const bool graphSelected = keysView->graphIsSelected(graph);
-            const bool isSelected = prop->prp_isSelected();
-            if (graphSelected) {
-                if (!isSelected) { keysView->graphRemoveViewedAnimator(graph); }
-            } else {
-                if (isSelected) { keysView->graphAddViewedAnimator(graph); }
+        updateGraphForAnim(graph);
+    } else if (const auto ptAnim = enve_cast<QPointFAnimator*>(prop)) {
+        updateGraphForAnim(ptAnim->getXAnimator());
+        updateGraphForAnim(ptAnim->getYAnimator());
+    } else if (const auto comp = enve_cast<ComplexAnimator*>(prop)) {
+        for (int i = 0; i < comp->ca_getNumberOfChildren(); ++i) {
+            const auto child = comp->ca_getChildAt(i);
+            if (const auto childGraph = enve_cast<GraphAnimator*>(child)) {
+                updateGraphForAnim(childGraph);
+            } else if (const auto childPt = enve_cast<QPointFAnimator*>(child)) {
+                updateGraphForAnim(childPt->getXAnimator());
+                updateGraphForAnim(childPt->getYAnimator());
             }
-            Document::sInstance->actionFinished();
         }
     }
+    Document::sInstance->actionFinished();
 }
 
 ColorAnimator *BoxSingleWidget::getColorTarget() const {
