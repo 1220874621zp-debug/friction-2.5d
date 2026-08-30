@@ -187,14 +187,17 @@ LiquidGlassEffect::LiquidGlassEffect() :
                                                  QObject::tr("glow bias"));
     ca_addChild(mGlowBias);
 
+    // NOTE: Chinese names must use QStringLiteral (u16 literal, no
+    // execution-charset conversion) -- tr() with \u escapes encodes to
+    // GBK bytes under MSVC and Qt decodes them as UTF-8 = mojibake
     mHighlight = enve::make_shared<QrealAnimator>(0.6, 0, 2, 0.01,
-            QObject::tr("\u9AD8\u5149\u5F3A\u5EA6")); // 高光强度
+            QStringLiteral("\u9AD8\u5149\u5F3A\u5EA6")); // 高光强度
     ca_addChild(mHighlight);
     mHlWidth = enve::make_shared<QrealAnimator>(3, 0.5, 20, 0.1,
-            QObject::tr("\u9AD8\u5149\u5BBD\u5EA6")); // 高光宽度
+            QStringLiteral("\u9AD8\u5149\u5BBD\u5EA6")); // 高光宽度
     ca_addChild(mHlWidth);
     mHlAngle = enve::make_shared<QrealAnimator>(135, 0, 360, 1,
-            QObject::tr("\u5149\u7167\u89D2\u5EA6")); // 光照角度
+            QStringLiteral("\u5149\u7167\u89D2\u5EA6")); // 光照角度
     ca_addChild(mHlAngle);
 
     // AE-style background layer picker: when a layer is picked, its
