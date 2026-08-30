@@ -206,10 +206,20 @@ void SceneNavigatorBar::rebuild() {
         mRowLayout->addWidget(sep);
     };
 
-    // chain section: only once drilling has happened (path > 1) -
-    // at the top level the lone current-scene label would sit right
-    // next to the dropdown showing the same name again
-    for (int i = 0; sPath.count() > 1 && i < sPath.count(); i++) {
+    // children of the current scene first - they decide whether a
+    // lone top-level chain label is worth showing
+    QList<Canvas*> children;
+    if (cur) {
+        for (const auto& linked : linkedScenes(cur)) {
+            if (!sPath.contains(linked)) { children << linked; }
+        }
+    }
+    // render the chain when drilling happened OR when the current
+    // scene has children to expand under it - a bare child-button
+    // row without its parent read as unrelated toggle buttons
+    const bool showChain = sPath.count() > 1 || !children.isEmpty();
+
+    for (int i = 0; showChain && i < sPath.count(); i++) {
         const auto scene = sPath.at(i);
         if (i > 0) { addSep(); }
         const bool isCurrent = (i == sPath.count() - 1);
@@ -242,13 +252,13 @@ void SceneNavigatorBar::rebuild() {
         }
     }
 
-    // next level: scenes nested inside the current one, appended
-    // after the chain end (these extend the chain when clicked);
-    // skipped when already on the path (cycle protection)
+    // next level: the current scene's children appended after the
+    // chain end with a separator (【parent】 > [child] [child]);
+    // clicking one drills deeper and extends the chain
     int chipsBuilt = 0;
-    if (cur) {
-        for (const auto& linked : linkedScenes(cur)) {
-            if (sPath.contains(linked)) { continue; }
+    if (!children.isEmpty()) {
+        addSep();
+        for (const auto& linked : children) {
             const auto chip = new QPushButton(
                         fontMetrics().elidedText(linked->prp_getName(),
                                                  Qt::ElideMiddle, 160), this);
