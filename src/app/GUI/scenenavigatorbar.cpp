@@ -192,42 +192,35 @@ void SceneNavigatorBar::rebuild() {
     mRowLayout->addWidget(mMoreBtn);
     mMoreBtn->hide();
 
-    for (int i = 0; i < sPath.count(); i++) {
+    // breadcrumb of the ANCESTORS only (path minus the current
+    // scene) - the row-start dropdown already shows the current
+    // scene name; rendering it here too read as two identical
+    // dropdowns side by side
+    for (int i = 0; i < sPath.count() - 1; i++) {
         const auto scene = sPath.at(i);
         const auto btn = new QPushButton(
                     fontMetrics().elidedText(scene->prp_getName(),
                                              Qt::ElideMiddle, 160), this);
         setupFlatBtn(btn);
         btn->setToolTip(scene->prp_getName());
-        const bool isCurrent = (i == sPath.count() - 1);
-        auto font = btn->font();
-        font.setBold(isCurrent);
-        btn->setFont(font);
-        if (isCurrent) {
-            btn->setCheckable(true);
-            btn->setChecked(true);
-            btn->setEnabled(false);
-        } else {
-            connect(btn, &QPushButton::clicked, this,
-                    [this, scene]() {
-                const int idx = sPath.indexOf(scene);
-                if (idx >= 0) { sPath = sPath.mid(0, idx + 1); }
-                emit sceneRequested(scene);
-            });
-        }
+        connect(btn, &QPushButton::clicked, this,
+                [this, scene]() {
+            const int idx = sPath.indexOf(scene);
+            if (idx >= 0) { sPath = sPath.mid(0, idx + 1); }
+            emit sceneRequested(scene);
+        });
         mRowLayout->addWidget(btn);
         mCrumbBtns << btn;
-        // separator AFTER this button (none for the last entry),
-        // index-aligned with mCrumbBtns for the overflow collapse
-        if (i < sPath.count() - 1) {
-            const auto sep = new QLabel(QString(QChar(0x25B8)), this);
-            mRowLayout->addWidget(sep);
-            mCrumbSeps << sep;
-        }
+        // separator AFTER this button, index-aligned with
+        // mCrumbBtns for the overflow collapse
+        const auto sep = new QLabel(QString(QChar(0x25B8)), this);
+        mRowLayout->addWidget(sep);
+        mCrumbSeps << sep;
     }
 
     // chips: scenes nested (linked) inside the current one, always
     // directly clickable - never collapsed by the overflow logic
+    int chipsBuilt = 0;
     if (!sPath.isEmpty()) {
         const auto cur = sPath.last();
         QList<Canvas*> chips;
@@ -250,11 +243,13 @@ void SceneNavigatorBar::rebuild() {
                     emit sceneRequested(chipScene);
                 });
                 mRowLayout->addWidget(chip);
+                chipsBuilt++;
             }
         }
     }
     updateOverflow();
     qWarning() << "NAV: rebuild crumbs=" << mCrumbBtns.count()
+               << "chips=" << chipsBuilt
                << "path=" << sPath.count()
                << "w=" << width() << "visible=" << isVisible();
 }
@@ -280,9 +275,9 @@ void SceneNavigatorBar::updateOverflow() {
 
     int hiddenCount = 0;
     while (totalWidth() > width() &&
-           hiddenCount < mCrumbBtns.count() - 1) {
+           hiddenCount < mCrumbBtns.count()) {
         // collapse the breadcrumb from the left, one entry at a
-        // time; the current scene always stays visible
+        // time; nested chips are never collapsed
         const auto btn = mCrumbBtns.at(hiddenCount);
         btn->hide();
         if (hiddenCount < mCrumbSeps.count() &&
