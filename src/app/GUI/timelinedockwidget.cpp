@@ -29,6 +29,7 @@
 #include <QScrollBar>
 #include <QShortcut>
 #include <QPainter>
+#include <QInputDialog>
 #include <QDir>
 #include <QFileInfo>
 #include <QRegularExpression>
@@ -52,6 +53,8 @@
 #include "Animators/transformanimator.h"
 #include "Animators/complexanimator.h"
 #include "Animators/animator.h"
+#include "Animators/qrealanimator.h"
+#include "Expressions/expression.h"
 #include "Properties/property.h"
 #include "swt_abstraction.h"
 
@@ -67,6 +70,26 @@
 #include "layouthandler.h"
 #include "memoryhandler.h"
 #include "appsupport.h"
+
+namespace {
+// recursively gather every keyed QrealAnimator under prop (property
+// channels, nested containers, child boxes included)
+void collectKeyedQrealAnimators(Property* const prop,
+                                QList<QrealAnimator*>& out) {
+    const auto qa = dynamic_cast<QrealAnimator*>(prop);
+    if (qa) {
+        if (qa->anim_hasKeys()) out << qa;
+        return;
+    }
+    const auto ca = dynamic_cast<ComplexAnimator*>(prop);
+    if (ca) {
+        const int n = ca->ca_getNumberOfChildren();
+        for (int i = 0; i < n; i++) {
+            collectKeyedQrealAnimators(ca->ca_getChildAt<Property>(i), out);
+        }
+    }
+}
+}
 
 TimelineDockWidget::TimelineDockWidget(Document& document,
                                        LayoutHandler * const layoutH,
@@ -302,6 +325,154 @@ TimelineDockWidget::TimelineDockWidget(Document& document,
                                     QStringLiteral("autoFreezePose"),
                                     checked);
         });
+
+        // key loop modes: toggles right of the freeze-pose button;
+        // enabling applies a loop-out expression (AE loopOut alike,
+        // see Expression::parseLoopHeader) to every keyed animator of
+        // the selected layers, disabling clears those expressions
+        // again; the expression lives in the project, so it survives
+        // saves and is per-property undoable.
+        // applyLoopExpressions/clearLoopExpressions are MEMBER funcs:
+        // constructor-local lambdas dangle after the ctor returns
+        const auto setCheckedQuiet = [](QAction* const act,
+                                        const bool checked) {
+            act->blockSignals(true);
+            act->setChecked(checked);
+            act->blockSignals(false);
+        };
+
+        QPen loopPen(QColor(255, 255, 255, 230));
+        loopPen.setWidthF(3.5);
+        loopPen.setCapStyle(Qt::RoundCap);
+        const QColor loopFill(255, 255, 255, 230);
+
+        // forward cycle: open ring with an arrow head
+        QPixmap lFwd(64, 64);
+        lFwd.fill(Qt::transparent);
+        {
+            QPainter p(&lFwd);
+            p.setRenderHint(QPainter::Antialiasing);
+            p.setPen(loopPen);
+            const QRectF r(15, 15, 34, 34);
+            // gap of ~40 degrees at the top, arrow at its right side
+            p.drawArc(r, 70*16, 290*16);
+            const qreal a = qDegreesToRadians(70.);
+            const QPointF tip(32 + qCos(a - 0.45)*17,
+                              32 - qSin(a - 0.45)*17);
+            QPolygonF head;
+            head << tip
+                 << tip + QPointF(qCos(a + 0.9)*11, -qSin(a + 0.9)*11)
+                 << tip + QPointF(qCos(a - 1.6)*11, -qSin(a - 1.6)*11);
+            p.setPen(Qt::NoPen);
+            p.setBrush(loopFill);
+            p.drawPolygon(head);
+            p.end();
+        }
+        mLoopPoseFwdButton = new QAction(lFwd, tr("Loop Keys"), this);
+        mLoopPoseFwdButton->setCheckable(true);
+        mLoopPoseFwdButton->setToolTip(tr(
+                "Cycle keyframed animation forward after the last key "
+                "(1,2,3 -> 1,2,3,1,...); applies a loop expression to "
+                "every keyed property of the selected layers, bones "
+                "included; click again to remove"));
+        connect(mLoopPoseFwdButton, &QAction::triggered,
+                this, [this, setCheckedQuiet](const bool checked) {
+            if (checked) {
+                setCheckedQuiet(mLoopPosePingPongButton, false);
+                setCheckedQuiet(mLoopPoseSkipButton, false);
+                applyLoopExpressions(QStringLiteral("//loop:cycle"));
+            } else clearLoopExpressions();
+        });
+
+        // ping-pong: two opposing arrows
+        QPixmap lPP(64, 64);
+        lPP.fill(Qt::transparent);
+        {
+            QPainter p(&lPP);
+            p.setRenderHint(QPainter::Antialiasing);
+            p.setPen(loopPen);
+            p.drawLine(14, 24, 44, 24);
+            p.drawLine(20, 40, 50, 40);
+            p.setPen(Qt::NoPen);
+            p.setBrush(loopFill);
+            QPolygonF h1;
+            h1 << QPointF(44, 24) << QPointF(34, 17) << QPointF(34, 31);
+            p.drawPolygon(h1);
+            QPolygonF h2;
+            h2 << QPointF(20, 40) << QPointF(30, 33) << QPointF(30, 47);
+            p.drawPolygon(h2);
+            p.end();
+        }
+        mLoopPosePingPongButton = new QAction(lPP, tr("Ping-Pong Loop"), this);
+        mLoopPosePingPongButton->setCheckable(true);
+        mLoopPosePingPongButton->setToolTip(tr(
+                "Bounce keyframed animation back and forth after the "
+                "last key (1,2,3 -> 1,2,3,2,1,...); applies a loop "
+                "expression to every keyed property of the selected "
+                "layers, bones included; click again to remove"));
+        connect(mLoopPosePingPongButton, &QAction::triggered,
+                this, [this, setCheckedQuiet](const bool checked) {
+            if (checked) {
+                setCheckedQuiet(mLoopPoseFwdButton, false);
+                setCheckedQuiet(mLoopPoseSkipButton, false);
+                applyLoopExpressions(QStringLiteral("//loop:pingpong"));
+            } else clearLoopExpressions();
+        });
+
+        // skip cycle: open ring with a cross marking the skipped keys
+        QPixmap lSkip(64, 64);
+        lSkip.fill(Qt::transparent);
+        {
+            QPainter p(&lSkip);
+            p.setRenderHint(QPainter::Antialiasing);
+            p.setPen(loopPen);
+            const QRectF r(19, 19, 30, 30);
+            p.drawArc(r, 70*16, 290*16);
+            const qreal a = qDegreesToRadians(70.);
+            const QPointF tip(35.5 + qCos(a - 0.45)*15,
+                              35.5 - qSin(a - 0.45)*15);
+            QPolygonF head;
+            head << tip
+                 << tip + QPointF(qCos(a + 0.9)*10, -qSin(a + 0.9)*10)
+                 << tip + QPointF(qCos(a - 1.6)*10, -qSin(a - 1.6)*10);
+            p.setPen(Qt::NoPen);
+            p.setBrush(loopFill);
+            p.drawPolygon(head);
+            // small cross over the leading (skipped) keys
+            p.setBrush(Qt::NoBrush);
+            p.setPen(loopPen);
+            p.drawLine(12, 50, 24, 62);
+            p.drawLine(24, 50, 12, 62);
+            p.end();
+        }
+        mLoopPoseSkipButton = new QAction(lSkip, tr("Skip Loop"), this);
+        mLoopPoseSkipButton->setCheckable(true);
+        mLoopPoseSkipButton->setToolTip(tr(
+                "Cycle keyframed animation skipping the given number of "
+                "leading keys (keys 1,2,3, skip 1 -> cycles 2,3); the "
+                "amount is asked for when enabled; applies a loop "
+                "expression to every keyed property of the selected "
+                "layers, bones included; click again to remove"));
+        connect(mLoopPoseSkipButton, &QAction::triggered,
+                this, [this, setCheckedQuiet](const bool checked) {
+            if (!checked) {
+                clearLoopExpressions();
+                return;
+            }
+            setCheckedQuiet(mLoopPoseFwdButton, false);
+            setCheckedQuiet(mLoopPosePingPongButton, false);
+            bool ok = false;
+            const int skip = QInputDialog::getInt(
+                        this, tr("Skip Loop"),
+                        tr("Number of leading keys to skip:"),
+                        1, 1, 999, 1, &ok);
+            if (!ok) {
+                setCheckedQuiet(mLoopPoseSkipButton, false);
+                return;
+            }
+            applyLoopExpressions(
+                        QStringLiteral("//loop:skip=%1").arg(skip));
+        });
     }
 
     mStepPreviewTimer = new QTimer(this);
@@ -464,6 +635,9 @@ TimelineDockWidget::TimelineDockWidget(Document& document,
     mToolBar->addAction(mSafeFramesButton);
     mToolBar->addAction(mTransparencyGridButton);
     mToolBar->addAction(mFreezePoseButton);
+    mToolBar->addAction(mLoopPoseFwdButton);
+    mToolBar->addAction(mLoopPosePingPongButton);
+    mToolBar->addAction(mLoopPoseSkipButton);
 
     addSpacer();
 
@@ -1220,6 +1394,66 @@ void TimelineDockWidget::showAnimatedProperties()
     mDocument.actionFinished();
 }
 
+void TimelineDockWidget::applyLoopExpressions(const QString& header)
+{
+    const auto scene = *mDocument.fActiveScene;
+    if (!scene) return;
+    QList<QrealAnimator*> targets;
+    const auto selected = scene->getSelectedBoxesList();
+    for (const auto& box : selected) {
+        collectKeyedQrealAnimators(box, targets);
+    }
+    int applied = 0;
+    for (const auto& anim : targets) {
+        const auto script = header + QStringLiteral("\nreturn value;");
+        try {
+            // the $frame binding is required for playback: it emits
+            // currentValueChanged on every frame change, which is the
+            // only thing that re-evaluates the expression for the
+            // current-frame cache (the $value binding alone never
+            // signals, the canvas would stay frozen)
+            auto expr = Expression::sCreate(
+                        QStringLiteral("value = $value;\nframe = $frame;\n"),
+                        QString(),
+                        script, anim,
+                        Expression::sQrealAnimatorTester);
+            anim->setExpressionAction(expr);
+            applied++;
+        } catch (const std::exception& e) {
+            qWarning() << "[loop] expression failed for"
+                       << anim->prp_getName()
+                       << ":" << e.what();
+        } catch (...) {
+            qWarning() << "[loop] expression failed for"
+                       << anim->prp_getName();
+        }
+    }
+    qWarning() << "[loop] apply" << header
+               << "selected boxes:" << selected.count()
+               << "keyed animators:" << targets.count()
+               << "applied:" << applied;
+    Document::sInstance->actionFinished();
+    scene->updateAllBoxes(UpdateReason::userChange);
+}
+
+void TimelineDockWidget::clearLoopExpressions()
+{
+    const auto scene = *mDocument.fActiveScene;
+    if (!scene) return;
+    QList<QrealAnimator*> targets;
+    for (const auto& box : scene->getSelectedBoxesList()) {
+        collectKeyedQrealAnimators(box, targets);
+    }
+    for (const auto& anim : targets) {
+        if (!anim->hasExpression()) continue;
+        if (!anim->getExpressionScriptString()
+                 .startsWith(QLatin1String("//loop:"))) continue;
+        anim->clearExpressionAction();
+    }
+    Document::sInstance->actionFinished();
+    scene->updateAllBoxes(UpdateReason::userChange);
+}
+
 void TimelineDockWidget::setupPropertyShortcuts()
 {
     const auto makeShortcut = [this](const QString &id,
@@ -1232,14 +1466,19 @@ void TimelineDockWidget::setupPropertyShortcuts()
         // hardcoded action shortcuts (e.g. View->Timeline uses T);
         // with two identical shortcuts Qt treats them as ambiguous
         // and neither fires, so clear the conflicting one
-        if (mMainWindow) {
+        const auto clearConflicts = [this, keySeq]() {
+            if (!mMainWindow) return;
             const auto acts = mMainWindow->findChildren<QAction*>();
             for (const auto a : acts) {
                 if (a && a->shortcut() == keySeq) {
                     a->setShortcut(QKeySequence());
                 }
             }
-        }
+        };
+        clearConflicts();
+        // toolbox/menu actions may be created after this dock, run
+        // again once everything is built
+        QTimer::singleShot(0, this, clearConflicts);
         const auto sc = new QShortcut(keySeq, this);
         connect(sc, &QShortcut::activated, this, fn);
     };

@@ -27,6 +27,9 @@
 
 #include "exceptions.h"
 #include "Private/esettings.h"
+#include "Animators/animator.h"
+
+#include <cmath>
 
 Expression::ResultTester Expression::sQrealAnimatorTester =
         [](const QJSValue& val) {
@@ -49,6 +52,7 @@ Expression::Expression(const QString& definitionsStr,
         connect(binding.second.get(), &PropertyBinding::relRangeChanged,
                 this, &Expression::relRangeChanged);
     }
+    parseLoopHeader();
 }
 
 
@@ -158,6 +162,9 @@ bool Expression::dependsOn(const Property* const prop) {
 }
 
 QJSValue Expression::evaluate() {
+    if (mLoopMode && mLoopKeys) {
+        return evaluate(mLoopKeys->anim_getCurrentRelFrame());
+    }
     QJSValueList values;
     for(const auto& binding : mBindings) {
         values << binding.second->getJSValue(*mEngine);
@@ -167,18 +174,76 @@ QJSValue Expression::evaluate() {
 
 QJSValue Expression::evaluate(const qreal relFrame)
 {
+    const qreal f = mLoopMode ? mapLoopFrame(relFrame) : relFrame;
     QJSValueList values;
     for (const auto& binding : mBindings) {
         QString path = binding.second->path();
-        QJSValue val = binding.second->getJSValue(*mEngine, relFrame);
-        if (path == "$frame") { values << QJSValue(relFrame); }
+        QJSValue val = binding.second->getJSValue(*mEngine, f);
+        if (path == "$frame") { values << QJSValue(f); }
         else { values << val; }
     }
     QJSValue res = mEEvaluate.call(values);
     return res;
 }
 
+void Expression::parseLoopHeader() {
+    const QString firstLine = mScriptStr.section(QLatin1Char('\n'), 0, 0)
+                                  .trimmed();
+    if (firstLine == QLatin1String("//loop:cycle")) {
+        mLoopMode = 1;
+    } else if (firstLine == QLatin1String("//loop:pingpong")) {
+        mLoopMode = 2;
+    } else if (firstLine.startsWith(QLatin1String("//loop:skip="))) {
+        const QString skipStr = firstLine.mid(12).trimmed();
+        bool ok = false;
+        const int skip = skipStr.toInt(&ok);
+        if (ok) {
+            mLoopMode = 3;
+            mLoopSkip = qMax(1, skip);
+        }
+    }
+}
+
+qreal Expression::mapLoopFrame(const qreal relFrame) const {
+    if (!mLoopKeys) return relFrame;
+    const auto& keys = mLoopKeys->anim_getKeys();
+    const int n = keys.count();
+    if (n < 2) return relFrame;
+    // keys are sorted by frame; cycle over the animator's own list
+    Key* first = nullptr;
+    Key* last = nullptr;
+    Key* start = nullptr;
+    const int startId = mLoopMode == 3 ?
+                qBound(1, mLoopSkip, n - 1) : 0;
+    int i = 0;
+    for (auto it = keys.begin(); it != keys.end(); ++it, i++) {
+        Key* const k = *it;
+        if (!k) continue;
+        if (!first) first = k;
+        last = k;
+        if (i == startId) start = k;
+    }
+    if (!first || !last || !start) return relFrame;
+    const qreal firstF = start->getRelFrame();
+    const qreal lastF = last->getRelFrame();
+    if (relFrame <= lastF) return relFrame;
+    if (mLoopMode == 2) { // ping-pong: 1,2,3 -> 1,2,3,2,1,2,3...
+        const qreal period = lastF - firstF;
+        if (period < 1.) return relFrame;
+        const qreal off = std::fmod(relFrame - firstF, 2. * period);
+        return off < period ? firstF + off : lastF - (off - period);
+    } else { // cycle / skip: the period includes the last frame, so
+             // the frame right after the last key shows the first
+             // cycled value (keys 1,2,3 -> frame 4 shows key 1)
+        const qreal period = lastF - firstF + 1.;
+        return firstF + std::fmod(relFrame - firstF, period);
+    }
+}
+
 FrameRange Expression::identicalRelRange(const int absFrame) const {
+    // loop modes break the "value stays constant past the last key"
+    // assumption the cache relies on - fall back to per-frame
+    if (mLoopMode) return {absFrame, absFrame};
     FrameRange result{FrameRange::EMINMAX};
     for(const auto& binding : mBindings) {
         const auto prop = binding.second.get();

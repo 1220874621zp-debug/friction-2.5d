@@ -38,6 +38,7 @@
 #include "framerange.h"
 #include "Animators/SmartPath/smartpathanimator.h"
 class QrealAnimatorValueSlider;
+class QPlainTextEdit;
 class TimelineMovable;
 class eBoxOrSound;
 class Key;
@@ -224,6 +225,18 @@ private:
     QrealAnimatorValueSlider *mSecondValueSlider;
     PixmapActionButton *mResetButton;
 
+    // AE-style inline expression editor: fx button on animator rows
+    // toggles an ExpressionRow child (script editor line) under the
+    // property; commit on focus-out / Ctrl+Return
+    PixmapActionButton *mExprButton = nullptr;
+    QPlainTextEdit *mExprEdit = nullptr;
+    PixmapActionButton *mExprClearButton = nullptr;
+    bool mExprEditLoading = false;
+
+    void toggleExpressionRow();
+    void commitExpressionEdit();
+    void collapseOwnExpressionRow();
+
     PixmapActionButton *mPromoteToLayerButton;
     eComboBox *mPropertyComboBox;
     eComboBox *mBlendModeCombo;
@@ -237,6 +250,13 @@ private:
     PixmapActionButton *mTrkMatModeButton;
     bool mTrkMatBuilding = false;
     void rebuildTrkMatLayerCandidates();
+
+    // layer-picker dropdown for BoxTargetProperty rows flagged with
+    // comboPicker() (e.g. the liquid-glass background layer)
+    eComboBox *mBgLayerCombo = nullptr;
+    bool mBgLayerBuilding = false;
+    class BoxTargetProperty* mBgTargetProp = nullptr;
+    void rebuildBgLayerCandidates();
 
     // topmost translucent overlay painting the selection highlight
     // above every child widget of the row

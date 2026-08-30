@@ -32,6 +32,8 @@
 #include "svgexporthelpers.h"
 #include "Private/esettings.h"
 
+#include <cmath>
+
 #include <QPainter>
 
 Animator::Animator(const QString& name) : Property(name), anim_mKeys(this) {}

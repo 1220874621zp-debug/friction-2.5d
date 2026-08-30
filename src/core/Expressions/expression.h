@@ -31,6 +31,8 @@
 
 #include "propertybindingparser.h"
 
+class Animator;
+
 class CORE_EXPORT Expression : public QObject {
     Q_OBJECT
     Expression(const QString& definitionsStr,
@@ -88,6 +90,22 @@ private:
     QJSValue mEEvaluate;
     const PropertyBindingMap mBindings;
     const std::unique_ptr<QJSEngine> mEngine;
+
+    // loop-out support (timeline toolbar buttons): a magic first line
+    // in the script ("//loop:cycle", "//loop:pingpong", "//loop:skip=N")
+    // makes evaluate() remap frames past the last key of the animator
+    // owning this expression, so a plain "return value;" script cycles
+    // the keys (AE loopOut alike); the header travels inside the
+    // script text so it serializes with the project for free
+    int mLoopMode = 0;        // 0 off, 1 cycle, 2 ping-pong, 3 skip
+    int mLoopSkip = 1;        // leading keys skipped in skip mode
+    const Animator* mLoopKeys = nullptr; // set by QrealAnimator::setExpression
+
+    void parseLoopHeader();
+    qreal mapLoopFrame(const qreal relFrame) const;
+public:
+    void setLoopKeysSource(const Animator* const anim)
+    { mLoopKeys = anim; }
 };
 
 #endif // EXPRESSION_H

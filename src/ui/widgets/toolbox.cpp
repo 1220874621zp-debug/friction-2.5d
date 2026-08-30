@@ -369,7 +369,7 @@ void ToolBox::setupMainActions()
                     tr("Bone Pose"),
                     QKeySequence(AppSupport::getSettings("shortcuts",
                                                          "bonePose",
-                                                         "P").toString()),
+                                                         "").toString()),
                     {CanvasMode::bonePose},
                     false);
     setupMainAction(svgToolIcon(QStringLiteral(":/icons/bone_bind.svg"),
@@ -425,7 +425,7 @@ void ToolBox::setupMainActions()
                               mMain);
     mLocalPivot->setShortcut(QKeySequence(AppSupport::getSettings("shortcuts",
                                                                   "localPivot",
-                                                                  "P").toString()));
+                                                                  "").toString()));
     connect(mLocalPivot, &QAction::triggered,
             this, [this]() {
         mDocument.fLocalPivot = !mDocument.fLocalPivot;

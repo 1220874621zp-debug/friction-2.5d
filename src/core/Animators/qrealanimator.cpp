@@ -414,6 +414,8 @@ void QrealAnimator::applyExpression(const FrameRange& relRange,
 void QrealAnimator::setExpression(const qsptr<Expression>& expression) {
     auto& conn = mExpression.assign(expression);
     if(expression) {
+        // loop expressions read this animator's keys to remap frames
+        expression->setLoopKeysSource(this);
         const int absFrame = anim_getCurrentAbsFrame();
         expression->setAbsFrame(absFrame);
         conn << connect(expression.get(), &Expression::currentValueChanged,
