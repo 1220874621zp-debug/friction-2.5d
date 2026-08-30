@@ -448,17 +448,33 @@ if(${SKIA_USE_SYSTEM_LIBS} AND UNIX)
         ${WEBPDEMUX_LIBRARIES}
         ${ZLIB_LIBRARIES}
     )
+    target_link_libraries(
+        friction_effects_test
+        PRIVATE
+        ${EXPAT_LIBRARIES}
+        ${FREETYPE_LIBRARIES}
+        ${FONTCONFIG_LIBRARIES}
+        ${JPEG_LIBRARIES}
+        ${PNG_LIBRARIES}
+        ${WEBP_LIBRARIES}
+        ${WEBPMUX_LIBRARIES}
+        ${WEBPDEMUX_LIBRARIES}
+        ${ZLIB_LIBRARIES}
+    )
 endif()
 
 if(${SKIA_STATIC})
     if(UNIX AND NOT APPLE)
         if(${SKIA_USE_EGL})
-            target_link_libraries(${PROJECT_NAME} PRIVATE ${EGL_LIBRARIES} ${GLES_LIBRARIES} ${FONTCONFIG_LIBRARIES})
+            target_link_libraries(${PROJECT_NAME} PRIVATE ${EGL_LIBRARIES} ${GLES_LIBRARIES} ${FONTCONFIG_LIBRARIES} pthread dl)
+            target_link_libraries(friction_effects_test PRIVATE ${EGL_LIBRARIES} ${GLES_LIBRARIES} ${FONTCONFIG_LIBRARIES} pthread dl)
         else()
-            target_link_libraries(${PROJECT_NAME} PRIVATE OpenGL::GLX ${FONTCONFIG_LIBRARIES})
+            target_link_libraries(${PROJECT_NAME} PRIVATE OpenGL::GLX ${FONTCONFIG_LIBRARIES} pthread dl)
+            target_link_libraries(friction_effects_test PRIVATE OpenGL::GLX ${FONTCONFIG_LIBRARIES} pthread dl)
         endif()
         if(NOT ${SKIA_USE_SYSTEM_LIBS})
             target_link_libraries(${PROJECT_NAME} PRIVATE ${FONTCONFIG_LIBRARIES})
+            target_link_libraries(friction_effects_test PRIVATE ${FONTCONFIG_LIBRARIES})
         endif()
     endif()
     if(APPLE)
@@ -471,7 +487,21 @@ if(${SKIA_STATIC})
             "-framework CoreServices"
             "-framework ImageIO"
         )
+        target_link_libraries(
+            friction_effects_test
+            PRIVATE
+            "-framework CoreFoundation"
+            "-framework CoreGraphics"
+            "-framework CoreText"
+            "-framework CoreServices"
+            "-framework ImageIO"
+        )
     endif()
+endif()
+
+if(UNIX AND NOT APPLE)
+    target_link_libraries(${PROJECT_NAME} PRIVATE pthread dl)
+    target_link_libraries(friction_effects_test PRIVATE pthread dl)
 endif()
 
 if(APPLE)

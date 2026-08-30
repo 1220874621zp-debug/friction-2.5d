@@ -29,6 +29,16 @@
 #include "../glhelpers.h"
 #include "rastereffectcaller.h"
 
+#ifdef HALFTONE
+#undef HALFTONE
+#endif
+#ifdef INVERT
+#undef INVERT
+#endif
+#ifdef MIRROR
+#undef MIRROR
+#endif
+
 enum class RasterEffectType : short {
     BLUR,
     SHADOW,
