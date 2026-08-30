@@ -192,56 +192,81 @@ void SceneNavigatorBar::rebuild() {
     mRowLayout->addWidget(mMoreBtn);
     mMoreBtn->hide();
 
-    // flat scene list: EVERY other scene of the project as a
-    // directly clickable chip (the current scene is shown by the
-    // row-start dropdown, rendering it here too read as two
-    // identical dropdowns). Scenes nested (linked) inside the
-    // current scene carry a bold marker - that is the
-    // folder-structure part
+    // Explorer-style chain: the drill-in path rendered level by
+    // level (SceneA [click to jump back] > SceneB > [CURRENT bold
+    // label]), followed by the scenes nested inside the current one
+    // - clicking those drills one level deeper and extends the
+    // chain. Unrelated sibling scenes stay in the row-start
+    // dropdown: inline buttons here must be chain/jump targets, not
+    // a flat toggle list
     const auto cur = sPath.isEmpty() ? nullptr : sPath.last();
-    QList<Canvas*> nested;
-    if (cur) nested = linkedScenes(cur);
 
-    const auto addChip = [this](Canvas* const scene, const bool isNested) {
-        const QString name = scene->prp_getName();
-        const QString label = isNested
-                ? QString(QChar(0x25B8)) + QStringLiteral(" ") + name
-                : name;
-        const auto chip = new QPushButton(
-                    fontMetrics().elidedText(label,
-                                             Qt::ElideMiddle, 160), this);
-        setupFlatBtn(chip);
-        chip->setToolTip(name);
-        if (isNested) {
-            auto font = chip->font();
-            font.setBold(true);
-            chip->setFont(font);
-        }
-        connect(chip, &QPushButton::clicked, this,
-                [this, scene]() {
-            emit sceneRequested(scene);
-        });
-        mRowLayout->addWidget(chip);
-        mCrumbBtns << chip;
-        mChipScenes << scene;
+    const auto addSep = [this]() {
+        const auto sep = new QLabel(QString(QChar(0x25B8)), this);
+        mRowLayout->addWidget(sep);
     };
 
-    // plain sibling scenes first, nested ones last: the overflow
-    // collapse eats from the left, so the nested (drill-in) chips
-    // survive the longest
-    for (const auto& scene : mDocument.fScenes) {
-        const auto s = scene.get();
-        if (!s || s == cur || nested.contains(s)) { continue; }
-        addChip(s, false);
+    // chain section: only once drilling has happened (path > 1) -
+    // at the top level the lone current-scene label would sit right
+    // next to the dropdown showing the same name again
+    for (int i = 0; sPath.count() > 1 && i < sPath.count(); i++) {
+        const auto scene = sPath.at(i);
+        if (i > 0) { addSep(); }
+        const bool isCurrent = (i == sPath.count() - 1);
+        if (isCurrent) {
+            // chain end = where we are: a bold LABEL, not a button
+            // (a disabled button here collected dead clicks before)
+            const auto lbl = new QLabel(
+                        fontMetrics().elidedText(scene->prp_getName(),
+                                                 Qt::ElideMiddle, 160), this);
+            auto font = lbl->font();
+            font.setBold(true);
+            lbl->setFont(font);
+            lbl->setToolTip(scene->prp_getName());
+            mRowLayout->addWidget(lbl);
+        } else {
+            const auto btn = new QPushButton(
+                        fontMetrics().elidedText(scene->prp_getName(),
+                                                 Qt::ElideMiddle, 160), this);
+            setupFlatBtn(btn);
+            btn->setToolTip(scene->prp_getName());
+            connect(btn, &QPushButton::clicked, this,
+                    [this, scene]() {
+                const int idx = sPath.indexOf(scene);
+                if (idx >= 0) { sPath = sPath.mid(0, idx + 1); }
+                emit sceneRequested(scene);
+            });
+            mRowLayout->addWidget(btn);
+            mCrumbBtns << btn;
+            mChipScenes << scene;
+        }
     }
-    for (const auto& scene : mDocument.fScenes) {
-        const auto s = scene.get();
-        if (!s || s == cur || !nested.contains(s)) { continue; }
-        addChip(s, true);
+
+    // next level: scenes nested inside the current one, appended
+    // after the chain end (these extend the chain when clicked);
+    // skipped when already on the path (cycle protection)
+    int chipsBuilt = 0;
+    if (cur) {
+        for (const auto& linked : linkedScenes(cur)) {
+            if (sPath.contains(linked)) { continue; }
+            const auto chip = new QPushButton(
+                        fontMetrics().elidedText(linked->prp_getName(),
+                                                 Qt::ElideMiddle, 160), this);
+            setupFlatBtn(chip);
+            chip->setToolTip(linked->prp_getName());
+            connect(chip, &QPushButton::clicked, this,
+                    [this, linked]() {
+                emit sceneRequested(linked);
+            });
+            mRowLayout->addWidget(chip);
+            mCrumbBtns << chip;
+            mChipScenes << linked;
+            chipsBuilt++;
+        }
     }
     updateOverflow();
-    qWarning() << "NAV: rebuild chips=" << mCrumbBtns.count()
-               << "nested=" << nested.count()
+    qWarning() << "NAV: rebuild chain=" << sPath.count()
+               << "chips=" << chipsBuilt
                << "w=" << width() << "visible=" << isVisible();
 }
 
@@ -266,8 +291,8 @@ void SceneNavigatorBar::updateOverflow() {
     int hiddenCount = 0;
     while (totalWidth() > width() &&
            hiddenCount < mCrumbBtns.count()) {
-        // collapse chips from the left; the bold nested chips are
-        // added last so they survive the longest
+        // collapse chain entries from the left; the next-level
+        // chips are appended last so they survive the longest
         mCrumbBtns.at(hiddenCount)->hide();
         hiddenCount++;
     }
