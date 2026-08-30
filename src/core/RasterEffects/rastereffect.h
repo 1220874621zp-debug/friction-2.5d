@@ -30,14 +30,44 @@
 #include "rastereffectcaller.h"
 
 // Windows GDI defines these as macros
-#ifdef HALFTONE
-#undef HALFTONE
-#endif
 #ifdef INVERT
 #undef INVERT
 #endif
+#ifdef HALFTONE
+#undef HALFTONE
+#endif
 #ifdef MIRROR
 #undef MIRROR
+#endif
+#ifdef NOISE
+#undef NOISE
+#endif
+#ifdef TINT
+#undef TINT
+#endif
+#ifdef RAIN
+#undef RAIN
+#endif
+#ifdef SHAKE
+#undef SHAKE
+#endif
+#ifdef STRIPE
+#undef STRIPE
+#endif
+#ifdef GLOW
+#undef GLOW
+#endif
+#ifdef CHROMA_KEY
+#undef CHROMA_KEY
+#endif
+#ifdef TRANSPARENT
+#undef TRANSPARENT
+#endif
+#ifdef OPAQUE
+#undef OPAQUE
+#endif
+#ifdef ERROR
+#undef ERROR
 #endif
 
 enum class RasterEffectType : short {
@@ -116,6 +146,10 @@ public:
 
     void writeIdentifier(eWriteStream& dst) const;
     void writeIdentifierXEV(QDomElement& ele) const;
+
+    RasterEffectType getEffectType() const {
+        return mType;
+    }
 
     HardwareSupport instanceHwSupport() const {
         return mInstHwSupport;

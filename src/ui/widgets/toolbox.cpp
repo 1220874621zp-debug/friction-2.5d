@@ -263,15 +263,22 @@ static QIcon svgToolIcon(const QString& qrcPath, const int size) {
         renderer.render(&p, QRectF(0, 0, size, size));
         p.end();
     }
-    // checked-state variant: white tint of the same artwork (tool
-    // buttons highlight their icon when the mode is active)
+    // Normal state: monochrome white icon matching other theme tools
+    QPixmap pmWhite = pm;
+    QPainter pWhite(&pmWhite);
+    pWhite.setCompositionMode(QPainter::CompositionMode_SourceIn);
+    pWhite.fillRect(pmWhite.rect(), QColor(230, 230, 235));
+    pWhite.end();
+
+    // Checked state: pure white
     QPixmap pmOn = pm;
     QPainter pOn(&pmOn);
     pOn.setCompositionMode(QPainter::CompositionMode_SourceIn);
     pOn.fillRect(pmOn.rect(), Qt::white);
     pOn.end();
+
     QIcon ic;
-    ic.addPixmap(pm, QIcon::Normal, QIcon::Off);
+    ic.addPixmap(pmWhite, QIcon::Normal, QIcon::Off);
     ic.addPixmap(pmOn, QIcon::Normal, QIcon::On);
     cache.insert(qrcPath, ic);
     return ic;
@@ -291,7 +298,7 @@ static QIcon glyphToolIcon(const QString& glyph, const int size) {
     QFont f(QStringLiteral("Segoe UI Symbol"));
     f.setPixelSize(qRound(size*0.82));
     p.setFont(f);
-    p.setPen(ThemeSupport::getThemeColorBlue());
+    p.setPen(QColor(230, 230, 235));
     p.drawText(pm.rect(), Qt::AlignCenter, glyph);
     p.end();
     return QIcon(pm);
@@ -299,9 +306,7 @@ static QIcon glyphToolIcon(const QString& glyph, const int size) {
 
 void ToolBox::setupMainActions()
 {
-    setupMainAction(ThemeSupport::themedToolIcon("boxTransform",
-                                                 ThemeSupport::getThemeColorBlue(),
-                                                 64),
+    setupMainAction(QIcon::fromTheme("boxTransform"),
                     tr("Object Mode"),
                     QKeySequence(AppSupport::getSettings("shortcuts",
                                                          "boxTransform",
@@ -406,9 +411,7 @@ void ToolBox::setupMainActions()
                                                          "C").toString()),
                     {CanvasMode::camera},
                     false);
-    setupMainAction(ThemeSupport::themedToolIcon("pick",
-                                                 ThemeSupport::getThemeColorRed(),
-                                                 64),
+    setupMainAction(QIcon::fromTheme("pick"),
                     tr("Color Pick Mode"),
                     QKeySequence(AppSupport::getSettings("shortcuts",
                                                          "pickMode",

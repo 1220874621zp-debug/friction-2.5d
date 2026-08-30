@@ -79,6 +79,7 @@ public:
     void setLineEditFocus();
 
     void fitWidthToContent();
+    void setAutoAdjustWidth(const bool value);
     QString getValueString();
 
     void setValueRange(const qreal min, const qreal max);

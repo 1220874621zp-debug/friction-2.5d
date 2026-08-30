@@ -376,6 +376,20 @@ void QDoubleSlider::fitWidthToContent() {
     mLineEdit->setFixedWidth(newWidth);
 }
 
+void QDoubleSlider::setAutoAdjustWidth(const bool value)
+{
+    mAutoAdjustWidth = value;
+    if (!value) {
+        setMinimumWidth(28);
+        setMaximumWidth(QWIDGETSIZE_MAX);
+        mLineEdit->setMinimumWidth(28);
+        mLineEdit->setMaximumWidth(QWIDGETSIZE_MAX);
+        setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    } else {
+        fitWidthToContent();
+    }
+}
+
 void QDoubleSlider::paintEvent(QPaintEvent *) {
     QPainter p(this);
     paint(&p);

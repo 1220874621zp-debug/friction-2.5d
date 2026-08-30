@@ -392,8 +392,8 @@ protected:
     void paintEvent(QPaintEvent *) override {
         if(!mOwner->isSelectedRow()) return;
         QPainter p(this);
-        p.fillRect(rect(), QColor(70, 130, 220, 60));
-        p.setPen(QPen(QColor(120, 170, 255), 2));
+        p.fillRect(rect(), ThemeSupport::getThemeHighlightSelectedColor(60));
+        p.setPen(QPen(ThemeSupport::getThemeHighlightColor(), 2));
         p.setBrush(Qt::NoBrush);
         p.drawRect(rect().adjusted(1, 1, -2, -2));
         p.end();
@@ -1182,20 +1182,39 @@ void BoxSingleWidget::setComboProperty(ComboBoxProperty* const combo) {
 
 void BoxSingleWidget::handlePropertySelectedChanged(const Property *prop)
 {
+    const auto bsvt = static_cast<BoxScroller*>(mParent);
+    const auto keysView = bsvt ? bsvt->getKeysView() : nullptr;
+    if (!keysView || !prop) { return; }
+
+    const bool isSelected = prop->prp_isSelected();
+
+    auto updateGraphForAnim = [keysView, isSelected](GraphAnimator *graph) {
+        if (!graph) { return; }
+        const bool graphSelected = keysView->graphIsSelected(graph);
+        if (graphSelected) {
+            if (!isSelected) { keysView->graphRemoveViewedAnimator(graph); }
+        } else {
+            if (isSelected) { keysView->graphAddViewedAnimator(graph); }
+        }
+    };
+
     if (const auto graph = enve_cast<GraphAnimator*>(prop)) {
-        const auto bsvt = static_cast<BoxScroller*>(mParent);
-        const auto keysView = bsvt->getKeysView();
-        if (keysView) {
-            const bool graphSelected = keysView->graphIsSelected(graph);
-            const bool isSelected = prop->prp_isSelected();
-            if (graphSelected) {
-                if (!isSelected) { keysView->graphRemoveViewedAnimator(graph); }
-            } else {
-                if (isSelected) { keysView->graphAddViewedAnimator(graph); }
+        updateGraphForAnim(graph);
+    } else if (const auto ptAnim = enve_cast<QPointFAnimator*>(prop)) {
+        updateGraphForAnim(ptAnim->getXAnimator());
+        updateGraphForAnim(ptAnim->getYAnimator());
+    } else if (const auto comp = enve_cast<ComplexAnimator*>(prop)) {
+        for (int i = 0; i < comp->ca_getNumberOfChildren(); ++i) {
+            const auto child = comp->ca_getChildAt(i);
+            if (const auto childGraph = enve_cast<GraphAnimator*>(child)) {
+                updateGraphForAnim(childGraph);
+            } else if (const auto childPt = enve_cast<QPointFAnimator*>(child)) {
+                updateGraphForAnim(childPt->getXAnimator());
+                updateGraphForAnim(childPt->getYAnimator());
             }
-            Document::sInstance->actionFinished();
         }
     }
+    Document::sInstance->actionFinished();
 }
 
 ColorAnimator *BoxSingleWidget::getColorTarget() const {
@@ -2093,16 +2112,16 @@ void BoxSingleWidget::paintEvent(QPaintEvent *) {
         nameX += eSizesUI::widget/4;
         const bool ss = enve_cast<eSoundObjectBase*>(prop);
         if (ss || enve_cast<BoundingBox*>(prop)) {
-            p.fillRect(rect(), QColor(0, 0, 0, 50));
+            p.fillRect(rect(), ThemeSupport::getThemeBaseDarkerColor(80));
             if (bsTarget->isSelected()) {
                 p.fillRect(mFillWidget->geometry(),
-                           ThemeSupport::getThemeHighlightSelectedColor(50));
-                p.setPen(Qt::white);
+                           ThemeSupport::getThemeHighlightSelectedColor(60));
+                p.setPen(ThemeSupport::getThemeBaseColor().lightnessF() > 0.5 ? Qt::black : Qt::white);
             } else {
-                p.setPen(Qt::white);
+                p.setPen(ThemeSupport::getThemeBaseColor().lightnessF() > 0.5 ? QColor(30, 30, 30) : Qt::white);
             }
         } else if (enve_cast<BlendEffectBoxShadow*>(prop)) {
-            p.fillRect(rect(), QColor(0, 255, 125, 50));
+            p.fillRect(rect(), ThemeSupport::getThemeColorGreen(50));
             nameX += eSizesUI::widget;
         }
     } else if(!enve_cast<ComplexAnimator*>(prop)) {

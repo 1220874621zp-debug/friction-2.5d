@@ -66,11 +66,14 @@
 #include "dialogs/markereditordialog.h"
 #include "timelinedockwidget.h"
 #include "easingpresetspanel.h"
+#include "effectspresetspanel.h"
+#include "quickeffectsearchdialog.h"
 #include "projectpanel.h"
 #include "scriptmanager.h"
 #include "scriptconsole.h"
 #include "GUI/keysview.h"
 #include "canvaswindow.h"
+#include "aepropertiesinspector.h"
 #include "GUI/BoxesList/boxscrollwidget.h"
 #include "clipboardcontainer.h"
 #include "optimalscrollarena/scrollarea.h"
@@ -742,6 +745,7 @@ void MainWindow::updateSettingsForCurrentCanvas(Canvas* const scene)
     if (mCanvasToolBar) { mCanvasToolBar->setCurrentCanvas(scene); }
 
     mObjectSettingsWidget->setCurrentScene(scene);
+    if (mPropertiesInspector) { mPropertiesInspector->setCurrentScene(scene); }
 
     if (mPreviewSVGAct) { mPreviewSVGAct->setEnabled(scene); }
     if (mExportSVGAct) { mExportSVGAct->setEnabled(scene); }
@@ -1476,7 +1480,8 @@ void MainWindow::setupPropertiesWidgets()
     propertiesLayout->setContentsMargins(0, 0, 0, 0);
     propertiesLayout->setSpacing(0);
 
-    propertiesLayout->addWidget(mObjectSettingsScrollArea);
+    mPropertiesInspector = new AEPropertiesInspector(mDocument, this);
+    propertiesLayout->addWidget(mPropertiesInspector);
     propertiesLayout->addWidget(mFontWidget);
     propertiesLayout->addWidget(alignWidget);
 
@@ -1484,6 +1489,12 @@ void MainWindow::setupPropertiesWidgets()
                                                  ThemeSupport::themedToolIcon("drawPathAutoChecked",
                                                                               ThemeSupport::getThemeColorBlue(), 64),
                                                  tr("Properties"));
+    const auto effectsPanel = new EffectsPresetsPanel(this, this);
+    mEffectsPresetsPanel = effectsPanel;
+    mTabEffectsIndex = mTabProperties->addTab(effectsPanel,
+                                              ThemeSupport::themedToolIcon("effect",
+                                                                           ThemeSupport::getThemeColorOrange(), 64),
+                                              tr("Effects"));
     mTabAssetsIndex = mTabProperties->addTab(assets,
                                              ThemeSupport::themedToolIcon("asset_manager",
                                                                           ThemeSupport::getThemeColorGreen(), 64),
@@ -1522,6 +1533,8 @@ void MainWindow::setupLayout()
         const auto dock = new QDockWidget(title, this);
         dock->setObjectName(objectName); // required by saveState()
         dock->setWidget(widget);
+        dock->setPalette(ThemeSupport::getDarkPalette());
+        dock->setAutoFillBackground(true);
         dock->setFeatures(QDockWidget::DockWidgetClosable |
                           QDockWidget::DockWidgetMovable |
                           QDockWidget::DockWidgetFloatable);

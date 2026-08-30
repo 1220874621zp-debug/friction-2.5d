@@ -194,6 +194,7 @@ set(
     main.cpp
     GUI/BoxesList/boxscroller.cpp
     GUI/Dialogs/dialogsinterfaceimpl.cpp
+    GUI/Dialogs/animationtopaintdialog.cpp
     GUI/Expressions/expressiondialog.cpp
     GUI/Expressions/expressioneditor.cpp
     GUI/Expressions/expressionhighlighter.cpp
@@ -201,6 +202,7 @@ set(
     GUI/RenderWidgets/rendersettingsdialog.cpp
     GUI/RenderWidgets/rendersettingsdisplaywidget.cpp
     GUI/Settings/generalsettingswidget.cpp
+    GUI/Settings/themesettingswidget.cpp
     GUI/Settings/settingsdialog.cpp
     GUI/Settings/shortcutsettingswidget.cpp
     GUI/Settings/timelinesettingswidget.cpp
@@ -257,6 +259,7 @@ set(
     GUI/aepropertiesinspector.h
     GUI/BoxesList/boxscroller.h
     GUI/Dialogs/dialogsinterfaceimpl.h
+    GUI/Dialogs/animationtopaintdialog.h
     GUI/Expressions/expressiondialog.h
     GUI/Expressions/expressioneditor.h
     GUI/Expressions/expressionhighlighter.h
@@ -264,6 +267,7 @@ set(
     GUI/RenderWidgets/rendersettingsdialog.h
     GUI/RenderWidgets/rendersettingsdisplaywidget.h
     GUI/Settings/generalsettingswidget.h
+    GUI/Settings/themesettingswidget.h
     GUI/Settings/settingsdialog.h
     GUI/Settings/shortcutsettingswidget.h
     GUI/Settings/timelinesettingswidget.h

@@ -66,7 +66,8 @@ EffectsPresetsPanel::EffectsPresetsPanel(MainWindow * const mainWindow,
     mTreeWidget->setHeaderHidden(true);
     mTreeWidget->setAnimated(true);
     mTreeWidget->setIndentation(16);
-    mTreeWidget->setPalette(ThemeSupport::getDarkPalette());
+    mTreeWidget->setPalette(ThemeSupport::getDefaultPalette());
+    mTreeWidget->setFrameShape(QFrame::NoFrame);
     connect(mTreeWidget, &QTreeWidget::itemDoubleClicked,
             this, &EffectsPresetsPanel::onItemDoubleClicked);
     mainLayout->addWidget(mTreeWidget);

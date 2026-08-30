@@ -27,6 +27,7 @@
 #include <QMouseEvent>
 #include "Animators/SmartPath/smartpathanimator.h"
 #include "Animators/transformanimator.h"
+#include "Animators/qpointfanimator.h"
 #include "Expressions/expression.h"
 #include "Expressions/propertybindingparser.h"
 #include "mainwindow.h"
@@ -53,7 +54,7 @@ bool KeysView::graphIsSelected(GraphAnimator * const anim) {
 
 void KeysView::graphEasingAction(const QString &easing)
 {
-    if (mSelectedKeysAnimators.isEmpty()) {
+    if (mSelectedKeysAnimators.isEmpty() && mGraphAnimators.isEmpty()) {
         emit statusMessage(tr("Select at least two keyframes to apply easing"));
         return;
     }
@@ -64,11 +65,13 @@ void KeysView::graphEasingAction(const QString &easing)
             if (segments.count() < 2) { continue; }
             auto firstKey = segments.first();
             auto lastKey = segments.last();
-            graphEasingApply(static_cast<QrealAnimator*>(anim),
-                             {firstKey->getRelFrame(),
-                              lastKey->getRelFrame()},
-                             easing);
-            applied = true;
+            if (const auto qrealAnim = enve_cast<QrealAnimator*>(anim)) {
+                graphEasingApply(qrealAnim,
+                                 {firstKey->getRelFrame(),
+                                  lastKey->getRelFrame()},
+                                 easing);
+                applied = true;
+            }
         }
     } else {
         for (const auto& anim : mSelectedKeysAnimators) {
@@ -76,11 +79,28 @@ void KeysView::graphEasingAction(const QString &easing)
             if (segments.count() < 2) { continue; }
             auto firstKey = segments.first();
             auto lastKey = segments.last();
-                graphEasingApply(static_cast<QrealAnimator*>(anim),
+            if (const auto qrealAnim = enve_cast<QrealAnimator*>(anim)) {
+                graphEasingApply(qrealAnim,
                                  {firstKey->getRelFrame(),
                                   lastKey->getRelFrame()},
                                  easing);
                 applied = true;
+            } else if (const auto ptAnim = enve_cast<QPointFAnimator*>(anim)) {
+                if (const auto xAnim = ptAnim->getXAnimator()) {
+                    graphEasingApply(xAnim,
+                                     {firstKey->getRelFrame(),
+                                      lastKey->getRelFrame()},
+                                     easing);
+                    applied = true;
+                }
+                if (const auto yAnim = ptAnim->getYAnimator()) {
+                    graphEasingApply(yAnim,
+                                     {firstKey->getRelFrame(),
+                                      lastKey->getRelFrame()},
+                                     easing);
+                    applied = true;
+                }
+            }
         }
     }
     if (!applied) {
@@ -572,9 +592,7 @@ void KeysView::graphResetValueScaleAndMinShown() {
 
 bool KeysView::graphValidateVisible(GraphAnimator* const animator)
 {
-    if (animator->prp_isSelected() &&
-        animator->prp_isParentBoxContained()) { return true; }
-    return false;
+    return animator != nullptr;
 }
 
 void KeysView::graphAddToViewedAnimatorList(GraphAnimator * const animator) {
@@ -588,18 +606,14 @@ void KeysView::graphAddToViewedAnimatorList(GraphAnimator * const animator) {
 
 void KeysView::graphUpdateVisible()
 {
-    qDebug() << "graphUpdateVisible";
-    //mGraphAnimators.clear();
+    mGraphAnimators.clear();
     if (mCurrentScene) {
         const int id = mBoxesListWidget->getId();
         const auto all = mCurrentScene->getSelectedForGraph(id);
         if (all) {
-            qDebug() << "selected for graph" << all->count();
             for (auto anim : *all) {
-                if (graphValidateVisible(anim)) { graphAddToViewedAnimatorList(anim); }
-                else {
-                    anim->prp_setSelected(false);
-                    graphRemoveViewedAnimator(anim);
+                if (graphValidateVisible(anim)) {
+                    graphAddToViewedAnimatorList(anim);
                 }
             }
         }
