@@ -81,6 +81,9 @@ void BoxRenderData::copyFrom(BoxRenderData *src) {
     fResolutionScale = src->fResolutionScale;
     fRenderedImage = src->requestImageCopy();
     fBoxStateId = src->fBoxStateId;
+    // backdrop-sampling effects live outside the effects renderer:
+    // a copy without them silently loses the composite-time treatment
+    fBackdropCallers = src->fBackdropCallers;
     mState = eTaskState::finished;
     fRelBoundingRectSet = true;
 }
@@ -105,6 +108,16 @@ void BoxRenderData::drawOnParentLayer(SkCanvas * const canvas) {
 
 void BoxRenderData::drawOnParentLayer(SkCanvas * const canvas,
                                       SkPaint& paint) {
+    // backdrop-sampling effects REPLACE the layer pixels with the
+    // treated backdrop: the layer's alpha is the glass shape, its own
+    // content does not draw. The preview path reaches this same code
+    // through RenderContainer::drawSk
+    if(!fBackdropCallers.isEmpty()) {
+        for(const auto& c : fBackdropCallers) {
+            if(c) c->processBackdrop(canvas, *this, paint);
+        }
+        return;
+    }
     if(isZero4Dec(fOpacity) || !fRenderedImage) return;
     if(fUseRenderTransform) canvas->concat(toSkMatrix(fRenderTransform));
     if(fBlendMode == SkBlendMode::kDstIn ||

@@ -111,6 +111,13 @@ private:
     void showAnimatedProperties();               // U key behavior
     void setupPropertyShortcuts();
 
+    // key loop toolbar buttons: apply/remove a loop-out expression
+    // on every keyed animator of the selected layers (member funcs,
+    // NOT constructor-local lambdas - those dangle once the ctor
+    // returns and crash on the first click)
+    void applyLoopExpressions(const QString& header);
+    void clearLoopExpressions();
+
     bool playPreview();
     void renderPreview();
     void pausePreview();
@@ -145,6 +152,9 @@ private:
     QAction *mSafeFramesButton = nullptr;
     QAction *mTransparencyGridButton = nullptr;
     QAction *mFreezePoseButton = nullptr;
+    QAction *mLoopPoseFwdButton = nullptr;
+    QAction *mLoopPosePingPongButton = nullptr;
+    QAction *mLoopPoseSkipButton = nullptr;
 
     FrameSpinBox *mFrameStartSpin;
     FrameSpinBox *mFrameEndSpin;

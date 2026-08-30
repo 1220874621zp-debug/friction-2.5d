@@ -63,6 +63,11 @@ It's always preferred to submit pull requests against the `main` branch
 25. **扣绿特效 Chroma Key** - 移植 Enhanced Hybrid Keyer 3.1，MIT 许可
 26. **骨骼冻结姿势** - 全属性关键帧钉死姿势
 27. **Krita .kra 原生导入** - 绘画层静态+逐关键帧动画/组递归/混合模式/帧率画布
+28.  **项目面板** -改善场景嵌套流程，类似ae合成使用逻辑
+29.   **液态玻璃** -新增特效滤镜
+30.    **循环** -3中循环按钮表达式注入，常用工具，播放控制栏
+
+
 
 **部署位置：** `friction/build/output/friction-cn-test/friction.exe`
 

@@ -39,7 +39,10 @@
 #include "boxtargetwidget.h"
 #include "Properties/boxtargetproperty.h"
 #include "Properties/comboboxproperty.h"
+#include "Properties/expressionrow.h"
 #include "Animators/qstringanimator.h"
+#include "Animators/qrealanimator.h"
+#include "Expressions/expression.h"
 #include "RasterEffects/rastereffectcollection.h"
 #include "Properties/boolproperty.h"
 #include "Properties/boolpropertycontainer.h"
@@ -65,6 +68,7 @@
 
 #include <QApplication>
 #include <QPainter>
+#include <QPlainTextEdit>
 
 #include <QtMath>
 #include <cmath>
@@ -83,6 +87,8 @@
 
 QPixmap* BoxSingleWidget::VISIBLE_ICON;
 
+// Translate internal (lowercase) property names for display in the timeline.
+// lupdate extracts the tr() literals below.
 QString translatePropertyName(const QString& name) {
     static const QHash<QString, QString> map = {
         { QStringLiteral("transform"), BoxSingleWidget::tr("transform") },
@@ -155,165 +161,29 @@ QString translatePropertyName(const QString& name) {
         { QStringLiteral("outline effects"), BoxSingleWidget::tr("outline effects") },
         { QStringLiteral("outline base effects"), BoxSingleWidget::tr("outline base effects") },
         { QStringLiteral("path base effects"), BoxSingleWidget::tr("path base effects") },
-        { QStringLiteral("Raster Effects"), BoxSingleWidget::tr("Raster Effects") },
-        { QStringLiteral("raster effects"), BoxSingleWidget::tr("Raster Effects") },
-        { QStringLiteral("Path Effects"), BoxSingleWidget::tr("Path Effects") },
-        { QStringLiteral("path effects"), BoxSingleWidget::tr("Path Effects") },
-        { QStringLiteral("Blend Effects"), BoxSingleWidget::tr("Blend Effects") },
-        { QStringLiteral("blend effects"), BoxSingleWidget::tr("Blend Effects") },
-        { QStringLiteral("Transform Effects"), BoxSingleWidget::tr("Transform Effects") },
-        { QStringLiteral("transform effects"), BoxSingleWidget::tr("Transform Effects") },
         // 2.5D billboard properties
         // NOTE: must use QStringLiteral (wide literal) for the Chinese text:
         // tr() takes a narrow (char*) literal, MSVC encodes \uXXXX escapes to
         // GBK, but tr() decodes as UTF-8 -> mojibake. QStringLiteral on MSVC
         // uses L"" wide literals where \uXXXX is a correct wchar_t code unit.
         { QStringLiteral("3D rotation X"),
-          QStringLiteral("3D \u65CB\u8F6C X") },
+          BoxSingleWidget::tr("3D Rotation X") },
         { QStringLiteral("3D rotation Y"),
-          QStringLiteral("3D \u65CB\u8F6C Y") },
+          BoxSingleWidget::tr("3D Rotation Y") },
         { QStringLiteral("3D position Z"),
-          QStringLiteral("3D \u4F4D\u79FB Z") },
+          BoxSingleWidget::tr("3D Position Z") },
         { QStringLiteral("3D perspective"),
-          QStringLiteral("3D \u900F\u89C6") },
-        // effect names
-        { QStringLiteral("blur"), QStringLiteral("\u9AD8\u65AF\u6A21\u7CCA (Blur)") },
-        { QStringLiteral("directional blur"), QStringLiteral("\u65B9\u5411\u6A21\u7CCA (Directional Blur)") },
-        { QStringLiteral("radial blur"), QStringLiteral("\u5F84\u5411\u6A21\u7CCA (Radial Blur)") },
-        { QStringLiteral("channel blur"), QStringLiteral("\u901A\u9053\u6A21\u7CCA (Channel Blur)") },
-        { QStringLiteral("shadow"), QStringLiteral("\u9634\u5F71 (Shadow)") },
-        { QStringLiteral("motion blur"), QStringLiteral("\u8FD0\u52A8\u6A21\u7CCA (Motion Blur)") },
-        { QStringLiteral("brightness contrast"), QStringLiteral("\u4EAE\u5EA6\u5BF9\u6BD4\u5EA6 (Brightness-Contrast)") },
-        { QStringLiteral("brightness-contrast"), QStringLiteral("\u4EAE\u5EA6\u5BF9\u6BD4\u5EA6 (Brightness-Contrast)") },
-        { QStringLiteral("colorize"), QStringLiteral("\u989C\u8272\u66FF\u6362 (Colorize)") },
-        { QStringLiteral("invert"), QStringLiteral("\u53CD\u8272 (Invert)") },
-        { QStringLiteral("tint"), QStringLiteral("\u53CC\u8272\u8C03\u8272 (Tint)") },
-        { QStringLiteral("posterize"), QStringLiteral("\u8272\u8C03\u5206\u79BB (Posterize)") },
-        { QStringLiteral("glow"), QStringLiteral("\u8F89\u5149\u53D1\u5149 (Glow)") },
-        { QStringLiteral("chromatic aberration"), QStringLiteral("RGB\u8272\u5dee (Chromatic Aberration)") },
-        { QStringLiteral("wave warp"), QStringLiteral("\u6CE2\u6D6A\u626D\u66F2 (Wave Warp)") },
-        { QStringLiteral("mirror"), QStringLiteral("\u955C\u50CF\u5BF9\u79F0 (Mirror)") },
-        { QStringLiteral("twirl"), QStringLiteral("\u65CB\u8F6C\u626D\u66F2 (Twirl)") },
-        { QStringLiteral("vignette"), QStringLiteral("\u6697\u89D2\u7FA1\u5316 (Vignette)") },
-        { QStringLiteral("letterbox"), QStringLiteral("\u7535\u5F71\u906E\u5E45 (Letterbox)") },
-        { QStringLiteral("scanlines"), QStringLiteral("CRT\u626B\u63CF\u7EBF (Scanlines)") },
-        { QStringLiteral("edge detect"), QStringLiteral("\u8FB9\u7F18\u68C0\u6D4B (Edge Detect)") },
-        { QStringLiteral("pixelate"), QStringLiteral("\u50CF\u7D20\u5316 (Pixelate)") },
-        { QStringLiteral("noise"), QStringLiteral("\u80F6\u7247\u566A\u70B9 (Noise)") },
-        { QStringLiteral("glitch"), QStringLiteral("\u6545\u969C\u827A\u672F (Glitch)") },
-        { QStringLiteral("halftone"), QStringLiteral("\u534A\u8272\u8C03\u7F51\u70B9 (Halftone)") },
-        { QStringLiteral("rain"), QStringLiteral("\u7A0B\u5E8F\u5316\u96E8\u6C34 (Rain)") },
-        { QStringLiteral("wipe"), QStringLiteral("\u7EBF\u6027\u64E6\u9664 (Wipe)") },
-        { QStringLiteral("noise fade"), QStringLiteral("\u566A\u6CE2\u6D88\u9690 (Noise Fade)") },
-        { QStringLiteral("shake"), QStringLiteral("\u753B\u9762\u9707\u52A8 (Shake)") },
-        { QStringLiteral("drop shadow"), QStringLiteral("\u67D4\u548C\u6295\u5F71 (Drop Shadow)") },
-        { QStringLiteral("zoom blur"), QStringLiteral("\u7F29\u653E\u5149\u8292\u6A21\u7CCA (Zoom Blur)") },
-        { QStringLiteral("color grading"), QStringLiteral("\u4E13\u4E1A\u8C03\u8272 (Color Grading)") },
-        { QStringLiteral("stripe"), QStringLiteral("\u6761\u7EB9\u767E\u53F6\u7A97 (Stripe)") },
-        { QStringLiteral("motion tile"), QStringLiteral("\u8FD0\u52A8\u5E73\u94FA (Motion Tile)") },
-        { QStringLiteral("fractal noise"), QStringLiteral("\u5206\u5F62\u6742\u8272 (Fractal Noise)") },
-        { QStringLiteral("fractalNoise"), QStringLiteral("\u5206\u5F62\u6742\u8272 (Fractal Noise)") },
-        { QStringLiteral("light sweep"), QStringLiteral("\u626B\u5149 (Light Sweep)") },
-        { QStringLiteral("lightSweep"), QStringLiteral("\u626B\u5149 (Light Sweep)") },
-        { QStringLiteral("displacement warp"), QStringLiteral("\u7F6E\u6362\u626D\u66F2 (Displacement Warp)") },
-        { QStringLiteral("displacementWarp"), QStringLiteral("\u7F6E\u6362\u626D\u66F2 (Displacement Warp)") },
-        { QStringLiteral("film grain"), QStringLiteral("\u80F6\u7247\u9897\u7C92 (Film Grain)") },
-        { QStringLiteral("filmGrain"), QStringLiteral("\u80F6\u7247\u9897\u7C92 (Film Grain)") },
-        { QStringLiteral("black white flash"), QStringLiteral("\u9ED1\u767D\u95EA (Black-White Flash)") },
-        { QStringLiteral("blackWhiteFlash"), QStringLiteral("\u9ED1\u767D\u95EA (Black-White Flash)") },
-        { QStringLiteral("liquid glass"), QStringLiteral("\u6D41\u4F53\u6bdb\u73BB\u7483 (Liquid Glass)") },
-        { QStringLiteral("liquidGlass"), QStringLiteral("\u6D41\u4F53\u6bdb\u73BB\u7483 (Liquid Glass)") },
-        { QStringLiteral("pixel art"), QStringLiteral("\u590D\u53E4\u50CF\u7D20\u753B (Pixel Art)") },
-        { QStringLiteral("pixelArt"), QStringLiteral("\u590D\u53E4\u50CF\u7D20\u753B (Pixel Art)") },
-        { QStringLiteral("chroma-key"), QStringLiteral("\u6263\u7EFF\u62A0\u50CF (Chroma Key)") },
-        { QStringLiteral("chroma key"), QStringLiteral("\u6263\u7EFF\u62A0\u50CF (Chroma Key)") },
-        { QStringLiteral("key color"), QStringLiteral("\u62A0\u50CF\u989C\u8272 (Key Color)") },
-        { QStringLiteral("keying method"), QStringLiteral("\u62A0\u50CF\u7B97\u6CD5 (Keying Method)") },
-        { QStringLiteral("matte black"), QStringLiteral("\u906E\u7F69\u9ED1\u573A (Matte Black)") },
-        { QStringLiteral("matte white"), QStringLiteral("\u906E\u7F69\u767D\u573A (Matte White)") },
-        { QStringLiteral("matte highlights"), QStringLiteral("\u906E\u7F69\u9AD8\u5149 (Matte Highlights)") },
-        { QStringLiteral("matte shadows"), QStringLiteral("\u906E\u7F69\u9634\u5F71 (Matte Shadows)") },
-        { QStringLiteral("edge softness"), QStringLiteral("\u8FB9\u7F18\u67D4\u5316 (Edge Softness)") },
-        { QStringLiteral("hair detail"), QStringLiteral("\u6bdb\u53D1\u7EC6\u8282 (Hair Detail)") },
-        { QStringLiteral("edge defringe"), QStringLiteral("\u8FB9\u7F18\u53BB\u8FB9 (Edge Defringe)") },
-        { QStringLiteral("spill reduction"), QStringLiteral("\u6EA2\u8272\u6291\u5236 (Spill Reduction)") },
-        { QStringLiteral("spill balance"), QStringLiteral("\u6EA2\u8272\u5E73\u8861 (Spill Balance)") },
-        // path effects
-        { QStringLiteral("displace"), QStringLiteral("\u7F6E\u6362 (Displace)") },
-        { QStringLiteral("spatial displace"), QStringLiteral("\u7A7A\u95F4\u7F6E\u6362 (Spatial Displace)") },
-        { QStringLiteral("dash"), QStringLiteral("\u865A\u7EBF (Dash)") },
-        { QStringLiteral("duplicate"), QStringLiteral("\u526F\u672C\u751F\u6210 (Duplicate)") },
-        { QStringLiteral("sub-path"), QStringLiteral("\u5B50\u8DEF\u5F84 (Sub-Path)") },
-        { QStringLiteral("sub path"), QStringLiteral("\u5B50\u8DEF\u5F84 (Sub-Path)") },
-        { QStringLiteral("solidify"), QStringLiteral("\u5B9E\u4F53\u5316 (Solidify)") },
-        { QStringLiteral("sum"), QStringLiteral("\u8F6E\u5ED3\u878D\u5408 (Sum)") },
-        { QStringLiteral("lines"), QStringLiteral("\u7EBF\u6761\u586B\u5145 (Lines)") },
-        { QStringLiteral("zigzag"), QStringLiteral("\u6CE2\u6D6A\u6298\u7EBF (ZigZag)") },
-        { QStringLiteral("subdivide"), QStringLiteral("\u7EC6\u5206 (Subdivide)") },
-        // blend effects
-        { QStringLiteral("move"), QStringLiteral("\u4F4D\u79FB (Move)") },
-        { QStringLiteral("targeted"), QStringLiteral("\u76EE\u6807\u5B9A\u5411 (Targeted)") },
-        // transform effects
-        { QStringLiteral("track"), QStringLiteral("\u8DDF\u8E2A (Track)") },
-        { QStringLiteral("follow path"), QStringLiteral("\u6CBF\u8DEF\u5F84\u8FD0\u52A8 (Follow Path)") },
-        { QStringLiteral("follow object"), QStringLiteral("\u8DDF\u968F\u5BF9\u8C61 (Follow Object)") },
-        { QStringLiteral("follow object relative"), QStringLiteral("\u76F8\u5BF9\u8DDF\u968F\u5BF9\u8C61 (Follow Object Relative)") },
-        { QStringLiteral("parent"), QStringLiteral("\u7236\u7EA7\u7ED1\u5B9A (Parent)") },
-        { QStringLiteral("effects"), QStringLiteral("\u7279\u6548 (Effects)") },
-        // effect parameters
-        { QStringLiteral("edge"), QStringLiteral("\u8FB9\u7F18\u5F3A\u5EA6 (Edge)") },
-        { QStringLiteral("bgcolor"), QStringLiteral("\u80CC\u666F\u989C\u8272 (Background Color)") },
-        { QStringLiteral("roughness"), QStringLiteral("\u8868\u9762\u7C97\u7CD9\u5EA6 (Roughness)") },
-        { QStringLiteral("complexity"), QStringLiteral("\u590D\u6742\u5EA6 (Complexity)") },
-        { QStringLiteral("evolution"), QStringLiteral("\u6F14\u5316 (Evolution)") },
-        { QStringLiteral("color1"), QStringLiteral("\u989C\u8272 1 (Color 1)") },
-        { QStringLiteral("color2"), QStringLiteral("\u989C\u8272 2 (Color 2)") },
-        { QStringLiteral("colorGrain"), QStringLiteral("\u5F69\u8272\u9897\u7C92 (Color Grain)") },
-        { QStringLiteral("chromatic"), QStringLiteral("\u8272\u6563\u5206\u79BB (Chromatic)") },
-        { QStringLiteral("dispType"), QStringLiteral("\u7F6E\u6362\u7C7B\u578B (Displacement Type)") },
-        { QStringLiteral("noiseType"), QStringLiteral("\u6742\u8272\u7C7B\u578B (Noise Type)") },
-        { QStringLiteral("invert"), QStringLiteral("\u53CD\u76F8 (Invert)") },
-        { QStringLiteral("threshold"), QStringLiteral("\u9608\u503C (Threshold)") },
-        { QStringLiteral("intensity"), QStringLiteral("\u5F3A\u5EA6 (Intensity)") },
-        { QStringLiteral("amount"), QStringLiteral("\u6570\u91CF/\u5F3A\u5EA6 (Amount)") },
-        { QStringLiteral("density"), QStringLiteral("\u5BC6\u5EA6 (Density)") },
-        { QStringLiteral("speed"), QStringLiteral("\u901F\u5EA6 (Speed)") },
-        { QStringLiteral("angle"), QStringLiteral("\u89D2\u5EA6 (Angle)") },
-        { QStringLiteral("frequency"), QStringLiteral("\u9891\u7387 (Frequency)") },
-        { QStringLiteral("phase"), QStringLiteral("\u76F8\u4F4D (Phase)") },
-        { QStringLiteral("amplitude"), QStringLiteral("\u632F\u5E45 (Amplitude)") },
-        { QStringLiteral("randomness"), QStringLiteral("\u968F\u673A\u5EA6 (Randomness)") },
-        { QStringLiteral("distance"), QStringLiteral("\u8DDD\u79BB (Distance)") },
-        { QStringLiteral("softness"), QStringLiteral("\u67D4\u548C\u5EA6 (Softness)") },
-        { QStringLiteral("exposure"), QStringLiteral("\u66DD\u5149 (Exposure)") },
-        { QStringLiteral("contrast"), QStringLiteral("\u5BF9\u6BD4\u5EA6 (Contrast)") },
-        { QStringLiteral("saturation"), QStringLiteral("\u9971\u548C\u5EA6 (Saturation)") },
-        { QStringLiteral("temperature"), QStringLiteral("\u8272\u6E29 (Temperature)") },
-        { QStringLiteral("tint"), QStringLiteral("\u8272\u5F69\u5E73\u8861/\u8272\u8C03 (Tint)") },
-        { QStringLiteral("transition"), QStringLiteral("\u8FC7\u6E21\u8FDB\u5EA6 (Transition)") },
-        { QStringLiteral("feather"), QStringLiteral("\u7FBD\u5316 (Feather)") },
-        { QStringLiteral("tileCountX"), QStringLiteral("\u6C34\u5E73\u5E73\u94FA\u6570 (Tile Count X)") },
-        { QStringLiteral("tileCountY"), QStringLiteral("\u5782\u76F4\u5E73\u94FA\u6570 (Tile Count Y)") },
-        { QStringLiteral("offsetX"), QStringLiteral("\u6C34\u5E73\u504F\u79FB (Offset X)") },
-        { QStringLiteral("offsetY"), QStringLiteral("\u5782\u76F4\u5E73\u94FA (Offset Y)") },
-        { QStringLiteral("mirrorEdges"), QStringLiteral("\u955C\u50CF\u8FB9\u7F18 (Mirror Edges)") },
-        { QStringLiteral("radius"), QStringLiteral("\u534A\u5F84 (Radius)") },
-        { QStringLiteral("samples"), QStringLiteral("\u91C7\u6837\u6570 (Samples)") },
-        { QStringLiteral("levels"), QStringLiteral("\u8272\u9636\u6570 (Levels)") },
-        { QStringLiteral("red blur"), QStringLiteral("\u7EA2\u8272\u901A\u9053\u6A21\u7CCA (Red Blur)") },
-        { QStringLiteral("green blur"), QStringLiteral("\u7EFF\u8272\u901A\u9053\u6A21\u7CCA (Green Blur)") },
-        { QStringLiteral("blue blur"), QStringLiteral("\u84DD\u8272\u901A\u9053\u6A21\u7CCA (Blue Blur)") },
-        { QStringLiteral("falloff"), QStringLiteral("\u8870\u51CF (Falloff)") },
-        { QStringLiteral("monochrome"), QStringLiteral("\u5355\u8272\u6A21\u5F0F (Monochrome)") },
-        { QStringLiteral("aspect ratio"), QStringLiteral("\u753B\u5E45\u6BD4\u4F8B (Aspect Ratio)") },
-        { QStringLiteral("blend"), QStringLiteral("\u6DF7\u5408\u5EA6 (Blend)") },
-        { QStringLiteral("map black"), QStringLiteral("\u6620\u5C04\u9ED1\u8272 (Map Black)") },
-        { QStringLiteral("map white"), QStringLiteral("\u6620\u5C04\u767D\u8272 (Map White)") },
-        { QStringLiteral("block size"), QStringLiteral("\u65B9\u5757\u5927\u5C0F (Block Size)") },
-        { QStringLiteral("line count"), QStringLiteral("\u6761\u7EB9\u6570\u91CF (Line Count)") },
+          BoxSingleWidget::tr("3D Perspective") },
+        // mask pen / raster effect names
+        { QStringLiteral("blur"),
+          BoxSingleWidget::tr("Blur") },            // 模糊
+        { QStringLiteral("radius"),
+          BoxSingleWidget::tr("Radius") },            // 半径
+        { QStringLiteral("effects"),
+          BoxSingleWidget::tr("Effects") },            // 特效
     };
     if(name.startsWith(QStringLiteral("Mask: "))) {
-        return QStringLiteral("\u8499\u7248: ") + name.mid(6);
+        return BoxSingleWidget::tr("Mask: ") + name.mid(6);
     }
     return map.value(name, name);
 }
@@ -632,6 +502,62 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
         menu.exec(QCursor::pos());
     });
 
+    // fx toggle for the AE-style inline expression editor; lazily
+    // painted icons (dim when no expression, bright when present,
+    // filled when the editor row is expanded)
+    mExprButton = new PixmapActionButton(this);
+    mExprButton->setToolTip(tr("Toggle expression editor"));
+    mExprButton->setPixmapChooser([this]() {
+        if (!mTarget) { return static_cast<QPixmap*>(nullptr); }
+        const auto target = mTarget->getTarget();
+        const auto qra = enve_cast<QrealAnimator*>(target);
+        const auto pfa = enve_cast<QPointFAnimator*>(target);
+        if (!qra && !pfa) { return static_cast<QPixmap*>(nullptr); }
+        static QPixmap sNone;
+        static QPixmap sHas;
+        static QPixmap sOpen;
+        if (sNone.isNull()) {
+            const int s = 64;
+            for (int variant = 0; variant < 3; variant++) {
+                QPixmap pm(s, s);
+                pm.fill(Qt::transparent);
+                QPainter p(&pm);
+                p.setRenderHint(QPainter::Antialiasing);
+                QColor col(255, 255, 255, variant == 0 ? 100 : 230);
+                if (variant == 2) {
+                    p.setPen(QPen(QColor(0, 0, 0, 60), 6));
+                    p.setBrush(col);
+                    p.drawEllipse(QRectF(6, 6, 52, 52));
+                    p.setPen(Qt::NoPen);
+                } else {
+                    p.setPen(QPen(col, 4.5));
+                    p.setBrush(Qt::NoBrush);
+                }
+                QFont f = p.font();
+                f.setPixelSize(variant == 2 ? 34 : 38);
+                f.setItalic(true);
+                f.setBold(true);
+                p.setFont(f);
+                p.drawText(QRect(0, 0, s, s), Qt::AlignCenter, "fx");
+                p.end();
+                if (variant == 0) sNone = pm;
+                else if (variant == 1) sHas = pm;
+                else sOpen = pm;
+            }
+        }
+        // point rows track their x channel (x/y are keyed/looped
+        // together, one state is enough for the icon)
+        const auto trackX = qra ? qra :
+                            (pfa ? pfa->getXAnimator() : nullptr);
+        if (!trackX) { return static_cast<QPixmap*>(nullptr); }
+        if (ExpressionRow::sRowFor(trackX)) return &sOpen;
+        if (trackX->hasExpression()) return &sHas;
+        return &sNone;
+    });
+    mMainLayout->addWidget(mExprButton);
+    connect(mExprButton, &BoxesListActionButton::pressed,
+            this, &BoxSingleWidget::toggleExpressionRow);
+
     mRecordButton = new PixmapActionButton(this);
     mRecordButton->setPixmapChooser([this]() {
         if (!mTarget) { return static_cast<QPixmap*>(nullptr); }
@@ -923,6 +849,49 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
     mValueSlider = new QrealAnimatorValueSlider(nullptr, this);
     mMainLayout->addWidget(mValueSlider, Qt::AlignRight);
 
+    // inline expression script editor (occupies the ExpressionRow);
+    // commits on focus-out / Ctrl+Return, Escape collapses the row
+    mExprEdit = new QPlainTextEdit(this);
+    mExprEdit->setFixedHeight(eSizesUI::widget);
+    mExprEdit->setFocusPolicy(Qt::ClickFocus);
+    mExprEdit->setToolTip(tr("Expression script - click away or press "
+                             "Ctrl+Return to apply, Escape to close"));
+    mExprEdit->setVisible(false);
+    mExprEdit->installEventFilter(this);
+    mMainLayout->addWidget(mExprEdit, 1);
+
+    mExprClearButton = new PixmapActionButton(this);
+    mExprClearButton->setToolTip(tr("Remove expression"));
+    mExprClearButton->setPixmapChooser([]() {
+        static QPixmap pm;
+        if (pm.isNull()) {
+            pm = QPixmap(64, 64);
+            pm.fill(Qt::transparent);
+            QPainter p(&pm);
+            p.setRenderHint(QPainter::Antialiasing);
+            QPen pen(QColor(255, 255, 255, 220), 4.5);
+            pen.setCapStyle(Qt::RoundCap);
+            p.setPen(pen);
+            p.drawLine(20, 20, 44, 44);
+            p.drawLine(44, 20, 20, 44);
+            p.end();
+        }
+        return &pm;
+    });
+    mExprClearButton->setVisible(false);
+    mMainLayout->addWidget(mExprClearButton);
+    connect(mExprClearButton, &BoxesListActionButton::pressed,
+            this, [this]() {
+        const auto exprRow = enve_cast<ExpressionRow*>(
+                    mTarget ? mTarget->getTarget() : nullptr);
+        if (!exprRow) return;
+        const auto qra = exprRow->target();
+        if (qra && qra->hasExpression()) {
+            qra->clearExpressionAction();
+            Document::sInstance->actionFinished();
+        }
+    });
+
     mSecondValueSlider = new QrealAnimatorValueSlider(nullptr, this);
     mMainLayout->addWidget(mSecondValueSlider, Qt::AlignRight);
 
@@ -1045,6 +1014,30 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
     mTrkMatLayerCombo->setSizePolicy(QSizePolicy::Maximum,
                                      QSizePolicy::Minimum);
     mTrkMatLayerCombo->setFixedWidth(eSizesUI::widget*5);
+
+    // layer picker for combo-picker BoxTargetProperty rows (liquid
+    // glass background layer): first item = auto, rest = scene layers
+    mBgLayerCombo = createCombo(this);
+    mMainLayout->addWidget(mBgLayerCombo);
+    mBgLayerCombo->setObjectName("lgBackgroundLayerCombo");
+    mBgLayerCombo->setToolTip(QStringLiteral(
+                "\u6298\u5C04\u80CC\u666F\u56FE\u5C42")); // 折射背景图层
+    mBgLayerCombo->setVisible(false);
+    mBgLayerCombo->installEventFilter(this);
+    connect(mBgLayerCombo, qOverload<int>(&QComboBox::activated),
+            this, [this](const int index) {
+        if(mBgLayerBuilding || !mBgTargetProp) return;
+        BoundingBox* picked = nullptr;
+        if(index > 0) {
+            picked = reinterpret_cast<BoundingBox*>(
+                        mBgLayerCombo->itemData(index).value<quintptr>());
+        }
+        mBgTargetProp->setTargetAction(picked);
+        Document::sInstance->actionFinished();
+    });
+    mBgLayerCombo->setSizePolicy(QSizePolicy::Maximum,
+                                 QSizePolicy::Minimum);
+    mBgLayerCombo->setFixedWidth(eSizesUI::widget*5);
 
     mTrkMatModeButton = new PixmapActionButton(this);
     mTrkMatModeButton->setToolTip(tr("Track matte mode"));
@@ -1272,6 +1265,12 @@ void BoxSingleWidget::setTargetAbstraction(SWT_Abstraction *abs) {
     mMainLayout->setContentsMargins(0, 0, boundingBox ? 0 : 5, 0);
     mContentButton->setVisible(complexAnimator);
     mRecordButton->setVisible(animator && !eboxOrSound);
+    // fx on single-value rows AND point rows (position etc., which
+    // show the x/y pair collapsed but never expand to child rows)
+    mExprButton->setVisible(enve_cast<QrealAnimator*>(prop) ||
+                            enve_cast<QPointFAnimator*>(prop));
+    mExprEdit->setVisible(false);
+    mExprClearButton->setVisible(false);
     mVisibleButton->setVisible(eboxOrSound || eeffect || graphAnimator);
     mLockedButton->setVisible(boundingBox);
     mSoloButton->setVisible(eboxOrSound);
@@ -1307,7 +1306,15 @@ void BoxSingleWidget::setTargetAbstraction(SWT_Abstraction *abs) {
             });
         }
     }
-    mBoxTargetWidget->setVisible(boxTargetProperty);
+    mBoxTargetWidget->setVisible(boxTargetProperty &&
+                                 !boxTargetProperty->comboPicker());
+    mBgLayerCombo->setVisible(false);
+    mBgTargetProp = nullptr;
+    if(boxTargetProperty && boxTargetProperty->comboPicker()) {
+        mBgTargetProp = boxTargetProperty;
+        mBgLayerCombo->setVisible(true);
+        rebuildBgLayerCandidates();
+    }
     mCheckBox->setVisible(boolProperty || boolPropertyContainer ||
                          boolAnimator);
 
@@ -1386,10 +1393,38 @@ void BoxSingleWidget::setTargetAbstraction(SWT_Abstraction *abs) {
                                this, [this](const UpdateReason) {
             mCheckBox->update();
         });
+    } else if(const auto exprRow = enve_cast<ExpressionRow*>(prop)) {
+        // AE-style inline expression editor row under a property
+        const auto qra = exprRow->target();
+        if (qra) {
+            mExprEditLoading = true;
+            mExprEdit->setPlainText(
+                        qra->hasExpression() ?
+                            qra->getExpressionScriptString() :
+                            QStringLiteral("return value;"));
+            mExprEditLoading = false;
+            mExprClearButton->setVisible(qra->hasExpression());
+            mExprEdit->setVisible(true);
+            // clearing the expression (x button) reloads the default
+            // script and hides the clear button again
+            mTargetConn << connect(qra, &QrealAnimator::expressionChanged,
+                                   this, [this, qra]() {
+                mExprEditLoading = true;
+                mExprEdit->setPlainText(
+                            qra->hasExpression() ?
+                                qra->getExpressionScriptString() :
+                                QStringLiteral("return value;"));
+                mExprEditLoading = false;
+                mExprClearButton->setVisible(qra->hasExpression());
+            });
+        }
     } else if(const auto qra = enve_cast<QrealAnimator*>(prop)) {
         mValueSlider->setTarget(qra);
         valueSliderVisible = true;
         mValueSlider->setIsLeftSlider(false);
+        mExprButton->setVisible(true);
+        mTargetConn << connect(qra, &QrealAnimator::expressionChanged,
+                               this, qOverload<>(&QWidget::update));
     } else if(complexAnimator) {
         if(const auto col = enve_cast<ColorAnimator*>(prop)) {
             colorButtonVisible = true;
@@ -2214,6 +2249,39 @@ void BoxSingleWidget::rebuildParentLinkCandidates() {
     mParentLinkComboBuilding = false;
 }
 
+// background-layer candidates for combo-picker BoxTargetProperty rows:
+// every scene box except the layer owning the effect and its subtree
+// (an external render of those would queue this effect again)
+void BoxSingleWidget::rebuildBgLayerCandidates() {
+    mBgLayerBuilding = true;
+    const QSignalBlocker blocker(mBgLayerCombo);
+    const auto scene = mParent ? mParent->currentScene() : nullptr;
+    mBgLayerCombo->clear();
+    // \u81EA\u52A8\uFF08\u4E0B\u5C42\u5408\u6210\uFF09 = 自动（下层合成）
+    mBgLayerCombo->addItem(QStringLiteral(
+                "\u81EA\u52A8\uFF08\u4E0B\u5C42\u5408\u6210\uFF09"));
+    int match = 0;
+    if(scene && mBgTargetProp) {
+        const auto owner = mBgTargetProp->getFirstAncestor<BoundingBox>();
+        BoundingBox* cur = mBgTargetProp->getTarget();
+        std::function<void(ContainerBox*)> walk =
+                [this, &walk, &match, owner, &cur](ContainerBox* const cont) {
+            for(const auto b : cont->getContainedBoxes()) {
+                if(!b || b == owner ||
+                   (owner && owner->isAncestor(b))) continue;
+                mBgLayerCombo->addItem(
+                            b->prp_getName(),
+                            QVariant::fromValue(reinterpret_cast<quintptr>(b)));
+                if(b == cur) match = mBgLayerCombo->count() - 1;
+                if(const auto g = enve_cast<ContainerBox*>(b)) walk(g);
+            }
+        };
+        walk(scene);
+    }
+    mBgLayerCombo->setCurrentIndex(match);
+    mBgLayerBuilding = false;
+}
+
 // matte layer candidates: every scene box except this one and its own
 // subtree (those would matte with themselves / their dependents)
 void BoxSingleWidget::rebuildTrkMatLayerCandidates() {
@@ -2483,8 +2551,87 @@ bool BoxSingleWidget::eventFilter(QObject *obj, QEvent *event) {
     if(event->type() == QEvent::MouseButtonPress) {
         if(obj == mParentLinkCombo) rebuildParentLinkCandidates();
         else if(obj == mTrkMatLayerCombo) rebuildTrkMatLayerCandidates();
+        else if(obj == mBgLayerCombo) rebuildBgLayerCandidates();
+    } else if(obj == mExprEdit) {
+        if(event->type() == QEvent::FocusOut) {
+            commitExpressionEdit();
+        } else if(event->type() == QEvent::KeyPress) {
+            const auto ke = static_cast<QKeyEvent*>(event);
+            if(ke->key() == Qt::Key_Escape) {
+                collapseOwnExpressionRow();
+            } else if(ke->key() == Qt::Key_Return &&
+                      (ke->modifiers() & Qt::ControlModifier)) {
+                commitExpressionEdit();
+                collapseOwnExpressionRow();
+            }
+        }
     }
     return QWidget::eventFilter(obj, event);
+}
+
+void BoxSingleWidget::toggleExpressionRow() {
+    if(!mTarget) return;
+    const auto target = mTarget->getTarget();
+    const auto qra = enve_cast<QrealAnimator*>(target);
+    if(qra) {
+        const bool expand = !ExpressionRow::sRowFor(qra);
+        // unfold the property node itself so the editor row shows
+        if (expand && mTarget && !mTarget->contentVisible()) {
+            mTarget->switchContentVisible();
+        }
+        ExpressionRow::sSetExpanded(qra, expand);
+    } else if(const auto pfa = enve_cast<QPointFAnimator*>(target)) {
+        // point rows expand one editor row per channel (x on top of y);
+        // the point node itself must unfold so the rows become visible
+        const auto xAnim = pfa->getXAnimator();
+        const auto yAnim = pfa->getYAnimator();
+        const bool expand = !ExpressionRow::sRowFor(xAnim);
+        if (expand && mTarget && !mTarget->contentVisible()) {
+            mTarget->switchContentVisible();
+        }
+        ExpressionRow::sSetExpanded(xAnim, expand,
+                                    QStringLiteral("fx x"));
+        ExpressionRow::sSetExpanded(yAnim, expand,
+                                    QStringLiteral("fx y"));
+    } else return;
+    Document::sInstance->actionFinished();
+}
+
+void BoxSingleWidget::collapseOwnExpressionRow() {
+    if(!mTarget) return;
+    const auto exprRow = enve_cast<ExpressionRow*>(mTarget->getTarget());
+    if(!exprRow) return;
+    const auto qra = exprRow->target();
+    if(qra) ExpressionRow::sSetExpanded(qra, false);
+    Document::sInstance->actionFinished();
+}
+
+void BoxSingleWidget::commitExpressionEdit() {
+    if(!mTarget || mExprEditLoading) return;
+    const auto exprRow = enve_cast<ExpressionRow*>(mTarget->getTarget());
+    if(!exprRow) return;
+    const auto qra = exprRow->target();
+    if(!qra) return;
+    const auto script = mExprEdit->toPlainText();
+    if(qra->hasExpression() &&
+       script == qra->getExpressionScriptString()) return;
+    // fresh expressions get the bindings the loop buttons use (the
+    // $frame binding is what makes playback re-evaluate)
+    const auto bindings = qra->hasExpression() ?
+                qra->getExpressionBindingsString() :
+                QStringLiteral("value = $value;\nframe = $frame;\n");
+    const auto definitions = qra->hasExpression() ?
+                qra->getExpressionDefinitionsString() : QString();
+    try {
+        auto expr = Expression::sCreate(bindings, definitions,
+                                        script, qra,
+                                        Expression::sQrealAnimatorTester);
+        qra->setExpressionAction(expr);
+    } catch(...) {
+        // keep the typed text; the slider dot marks the expression
+        // invalid until the script is fixed
+    }
+    Document::sInstance->actionFinished();
 }
 
 void BoxSingleWidget::selOverlayUpdate() {

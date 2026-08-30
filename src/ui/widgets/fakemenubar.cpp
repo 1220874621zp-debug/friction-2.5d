@@ -127,6 +127,10 @@ void FakeMenuBar::addMenu(QMenu * const menu) {
     mActsLayout->addWidget(button);
 }
 
+void FakeMenuBar::addWidget(QWidget * const widget) {
+    mActsLayout->addWidget(widget);
+}
+
 QAction* FakeMenuBar::addAction(const QString &title) {
     const auto action = new QAction(title, this);
     addAction(action);

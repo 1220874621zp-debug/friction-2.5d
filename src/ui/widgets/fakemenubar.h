@@ -45,6 +45,8 @@ public:
     QAction* addAction(const QString& title);
     QAction* addAction(const QIcon& icon, const QString& title);
     void addAction(QAction * const action);
+
+    void addWidget(QWidget * const widget);
 private:
     QHBoxLayout* mActsLayout;
 };

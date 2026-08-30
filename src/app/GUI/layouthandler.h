@@ -189,6 +189,14 @@ public:
     }
     int getSceneId(const Canvas* const scene) { return sceneId(scene); };
     bool isCurrentScene(const int index) { return index == mCurrentId; };
+    // pure page switch (canvas + timeline + combo) WITHOUT the pane
+    // recreation setCurrentScene performs - safe to call from widgets
+    // living inside those panes
+    void switchToScene(Canvas* const scene) {
+        if (!scene) { return; }
+        const int id = sceneId(scene);
+        if (id >= 0) { setCurrent(id); }
+    };
     void setCurrentScene(const Canvas* const scene) {
         if (!scene) { return; }
         setCurrent(sceneId(scene));

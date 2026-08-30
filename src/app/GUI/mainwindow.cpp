@@ -66,13 +66,11 @@
 #include "dialogs/markereditordialog.h"
 #include "timelinedockwidget.h"
 #include "easingpresetspanel.h"
-#include "effectspresetspanel.h"
-#include "quickeffectsearchdialog.h"
+#include "projectpanel.h"
 #include "scriptmanager.h"
 #include "scriptconsole.h"
 #include "GUI/keysview.h"
 #include "canvaswindow.h"
-#include "aepropertiesinspector.h"
 #include "GUI/BoxesList/boxscrollwidget.h"
 #include "clipboardcontainer.h"
 #include "optimalscrollarena/scrollarea.h"
@@ -744,7 +742,6 @@ void MainWindow::updateSettingsForCurrentCanvas(Canvas* const scene)
     if (mCanvasToolBar) { mCanvasToolBar->setCurrentCanvas(scene); }
 
     mObjectSettingsWidget->setCurrentScene(scene);
-    if (mPropertiesInspector) { mPropertiesInspector->setCurrentScene(scene); }
 
     if (mPreviewSVGAct) { mPreviewSVGAct->setEnabled(scene); }
     if (mExportSVGAct) { mExportSVGAct->setEnabled(scene); }
@@ -1340,8 +1337,6 @@ void MainWindow::applyDefaultWorkspace()
     addDockWidget(Qt::RightDockWidgetArea, mEasingDock);
     addDockWidget(Qt::BottomDockWidgetArea, mTimelineDock);
 
-    if (mEasingDock) { mEasingDock->hide(); }
-
     const int w = width();
     const int h = height();
     if (w > 0 && h > 0) {
@@ -1385,6 +1380,9 @@ void MainWindow::rebuildWorkspaceMenu()
     panelsMenu->addAction(mFillStrokeDock->toggleViewAction());
     panelsMenu->addAction(mPropertiesDock->toggleViewAction());
     panelsMenu->addAction(mEasingDock->toggleViewAction());
+    if (mProjectDock) {
+        panelsMenu->addAction(mProjectDock->toggleViewAction());
+    }
     if (mScriptManager && mScriptManager->console()) {
         panelsMenu->addAction(mScriptManager->console()->toggleViewAction());
     }
@@ -1443,9 +1441,11 @@ void MainWindow::setupPropertiesWidgets()
     mObjectSettingsWidget = new BoxScrollWidget(mDocument,
                                                 mObjectSettingsScrollArea);
     mObjectSettingsScrollArea->setWidget(mObjectSettingsWidget);
-    mObjectSettingsWidget->setAlwaysShowChildren(false);
-    mObjectSettingsWidget->setCurrentRule(SWT_BoxRule::selected);
-    mObjectSettingsWidget->setCurrentTarget(nullptr, SWT_Target::canvas);
+    const int defaultRule = AppSupport::getSettings("ui",
+                                                    "propertiesFilter",
+                                                    (int)SWT_BoxRule::selected).toInt();
+    mObjectSettingsWidget->setCurrentRule(static_cast<SWT_BoxRule>(defaultRule));
+    mObjectSettingsWidget->setCurrentTarget(nullptr, SWT_Target::group);
 
     // font widget
     mFontWidget = new Ui::FontsWidget(this);
@@ -1476,8 +1476,7 @@ void MainWindow::setupPropertiesWidgets()
     propertiesLayout->setContentsMargins(0, 0, 0, 0);
     propertiesLayout->setSpacing(0);
 
-    mPropertiesInspector = new AEPropertiesInspector(mDocument, this);
-    propertiesLayout->addWidget(mPropertiesInspector);
+    propertiesLayout->addWidget(mObjectSettingsScrollArea);
     propertiesLayout->addWidget(mFontWidget);
     propertiesLayout->addWidget(alignWidget);
 
@@ -1485,12 +1484,6 @@ void MainWindow::setupPropertiesWidgets()
                                                  ThemeSupport::themedToolIcon("drawPathAutoChecked",
                                                                               ThemeSupport::getThemeColorBlue(), 64),
                                                  tr("Properties"));
-    const auto effectsPanel = new EffectsPresetsPanel(this, this);
-    mEffectsPresetsPanel = effectsPanel;
-    mTabEffectsIndex = mTabProperties->addTab(effectsPanel,
-                                              ThemeSupport::themedToolIcon("effect",
-                                                                           ThemeSupport::getThemeColorOrange(), 64),
-                                              tr("Effects"));
     mTabAssetsIndex = mTabProperties->addTab(assets,
                                              ThemeSupport::themedToolIcon("asset_manager",
                                                                           ThemeSupport::getThemeColorGreen(), 64),
@@ -1552,12 +1545,20 @@ void MainWindow::setupLayout()
     mEasingDock = makeDock(tr("Easing Presets"), QStringLiteral("dockEasingPresets"),
                            easingPresets);
 
+    // project panel (AE-like): lists every scene; scenes can be
+    // dragged onto the active canvas to create a scene link
+    mProjectPanel = new ProjectPanel(mDocument, this);
+    mProjectDock = makeDock(tr("Project"), QStringLiteral("dockProject"),
+                            mProjectPanel);
+
     setCentralWidget(mStackWidget);
+    addDockWidget(Qt::LeftDockWidgetArea, mProjectDock);
     addDockWidget(Qt::RightDockWidgetArea, mFillStrokeDock);
     addDockWidget(Qt::RightDockWidgetArea, mPropertiesDock);
     addDockWidget(Qt::RightDockWidgetArea, mEasingDock);
     addDockWidget(Qt::BottomDockWidgetArea, mTimelineDock);
 
+    // hidden by default, can be opened from the Panels menu
     mEasingDock->hide();
 
     // JS plugin system: Scripts menu + script console dock

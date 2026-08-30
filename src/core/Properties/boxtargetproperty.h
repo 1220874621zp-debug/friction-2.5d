@@ -52,6 +52,11 @@ public:
     void setTarget(BoundingBox * const box);
     void setTargetAction(BoundingBox * const box);
 
+    // UI hint: render the picker as a layer-name dropdown (combo)
+    // instead of the default drop-target widget
+    void setComboPicker(const bool combo) { mComboPicker = combo; }
+    bool comboPicker() const { return mComboPicker; }
+
     using Validator = std::function<bool(BoundingBox*)>;
 
     const auto& validator() const
@@ -67,6 +72,7 @@ signals:
     void targetSet(BoundingBox*);
 private:
     std::function<bool(BoundingBox*)> mValidator = nullptr;
+    bool mComboPicker = false;
     ConnContextQPtr<BoundingBox> mTarget_d;
 };
 

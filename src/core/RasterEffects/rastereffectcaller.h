@@ -33,6 +33,10 @@
 
 enum class HardwareSupport : short;
 
+class SkCanvas;
+class SkPaint;
+struct BoxRenderData;
+
 class CORE_EXPORT RasterEffectCaller : public StdSelfRef {
     e_OBJECT
 public:
@@ -52,9 +56,26 @@ public:
         Q_UNUSED(data)
     }
 
+    // backdrop-sampling effects: run at composite time with the canvas
+    // snapshot below the layer available; the box's own rendered image
+    // (its alpha = the glass shape) is passed via boxData
+    virtual void processBackdrop(SkCanvas * const canvas,
+                                 const BoxRenderData& boxData,
+                                 const SkPaint& paint) {
+        Q_UNUSED(canvas)
+        Q_UNUSED(boxData)
+        Q_UNUSED(paint)
+    }
+
     virtual int cpuThreads(const int available, const int area) const;
 
     virtual bool srcDstSeparation() const { return true; }
+
+    // backdrop-sampling effects (e.g. liquid glass) are diverted by
+    // RasterEffectCollection to BoxRenderData::fBackdropCallers and run
+    // at composite time against the canvas snapshot below the layer
+    // (adjustment-layer machinery) instead of the box-image phase
+    bool samplesBackdrop() const { return fSamplesBackdrop; }
 
     HardwareSupport hardwareSupport() const {
         return fHwSupport;
@@ -77,6 +98,7 @@ protected:
     const bool fForceMargin;
     const HardwareSupport fHwSupport;
     const QMargins fMargin;
+    bool fSamplesBackdrop = false;
     SkIRect fSrcRect;
     SkIRect fDstRect;
 };

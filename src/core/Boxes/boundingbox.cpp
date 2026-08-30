@@ -421,6 +421,8 @@ void BoundingBox::drawPixmapSk(SkCanvas * const canvas,
                                const SkFilterQuality filter) const {
     const qreal opacity = getOpacity(anim_getCurrentRelFrame());
     if(isZero4Dec(opacity) || !mVisibleInScene) return;
+    // backdrop effects are applied inside drawOnParentLayer, which
+    // RenderContainer::drawSk invokes - no extra hook needed here
     mDrawRenderContainer.drawSk(canvas, filter);
 }
 
@@ -788,20 +790,31 @@ BoxRenderData *BoundingBox::updateCurrentRenderData(const qreal relFrame) {
 
 bool BoundingBox::hasCurrentRenderData(const qreal relFrame) const {
     const auto currentRenderData = mRenderDataHandler.getItemAtRelFrame(relFrame);
-    if(currentRenderData) return true;
+    if(currentRenderData) {
+        const auto data = currentRenderData->ref<BoxRenderData>();
+        // data from before the last content change (state bump) is
+        // not current: serving it skips re-renders the change needs
+        return data->fBoxStateId == mStateId;
+    }
     if(mDrawRenderContainer.isExpired()) return false;
     const auto drawData = mDrawRenderContainer.getSrcRenderData();
     if(!drawData) return false;
+    if(drawData->fBoxStateId != mStateId) return false;
     return !diffsIncludingInherited(drawData->fRelFrame, relFrame);
 }
 
 stdsptr<BoxRenderData> BoundingBox::getCurrentRenderData(const qreal relFrame) const {
     const auto currentRenderData =
             mRenderDataHandler.getItemAtRelFrame(relFrame);
-    if(currentRenderData) return currentRenderData->ref<BoxRenderData>();
+    if(currentRenderData) {
+        const auto data = currentRenderData->ref<BoxRenderData>();
+        if(data->fBoxStateId == mStateId) return data;
+        return nullptr;
+    }
     if(mDrawRenderContainer.isExpired()) return nullptr;
     const auto drawData = mDrawRenderContainer.getSrcRenderData();
     if(!drawData) return nullptr;
+    if(drawData->fBoxStateId != mStateId) return nullptr;
     if(!diffsIncludingInherited(drawData->fRelFrame, relFrame)) {
         const auto copy = drawData->makeCopy();
         copy->fRelFrame = relFrame;
@@ -1443,6 +1456,14 @@ bool BoundingBox::isAnimated() const {
 
 void BoundingBox::addRasterEffect(const qsptr<RasterEffect>& rasterEffect) {
     mRasterEffectsAnimators->addChild(rasterEffect);
+    // make sure the change propagates even if the fresh effect's
+    // influence range intersects empty against the collection's
+    rasterEffect->prp_afterWholeInfluenceRangeChanged();
+    // and force a canvas repaint so composite-time backdrop effects
+    // become visible immediately (the box render alone does not
+    // retrigger the canvas composite in every path)
+    const auto scene = getParentScene();
+    if (scene) scene->requestUpdate();
 }
 
 void BoundingBox::removeRasterEffect(const qsptr<RasterEffect> &effect) {
