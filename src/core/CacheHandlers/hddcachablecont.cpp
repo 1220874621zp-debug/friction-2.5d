@@ -73,6 +73,16 @@ void HddCachableCont::setDataSavedToTmpFile(const qsptr<QTemporaryFile> &tmpFile
     mTmpFile = tmpFile;
 }
 
+void HddCachableCont::setDataSaveFailed() {
+    mTmpSaveTask.reset();
+    // free_RAM_k already dropped the in-memory data; without a tmp file
+    // there is nothing left to load back. Drop the container so its owner
+    // (e.g. ImageFileDataHandler) falls back to reloading from the source
+    // file, instead of every later load waiting on this dead save task and
+    // ending up with a null image rendered as an empty layer.
+    if(!storesDataInMemory() && !mTmpFile) noDataLeft_k();
+}
+
 void HddCachableCont::afterDataLoadedFromTmpFile() {
     setDataInMemory(true);
     mTmpLoadTask.reset();

@@ -39,11 +39,24 @@ void RenderContainer::drawSk(SkCanvas * const canvas,
 }
 
 void RenderContainer::updatePaintTransformGivenNewTotalTransform(
-                                    const QMatrix &totalTransform) {
-    QMatrix paintTransform = mTransform.inverted()*totalTransform;
-    const qreal invRes = 1/mResolutionFraction;
-    paintTransform.scale(invRes, invRes);
-    mPaintTransform = toSkMatrix(paintTransform);
+                                    const SkMatrix &fullTransform) {
+    // The stale bitmap was rasterized with mFullTransform (which ends in the
+    // render resolution scale), so mapping pixel -> new canvas is
+    // F_new * F_old^-1 - the 1/res pixel step cancels against the resolution
+    // baked into F_old. Both matrices include the scene camera, so dragging
+    // under a rotated/tilted camera no longer bounces between the wrongly
+    // compensated stale bitmap and the freshly rendered one.
+    SkMatrix inverted;
+    if(mFullTransform.invert(&inverted)) {
+        mPaintTransform = SkMatrix::Concat(fullTransform, inverted);
+    } else {
+        // degenerate old transform (e.g. scale animated through zero):
+        // fall back to plain resolution scaling
+        const qreal invRes = 1/mResolutionFraction;
+        SkMatrix paintTransform;
+        paintTransform.setScale(toSkScalar(invRes), toSkScalar(invRes));
+        mPaintTransform = paintTransform;
+    }
 }
 
 void RenderContainer::clear() {
@@ -53,12 +66,14 @@ void RenderContainer::clear() {
 
 void RenderContainer::setSrcRenderData(BoxRenderData * const data) {
     mTransform = data->fTotalTransform;
+    mFullTransform = data->getFullRenderTransform();
     mResolutionFraction = data->fResolution;
     mImageSk = data->fRenderedImage;
     mGlobalRect = data->fGlobalRect;
     mAntiAlias = data->fAntiAlias;
-    QMatrix paintTransform;
-    paintTransform.scale(1/mResolutionFraction, 1/mResolutionFraction);
-    mPaintTransform = toSkMatrix(paintTransform);
+    SkMatrix paintTransform;
+    paintTransform.setScale(toSkScalar(1/mResolutionFraction),
+                            toSkScalar(1/mResolutionFraction));
+    mPaintTransform = paintTransform;
     mSrcRenderData = data->ref<BoxRenderData>();
 }

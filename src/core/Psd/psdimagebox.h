@@ -51,6 +51,11 @@ public:
     void writeBoundingBox(eWriteStream& dst) const;
     void readBoundingBox(eReadStream& src);
 
+    void setupRenderData(const qreal relFrame,
+                         const QMatrix& parentM,
+                         BoxRenderData * const data,
+                         Canvas* const scene);
+
     void setPsdSource(const QString &sourcePackage,
                       const QString &sourceLayerKey);
 

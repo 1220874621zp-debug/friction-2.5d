@@ -179,6 +179,21 @@ bool PsdImageBox::ensureCachedFile()
     return true;
 }
 
+void PsdImageBox::setupRenderData(const qreal relFrame,
+                                  const QMatrix& parentM,
+                                  BoxRenderData * const data,
+                                  Canvas* const scene)
+{
+    // runtime fallback: the pixel cache lives in the cache dir and can be
+    // wiped by disk cleanup at any time (ensureCachedFile is otherwise only
+    // called when the project is deserialized). Without this the layer
+    // renders empty forever after the cache file disappears.
+    if (mFileHandler && !mFileHandler->hasImage()) {
+        ensureCachedFile();
+    }
+    ImageBox::setupRenderData(relFrame, parentM, data, scene);
+}
+
 void PsdImageBox::setupCanvasMenu(PropertyMenu * const menu)
 {
     if (menu->hasActionsForType<PsdImageBox>()) { return; }

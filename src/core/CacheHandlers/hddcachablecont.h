@@ -45,6 +45,7 @@ public:
     eTask* scheduleLoadFromTmpFile();
 
     void setDataSavedToTmpFile(const qsptr<QTemporaryFile> &tmpFile);
+    void setDataSaveFailed();
 
     bool storesDataInMemory() const { return mDataInMemory; }
     qsptr<QTemporaryFile> getTmpFile() const { return mTmpFile; }

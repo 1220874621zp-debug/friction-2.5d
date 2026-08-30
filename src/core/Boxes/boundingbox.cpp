@@ -1406,8 +1406,20 @@ QPointF BoundingBox::getAbsolutePos() const {
 
 void BoundingBox::updateDrawRenderContainerTransform() {
     if(mNReasonsNotToApplyUglyTransform == 0) {
-        mDrawRenderContainer.updatePaintTransformGivenNewTotalTransform(
-                    getTotalTransformAtFrame(anim_getCurrentRelFrame()));
+        // the compensation matrix must use the same transform family the
+        // stale bitmap was rasterized with (see RenderContainer): bake the
+        // scene camera in for 3D layers, or dragging under a rotated camera
+        // bounces between the mis-compensated old bitmap and the new render
+        const int relFrame = anim_getCurrentRelFrame();
+        SkMatrix full = toSkMatrix(getTotalTransformAtFrame(relFrame));
+        if(mType != eBoxType::canvas && mTransformAnimator->is3DEnabled()) {
+            const auto scene = getParentScene();
+            if(scene) {
+                const SkMatrix cam = scene->getCameraTransformAtFrame(relFrame);
+                if(!cam.isIdentity()) full = SkMatrix::Concat(cam, full);
+            }
+        }
+        mDrawRenderContainer.updatePaintTransformGivenNewTotalTransform(full);
     }
 }
 

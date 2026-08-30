@@ -27,6 +27,7 @@
 #include "videoencoder.h"
 #include "memoryhandler.h"
 #include "Private/Tasks/taskscheduler.h"
+#include "hardwareinfo.h"
 #include "canvas.h"
 #include "Sound/soundcomposition.h"
 #include "CacheHandlers/soundcachecontainer.h"
@@ -54,6 +55,14 @@ RenderHandler::RenderHandler(Document &document,
             this, &RenderHandler::nextPreviewFrame);
     connect(mPreviewFPSTimer, &QTimer::timeout,
             this, &RenderHandler::audioPushTimerExpired);
+
+    // keepalive during output rendering: when the backlog cap pauses frame
+    // advancement, the task underflow/all-finished callbacks no longer fire
+    // on their own, so poll to resume once the encoder drains the backlog
+    mBacklogTimer = new QTimer(this);
+    connect(mBacklogTimer, &QTimer::timeout, this, [this]() {
+        if(mCurrentRenderSettings) nextSaveOutputFrame();
+    });
     connect(audioHandler.audioOutput(), &QAudioOutput::notify,
             this, &RenderHandler::audioPushTimerExpired);
 
@@ -107,6 +116,7 @@ void RenderHandler::renderFromSettings(RenderInstanceSettings * const settings) 
         mCurrentScene->anim_setAbsFrame(mCurrentRenderFrame);
         mCurrentScene->setOutputRendering(true);
         TaskScheduler::instance()->setAlwaysQue(true);
+        mBacklogTimer->start(100);
         //fitSceneToSize();
         if(!isZero6Dec(mSavedResolutionFraction - resolutionFraction)) {
             mCurrentScene->setResolution(resolutionFraction);
@@ -242,6 +252,7 @@ void RenderHandler::interruptOutputRendering() {
     if(mCurrentScene) mCurrentScene->setOutputRendering(false);
     TaskScheduler::instance()->setAlwaysQue(false);
     TaskScheduler::sClearAllFinishedFuncs();
+    mBacklogTimer->stop();
     stopPreview();
 }
 
@@ -359,6 +370,7 @@ void RenderHandler::nextPreviewFrame() {
 
 void RenderHandler::finishEncoding() {
     TaskScheduler::sClearAllFinishedFuncs();
+    mBacklogTimer->stop();
     mCurrentRenderSettings = nullptr;
     mCurrentScene->setOutputRendering(false);
     TaskScheduler::instance()->setAlwaysQue(false);
@@ -368,9 +380,27 @@ void RenderHandler::finishEncoding() {
     }
     mCurrentSoundComposition->clearUseRange();
     VideoEncoder::sFinishEncoding();
+    // actually release the rendered frames: without this they stay in RAM
+    // until the next memory-pressure pass, so a second render of the same
+    // scene starts with the previous run's whole output still resident
+    // (second render then hits CRITICAL memory state and deadlocks)
+    mCurrentScene->getSceneFramesHandler().clearUseRange();
+    mCurrentScene->getSceneFramesHandler().clear();
+    mDocument.actionFinished();
+}
+
+int RenderHandler::maxBacklogFrames() const {
+    const qint64 totRamBytes = qint64(HardwareInfo::sRamKB().fValue) * 1024;
+    const qint64 budget = qMin<qint64>(1536LL * 1024 * 1024,
+                                       totRamBytes / 4);
+    const auto &renSettings = mCurrentRenderSettings->getRenderSettings();
+    const qint64 frameBytes = qint64(qMax(1, renSettings.fVideoWidth)) *
+                              qint64(qMax(1, renSettings.fVideoHeight)) * 4;
+    return int(qMax<qint64>(8, budget / frameBytes));
 }
 
 void RenderHandler::nextSaveOutputFrame() {
+    if(!mCurrentRenderSettings || !mCurrentScene) return;
     const auto& sCacheHandler = mCurrentSoundComposition->getCacheHandler();
     const qreal fps = mCurrentScene->getFps();
     const int sampleRate = eSoundSettings::sSampleRate();
@@ -414,6 +444,15 @@ void RenderHandler::nextSaveOutputFrame() {
             });
         }
     } else {
+        // backpressure: rendered-but-unencoded frames are pinned in RAM by
+        // the use range; cap the backlog instead of letting it grow until
+        // the system runs out of memory (render is multi-threaded, encoding
+        // is not, so the backlog would otherwise grow unbounded)
+        const auto useRange = mCurrentScene->getSceneFramesHandler().useRange();
+        const int encodedUpTo = useRange.isValid() ?
+                    useRange.fMin - 1 : mMinRenderFrame - 1;
+        const int backlog = mCurrentRenderFrame - encodedUpTo;
+        if(backlog >= maxBacklogFrames()) return; // encoder drains, timer re-invokes
         mCurrentRenderSettings->setCurrentRenderFrame(mCurrentRenderFrame);
         nextCurrentRenderFrame();
         if(TaskScheduler::sAllTasksFinished()) {

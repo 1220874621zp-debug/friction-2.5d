@@ -41,7 +41,7 @@ public:
                 const SkFilterQuality filter) const;
 
     void updatePaintTransformGivenNewTotalTransform(
-            const QMatrix &totalTransform);
+            const SkMatrix &fullTransform);
 
     void clear();
     void setSrcRenderData(BoxRenderData * const data);
@@ -63,6 +63,9 @@ protected:
     qreal mResolutionFraction;
     QRect mGlobalRect;
     QMatrix mTransform;
+    // full transform (incl. scene camera and resolution) the bitmap was
+    // rasterized with - needed so the drag compensation can undo it
+    SkMatrix mFullTransform;
     SkMatrix mPaintTransform;
     stdsptr<BoxRenderData> mSrcRenderData;
     sk_sp<SkImage> mImageSk;

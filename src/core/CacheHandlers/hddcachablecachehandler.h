@@ -98,6 +98,10 @@ public:
         mUsedRange.clearRange();
     }
 
+    iValueRange useRange() const {
+        return mUsedRange.range();
+    }
+
     auto begin() const { return mConts.begin(); }
     auto end() const { return mConts.begin(); }
 private:

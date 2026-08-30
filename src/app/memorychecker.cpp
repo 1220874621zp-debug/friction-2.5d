@@ -171,6 +171,14 @@ void MemoryChecker::checkMemory() {
         if(sysFreeKB < mCriticalFreeKB) {
             emit handleMemoryState(CRITICAL_MEMORY_STATE, longB(toFree));
             mLastMemoryState = CRITICAL_MEMORY_STATE;
+        } else if(usedKB.fValue < HardwareInfo::sRamKB().fValue * 40 / 100) {
+            // external pressure: another program ate the system RAM. Evicting
+            // our few hundred MB of image caches cannot fix that deficit - it
+            // only blanks the canvas while the async tmp reloads run. Only
+            // treat system-wide pressure as ours once our own working set is
+            // a major contributor (critical states always pass through).
+            emit handleMemoryState(NORMAL_MEMORY_STATE, longB(0));
+            mLastMemoryState = NORMAL_MEMORY_STATE;
         } else if(sysFreeKB < mVeryLowFreeKB) {
             emit handleMemoryState(VERY_LOW_MEMORY_STATE, longB(toFree));
             mLastMemoryState = VERY_LOW_MEMORY_STATE;

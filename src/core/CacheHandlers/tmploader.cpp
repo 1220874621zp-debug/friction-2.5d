@@ -25,6 +25,8 @@
 
 #include "tmploader.h"
 
+#include <QDebug>
+
 TmpLoader::TmpLoader(const qsptr<QTemporaryFile> &file,
                      HddCachableCont * const target) :
     mTmpFile(file), mTarget(target) {}
@@ -36,7 +38,12 @@ void TmpLoader::process() {
         read(src);
         mTmpFile->close();
     } else {
-        RuntimeThrow("Could not open temporary file for reading.");
+        // Do not throw here: an exception cancels every render task waiting
+        // on this load (e.g. the tmp file was removed by disk cleanup).
+        // Returning with no data lets image containers fall back to
+        // reloading from their source file instead.
+        qWarning() << "TmpLoader: could not open cache file for reading:"
+                   << mTmpFile->fileName();
     }
 }
 

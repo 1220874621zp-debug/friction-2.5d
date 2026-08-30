@@ -79,6 +79,8 @@ private:
     void setFrameAction(const int frame);
     void setCurrentScene(Canvas * const scene);
 
+    int maxBacklogFrames() const;
+
     void finishEncoding();
     void playPreviewAfterAllTasksCompleted();
 
@@ -107,6 +109,7 @@ private:
 
     Canvas* mCurrentScene = nullptr;
     QTimer *mPreviewFPSTimer = nullptr;
+    QTimer *mBacklogTimer = nullptr;
     RenderInstanceSettings *mCurrentRenderSettings = nullptr;
 
     int mCurrentPreviewFrame;

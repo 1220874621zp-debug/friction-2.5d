@@ -851,8 +851,18 @@ public:
     // invalidate every 3D layer's render data + the scene frame cache
     // (wired to the CameraLayer animators - without this the layers
     // keep serving cached render data with the OLD camera matrix)
+    // Coalesced through the event loop: one orbit drag updates rotX AND
+    // rotY, which must not walk the whole scene twice per mouse move
     void sceneCameraChanged(const FrameRange& range);
     void addCameraLayerAction();
+    // true when a camera layer exists and its transform is not the identity
+    bool sceneHasActiveCamera() const;
+    // true when the current box selection contains 3D layers shown through
+    // an active camera (their move deltas must be un-projected)
+    bool selectionNeedsCameraMapping() const;
+    // un-project a canvas position through the scene camera so screen-space
+    // mouse deltas become world-space deltas (identity camera: unchanged)
+    QPointF mapCameraScreenToWorld(const QPointF &pos) const;
     // bone tool interaction helpers (canvasmouseinteractions.cpp)
     void boneCreatePress(const class eMouseEvent& e);
     void updateDraftBone(const QPointF& absPos);
@@ -1089,6 +1099,9 @@ protected:
     bool mRenderingOutput = false;
 
     bool mSceneFrameOutdated = false;
+    // camera-change coalescing (see sceneCameraChanged)
+    bool mCameraChangeQueued = false;
+    FrameRange mCameraChangePendingRange = FrameRange::INVALID;
     UseSharedPointer<SceneFrameContainer> mSceneFrame;
     UseSharedPointer<SceneFrameContainer> mLoadingSceneFrame;
 

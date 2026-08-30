@@ -276,7 +276,7 @@ void BoxRenderData::dataSet() {
 void BoxRenderData::updateGlobalRect() {
     fScaledTransform = fTotalTransform*fResolutionScale;
     QRectF baseRectF;
-    if(fHasPerspective) {
+    if(fHasPerspective || fHasSceneCamera) {
         // perspective: map bounding rect corners and take the AABB
         const auto full = getFullRenderTransform();
         const auto& r = fRelBoundingRect;

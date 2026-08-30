@@ -25,6 +25,7 @@
 
 #include "videoencoder.h"
 #include <QByteArray>
+#include <QThread>
 #include "Boxes/boxrendercontainer.h"
 #include "CacheHandlers/sceneframecontainer.h"
 #include "canvas.h"
@@ -258,6 +259,24 @@ static void addVideoStream(OutputStream * const ost,
 
     c->gop_size      = 12; /* emit one intra frame every twelve frames at most */
     c->pix_fmt       = outSettings.fVideoPixelFormat;//RGBA;
+    // FFmpeg leaves thread_count at 1 unless told otherwise, which pinned the
+    // whole encode stage to a single core (minutes-long low-CPU tail on webm).
+    // An explicit "threads" codec option in the render settings still wins.
+    bool hasThreadsOpt = false;
+    for (const auto &opt : outSettings.fVideoOptions.fValues) {
+        if(opt.fType == FormatType::fTypeCodec && opt.fKey == "threads") {
+            hasThreadsOpt = true;
+            break;
+        }
+    }
+    if(!hasThreadsOpt) {
+        c->thread_count = qMin(QThread::idealThreadCount(), 16);
+    }
+    if(codec->id == AV_CODEC_ID_VP9) {
+        // row-based multi-threading for vp9; tile-only threading scales
+        // poorly - ignore errors, not every ffmpeg build exposes the option
+        av_opt_set(c->priv_data, "row-mt", "1", 0);
+    }
     if(c->codec_id == AV_CODEC_ID_MPEG2VIDEO) {
         /* just for testing, we also add B-frames */
         c->max_b_frames = 2;
@@ -823,7 +842,6 @@ void VideoEncoder::process() {
             try {
                 writeVideoFrame(mFormatContext, &mVideoStream,
                                 image, &hasVideo);
-                avcodec_flush_buffers(mVideoStream.fCodec);
             } catch(...) {
                 RuntimeThrow("Failed to write video frame");
             }
@@ -845,7 +863,6 @@ void VideoEncoder::process() {
             try {
                 processAudioStream(mFormatContext, &mAudioStream,
                                    mSoundIterator, &hasAudio);
-                avcodec_flush_buffers(mAudioStream.fCodec);
             } catch(...) {
                 RuntimeThrow("Failed to process audio stream");
             }

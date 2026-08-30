@@ -243,6 +243,12 @@ void Canvas::setCurrentBoxesGroup(ContainerBox* const group)
 void Canvas::updateHoveredBox(const eMouseEvent &e)
 {
     mHoveredBox = mCurrentContainer->getBoxAt(e.fPos);
+    if(!mHoveredBox && sceneHasActiveCamera()) {
+        // 3D layers are displayed through the camera projection: try the
+        // un-projected position as well so they highlight where they are
+        // actually seen (2D layers keep matching the raw position first)
+        mHoveredBox = mCurrentContainer->getBoxAt(mapCameraScreenToWorld(e.fPos));
+    }
 }
 
 void Canvas::updateHoveredPoint(const eMouseEvent &e)
@@ -2019,37 +2025,66 @@ bool Canvas::cameraHasPerspectiveAtFrame(const qreal relFrame) const {
     return cam->hasPerspectiveAtFrame(relFrame);
 }
 
+bool Canvas::sceneHasActiveCamera() const {
+    if(!getCameraLayer()) return false;
+    return !getCameraTransformAtFrame(anim_getCurrentRelFrame()).isIdentity();
+}
+
+bool Canvas::selectionNeedsCameraMapping() const {
+    if(!sceneHasActiveCamera()) return false;
+    for(const auto& box : mSelectedBoxes) {
+        const auto ta = box ? box->getBoxTransformAnimator() : nullptr;
+        if(ta && ta->is3DEnabled()) return true;
+    }
+    return false;
+}
+
+QPointF Canvas::mapCameraScreenToWorld(const QPointF &pos) const {
+    const SkMatrix cam = getCameraTransformAtFrame(anim_getCurrentRelFrame());
+    if(cam.isIdentity()) return pos;
+    SkMatrix inv;
+    if(!cam.invert(&inv)) return pos;
+    SkPoint pt = toSkPoint(pos);
+    inv.mapPoints(&pt, &pt, 1);
+    return toQPointF(pt);
+}
+
 // camera values changed: drop the cached scene frames AND every 3D
 // layer's render data - the layers themselves believe nothing of
 // their own changed and would otherwise keep serving cached data
 // carrying the OLD camera matrix (the original "camera tool has no
-// effect" bug)
+// effect" bug).
+// Coalesced through the event loop: an orbit drag sets rotX and rotY
+// every mouse move, and each setter fires this - without coalescing
+// the scene is walked and invalidated twice per move.
 void Canvas::sceneCameraChanged(const FrameRange& range) {
-    mSceneFramesHandler.remove(range);
-    if(!mSceneFramesHandler.atFrame(anim_getCurrentRelFrame())) {
-        mSceneFrameOutdated = true;
-    }
-    int invalidated = 0;
-    std::function<void(ContainerBox*)> walk =
-            [&](ContainerBox* const cont) {
-        for(const auto& c : cont->getContained()) {
-            const auto box = enve_cast<BoundingBox*>(c.data());
-            if(const auto group = enve_cast<ContainerBox*>(c.data())) {
-                walk(group);
-            }
-            if(box && box->getBoxTransformAnimator() &&
-               box->getBoxTransformAnimator()->is3DEnabled()) {
-                box->planUpdate(UpdateReason::userChange);
-                invalidated++;
-            }
+    mCameraChangePendingRange = mCameraChangePendingRange + range;
+    if(mCameraChangeQueued) return;
+    mCameraChangeQueued = true;
+    QMetaObject::invokeMethod(this, [this]() {
+        mCameraChangeQueued = false;
+        const auto range = mCameraChangePendingRange;
+        mCameraChangePendingRange = FrameRange::INVALID;
+        mSceneFramesHandler.remove(range);
+        if(!mSceneFramesHandler.atFrame(anim_getCurrentRelFrame())) {
+            mSceneFrameOutdated = true;
         }
-    };
-    walk(const_cast<Canvas*>(this));
-    planUpdate(UpdateReason::userChange);
-    // camera-chain diagnostic: 0 = no layer has its 3D switch enabled
-    // (AE rule: the camera affects 3D layers only)
-    qWarning() << "CAMERA: changed, invalidated" << invalidated
-               << "3D layer(s)";
+        std::function<void(ContainerBox*)> walk =
+                [&](ContainerBox* const cont) {
+            for(const auto& c : cont->getContained()) {
+                const auto box = enve_cast<BoundingBox*>(c.data());
+                if(const auto group = enve_cast<ContainerBox*>(c.data())) {
+                    walk(group);
+                }
+                if(box && box->getBoxTransformAnimator() &&
+                   box->getBoxTransformAnimator()->is3DEnabled()) {
+                    box->planUpdate(UpdateReason::userChange);
+                }
+            }
+        };
+        walk(const_cast<Canvas*>(this));
+        planUpdate(UpdateReason::userChange);
+    }, Qt::QueuedConnection);
 }
 
 // depth-first search for the first bone layer anywhere in the scene

@@ -70,6 +70,11 @@ using namespace Friction::Core;
 void Canvas::handleMovePathMousePressEvent(const eMouseEvent& e)
 {
     mPressedBox = mCurrentContainer->getBoxAt(e.fPos);
+    if(!mPressedBox && sceneHasActiveCamera()) {
+        // 3D layers are hit-tested where they are SEEN (through the camera
+        // projection), 2D layers keep the raw canvas position first
+        mPressedBox = mCurrentContainer->getBoxAt(mapCameraScreenToWorld(e.fPos));
+    }
     if (e.shiftMod()) { return; }
     if (mPressedBox ? !mPressedBox->isSelected() : true) {
         clearBoxesSelection();
@@ -1309,6 +1314,13 @@ void Canvas::handleMovePathMouseMove(const eMouseEvent& e)
         }
 
         auto moveBy = getMoveByValueForEvent(e);
+        if(selectionNeedsCameraMapping()) {
+            // the selection is displayed through the camera projection:
+            // un-project both positions so the layer follows the cursor
+            // instead of racing off when the camera is rotated/tilted
+            moveBy = mapCameraScreenToWorld(e.fPos) -
+                     mapCameraScreenToWorld(e.fLastPressPos);
+        }
         if (gridSettings.snapEnabled && !mSelectedBoxes.isEmpty()) {
             const auto snapped = moveBySnapTargets(e.fModifiers,
                                                    moveBy,

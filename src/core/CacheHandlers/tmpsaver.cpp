@@ -25,11 +25,21 @@
 
 #include "tmpsaver.h"
 
+#include "appsupport.h"
+
+#include <QDir>
+
 TmpSaver::TmpSaver(HddCachableCont* const target) :
     mTarget(target) {}
 
 void TmpSaver::process() {
-    mTmpFile = qsptr<QTemporaryFile>(new QTemporaryFile());
+    // Keep the tmp files in our own cache dir instead of the system temp:
+    // Windows Storage Sense / disk cleanup wipes %TEMP%, which would leave
+    // the cache containers pointing at deleted files.
+    const QString cacheDir = AppSupport::getAppCachePath() + "/eCache";
+    QDir().mkpath(cacheDir);
+    mTmpFile = qsptr<QTemporaryFile>(
+                new QTemporaryFile(cacheDir + "/eCache_XXXXXX"));
     if(mTmpFile->open()) {
         eWriteStream dst(mTmpFile.get());
         write(dst);
@@ -42,6 +52,9 @@ void TmpSaver::process() {
 
 void TmpSaver::afterProcessing() {
     if(!mTarget) return;
-    if(!mSavingSuccessful) return;
+    if(!mSavingSuccessful) {
+        mTarget->setDataSaveFailed();
+        return;
+    }
     mTarget->setDataSavedToTmpFile(mTmpFile);
 }
