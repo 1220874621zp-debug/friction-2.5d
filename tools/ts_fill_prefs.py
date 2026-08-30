@@ -180,6 +180,11 @@ TABLE = {
     'Custom': '自定义',
     'Shader': '着色器',
 },
+'RenderInstanceWidget': {
+    'Open the rendered file in the default application': '用默认程序打开渲染产物',
+    'Set an output destination first': '请先设置输出路径',
+    'Rendered file does not exist yet': '渲染产物尚未生成',
+},
 }
 
 ctx_re = re.compile(r'<context>\s*<name>([^<]+)</name>.*?</context>', re.DOTALL)

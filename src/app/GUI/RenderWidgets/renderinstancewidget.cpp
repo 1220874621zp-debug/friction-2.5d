@@ -25,6 +25,7 @@
 
 #include "renderinstancewidget.h"
 
+#include "../mainwindow.h"
 #include "GUI/global.h"
 #include "canvas.h"
 #include "outputsettingsdialog.h"
@@ -154,19 +155,34 @@ void RenderInstanceWidget::iniGUI()
     connect(outputDestinationButton, &QPushButton::pressed,
             this, &RenderInstanceWidget::openOutputDestinationDialog);
 
-    const auto playButton = new QPushButton(QIcon::fromTheme("play"),
-                                            QString(),
-                                            this);
-    playButton->setFocusPolicy(Qt::NoFocus);
-    playButton->setToolTip(tr("Open in default application"));
+    // open the rendered output in the system default application;
+    // only useful after the render produced a file, so it stays
+    // disabled until then and complains in the status bar instead of
+    // failing silently
+    mPlayButton = new QPushButton(QIcon::fromTheme("play"),
+                                  QString(),
+                                  this);
+    mPlayButton->setFocusPolicy(Qt::NoFocus);
+    mPlayButton->setToolTip(tr("Open the rendered file in the default application"));
+    mPlayButton->setEnabled(false);
 
-    connect(playButton, &QPushButton::pressed,
+    connect(mPlayButton, &QPushButton::pressed,
             this, [this]() {
         const QString dst = mOutputDestinationLineEdit->text();
-        if (dst.trimmed().isEmpty()) { return; }
-        QDesktopServices::openUrl(dst.contains("%0") ?
-                                      QUrl::fromLocalFile(QFileInfo(dst).absolutePath()) :
-                                      QUrl::fromLocalFile(dst));
+        const auto mwd = MainWindow::sGetInstance();
+        if (dst.trimmed().isEmpty()) {
+            if (mwd) { mwd->statusBar()->showMessage(
+                        tr("Set an output destination first"), 4000); }
+            return;
+        }
+        const QString path = dst.contains("%0") ?
+                    QFileInfo(dst).absolutePath() : dst;
+        if (!QFile::exists(path)) {
+            if (mwd) { mwd->statusBar()->showMessage(
+                        tr("Rendered file does not exist yet"), 4000); }
+            return;
+        }
+        QDesktopServices::openUrl(QUrl::fromLocalFile(path));
     });
 
     mOutputDestinationLineEdit = new QLineEdit(this);
@@ -178,7 +194,6 @@ void RenderInstanceWidget::iniGUI()
 
     eSizesUI::widget.add(mOutputSettingsProfilesButton,
                          [renderSettingsButton,
-                          playButton,
                           outputDestinationButton,
                           this](const int size) {
         Q_UNUSED(size)
@@ -186,7 +201,7 @@ void RenderInstanceWidget::iniGUI()
         mOutputSettingsButton->setFixedHeight(eSizesUI::button);
         mOutputSettingsProfilesButton->setFixedHeight(eSizesUI::button);
         outputDestinationButton->setFixedHeight(eSizesUI::button);
-        playButton->setFixedSize(QSize(eSizesUI::button, eSizesUI::button));
+        mPlayButton->setFixedSize(QSize(eSizesUI::button, eSizesUI::button));
         mOutputDestinationLineEdit->setFixedHeight(eSizesUI::button);
     });
 
@@ -200,7 +215,7 @@ void RenderInstanceWidget::iniGUI()
     buttonsRow->addWidget(mOutputSettingsButton);
     buttonsRow->addStretch();
     buttonsRow->addWidget(outputDestinationButton);
-    buttonsRow->addWidget(playButton);
+    buttonsRow->addWidget(mPlayButton);
 
     const auto infoRow = new QHBoxLayout();
     infoRow->setContentsMargins(0, 0, 0, 0);
@@ -221,6 +236,10 @@ void RenderInstanceWidget::updateFromSettings()
     bool enabled = renderState != RenderState::paused &&
                    renderState != RenderState::rendering;
     setEnabled(enabled);
+    // opening the output only makes sense once it exists
+    if (mPlayButton) {
+        mPlayButton->setEnabled(renderState == RenderState::finished);
+    }
 
     QString nameLabelTxt = QString(mSettings.getName());
     const OutputSettings &outputSettings = mSettings.getOutputRenderSettings();

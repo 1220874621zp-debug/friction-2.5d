@@ -74,6 +74,7 @@ private:
     RenderSettingsDisplayWidget *mRenderSettingsDisplayWidget;
     OutputSettingsDisplayWidget *mOutputSettingsDisplayWidget;
     QLineEdit *mOutputDestinationLineEdit;
+    QPushButton *mPlayButton = nullptr;
     OutputProfilesListButton *mOutputSettingsProfilesButton;
     QPushButton *mOutputSettingsButton;
     QLineEdit *mNameLabel;

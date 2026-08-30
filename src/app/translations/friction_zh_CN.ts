@@ -7233,6 +7233,18 @@ Select the layers you want to import:</source>
         <source>Output Destination</source>
         <translation>输出位置</translation>
     </message>
+    <message>
+        <source>Open the rendered file in the default application</source>
+        <translation>用默认程序打开渲染产物</translation>
+    </message>
+    <message>
+        <source>Set an output destination first</source>
+        <translation>请先设置输出路径</translation>
+    </message>
+    <message>
+        <source>Rendered file does not exist yet</source>
+        <translation>渲染产物尚未生成</translation>
+    </message>
 </context>
 <context>
     <name>RenderSettingsDialog</name>
