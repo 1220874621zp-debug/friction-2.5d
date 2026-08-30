@@ -201,6 +201,7 @@ set(
     GUI/RenderWidgets/rendersettingsdialog.cpp
     GUI/RenderWidgets/rendersettingsdisplaywidget.cpp
     GUI/Settings/generalsettingswidget.cpp
+    GUI/Settings/themesettingswidget.cpp
     GUI/Settings/settingsdialog.cpp
     GUI/Settings/shortcutsettingswidget.cpp
     GUI/Settings/timelinesettingswidget.cpp
@@ -262,6 +263,7 @@ set(
     GUI/RenderWidgets/rendersettingsdialog.h
     GUI/RenderWidgets/rendersettingsdisplaywidget.h
     GUI/Settings/generalsettingswidget.h
+    GUI/Settings/themesettingswidget.h
     GUI/Settings/settingsdialog.h
     GUI/Settings/shortcutsettingswidget.h
     GUI/Settings/timelinesettingswidget.h

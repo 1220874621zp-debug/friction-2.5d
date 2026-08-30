@@ -7,6 +7,7 @@
 #include "appsupport.h"
 
 #include "generalsettingswidget.h"
+#include "themesettingswidget.h"
 #include "timelinesettingswidget.h"
 #include "shortcutsettingswidget.h"
 
@@ -35,6 +36,9 @@ SettingsDialog::SettingsDialog(QWidget * const parent)
 
     const auto general = new GeneralSettingsWidget(this);
     addSettingsWidget(general, tr("General"));
+
+    const auto theme = new ThemeSettingsWidget(this);
+    addSettingsWidget(theme, tr("Theme & Appearance"));
 
     const auto performance = new PerformanceSettingsWidget(this);
     addSettingsWidget(performance,tr("Hardware"));
@@ -97,6 +101,7 @@ SettingsDialog::SettingsDialog(QWidget * const parent)
     connect(restoreButton, &QPushButton::released, this, [this]() {
         eSettings::sInstance->loadDefaults();
         updateSettings(true /* restore */);
+        ThemeSupport::applyThemeLive();
     });
 
     connect(cancelButton, &QPushButton::released, this, &QDialog::close);
@@ -113,7 +118,8 @@ SettingsDialog::SettingsDialog(QWidget * const parent)
         } catch(const std::exception& e) {
             gPrintExceptionCritical(e);
         }
-        statusBar->showMessage(tr("Settings saved, you might have to restart"), 1500);
+        ThemeSupport::applyThemeLive();
+        statusBar->showMessage(tr("Settings saved successfully"), 2000);
     });
 
     updateSettings();

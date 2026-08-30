@@ -32,16 +32,49 @@
 #include <QToolBar>
 #include <QFileIconProvider>
 #include <QIcon>
+#include <QMap>
 
 #include "include/core/SkColor.h"
 
+struct CORE_EXPORT ThemePresetInfo
+{
+    QString id;
+    QString displayName;
+    QString description;
+    QColor base;
+    QColor alternate;
+    QColor darker;
+    QColor accent;
+    QColor buttonBase;
+    QColor buttonBorder;
+    QColor buttonHover;
+    QColor toolbar;
+    int defaultRadius = 6;
+};
+
+struct CORE_EXPORT AccentPresetInfo
+{
+    QString id;
+    QString name;
+    QColor color;
+};
+
 class CORE_EXPORT ThemeSupport
 {
-
 public:
     enum class Theme {
         Friction,
-        Blender
+        Blender,
+        MorandiDark,
+        MorandiCharcoal,
+        MorandiGraphite,
+        MorandiSage,
+        MorandiKyoto,
+        MorandiRose,
+        MorandiMidnight,
+        MorandiMocha,
+        MorandiSlate,
+        Custom
     };
 
     static void setTheme(const Theme theme);
@@ -50,6 +83,35 @@ public:
     static void setThemeFromId(const QString &id);
     static const QStringList availableThemeIds();
     static const QString themeDisplayName(const QString &id);
+
+    static const QList<ThemePresetInfo>& themePresetList();
+    static const ThemePresetInfo themePreset(const QString &id);
+
+    static const QList<AccentPresetInfo>& accentPresetList();
+    static const QString accentPresetId();
+    static void setAccentPresetId(const QString &id);
+
+    static void setCustomAccentColor(const QColor &color);
+    static const QColor customAccentColor();
+    static void setCustomBaseColor(const QColor &color);
+    static const QColor customBaseColor();
+    static void setCustomAlternateColor(const QColor &color);
+    static const QColor customAlternateColor();
+    static void setCustomDarkerColor(const QColor &color);
+    static const QColor customDarkerColor();
+
+    static int borderRadius();
+    static void setBorderRadius(int radius);
+
+    static int scrollbarWidth();
+    static void setScrollbarWidth(int width);
+
+    static const QString customQss();
+    static void setCustomQss(const QString &qss);
+
+    static void loadThemeConfig();
+    static void saveThemeConfig();
+    static void applyThemeLive(int iconSize = -1);
 
     static const QString getAppIconName(const bool alt = false);
     static const QColor getQColor(int r, int g, int b, int a = 255);

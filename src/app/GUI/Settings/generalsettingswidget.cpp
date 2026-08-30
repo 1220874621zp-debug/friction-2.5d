@@ -389,9 +389,10 @@ void GeneralSettingsWidget::applySettings()
     mSett.fInterfaceScaling = mInterfaceScaling->value() * 0.01;
     mSett.fImportFileDirOpt = mImportFileDir->currentData().toInt();
 
-    AppSupport::setSettings("ui",
-                            "theme",
-                            mTheme->currentData().toString());
+    if (mTheme) {
+        ThemeSupport::setThemeFromId(mTheme->currentData().toString());
+        ThemeSupport::saveThemeConfig();
+    }
 
     //eSizesUI::font.updateSize();
     //eSizesUI::widget.updateSize();
@@ -418,12 +419,11 @@ void GeneralSettingsWidget::updateSettings(bool restore)
     mInterfaceScaling->setEnabled(!mDefaultInterfaceScaling->isChecked());
     mInterfaceScaling->setValue(mDefaultInterfaceScaling->isChecked() ? 100 : 100 * mSett.fInterfaceScaling);
 
-    const QString themeId = restore ? QStringLiteral("friction") :
-                                      AppSupport::getSettings("ui",
-                                                              "theme",
-                                                              "friction").toString();
-    const int themeIndex = mTheme->findData(themeId);
-    mTheme->setCurrentIndex(themeIndex < 0 ? 0 : themeIndex);
+    if (mTheme) {
+        const QString themeId = restore ? QStringLiteral("friction") : ThemeSupport::themeId();
+        const int themeIndex = mTheme->findData(themeId);
+        mTheme->setCurrentIndex(themeIndex < 0 ? 0 : themeIndex);
+    }
 
     for (int i = 0; i < mImportFileDir->count(); i++) {
         if (mImportFileDir->itemData(i).toInt() == mSett.fImportFileDirOpt) {

@@ -8695,6 +8695,14 @@ Select the layers you want to import:</source>
             <translation>保存</translation>
         </message>
         <message>
+            <source>Theme &amp; Appearance</source>
+            <translation>外观与主题</translation>
+        </message>
+        <message>
+            <source>Settings saved successfully</source>
+            <translation>设置保存成功</translation>
+        </message>
+        <message>
             <location filename="../GUI/Settings/settingsdialog.cpp" line="112" />
             <source>Settings saved, you might have to restart</source>
             <translation>设置已保存，可能需要重启程序</translation>
@@ -9800,6 +9808,348 @@ Select the layers you want to import:</source>
             <location filename="../../core/Sound/esoundobjectbase.cpp" line="85" />
             <source>Stretch</source>
             <translation>拉伸</translation>
+        </message>
+    </context>
+    <context>
+        <name>ThemeSettingsWidget</name>
+        <message>
+            <source>Theme &amp; Appearance</source>
+            <translation>外观与主题</translation>
+        </message>
+        <message>
+            <source>Theme Gallery</source>
+            <translation>预设画廊</translation>
+        </message>
+        <message>
+            <source>Colors &amp; Tones</source>
+            <translation>色彩与调性</translation>
+        </message>
+        <message>
+            <source>UI &amp; Controls</source>
+            <translation>界面与部件</translation>
+        </message>
+        <message>
+            <source>Custom QSS</source>
+            <translation>自定义 QSS</translation>
+        </message>
+        <message>
+            <source>Click 'Live Preview' to inspect changes immediately without restarting.</source>
+            <translation>点击“即时预览”可免重启即时查看主题与外观效果</translation>
+        </message>
+        <message>
+            <source>Live Preview Theme</source>
+            <translation>即时预览主题</translation>
+        </message>
+        <message>
+            <source>Select any Morandi, Blender, or Friction theme card to apply full palette and styling:</source>
+            <translation>点击下方任意莫兰迪、Blender 或 Friction 主题卡片，即可一键套用完整调色板与外观：</translation>
+        </message>
+        <message>
+            <source>Apply Theme</source>
+            <translation>一键套用</translation>
+        </message>
+        <message>
+            <source>Base</source>
+            <translation>底色</translation>
+        </message>
+        <message>
+            <source>Alt</source>
+            <translation>次要色</translation>
+        </message>
+        <message>
+            <source>Dark</source>
+            <translation>深底色</translation>
+        </message>
+        <message>
+            <source>Accent</source>
+            <translation>强调色</translation>
+        </message>
+        <message>
+            <source>Theme Preset</source>
+            <translation>主题预设</translation>
+        </message>
+        <message>
+            <source>Active Theme:</source>
+            <translation>当前主题：</translation>
+        </message>
+        <message>
+            <source>Accent &amp; Highlight Color</source>
+            <translation>强调色与高亮色</translation>
+        </message>
+        <message>
+            <source>Accent Preset:</source>
+            <translation>强调色预设：</translation>
+        </message>
+        <message>
+            <source>Pick Custom...</source>
+            <translation>自定义取色...</translation>
+        </message>
+        <message>
+            <source>Background Tones (Custom Overrides)</source>
+            <translation>背景色调（自定义覆盖）</translation>
+        </message>
+        <message>
+            <source>Window Base Color:</source>
+            <translation>窗口底色：</translation>
+        </message>
+        <message>
+            <source>Panel Alternate Color:</source>
+            <translation>面板次要色：</translation>
+        </message>
+        <message>
+            <source>Input / Darker Color:</source>
+            <translation>输入框/深底色：</translation>
+        </message>
+        <message>
+            <source>Reset Colors to Preset Defaults</source>
+            <translation>重置色彩为预设默认值</translation>
+        </message>
+        <message>
+            <source>UI Geometry &amp; Components</source>
+            <translation>界面几何与部件微调</translation>
+        </message>
+        <message>
+            <source>Corner Radius:</source>
+            <translation>圆角弧度：</translation>
+        </message>
+        <message>
+            <source>Sharp Corners (0px)</source>
+            <translation>极简直角 (0px)</translation>
+        </message>
+        <message>
+            <source>Minimal Radius (2px)</source>
+            <translation>紧凑微圆角 (2px)</translation>
+        </message>
+        <message>
+            <source>Compact Radius (4px)</source>
+            <translation>紧凑圆角 (4px)</translation>
+        </message>
+        <message>
+            <source>Standard Radius (6px)</source>
+            <translation>标准极简 (6px)</translation>
+        </message>
+        <message>
+            <source>Soft Rounded (8px)</source>
+            <translation>柔和大圆角 (8px)</translation>
+        </message>
+        <message>
+            <source>Large Radius (12px)</source>
+            <translation>现代大圆角 (12px)</translation>
+        </message>
+        <message>
+            <source>Scrollbar Width:</source>
+            <translation>滚动条规格：</translation>
+        </message>
+        <message>
+            <source>Hidden Scrollbar (0px)</source>
+            <translation>隐藏 (0px)</translation>
+        </message>
+        <message>
+            <source>Slim Scrollbar (4px)</source>
+            <translation>极细 Slim (4px)</translation>
+        </message>
+        <message>
+            <source>Standard Scrollbar (6px)</source>
+            <translation>标准 Standard (6px)</translation>
+        </message>
+        <message>
+            <source>Medium Scrollbar (8px)</source>
+            <translation>中等 Medium (8px)</translation>
+        </message>
+        <message>
+            <source>Large Scrollbar (12px)</source>
+            <translation>粗体 Large (12px)</translation>
+        </message>
+        <message>
+            <source>Custom Stylesheet (QSS Injection)</source>
+            <translation>自定义样式表 (QSS 注入)</translation>
+        </message>
+        <message>
+            <source>Enter custom Qt Stylesheet (QSS) rules below to override or extend the active theme:</source>
+            <translation>在下方输入自定义 Qt 样式表 (QSS) 规则，可随时覆盖或扩展当前激活主题：</translation>
+        </message>
+        <message>
+            <source>Clear Custom QSS</source>
+            <translation>清除自定义 QSS</translation>
+        </message>
+        <message>
+            <source>Select Accent Color</source>
+            <translation>选择强调色</translation>
+        </message>
+        <message>
+            <source>Select Base Window Color</source>
+            <translation>选择窗口底色</translation>
+        </message>
+        <message>
+            <source>Select Alternate Panel Color</source>
+            <translation>选择面板次要色</translation>
+        </message>
+        <message>
+            <source>Select Input / Darker Color</source>
+            <translation>选择输入框深底色</translation>
+        </message>
+        <message>
+            <source>Settings saved successfully</source>
+            <translation>设置保存成功</translation>
+        </message>
+    </context>
+    <context>
+        <name>AEPropertiesInspector</name>
+        <message>
+            <source>合成属性 (Composition)</source>
+            <translation>合成属性 (Composition)</translation>
+        </message>
+        <message>
+            <source>分辨率 (Resolution)</source>
+            <translation>分辨率</translation>
+        </message>
+        <message>
+            <source>帧率 (Frame Rate)</source>
+            <translation>帧率</translation>
+        </message>
+        <message>
+            <source>持续时长 (Duration)</source>
+            <translation>持续时长</translation>
+        </message>
+        <message>
+            <source>图层</source>
+            <translation>图层</translation>
+        </message>
+        <message>
+            <source>调整图层</source>
+            <translation>调整图层</translation>
+        </message>
+        <message>
+            <source>矢量路径</source>
+            <translation>矢量路径</translation>
+        </message>
+        <message>
+            <source>空对象</source>
+            <translation>空对象</translation>
+        </message>
+        <message>
+            <source>显示/隐藏图层 (Visibility)</source>
+            <translation>显示/隐藏图层 (Visibility)</translation>
+        </message>
+        <message>
+            <source>2.5D 图层开关 (3D Layer)</source>
+            <translation>2.5D 图层开关 (3D Layer)</translation>
+        </message>
+        <message>
+            <source>变换 (Transform)</source>
+            <translation>变换 (Transform)</translation>
+        </message>
+        <message>
+            <source>形状与样式 (Fill &amp; Stroke)</source>
+            <translation>形状与样式 (Fill &amp; Stroke)</translation>
+        </message>
+        <message>
+            <source>特效管线 (Raster Effects)</source>
+            <translation>特效管线 (Raster Effects)</translation>
+        </message>
+        <message>
+            <source>锚点</source>
+            <translation>锚点</translation>
+        </message>
+        <message>
+            <source>位置</source>
+            <translation>位置</translation>
+        </message>
+        <message>
+            <source>缩放</source>
+            <translation>缩放</translation>
+        </message>
+        <message>
+            <source>旋转</source>
+            <translation>旋转</translation>
+        </message>
+        <message>
+            <source>不透明度</source>
+            <translation>不透明度</translation>
+        </message>
+        <message>
+            <source>3D旋转</source>
+            <translation>3D旋转</translation>
+        </message>
+        <message>
+            <source>深度 Z</source>
+            <translation>深度 Z</translation>
+        </message>
+        <message>
+            <source>填充颜色</source>
+            <translation>填充颜色</translation>
+        </message>
+        <message>
+            <source>描边颜色</source>
+            <translation>描边颜色</translation>
+        </message>
+        <message>
+            <source>描边粗细</source>
+            <translation>描边粗细</translation>
+        </message>
+        <message>
+            <source>选择填充颜色</source>
+            <translation>选择填充颜色</translation>
+        </message>
+        <message>
+            <source>选择描边颜色</source>
+            <translation>选择描边颜色</translation>
+        </message>
+        <message>
+            <source>添加特效 (Add Effect)...</source>
+            <translation>添加特效 (Add Effect)...</translation>
+        </message>
+        <message>
+            <source>通用 (General)</source>
+            <translation>通用 (General)</translation>
+        </message>
+        <message>
+            <source>当前图层未添加任何特效</source>
+            <translation>当前图层未添加任何特效</translation>
+        </message>
+        <message>
+            <source>删除此特效</source>
+            <translation>删除此特效</translation>
+        </message>
+        <message>
+            <source>选择颜色</source>
+            <translation>选择颜色</translation>
+        </message>
+        <message>
+            <source>跳转至上一关键帧</source>
+            <translation>跳转至上一关键帧</translation>
+        </message>
+        <message>
+            <source>跳转至下一关键帧</source>
+            <translation>跳转至下一关键帧</translation>
+        </message>
+        <message>
+            <source>重置为默认值</source>
+            <translation>重置为默认值</translation>
+        </message>
+        <message>
+            <source>当前帧已有关键帧 (点击删除关键帧)</source>
+            <translation>当前帧已有关键帧 (点击删除关键帧)</translation>
+        </message>
+        <message>
+            <source>在当前帧添加关键帧</source>
+            <translation>在当前帧添加关键帧</translation>
+        </message>
+        <message>
+            <source>启用关键帧动画并在当前帧记录</source>
+            <translation>启用关键帧动画并在当前帧记录</translation>
+        </message>
+        <message>
+            <source>当前帧已有关键帧 (点击删除 X/Y 关键帧)</source>
+            <translation>当前帧已有关键帧 (点击删除 X/Y 关键帧)</translation>
+        </message>
+        <message>
+            <source>在当前帧为 X/Y 添加关键帧</source>
+            <translation>在当前帧为 X/Y 添加关键帧</translation>
+        </message>
+        <message>
+            <source>启用 X/Y 关键帧动画并在当前帧记录</source>
+            <translation>启用 X/Y 关键帧动画并在当前帧记录</translation>
         </message>
     </context>
 </TS>

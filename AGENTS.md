@@ -34,12 +34,12 @@ cmake --build build -j$(nproc)
 
 ### 安装到本地用户环境
 ```bash
-cmake --install build --prefix /home/lanrhyme/.local
+cmake --install build --prefix ~/.local
 ```
 
 ### 一键构建、验证与部署流
 ```bash
-cmake --build build -j$(nproc) && ./build/src/app/friction_effects_test && cmake --install build --prefix /home/lanrhyme/.local
+cmake --build build -j$(nproc) && ./build/src/app/friction_effects_test && cmake --install build --prefix ~/.local
 ```
 
 ## 3. 核心子系统开发与扩展规范

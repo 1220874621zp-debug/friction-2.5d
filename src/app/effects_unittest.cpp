@@ -32,6 +32,8 @@
 #include "RasterEffects/rastereffectmenucreator.h"
 #include "include/core/SkBitmap.h"
 
+#include "themesupport.h"
+
 int main(int argc, char *argv[])
 {
     QCoreApplication app(argc, argv);
@@ -202,6 +204,49 @@ int main(int argc, char *argv[])
         if (!loaded) {
             throw std::runtime_error("Failed to load :/translations/friction_zh_CN.qm resource");
         }
+    });
+
+    // Test 5: ThemeSupport presets, accents and style generation test
+    runTest("Test 5: ThemeSupport presets and styling", [&]() {
+        const auto &presets = ThemeSupport::themePresetList();
+        if (presets.size() < 10) {
+            throw std::runtime_error("Expected at least 10 theme presets, got " + std::to_string(presets.size()));
+        }
+
+        const auto &accents = ThemeSupport::accentPresetList();
+        if (accents.size() < 10) {
+            throw std::runtime_error("Expected at least 10 accent presets, got " + std::to_string(accents.size()));
+        }
+
+        // Test theme switching
+        ThemeSupport::setThemeFromId(QStringLiteral("morandi_dark"));
+        if (ThemeSupport::themeId() != QStringLiteral("morandi_dark")) {
+            throw std::runtime_error("Theme ID mismatch for morandi_dark");
+        }
+        if (!ThemeSupport::getThemeBaseColor().isValid()) {
+            throw std::runtime_error("Invalid base color for morandi_dark");
+        }
+        if (!ThemeSupport::getThemeHighlightColor().isValid()) {
+            throw std::runtime_error("Invalid highlight color for morandi_dark");
+        }
+
+        // Test custom radius and scrollbar
+        ThemeSupport::setBorderRadius(8);
+        if (ThemeSupport::borderRadius() != 8) {
+            throw std::runtime_error("Failed to set border radius to 8");
+        }
+        ThemeSupport::setScrollbarWidth(6);
+        if (ThemeSupport::scrollbarWidth() != 6) {
+            throw std::runtime_error("Failed to set scrollbar width to 6");
+        }
+
+        const QString style = ThemeSupport::getThemeStyle(20);
+        if (style.isEmpty()) {
+            throw std::runtime_error("Generated theme style string is empty");
+        }
+
+        // Restore friction theme
+        ThemeSupport::setThemeFromId(QStringLiteral("friction"));
     });
 
     std::cout << "\n=========================================" << std::endl;

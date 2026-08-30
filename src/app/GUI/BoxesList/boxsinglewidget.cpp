@@ -521,8 +521,8 @@ protected:
     void paintEvent(QPaintEvent *) override {
         if(!mOwner->isSelectedRow()) return;
         QPainter p(this);
-        p.fillRect(rect(), QColor(70, 130, 220, 60));
-        p.setPen(QPen(QColor(120, 170, 255), 2));
+        p.fillRect(rect(), ThemeSupport::getThemeHighlightSelectedColor(60));
+        p.setPen(QPen(ThemeSupport::getThemeHighlightColor(), 2));
         p.setBrush(Qt::NoBrush);
         p.drawRect(rect().adjusted(1, 1, -2, -2));
         p.end();
@@ -2057,16 +2057,16 @@ void BoxSingleWidget::paintEvent(QPaintEvent *) {
         nameX += eSizesUI::widget/4;
         const bool ss = enve_cast<eSoundObjectBase*>(prop);
         if (ss || enve_cast<BoundingBox*>(prop)) {
-            p.fillRect(rect(), QColor(0, 0, 0, 50));
+            p.fillRect(rect(), ThemeSupport::getThemeBaseDarkerColor(80));
             if (bsTarget->isSelected()) {
                 p.fillRect(mFillWidget->geometry(),
-                           ThemeSupport::getThemeHighlightSelectedColor(50));
-                p.setPen(Qt::white);
+                           ThemeSupport::getThemeHighlightSelectedColor(60));
+                p.setPen(ThemeSupport::getThemeBaseColor().lightnessF() > 0.5 ? Qt::black : Qt::white);
             } else {
-                p.setPen(Qt::white);
+                p.setPen(ThemeSupport::getThemeBaseColor().lightnessF() > 0.5 ? QColor(30, 30, 30) : Qt::white);
             }
         } else if (enve_cast<BlendEffectBoxShadow*>(prop)) {
-            p.fillRect(rect(), QColor(0, 255, 125, 50));
+            p.fillRect(rect(), ThemeSupport::getThemeColorGreen(50));
             nameX += eSizesUI::widget;
         }
     } else if(!enve_cast<ComplexAnimator*>(prop)) {
