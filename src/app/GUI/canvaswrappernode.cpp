@@ -25,6 +25,8 @@
 
 #include "canvaswrappernode.h"
 #include "widgets/scenechooser.h"
+#include "scenenavigatorbar.h"
+#include "mainwindow.h"
 #include "Private/document.h"
 
 class CanvasWrapperMenuBar : public StackWrapperMenu {
@@ -34,21 +36,54 @@ public:
         mSceneMenu = new SceneChooser(mDocument, false, this);
         addMenu(mSceneMenu);
         connect(mSceneMenu, &SceneChooser::currentChanged,
-                this, &CanvasWrapperMenuBar::setCurrentScene);
+                this, &CanvasWrapperMenuBar::requestSceneSwitch);
         connect(window, &CanvasWindow::currentSceneChanged,
                 mSceneMenu, qOverload<Canvas*>(&SceneChooser::setCurrentScene));
+
+        // AE-style breadcrumb + nested-scene chips next to the
+        // dropdown; nested (linked) scenes are one click away
+        mNavigator = new SceneNavigatorBar(mDocument, this);
+        addWidget(mNavigator);
+        connect(mNavigator, &SceneNavigatorBar::sceneRequested,
+                this, &CanvasWrapperMenuBar::requestSceneSwitch);
     }
 
+    // initial binding only (ctor / project load)
     void setCurrentScene(Canvas * const scene) {
         mWindow->setCurrentCanvas(scene);
         mSceneMenu->setCurrentScene(scene);
     }
 
-    Canvas* getCurrentScene() const { return mCurrentScene; }
+    Canvas* getCurrentScene() const { return mWindow->getCurrentCanvas(); }
 private:
+    // scene switching from the dropdown or the navigator now does a
+    // FULL page switch (canvas + timeline + workspace combo stay in
+    // sync); the old setCurrentCanvas call only repainted this
+    // window and left the timeline on the previous scene
+    void requestSceneSwitch(Canvas * const scene) {
+        if (!scene) { return; }
+        const auto mwd = MainWindow::sGetInstance();
+        if (!mwd) { return; }
+        const auto lay = mwd->getLayoutHandler();
+        if (!lay) { return; }
+        // during project load panes are created while not being the
+        // current page - keep the old local behavior then
+        const int curId = lay->getSceneId(mWindow->getCurrentCanvas());
+        if (lay->isCurrentScene(curId)) {
+            lay->switchToScene(scene);
+            // this pane's page is no longer shown; restore its
+            // dropdown to its own scene for when the user returns
+            // (the emit re-enters requestSceneSwitch but the fallback
+            // no-ops on the unchanged canvas)
+            mSceneMenu->setCurrentScene(mWindow->getCurrentCanvas());
+        }
+        else { mWindow->setCurrentCanvas(scene); }
+    }
+
     Document& mDocument;
     CanvasWindow* const mWindow;
     SceneChooser * mSceneMenu;
+    SceneNavigatorBar * mNavigator = nullptr;
     Canvas * mCurrentScene = nullptr;
     std::map<Canvas*, QAction*> mSceneToAct;
 };

@@ -221,7 +221,6 @@ set(
     Properties/boxtargetproperty.cpp
     RasterEffects/blureffect.cpp
     RasterEffects/brightnesscontrasteffect.cpp
-    RasterEffects/chromakeyeffect.cpp
     RasterEffects/colorizeeffect.cpp
     RasterEffects/customrastereffect.cpp
     RasterEffects/motionblureffect.cpp
@@ -350,6 +349,7 @@ set(
     singlewidgettarget.cpp
     Properties/property.cpp
     Properties/comboboxproperty.cpp
+    Properties/expressionrow.cpp
     Animators/complexanimator.cpp
     Animators/animator.cpp
     Animators/intanimator.cpp
@@ -586,7 +586,6 @@ set(
     Properties/newproperty.h
     RasterEffects/blureffect.h
     RasterEffects/brightnesscontrasteffect.h
-    RasterEffects/chromakeyeffect.h
     RasterEffects/colorizeeffect.h
     RasterEffects/customrastereffect.h
     RasterEffects/motionblureffect.h
@@ -727,6 +726,7 @@ set(
     singlewidgettarget.h
     Properties/property.h
     Properties/comboboxproperty.h
+    Properties/expressionrow.h
     Animators/key.h
     Animators/complexanimator.h
     Animators/animator.h

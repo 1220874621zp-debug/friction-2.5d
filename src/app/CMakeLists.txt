@@ -211,6 +211,7 @@ set(
     GUI/ekeyfilter.cpp
     GUI/ewidgetsimpl.cpp
     GUI/layouthandler.cpp
+    GUI/scenenavigatorbar.cpp
     GUI/timelinebasewrappernode.cpp
     GUI/timelinedockwidget.cpp
     GUI/timelinehighlightwidget.cpp
@@ -271,6 +272,7 @@ set(
     GUI/ekeyfilter.h
     GUI/ewidgetsimpl.h
     GUI/layouthandler.h
+    GUI/scenenavigatorbar.h
     GUI/timelinebasewrappernode.h
     GUI/timelinedockwidget.h
     GUI/timelinehighlightwidget.h
