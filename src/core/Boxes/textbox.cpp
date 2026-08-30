@@ -26,6 +26,8 @@
 #include "Boxes/textbox.h"
 #include <QInputDialog>
 #include <QMenu>
+#include <QFont>
+#include <QRawFont>
 #ifdef Q_OS_WIN
 #include "include/core/SkFontMgr.h"
 #include "include/ports/SkTypeface_win.h"
@@ -249,10 +251,38 @@ void logTypefaceStep(const char* const stage,
 sk_sp<SkTypeface> makeTypefaceForFamily(const QString& family,
                                         const SkFontStyle& style)
 {
-    const auto stdName = family.toStdString();
-    auto typeface = SkTypeface::MakeFromName(stdName.c_str(), style);
+    // Qt lists multi-weight CJK fonts as composite "family style"
+    // entries ("阿里巴巴普惠体 B", "联想小新黑体 常规"); neither
+    // DirectWrite nor GDI match those names (each silently picks an
+    // unrelated fallback). Let Qt resolve its own entry back to the
+    // real family + weight, then look THAT up.
+    QString lookupFamily = family;
+    SkFontStyle lookupStyle = style;
+    {
+        const QRawFont raw = QRawFont::fromFont(QFont(family));
+        const QString real = raw.familyName();
+        if (!real.isEmpty() && real != family &&
+                familyNamesCompatible(real, family)) {
+            const int skWeight = qBound(100, qRound(raw.weight() * 9.0),
+                                        900);
+            const auto slant =
+                    raw.style() == QFont::StyleItalic ?
+                        SkFontStyle::kItalic_Slant :
+                    raw.style() == QFont::StyleOblique ?
+                        SkFontStyle::kOblique_Slant :
+                        SkFontStyle::kUpright_Slant;
+            lookupFamily = real;
+            lookupStyle = SkFontStyle(skWeight, style.width(), slant);
+            qWarning() << "[TF] qt entry=" << family
+                       << "family=" << real
+                       << "styleName=" << raw.styleName()
+                       << "weight=" << raw.weight();
+        }
+    }
+    const auto stdName = lookupFamily.toStdString();
+    auto typeface = SkTypeface::MakeFromName(stdName.c_str(), lookupStyle);
     logTypefaceStep("dw", typeface);
-    if (typefaceMatchesFamily(typeface, family)) { return typeface; }
+    if (typefaceMatchesFamily(typeface, lookupFamily)) { return typeface; }
 
 #ifdef Q_OS_WIN
     // DirectWrite swapped in an unrelated fallback font - retry
@@ -261,9 +291,9 @@ sk_sp<SkTypeface> makeTypefaceForFamily(const QString& family,
     static const sk_sp<SkFontMgr> gdiFontMgr = SkFontMgr_New_GDI();
     if (gdiFontMgr) {
         auto gdiTypeface = gdiFontMgr->legacyMakeTypeface(
-                    stdName.c_str(), style);
+                    stdName.c_str(), lookupStyle);
         logTypefaceStep("gdi", gdiTypeface);
-        if (typefaceMatchesFamily(gdiTypeface, family)) {
+        if (typefaceMatchesFamily(gdiTypeface, lookupFamily)) {
             return gdiTypeface;
         }
     }
