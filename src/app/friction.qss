@@ -841,6 +841,47 @@ QCheckBox::indicator:unchecked:hover {
 }
 
 /* =========================================================================
+   Tree, List Views & Table Headers (Assets, Project Panel, etc.)
+   ========================================================================= */
+
+QTreeView,
+QTreeWidget,
+QListView,
+QListWidget {
+    background-color: %5;
+    color: #e0e0e4;
+    border: none;
+    outline: none;
+    selection-background-color: %4;
+    selection-color: %5;
+}
+
+QTreeView::item:hover,
+QTreeWidget::item:hover,
+QListView::item:hover,
+QListWidget::item:hover {
+    background-color: %6;
+}
+
+QTreeView::item:selected,
+QTreeWidget::item:selected,
+QListView::item:selected,
+QListWidget::item:selected {
+    background-color: %4;
+    color: %5;
+}
+
+QHeaderView::section {
+    background-color: %16;
+    color: %13;
+    padding: 3px 6px;
+    border: none;
+    border-bottom: 1px solid %2;
+    font-size: 11px;
+    font-weight: 500;
+}
+
+/* =========================================================================
    GroupBoxes & Panels
    ========================================================================= */
 

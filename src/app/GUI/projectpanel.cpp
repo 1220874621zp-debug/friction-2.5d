@@ -97,6 +97,7 @@ ProjectPanel::ProjectPanel(Document& doc, QWidget* const parent) :
     mTree->setDragDropMode(QAbstractItemView::DragOnly);
     mTree->setDefaultDropAction(Qt::CopyAction);
     mTree->setContextMenuPolicy(Qt::CustomContextMenu);
+    mTree->setFrameShape(QFrame::NoFrame);
 
     const auto layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
