@@ -127,7 +127,26 @@ lupdate src/app src/core src/ui -ts src/app/translations/friction_zh_CN.ts
 lrelease src/app/translations/friction_zh_CN.ts -qm src/app/translations/friction_zh_CN.qm
 ```
 
-## 4. 文档与代码规范
+## 4. 跨平台适配与打包发布规范
+
+### Windows (MSVC) 平台兼容性要点
+- **宏冲突防护**：Windows SDK 与 GDI 头文件预定义了大量大写全局宏（如 `INVERT`、`HALFTONE`、`TRANSPARENT`、`OPAQUE`、`ERROR` 等），在声明同名枚举项或成员时，必须在头文件包含后显式使用 `#undef` 宏防护，防止 MSVC 预处理器将枚举项展开为整型字面量引发语法错误
+- **字符编码标准**：跨平台源文件一律采用 UTF-8 编码，CMake 中对 MSVC 编译器强制配置 `/utf-8` 编译参数，防止含非 ASCII 字符（如中文翻译字面量）引发 C2001/C2015 语法断裂
+- **动态库符号导出**：Windows 下 `frictioncore` 与 `frictionui` 作为共享库生成，对外暴露的类与函数必须标注 `CORE_EXPORT` 或 `UI_EXPORT` 导出修饰符
+- **跨平台语法严谨性**：避免使用特定编译器的非标准扩展，重写虚函数时必须显式标注 `override`，杜绝头文件中重复声明成员函数与变量
+
+### CMake 资产与源码完整性
+- **全量注册规则**：新增任何 `.cpp` 实现文件或包含 `Q_OBJECT` 宏的 `.h` 头文件，必须显式登记到所属子目录 `CMakeLists.txt` 的 `SOURCES` 与 `HEADERS` 列表中，确保跨平台 CMake AUTOMOC 机制在 Visual Studio / Ninja / Make 生成器下均能完整生成 MOC 元对象源码
+- **资源路径有效性**：`.qrc` 资源文件所引用的相对路径必须真实存在，禁止残留无效或已删除的文件引用，避免在跨平台 CPack / Inno Setup 打包阶段因找不到文件而中断
+
+### 持续集成（CI）与多平台打包管线
+- **Linux AppImage**：基于 Docker VFX Platform SDK 容器构建，输出便携式 `.AppImage` 镜像文件
+- **Linux DEB**：基于 Ubuntu Runner 通过 Clang + CPack 构建生成 `.deb` 安装包
+- **Windows x64**：基于 Visual Studio 2022 x64 构建核心程序与动态库，通过 Inno Setup（`src/app/friction.iss`）构建安装向导程序，并通过 7-Zip 生成便携版 `.7z` 压缩包
+- **macOS Universal**：通过 Xcode 工具链构建跨架构 Universal Binary 应用包
+- **构建输出位置**：各平台打包产物统一输出到 `build/output/` 或 `distfiles/builds/`
+
+## 5. 文档与代码规范
 - **禁止在 Markdown 文档或 README 中使用句号**
 - **禁止在 Markdown 文档中使用 Emoji**
 - 保持对话与技术回复精炼专业、列表优先
