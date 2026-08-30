@@ -221,6 +221,7 @@ set(
     Properties/boxtargetproperty.cpp
     RasterEffects/blureffect.cpp
     RasterEffects/brightnesscontrasteffect.cpp
+    RasterEffects/chromakeyeffect.cpp
     RasterEffects/colorizeeffect.cpp
     RasterEffects/customrastereffect.cpp
     RasterEffects/motionblureffect.cpp
@@ -586,6 +587,7 @@ set(
     Properties/newproperty.h
     RasterEffects/blureffect.h
     RasterEffects/brightnesscontrasteffect.h
+    RasterEffects/chromakeyeffect.h
     RasterEffects/colorizeeffect.h
     RasterEffects/customrastereffect.h
     RasterEffects/motionblureffect.h
