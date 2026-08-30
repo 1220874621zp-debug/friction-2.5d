@@ -73,7 +73,8 @@ enum class RasterEffectType : short {
     FILM_GRAIN,
     BLACK_WHITE_FLASH,
     LIQUID_GLASS,
-    PIXEL_ART
+    PIXEL_ART,
+    CHROMA_KEY
 };
 
 struct BoxRenderData;

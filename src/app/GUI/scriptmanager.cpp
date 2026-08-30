@@ -334,6 +334,33 @@ void ScriptManager::rebuildMenu()
             runCommand(label);
         });
     }
+    // panel-type scripts (registerPanel) live as dock widgets - list
+    // them here too so a closed panel can be brought back (click =
+    // toggle visibility); without this the two entry kinds were split
+    // across different places and closed panels were unreachable
+    if(!mPanelHosts.isEmpty()) {
+        mScriptsMenu->addSeparator();
+        for (auto it = mPanelHosts.constBegin();
+             it != mPanelHosts.constEnd(); ++it) {
+            const auto host = it.key();
+            const auto dock = it.value();
+            const QString title = host->panelDesc().title;
+            const auto act = mScriptsMenu->addAction(
+                        tr("Panel: %1").arg(title), this,
+                        [dock]() {
+                if(dock->isVisible()) dock->hide();
+                else {
+                    dock->show();
+                    dock->raise();
+                }
+            });
+            act->setCheckable(true);
+            act->setChecked(dock->isVisible());
+            // keep the checkmark live while the user docks/undocks
+            connect(dock, &QDockWidget::visibilityChanged,
+                    act, &QAction::setChecked);
+        }
+    }
 }
 
 void ScriptManager::runCommand(const QString &label)

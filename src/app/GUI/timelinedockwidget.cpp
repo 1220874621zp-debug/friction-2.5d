@@ -48,6 +48,7 @@
 #include "Boxes/boundingbox.h"
 #include "CacheHandlers/sceneframecontainer.h"
 #include "skia/skiahelpers.h"
+#include "Boxes/bone.h"
 #include "Animators/transformanimator.h"
 #include "Animators/complexanimator.h"
 #include "Animators/animator.h"
@@ -259,6 +260,48 @@ TimelineDockWidget::TimelineDockWidget(Document& document,
             const auto scene = *mDocument.fActiveScene;
             if(scene) scene->setTransparencyGrid(checked);
         });
+
+        // bone auto-freeze pose: when on, every bone pose operation
+        // keys ALL channels of the bone (Moho freeze-pose semantics)
+        // instead of just the touched one - pins the pose so staggered
+        // per-channel keys cannot drift
+        QPixmap fp(64, 64);
+        fp.fill(Qt::transparent);
+        QPainter f(&fp);
+        f.setRenderHint(QPainter::Antialiasing);
+        // snowflake: three crossing arms + center dot
+        QPen fpen(QColor(255, 255, 255, 230));
+        fpen.setWidthF(3.5);
+        fpen.setCapStyle(Qt::RoundCap);
+        f.setPen(fpen);
+        const QPointF c(32, 32);
+        const qreal r = 20.;
+        for(int k = 0; k < 3; k++) {
+            const qreal a = qDegreesToRadians(30. + k*60.);
+            f.drawLine(c + QPointF(qCos(a)*r, qSin(a)*r),
+                       c - QPointF(qCos(a)*r, qSin(a)*r));
+        }
+        f.setBrush(QColor(255, 255, 255, 230));
+        f.setPen(Qt::NoPen);
+        f.drawEllipse(c, 4.5, 4.5);
+        f.end();
+        mFreezePoseButton = new QAction(fp, tr("Freeze Pose"), this);
+        mFreezePoseButton->setCheckable(true);
+        mFreezePoseButton->setToolTip(tr(
+                "Auto freeze pose: key ALL bone channels on every pose "
+                "edit (pinned poses, no drift)"));
+        Bone::sAutoFreezePose = AppSupport::getSettings(
+                    QStringLiteral("bones"),
+                    QStringLiteral("autoFreezePose"),
+                    false).toBool();
+        mFreezePoseButton->setChecked(Bone::sAutoFreezePose);
+        connect(mFreezePoseButton, &QAction::triggered,
+                this, [this](const bool checked) {
+            Bone::sAutoFreezePose = checked;
+            AppSupport::setSettings(QStringLiteral("bones"),
+                                    QStringLiteral("autoFreezePose"),
+                                    checked);
+        });
     }
 
     mStepPreviewTimer = new QTimer(this);
@@ -420,6 +463,7 @@ TimelineDockWidget::TimelineDockWidget(Document& document,
     mToolBar->addAction(mSnapshotButton);
     mToolBar->addAction(mSafeFramesButton);
     mToolBar->addAction(mTransparencyGridButton);
+    mToolBar->addAction(mFreezePoseButton);
 
     addSpacer();
 

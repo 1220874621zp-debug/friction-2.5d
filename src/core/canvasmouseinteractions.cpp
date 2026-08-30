@@ -474,6 +474,8 @@ void Canvas::bonePosePress(const eMouseEvent& e) {
         mPoseMode = PoseDragMode::rotate;
         mPoseStartAngle = qAtan2(e.fPos.y() - head.y(),
                                  e.fPos.x() - head.x());
+        mPoseLastAngle = mPoseStartAngle;
+        mPoseAccumDeg = 0;
         const auto rot = transform->getRotAnimator();
         mPoseStartRot = rot->getEffectiveValue();
         rot->prp_startTransform();
@@ -487,9 +489,17 @@ void Canvas::bonePoseMove(const eMouseEvent& e) {
         const QPointF head = mPoseBone->getHeadAbsPos();
         const qreal cur = qAtan2(e.fPos.y() - head.y(),
                                  e.fPos.x() - head.x());
-        const qreal delta = qRadiansToDegrees(cur - mPoseStartAngle);
+        // wrap each INCREMENT to (-180, 180]: dragging across the
+        // atan2 +/-pi boundary must accumulate smoothly instead of
+        // jumping ~360 (keys interpolating the long way = reversed
+        // rotation direction)
+        qreal incr = qRadiansToDegrees(cur - mPoseLastAngle);
+        while(incr > 180.) incr -= 360.;
+        while(incr < -180.) incr += 360.;
+        mPoseAccumDeg += incr;
+        mPoseLastAngle = cur;
         transform->getRotAnimator()->setCurrentBaseValue(
-                    mPoseStartRot + delta);
+                    mPoseStartRot + mPoseAccumDeg);
     } else {
         const QPointF delta = e.fPos - mPoseMoveLast;
         mPoseMoveLast = e.fPos;
@@ -505,14 +515,22 @@ void Canvas::bonePoseRelease() {
     if(mPoseMode == PoseDragMode::rotate) {
         transform->getRotAnimator()->prp_finishTransform();
         // Moho-style auto-keyframing: posing a bone records a key at
-        // the current frame (no-op clicks do not create keys)
-        if(mPoseMoved) {
-            transform->getRotAnimator()->anim_saveCurrentValueAsKey();
+        // the current frame; with auto-freeze ON a plain CLICK (no
+        // drag) also freezes - the first pose frame usually needs no
+        // movement
+        if(mPoseMoved || Bone::sAutoFreezePose) {
+            if(Bone::sAutoFreezePose) freezeAllBones();
+            else if(mPoseMoved) {
+                transform->getRotAnimator()->anim_saveCurrentValueAsKey();
+            }
         }
     } else if(mPoseMode == PoseDragMode::move) {
         transform->getPosAnimator()->prp_finishTransform();
-        if(mPoseMoved) {
-            transform->getPosAnimator()->anim_saveCurrentValueAsKey();
+        if(mPoseMoved || Bone::sAutoFreezePose) {
+            if(Bone::sAutoFreezePose) freezeAllBones();
+            else if(mPoseMoved) {
+                transform->getPosAnimator()->anim_saveCurrentValueAsKey();
+            }
         }
     }
     if(Document::sInstance) Document::sInstance->actionFinished();

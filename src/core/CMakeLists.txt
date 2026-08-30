@@ -221,6 +221,7 @@ set(
     Properties/boxtargetproperty.cpp
     RasterEffects/blureffect.cpp
     RasterEffects/brightnesscontrasteffect.cpp
+    RasterEffects/chromakeyeffect.cpp
     RasterEffects/colorizeeffect.cpp
     RasterEffects/customrastereffect.cpp
     RasterEffects/motionblureffect.cpp
@@ -359,8 +360,10 @@ set(
     svgimporter.cpp
     Psd/psdfile.cpp
     Psd/psdimporter.cpp
+    Psd/ocaimporter.cpp
     Psd/fpsdpackage.cpp
     Psd/psdimagebox.cpp
+    Kra/kraimporter.cpp
     switchablecontext.cpp
     swt_abstraction.cpp
     swt_rulescollection.cpp
@@ -583,6 +586,7 @@ set(
     Properties/newproperty.h
     RasterEffects/blureffect.h
     RasterEffects/brightnesscontrasteffect.h
+    RasterEffects/chromakeyeffect.h
     RasterEffects/colorizeeffect.h
     RasterEffects/customrastereffect.h
     RasterEffects/motionblureffect.h
@@ -735,6 +739,7 @@ set(
     Psd/psdimporter.h
     Psd/fpsdpackage.h
     Psd/psdimagebox.h
+    Kra/kraimporter.h
     switchablecontext.h
     swt_abstraction.h
     swt_rulescollection.h

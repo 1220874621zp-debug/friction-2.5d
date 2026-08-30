@@ -826,6 +826,9 @@ public:
 
     // read access for diagnostics / tools
     const QList<Bone*>& getBones() const { return mBones; }
+    // freeze-pose helper: key every channel of every bone in the scene
+    // at the current frame (the auto-freeze toolbar toggle uses this)
+    void freezeAllBones();
     void removeBone(Bone* const bone);
     // bone currently being placed by the bone tool (length/rotation
     // follow the cursor until the next click grows a child bone)
@@ -1001,6 +1004,12 @@ private:
     bool mPoseMoved = false;   // any value written this drag
     qreal mPoseStartAngle = 0;   // world angle of the cursor at press
     qreal mPoseStartRot = 0;     // bone rotation value at press
+    // incremental rotation accumulation: each move wraps its delta to
+    // (-180, 180] so dragging across the atan2 +/-pi boundary never
+    // jumps the stored value by ~360 (which made keys interpolate the
+    // long way around - the wrong rotation direction)
+    qreal mPoseLastAngle = 0;    // cursor angle at the previous move
+    qreal mPoseAccumDeg = 0;     // total wrapped degrees since press
     QPointF mPoseMoveLast;       // last cursor pos while moving
 
 protected:

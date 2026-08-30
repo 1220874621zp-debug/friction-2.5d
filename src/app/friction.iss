@@ -54,6 +54,7 @@ Source: "Qt5Multimedia.dll"; DestDir: "{app}"; Components: qt ; Flags: ignorever
 Source: "Qt5Network.dll"; DestDir: "{app}"; Components: qt ; Flags: ignoreversion
 Source: "Qt5OpenGL.dll"; DestDir: "{app}"; Components: qt ; Flags: ignoreversion
 Source: "Qt5Qml.dll"; DestDir: "{app}"; Components: qt ; Flags: ignoreversion
+Source: "Qt5Svg.dll"; DestDir: "{app}"; Components: qt ; Flags: ignoreversion
 Source: "Qt5Widgets.dll"; DestDir: "{app}"; Components: qt ; Flags: ignoreversion
 Source: "Qt5Xml.dll"; DestDir: "{app}"; Components: qt ; Flags: ignoreversion
 Source: "audio\*"; DestDir: "{app}\audio"; Components: qt ; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -97,7 +98,6 @@ Type: files; Name: {app}\Qt5Network.dll
 Type: files; Name: {app}\Qt5OpenGL.dll
 Type: files; Name: {app}\Qt5PrintSupport.dll
 Type: files; Name: {app}\Qt5Qml.dll
-Type: files; Name: {app}\Qt5Svg.dll
 Type: files; Name: {app}\Qt5Widgets.dll
 Type: files; Name: {app}\Qt5Xml.dll
 Type: files; Name: {app}\swresample-3.dll

@@ -95,7 +95,8 @@ int main(int argc, char *argv[])
             RasterEffectType::FILM_GRAIN,
             RasterEffectType::BLACK_WHITE_FLASH,
             RasterEffectType::LIQUID_GLASS,
-            RasterEffectType::PIXEL_ART
+            RasterEffectType::PIXEL_ART,
+            RasterEffectType::CHROMA_KEY
         };
 
         for (const auto t : types) {

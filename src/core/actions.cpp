@@ -32,6 +32,7 @@
 #include "Boxes/externallinkboxt.h"
 #include "GUI/dialogsinterface.h"
 #include "svgimporter.h"
+#include "Psd/ocaimporter.h"
 
 #include <QMessageBox>
 #include <QStandardItemModel>
@@ -798,8 +799,20 @@ eBoxOrSound *Actions::importFile(const QString &path,
     }
 
     if (fInfo.isDir()) {
-        result = createImageSequenceBox(path);
-        target->insertContained(insertId, result);
+        // OCA folders (Open Cel Animation) build a full layer tree
+        // from the manifest instead of a plain image sequence;
+        // detected by manifest presence, not by folder name
+        if(ImportOCA::looksLikeOCA(path)) {
+            try {
+                result = ImportOCA::loadOCAFolder(path, scene);
+                target->insertContained(insertId, result);
+            } catch(const std::exception& e) {
+                gPrintExceptionCritical(e);
+            }
+        } else {
+            result = createImageSequenceBox(path);
+            target->insertContained(insertId, result);
+        }
     } else { // is file
         const QString extension = fInfo.suffix();
         if (isSoundExt(extension)) {
@@ -807,7 +820,16 @@ eBoxOrSound *Actions::importFile(const QString &path,
             target->insertContained(insertId, result);
         } else {
             try {
-                if (isImageExt(extension)) {
+                const QString extLower = extension.toLower();
+                if (extLower == QLatin1String("oca") ||
+                    (extLower == QLatin1String("json") &&
+                     ImportOCA::looksLikeOCAJson(path))) {
+                    // the OCA manifest FILE itself was picked (the
+                    // Krita exporter names it <doc>.oca); frame images
+                    // resolve relative to its folder
+                    qWarning() << "IMPORT: route=oca-manifest";
+                    result = ImportOCA::loadOCAManifestFile(path, scene);
+                } else if (isImageExt(extension)) {
                     qWarning() << "IMPORT: route=image";
                     result = createImageBox(path);
                 } else if (isVideoExt(extension)) {

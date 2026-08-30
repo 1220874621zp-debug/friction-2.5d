@@ -46,6 +46,16 @@ public:
     // (bone parent-link tool); returns false on no-op/cycle
     bool setParentBone(Bone* const parent);
 
+    // key EVERY animatable channel of this bone (position/rotation/
+    // scale/shear/pivot + length) at the current frame. Staggered
+    // per-channel keys leave the un-keyed channels interpolating
+    // through the pose frame (visible drift); freezing pins the pose
+    void freezeChannels();
+    // toolbar toggle: when on, every bone pose operation freezes the
+    // bone (all channels keyed) instead of keying just the touched
+    // channel (set/persisted by the timeline toolbar button)
+    static bool sAutoFreezePose;
+
     // lazily create the canvas overlay (tail joint); called from
     // BoundingBox::prp_updateCanvasProps which owns the props list
     Property* ensureBoneOverlay();

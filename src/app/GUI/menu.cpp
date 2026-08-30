@@ -33,6 +33,7 @@
 #include <QDesktopServices>
 #include <QClipboard>
 #include <QStatusBar>
+#include <QPainter>
 
 using namespace Friction;
 
@@ -86,6 +87,13 @@ void MainWindow::setupMenuBar()
                                          this, &MainWindow::importImageSequence);
     mImportSeqAct->setEnabled(false);
     cmdAddAction(mImportSeqAct);
+
+    mImportOCAAct = mFileMenu->addAction(QIcon::fromTheme("file_import"),
+                                         tr("Import OCA", "MenuBar_File"),
+                                         this, &MainWindow::importOCA);
+    mImportOCAAct->setEnabled(false);
+    mImportOCAAct->setObjectName("ImportOCAAct");
+    cmdAddAction(mImportOCAAct);
 
     mRevertAct = mFileMenu->addAction(QIcon::fromTheme("loop_back"),
                                       tr("Revert", "MenuBar_File"),
@@ -852,6 +860,12 @@ void MainWindow::setupMenuBar()
     mToolbar->addAction(openAct);
     mToolbar->addAction(mSaveAct);
     mToolbar->addAction(mImportAct);
+
+    // OCA quick-import next to the generic import; shares the menu
+    // action so it disables with no scene (a standalone action stayed
+    // enabled and silently did nothing)
+    mToolbar->addAction(mImportOCAAct);
+
     mToolbar->addAction(mLinkedAct);
 
     mRenderVideoAct = mToolbar->addAction(QIcon::fromTheme("render_animation"),

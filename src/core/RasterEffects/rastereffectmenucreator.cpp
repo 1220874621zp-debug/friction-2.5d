@@ -64,6 +64,8 @@ void RasterEffectMenuCreator::forEveryEffectCore(const EffectAdder &add)
         []() { return enve::make_shared<TintEffect>(); });
     add(QObject::tr("Posterize"), QObject::tr("Color"),
         []() { return enve::make_shared<PosterizeEffect>(); });
+    add(QObject::tr("Chroma Key"), QObject::tr("Color"),
+        []() { return enve::make_shared<ChromaKeyEffect>(); });
     add(QObject::tr("Glow"), QObject::tr("Light"),
         []() { return enve::make_shared<GlowEffect>(); });
     add(QObject::tr("Chromatic Aberration"), QObject::tr("Distort"),
