@@ -148,6 +148,26 @@ TABLE = {
         '改动重启后生效。标记为 [reserved] 的条目是规划中的功能，将在后续版本绑定。',
     'reserved': '保留',
 },
+'TimelineDockWidget': {
+    'Export the current frame as a 100% resolution PNG (snapshot path is configurable in Preferences, default: Desktop)':
+        '将当前帧导出为 100% 分辨率的 PNG（快照路径可在首选项中配置，默认：桌面）',
+    'Auto freeze pose: key ALL bone channels on every pose edit (pinned poses, no drift)':
+        '自动冻结姿势：每次编辑姿势时为骨骼所有通道打关键帧（姿势固定、不漂移）',
+    'Cycle keyframed animation forward after the last key (1,2,3 -> 1,2,3,1,...); applies a loop expression to every keyed property of the selected layers, bones included; click again to remove':
+        '在最后一个关键帧后正向循环动画（1,2,3 -> 1,2,3,1,...）；为选中图层的所有已打帧属性应用循环表达式（含骨骼）；再次点击可移除',
+    'Bounce keyframed animation back and forth after the last key (1,2,3 -> 1,2,3,2,1,...); applies a loop expression to every keyed property of the selected layers, bones included; click again to remove':
+        '在最后一个关键帧后往复循环动画（1,2,3 -> 1,2,3,2,1,...）；为选中图层的所有已打帧属性应用循环表达式（含骨骼）；再次点击可移除',
+    'Cycle keyframed animation skipping the given number of leading keys (keys 1,2,3, skip 1 -> cycles 2,3); the amount is asked for when enabled; applies a loop expression to every keyed property of the selected layers, bones included; click again to remove':
+        '跳过开头指定数量的关键帧后循环（帧 1,2,3，跳过 1 -> 循环 2,3）；启用时会询问跳过数量；为选中图层的所有已打帧属性应用循环表达式（含骨骼）；再次点击可移除',
+    'Set Layer In Point (Alt+[': '设置图层入点 (Alt+[',
+    'Set Layer Out Point (Alt+])': '设置图层出点 (Alt+])',
+    'Split Clip (Ctrl+Shift+D)': '拆分片段 (Ctrl+Shift+D)',
+    'Split Clip at Current Frame': '在当前帧拆分片段',
+    'No rendered frame available yet - wait for the preview to render this frame':
+        '暂无已渲染帧——请等待预览渲染完此帧',
+    'Snapshot timed out - the frame did not render in time':
+        '快照超时——帧未能及时渲染完成',
+},
 }
 
 ctx_re = re.compile(r'<context>\s*<name>([^<]+)</name>.*?</context>', re.DOTALL)

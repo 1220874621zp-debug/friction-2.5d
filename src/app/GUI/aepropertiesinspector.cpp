@@ -345,7 +345,7 @@ QFrame* AEPropertiesInspector::createSectionCard(const QString &title, const QIc
     auto foldBtn = new QToolButton(header);
     foldBtn->setObjectName(QStringLiteral("FlatButton"));
     foldBtn->setText(defaultExpanded ? QStringLiteral("▼") : QStringLiteral("▶"));
-    foldBtn->setStyleSheet(QStringLiteral("font-size: 8px; color: %1; padding: 0; border: none; background: transparent;")
+    foldBtn->setStyleSheet(QStringLiteral("font-size: 10px; color: %1; padding: 0; border: none; background: transparent;")
                            .arg(ThemeSupport::getThemeHighlightColor().name()));
     headerLayout->addWidget(foldBtn);
 
@@ -356,8 +356,7 @@ QFrame* AEPropertiesInspector::createSectionCard(const QString &title, const QIc
     }
 
     auto titleLbl = new QLabel(title, header);
-    titleLbl->setStyleSheet(QStringLiteral("font-weight: bold; color: %1; font-size: 10px;")
-                            .arg(ThemeSupport::getThemeHighlightColor().name()));
+    titleLbl->setStyleSheet(QStringLiteral("font-weight: bold; color: #ffffff; font-size: 13px;"));
     headerLayout->addWidget(titleLbl);
     headerLayout->addStretch(1);
 
@@ -397,7 +396,7 @@ QWidget* AEPropertiesInspector::createKeyframeNav(Animator *anim)
     prevBtn->setObjectName(QStringLiteral("FlatButton"));
     prevBtn->setText(QStringLiteral("◀"));
     prevBtn->setFixedSize(10, 16);
-    prevBtn->setStyleSheet(QStringLiteral("font-size: 7px; padding: 0; color: #757580; border: none; background: transparent;"));
+    prevBtn->setStyleSheet(QStringLiteral("font-size: 9px; padding: 0; color: #c8c8d0; border: none; background: transparent;"));
     prevBtn->setToolTip(tr("跳转至上一关键帧"));
     connect(prevBtn, &QToolButton::clicked, [anim, this]() {
         if (!anim || !mScene) { return; }
@@ -417,7 +416,7 @@ QWidget* AEPropertiesInspector::createKeyframeNav(Animator *anim)
     nextBtn->setObjectName(QStringLiteral("FlatButton"));
     nextBtn->setText(QStringLiteral("▶"));
     nextBtn->setFixedSize(10, 16);
-    nextBtn->setStyleSheet(QStringLiteral("font-size: 7px; padding: 0; color: #757580; border: none; background: transparent;"));
+    nextBtn->setStyleSheet(QStringLiteral("font-size: 9px; padding: 0; color: #c8c8d0; border: none; background: transparent;"));
     nextBtn->setToolTip(tr("跳转至下一关键帧"));
     connect(nextBtn, &QToolButton::clicked, [anim, this]() {
         if (!anim || !mScene) { return; }
@@ -443,7 +442,7 @@ QWidget* AEPropertiesInspector::createDualKeyframeNav(Animator *animX, Animator 
     prevBtn->setObjectName(QStringLiteral("FlatButton"));
     prevBtn->setText(QStringLiteral("◀"));
     prevBtn->setFixedSize(10, 16);
-    prevBtn->setStyleSheet(QStringLiteral("font-size: 7px; padding: 0; color: #757580; border: none; background: transparent;"));
+    prevBtn->setStyleSheet(QStringLiteral("font-size: 9px; padding: 0; color: #c8c8d0; border: none; background: transparent;"));
     prevBtn->setToolTip(tr("跳转至上一关键帧"));
     connect(prevBtn, &QToolButton::clicked, [animX, animY, this]() {
         if (!mScene) { return; }
@@ -466,7 +465,7 @@ QWidget* AEPropertiesInspector::createDualKeyframeNav(Animator *animX, Animator 
     nextBtn->setObjectName(QStringLiteral("FlatButton"));
     nextBtn->setText(QStringLiteral("▶"));
     nextBtn->setFixedSize(10, 16);
-    nextBtn->setStyleSheet(QStringLiteral("font-size: 7px; padding: 0; color: #757580; border: none; background: transparent;"));
+    nextBtn->setStyleSheet(QStringLiteral("font-size: 9px; padding: 0; color: #c8c8d0; border: none; background: transparent;"));
     nextBtn->setToolTip(tr("跳转至下一关键帧"));
     connect(nextBtn, &QToolButton::clicked, [animX, animY, this]() {
         if (!mScene) { return; }
@@ -485,13 +484,13 @@ QWidget* AEPropertiesInspector::createDualKeyframeNav(Animator *animX, Animator 
 void AEPropertiesInspector::buildSceneProperties()
 {
     QGridLayout *grid = nullptr;
-    auto card = createSectionCard(tr("合成属性 (Composition)"), QIcon::fromTheme(QStringLiteral("settings")), grid);
+    auto card = createSectionCard(tr("合成属性"), QIcon::fromTheme(QStringLiteral("settings")), grid);
 
     auto addSceneRow = [grid](int rowIdx, const QString &label, const QString &value) {
         auto l = new QLabel(label);
-        l->setStyleSheet(QStringLiteral("color: %1; font-size: 10px;").arg(ThemeSupport::getThemeColorTextDisabled().name()));
+        l->setStyleSheet(QStringLiteral("color: #ffffff; font-size: 12px;"));
         auto v = new QLabel(value);
-        v->setStyleSheet(QStringLiteral("color: #ececf0; font-weight: bold; font-size: 10px;"));
+        v->setStyleSheet(QStringLiteral("color: #ffffff; font-weight: bold; font-size: 12px;"));
         grid->addWidget(l, rowIdx, 1);
         grid->addWidget(v, rowIdx, 2);
     };
@@ -544,14 +543,13 @@ void AEPropertiesInspector::buildBoxProperties(BoundingBox *box)
     else if (enve_cast<NullObject*>(box)) { typeStr = tr("空对象"); }
 
     auto typeBadge = new QLabel(typeStr, headerWidget);
-    typeBadge->setStyleSheet(QStringLiteral("color: %1; font-size: 10px; padding: 0 4px;")
-                             .arg(ThemeSupport::getThemeColorTextDisabled().name()));
+    typeBadge->setStyleSheet(QStringLiteral("color: #ffffff; font-size: 12px; padding: 0 4px;"));
     hLayout->addWidget(typeBadge);
 
     auto eyeBtn = new QToolButton(headerWidget);
     eyeBtn->setObjectName(QStringLiteral("FlatButton"));
     eyeBtn->setIcon(QIcon::fromTheme(box->isVisible() ? QStringLiteral("visible") : QStringLiteral("novisible")));
-    eyeBtn->setToolTip(tr("显示/隐藏图层 (Visibility)"));
+    eyeBtn->setToolTip(tr("显示/隐藏图层"));
     eyeBtn->setCheckable(true);
     eyeBtn->setChecked(box->isVisible());
     connect(eyeBtn, &QToolButton::clicked, [box, eyeBtn, this](bool checked) {
@@ -588,7 +586,7 @@ void AEPropertiesInspector::buildBoxProperties(BoundingBox *box)
         auto cube3DBtn = new QToolButton(headerWidget);
         cube3DBtn->setObjectName(QStringLiteral("FlatButton"));
         cube3DBtn->setIcon(QIcon::fromTheme(QStringLiteral("boxTransform")));
-        cube3DBtn->setToolTip(tr("2.5D 图层开关 (3D Layer)"));
+        cube3DBtn->setToolTip(tr("2.5D 图层开关"));
         cube3DBtn->setCheckable(true);
         cube3DBtn->setChecked(advTrans->is3DEnabled());
         connect(cube3DBtn, &QToolButton::clicked, [advTrans, this](bool checked) {
@@ -603,14 +601,14 @@ void AEPropertiesInspector::buildBoxProperties(BoundingBox *box)
 
     // Section 1: Transform Controls (Grid Aligned)
     QGridLayout *transGrid = nullptr;
-    auto transCard = createSectionCard(tr("变换 (Transform)"), QIcon::fromTheme(QStringLiteral("transform")), transGrid);
+    auto transCard = createSectionCard(tr("变换"), QIcon::fromTheme(QStringLiteral("transform")), transGrid);
     setupTransformControls(transGrid, box);
     mMainLayout->addWidget(transCard);
 
     // Section 2: Vector Shape Style Controls (Fill / Stroke if PathBox)
     if (const auto pathBox = enve_cast<PathBox*>(box)) {
         QGridLayout *styleGrid = nullptr;
-        auto styleCard = createSectionCard(tr("形状与样式 (Fill & Stroke)"), QIcon::fromTheme(QStringLiteral("draw-brush")), styleGrid);
+        auto styleCard = createSectionCard(tr("形状与样式"), QIcon::fromTheme(QStringLiteral("draw-brush")), styleGrid);
         setupPathStyleControls(styleGrid, pathBox);
         mMainLayout->addWidget(styleCard);
     }
@@ -638,7 +636,7 @@ void AEPropertiesInspector::setupTransformControls(QGridLayout *grid, BoundingBo
 
         auto lbl = new QLabel(label);
         lbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-        lbl->setStyleSheet(QStringLiteral("color: %1; font-size: 10px;").arg(ThemeSupport::getThemeColorTextDisabled().name()));
+        lbl->setStyleSheet(QStringLiteral("color: #ffffff; font-size: 12px;"));
         grid->addWidget(lbl, rowIdx, 1);
 
         auto inputContainer = new QWidget();
@@ -746,7 +744,7 @@ void AEPropertiesInspector::setupTransformControls(QGridLayout *grid, BoundingBo
 
         auto lbl = new QLabel(label);
         lbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-        lbl->setStyleSheet(QStringLiteral("color: %1; font-size: 10px;").arg(ThemeSupport::getThemeColorTextDisabled().name()));
+        lbl->setStyleSheet(QStringLiteral("color: #ffffff; font-size: 12px;"));
         grid->addWidget(lbl, rowIdx, 1);
 
         auto slider = new QrealAnimatorValueSlider(anim, nullptr);
@@ -914,7 +912,7 @@ void AEPropertiesInspector::setupEffectsControls(QVBoxLayout *layout, BoundingBo
     topBarLayout->setContentsMargins(0, 1, 0, 2);
     topBarLayout->setSpacing(3);
 
-    auto title = new QLabel(tr("特效管线 (Raster Effects)"), topBar);
+    auto title = new QLabel(tr("特效管线"), topBar);
     title->setStyleSheet(QStringLiteral("font-weight: bold; color: %1; font-size: 10px;")
                          .arg(ThemeSupport::getThemeHighlightColor().name()));
     topBarLayout->addWidget(title);
@@ -955,7 +953,7 @@ void AEPropertiesInspector::setupEffectsControls(QVBoxLayout *layout, BoundingBo
 
         const auto adder = [box, getCat, this](const QString& name, const QString& cat, const RasterEffectMenuCreator::EffectCreator& creator) {
             if (name.isEmpty()) { return; }
-            auto targetMenu = getCat(cat.isEmpty() ? tr("通用 (General)") : cat);
+            auto targetMenu = getCat(cat.isEmpty() ? tr("通用") : cat);
             auto act = targetMenu->addAction(name);
             connect(act, &QAction::triggered, [box, creator, this]() {
                 box->addRasterEffect(creator());

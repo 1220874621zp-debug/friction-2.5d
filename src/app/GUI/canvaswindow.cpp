@@ -47,6 +47,7 @@
 #include "glhelpers.h"
 #include "themesupport.h"
 #include "projectpanel.h"
+#include "effectspresetspanel.h"
 
 CanvasWindow::CanvasWindow(Document &document,
                            QWidget * const parent)
@@ -793,9 +794,32 @@ bool CanvasWindow::handleSceneDrop(QDropEvent * const event)
     return true;
 }
 
+bool CanvasWindow::handleEffectDrop(QDropEvent * const event)
+{
+    const auto mimeData = event->mimeData();
+    if (!mimeData->hasFormat(EffectsPresetsPanel::sMimeFormat())) {
+        return false;
+    }
+    // always consume our effect mime so it never falls through to
+    // the file-import drop path
+    event->acceptProposedAction();
+    const auto apply = EffectsPresetsPanel::takeEffectDrag(
+                mimeData->data(EffectsPresetsPanel::sMimeFormat()));
+    if (!apply || !mCurrentCanvas) { return true; }
+    // the layer under the drop point receives the effect; dropping
+    // on empty canvas applies to the current box (same as the
+    // panel's double-click)
+    const QPointF pos = mapToCanvasCoord(event->posF());
+    const auto box = mCurrentCanvas->getBoxAt(pos);
+    if (box) { mCurrentCanvas->setCurrentBox(box); }
+    apply();
+    return true;
+}
+
 void CanvasWindow::dropEvent(QDropEvent *event)
 {
     if (handleSceneDrop(event)) { return; }
+    if (handleEffectDrop(event)) { return; }
     const QPointF pos = mapToCanvasCoord(event->posF());
     mActions.handleDropEvent(event, pos);
 }
@@ -803,6 +827,7 @@ void CanvasWindow::dropEvent(QDropEvent *event)
 void CanvasWindow::dragEnterEvent(QDragEnterEvent *event)
 {
     if (event->mimeData()->hasFormat(ProjectPanel::sMimeFormat()) ||
+        event->mimeData()->hasFormat(EffectsPresetsPanel::sMimeFormat()) ||
         event->mimeData()->hasUrls() ||
         event->mimeData()->hasFormat("application/x-qabstractitemmodeldatalist"))
     {
@@ -814,6 +839,7 @@ void CanvasWindow::dragEnterEvent(QDragEnterEvent *event)
 void CanvasWindow::dragMoveEvent(QDragMoveEvent *event)
 {
     if (event->mimeData()->hasFormat(ProjectPanel::sMimeFormat()) ||
+        event->mimeData()->hasFormat(EffectsPresetsPanel::sMimeFormat()) ||
         event->mimeData()->hasUrls()) {
         event->acceptProposedAction();
     }

@@ -1,4 +1,5 @@
 import re, xml.etree.ElementTree as ET
+import sys
 
 files = {
  'SettingsDialog': 'src/app/GUI/Settings/settingsdialog.cpp',
@@ -11,6 +12,11 @@ files = {
  'PerformanceSettingsWidget': 'src/ui/widgets/performancesettingswidget.cpp',
  'PresetSettingsWidget': 'src/ui/widgets/presetsettingswidget.cpp',
 }
+# argv items override/add: Context=path (repeatable)
+for arg in sys.argv[1:]:
+    if '=' in arg:
+        ctx, path = arg.split('=', 1)
+        files[ctx] = path
 tr_re = re.compile(r'\btr\(\s*"((?:[^"\\]|\\.)*)"')
 sources = {}
 for ctx, path in files.items():

@@ -37,6 +37,8 @@
 #include <QHeaderView>
 #include <QIcon>
 #include <QShortcut>
+#include <QDrag>
+#include <QMimeData>
 
 #include "RasterEffects/rastereffectmenucreator.h"
 #include "BlendEffects/blendeffectmenucreator.h"
@@ -45,6 +47,65 @@
 #include "themesupport.h"
 #include "appsupport.h"
 #include "effectsloader.h"
+
+namespace {
+// drag payload = generation token; the closure itself lives in the
+// panel's static registry (see beginEffectDrag/takeEffectDrag)
+class EffectsTreeWidget : public QTreeWidget {
+public:
+    explicit EffectsTreeWidget(EffectsPresetsPanel* const panel,
+                               QWidget* const parent = nullptr) :
+        QTreeWidget(parent), mPanel(panel) {}
+
+protected:
+    void startDrag(Qt::DropActions) {
+        const auto item = currentItem();
+        if (!item || !mPanel) { return; }
+        const auto apply = mPanel->effectCallback(item);
+        if (!apply) { return; }
+        auto mimeData = new QMimeData;
+        mimeData->setData(EffectsPresetsPanel::sMimeFormat(),
+                          EffectsPresetsPanel::beginEffectDrag(apply));
+        QDrag drag(this);
+        drag.setMimeData(mimeData);
+        const auto pm = item->icon(0).pixmap(32, 32);
+        if (!pm.isNull()) {
+            drag.setPixmap(pm);
+            drag.setHotSpot(QPoint(pm.width() / 2, pm.height() / 2));
+        }
+        drag.exec(Qt::CopyAction);
+    }
+
+private:
+    EffectsPresetsPanel* mPanel = nullptr;
+};
+}
+
+quint64 EffectsPresetsPanel::sDragGeneration = 0;
+std::function<void()> EffectsPresetsPanel::sDragCallback;
+
+const QString& EffectsPresetsPanel::sMimeFormat()
+{
+    static const QString format = QStringLiteral(
+                "application/x-friction-effect");
+    return format;
+}
+
+QByteArray EffectsPresetsPanel::beginEffectDrag(
+        const std::function<void()> &apply)
+{
+    sDragCallback = apply;
+    return QByteArray::number(++sDragGeneration);
+}
+
+std::function<void()> EffectsPresetsPanel::takeEffectDrag(
+        const QByteArray &token)
+{
+    if (token != QByteArray::number(sDragGeneration)) { return nullptr; }
+    auto apply = sDragCallback;
+    sDragCallback = nullptr;
+    return apply;
+}
 
 EffectsPresetsPanel::EffectsPresetsPanel(MainWindow * const mainWindow,
                                          QWidget * const parent) :
@@ -62,12 +123,15 @@ EffectsPresetsPanel::EffectsPresetsPanel(MainWindow * const mainWindow,
             this, &EffectsPresetsPanel::onSearchTextChanged);
     mainLayout->addWidget(mSearchEdit);
 
-    mTreeWidget = new QTreeWidget(this);
+    mTreeWidget = new EffectsTreeWidget(this, this);
     mTreeWidget->setHeaderHidden(true);
     mTreeWidget->setAnimated(true);
     mTreeWidget->setIndentation(16);
     mTreeWidget->setPalette(ThemeSupport::getDefaultPalette());
     mTreeWidget->setFrameShape(QFrame::NoFrame);
+    mTreeWidget->setDragEnabled(true);
+    mTreeWidget->setDragDropMode(QAbstractItemView::DragOnly);
+    mTreeWidget->setDefaultDropAction(Qt::CopyAction);
     connect(mTreeWidget, &QTreeWidget::itemDoubleClicked,
             this, &EffectsPresetsPanel::onItemDoubleClicked);
     mainLayout->addWidget(mTreeWidget);

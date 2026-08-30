@@ -8414,7 +8414,7 @@ Select the layers you want to import:</source>
     <message>
         <location filename="../GUI/timelinedockwidget.cpp" line="219"/>
         <source>Export the current frame as a 100% resolution PNG (snapshot path is configurable in Preferences, default: Desktop)</source>
-        <translation>将当前帧导出为 100% 分辨率 PNG（路径可在首选项设置，默认桌面）</translation>
+        <translation>将当前帧导出为 100% 分辨率的 PNG（快照路径可在首选项中配置，默认：桌面）</translation>
     </message>
     <message>
         <location filename="../GUI/timelinedockwidget.cpp" line="244"/>
@@ -8446,17 +8446,17 @@ Select the layers you want to import:</source>
         <location filename="../GUI/timelinedockwidget.cpp" line="576"/>
         <location filename="../GUI/timelinedockwidget.cpp" line="578"/>
         <source>Set Layer Out Point (Alt+])</source>
-        <translation type="unfinished"></translation>
+        <translation>设置图层出点 (Alt+])</translation>
     </message>
     <message>
         <location filename="../GUI/timelinedockwidget.cpp" line="588"/>
         <source>Split Clip (Ctrl+Shift+D)</source>
-        <translation type="unfinished"></translation>
+        <translation>拆分片段 (Ctrl+Shift+D)</translation>
     </message>
     <message>
         <location filename="../GUI/timelinedockwidget.cpp" line="590"/>
         <source>Split Clip at Current Frame</source>
-        <translation type="unfinished"></translation>
+        <translation>在当前帧拆分片段</translation>
     </message>
     <message>
         <location filename="../GUI/timelinedockwidget.cpp" line="829"/>
@@ -8466,12 +8466,12 @@ Select the layers you want to import:</source>
     <message>
         <location filename="../GUI/timelinedockwidget.cpp" line="817"/>
         <source>Snapshot timed out - the frame did not render in time</source>
-        <translation>快照超时：该帧未能及时渲染完成</translation>
+        <translation>快照超时——帧未能及时渲染完成</translation>
     </message>
     <message>
         <location filename="../GUI/timelinedockwidget.cpp" line="785"/>
         <source>No rendered frame available yet - wait for the preview to render this frame</source>
-        <translation>当前帧尚未渲染完成，请等待预览渲染后重试</translation>
+        <translation>暂无已渲染帧——请等待预览渲染完此帧</translation>
     </message>
     <message>
         <location filename="../GUI/timelinedockwidget.cpp" line="770"/>
@@ -8531,7 +8531,7 @@ Select the layers you want to import:</source>
     <message>
         <location filename="../GUI/timelinedockwidget.cpp" line="313"/>
         <source>Auto freeze pose: key ALL bone channels on every pose edit (pinned poses, no drift)</source>
-        <translation>自动冻结姿势：每次摆姿势记录骨骼全部通道（姿势钉死不漂移）</translation>
+        <translation>自动冻结姿势：每次编辑姿势时为骨骼所有通道打关键帧（姿势固定、不漂移）</translation>
     </message>
     <message>
         <location filename="../GUI/timelinedockwidget.cpp" line="371"/>
@@ -8541,7 +8541,7 @@ Select the layers you want to import:</source>
     <message>
         <location filename="../GUI/timelinedockwidget.cpp" line="373"/>
         <source>Cycle keyframed animation forward after the last key (1,2,3 -&gt; 1,2,3,1,...); applies a loop expression to every keyed property of the selected layers, bones included; click again to remove</source>
-        <translation>最后一个关键帧之后正向循环关键帧动画（1,2,3 → 1,2,3,1,...）；给选中图层的所有带关键帧属性（含骨骼）加循环表达式；再点一次移除</translation>
+        <translation>在最后一个关键帧后正向循环动画（1,2,3 -&gt; 1,2,3,1,...）；为选中图层的所有已打帧属性应用循环表达式（含骨骼）；再次点击可移除</translation>
     </message>
     <message>
         <location filename="../GUI/timelinedockwidget.cpp" line="406"/>
@@ -8551,7 +8551,7 @@ Select the layers you want to import:</source>
     <message>
         <location filename="../GUI/timelinedockwidget.cpp" line="408"/>
         <source>Bounce keyframed animation back and forth after the last key (1,2,3 -&gt; 1,2,3,2,1,...); applies a loop expression to every keyed property of the selected layers, bones included; click again to remove</source>
-        <translation>最后一个关键帧之后往复循环关键帧动画（1,2,3 → 1,2,3,2,1,...）；给选中图层的所有带关键帧属性（含骨骼）加循环表达式；再点一次移除</translation>
+        <translation>在最后一个关键帧后往复循环动画（1,2,3 -&gt; 1,2,3,2,1,...）；为选中图层的所有已打帧属性应用循环表达式（含骨骼）；再次点击可移除</translation>
     </message>
     <message>
         <location filename="../GUI/timelinedockwidget.cpp" line="448"/>
@@ -8562,12 +8562,16 @@ Select the layers you want to import:</source>
     <message>
         <location filename="../GUI/timelinedockwidget.cpp" line="450"/>
         <source>Cycle keyframed animation skipping the given number of leading keys (keys 1,2,3, skip 1 -&gt; cycles 2,3); the amount is asked for when enabled; applies a loop expression to every keyed property of the selected layers, bones included; click again to remove</source>
-        <translation>跳过左侧指定数量的关键帧后循环关键帧动画（关键帧 1,2,3、跳过 1 → 循环 2,3）；启用时会询问跳过数量；给选中图层的所有带关键帧属性（含骨骼）加循环表达式；再点一次移除</translation>
+        <translation>跳过开头指定数量的关键帧后循环（帧 1,2,3，跳过 1 -&gt; 循环 2,3）；启用时会询问跳过数量；为选中图层的所有已打帧属性应用循环表达式（含骨骼）；再次点击可移除</translation>
     </message>
     <message>
         <location filename="../GUI/timelinedockwidget.cpp" line="467"/>
         <source>Number of leading keys to skip:</source>
         <translation>跳过左侧关键帧的数量：</translation>
+    </message>
+    <message>
+        <source>Set Layer In Point (Alt+[</source>
+        <translation>设置图层入点 (Alt+[</translation>
     </message>
 </context>
 <context>

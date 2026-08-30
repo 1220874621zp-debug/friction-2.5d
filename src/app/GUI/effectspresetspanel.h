@@ -27,12 +27,15 @@
 #include <QWidget>
 #include <QTreeWidget>
 #include <QLineEdit>
+#include <QByteArray>
 #include <functional>
 
 class MainWindow;
 
 // AE-style Effects & Presets panel with live search filtering,
-// category tree, and double-click / Enter instant application
+// category tree, and double-click / Enter instant application.
+// Effect items can also be dragged onto the canvas: the layer under
+// the drop point receives the effect.
 class EffectsPresetsPanel : public QWidget {
     Q_OBJECT
 public:
@@ -41,6 +44,16 @@ public:
 
     void populateEffects();
     void focusSearch();
+
+    // drag registry: the apply closure cannot travel through
+    // QMimeData, so it is parked here and the mime payload carries
+    // only a generation token validated on drop (same process)
+    static const QString& sMimeFormat();
+    static QByteArray beginEffectDrag(const std::function<void()> &apply);
+    static std::function<void()> takeEffectDrag(const QByteArray &token);
+
+    std::function<void()> effectCallback(QTreeWidgetItem *item) const
+    { return mApplyCallbacks.value(item); }
 
 private slots:
     void onSearchTextChanged(const QString &text);
@@ -61,6 +74,9 @@ private:
     QTreeWidget *mTreeWidget = nullptr;
     QMap<QString, QTreeWidgetItem*> mCategoryItems;
     QMap<QTreeWidgetItem*, std::function<void()>> mApplyCallbacks;
+
+    static quint64 sDragGeneration;
+    static std::function<void()> sDragCallback;
 };
 
 #endif // EFFECTSPRESETSPANEL_H

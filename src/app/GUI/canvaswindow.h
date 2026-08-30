@@ -128,6 +128,9 @@ private:
     // scene dragged from the project panel -> create a link at the
     // drop position; returns true when the event was consumed
     bool handleSceneDrop(QDropEvent *event);
+    // effect dragged from the effects panel -> apply it to the layer
+    // under the drop point; returns true when the event was consumed
+    bool handleEffectDrop(QDropEvent *event);
 
     void setCanvasMode(const CanvasMode mode);
     void updatePaintModeCursor();
