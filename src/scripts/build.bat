@@ -77,6 +77,7 @@ copy "%SDK_DIR%\bin\Qt5Multimedia.dll" "%OUTPUT_DIR%\"
 copy "%SDK_DIR%\bin\Qt5Network.dll" "%OUTPUT_DIR%\"
 copy "%SDK_DIR%\bin\Qt5OpenGL.dll" "%OUTPUT_DIR%\"
 copy "%SDK_DIR%\bin\Qt5Qml.dll" "%OUTPUT_DIR%\"
+copy "%SDK_DIR%\bin\Qt5Svg.dll" "%OUTPUT_DIR%\"
 copy "%SDK_DIR%\bin\Qt5Widgets.dll" "%OUTPUT_DIR%\"
 copy "%SDK_DIR%\bin\Qt5Xml.dll" "%OUTPUT_DIR%\"
 

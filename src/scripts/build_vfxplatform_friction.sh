@@ -62,7 +62,10 @@ elif [ "${TAG}" != "" ]; then
     CHECKOUT="tags/${TAG}"
 fi
 
-if [ ! -d "${BUILD}/friction" ]; then
+if [ -d "/mnt/friction_src" ] && [ -f "/mnt/friction_src/CMakeLists.txt" ]; then
+    rm -rf ${BUILD}/friction || true
+    cp -a /mnt/friction_src ${BUILD}/friction
+elif [ ! -d "${BUILD}/friction" ]; then
     (cd ${BUILD} ;
         git clone ${FRICTION_REPO_URL} friction
         cd friction
