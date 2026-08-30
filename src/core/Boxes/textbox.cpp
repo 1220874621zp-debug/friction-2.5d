@@ -26,6 +26,10 @@
 #include "Boxes/textbox.h"
 #include <QInputDialog>
 #include <QMenu>
+#ifdef Q_OS_WIN
+#include "include/core/SkFontMgr.h"
+#include "include/ports/SkTypeface_win.h"
+#endif
 #include "canvas.h"
 #include "Animators/gradientpoints.h"
 #include "Animators/qstringanimator.h"
@@ -181,6 +185,48 @@ void TextBox::setFontSize(const qreal size)
     setFont(mFont.makeWithSize(size));
 }
 
+namespace {
+// the font list shown in the UI comes from Qt's QFontDatabase, but
+// rendering resolves names through Skia's DirectWrite system
+// collection. Fonts invisible to DirectWrite (Qt-only memory fonts,
+// some localized family names) silently resolve to a fallback
+// typeface there - CJK text then renders as tofu.
+
+bool typefaceMatchesFamily(const sk_sp<SkTypeface>& typeface,
+                           const QString& family)
+{
+    if (!typeface) { return false; }
+    SkString got;
+    typeface->getFamilyName(&got);
+    return QString::compare(QString::fromUtf8(got.c_str()),
+                             family, Qt::CaseInsensitive) == 0;
+}
+
+sk_sp<SkTypeface> makeTypefaceForFamily(const QString& family,
+                                        const SkFontStyle& style)
+{
+    const auto stdName = family.toStdString();
+    auto typeface = SkTypeface::MakeFromName(stdName.c_str(), style);
+    if (typefaceMatchesFamily(typeface, family)) { return typeface; }
+
+#ifdef Q_OS_WIN
+    // DirectWrite swapped in an unrelated fallback font - retry
+    // through GDI: its enumeration carries localized family names
+    // and also sees AddFontResourceEx (Qt-installed) fonts
+    static const sk_sp<SkFontMgr> gdiFontMgr = SkFontMgr_New_GDI();
+    if (gdiFontMgr) {
+        auto gdiTypeface = gdiFontMgr->legacyMakeTypeface(
+                    stdName.c_str(), style);
+        if (typefaceMatchesFamily(gdiTypeface, family)) {
+            return gdiTypeface;
+        }
+    }
+#endif
+    // no better answer than Skia's own fallback
+    return typeface;
+}
+}
+
 void TextBox::setFontFamilyAndStyle(const QString &fontFamily,
                                     const SkFontStyle& style)
 {
@@ -202,8 +248,7 @@ void TextBox::setFontFamilyAndStyle(const QString &fontFamily,
     mFamily = fontFamily;
     mStyle = style;
     SkFont newFont = mFont;
-    const auto fmlStdStr = fontFamily.toStdString();
-    const auto newTypeface = SkTypeface::MakeFromName(fmlStdStr.c_str(), style);
+    const auto newTypeface = makeTypefaceForFamily(fontFamily, style);
     newFont.setTypeface(newTypeface);
     setFont(newFont);
 }
