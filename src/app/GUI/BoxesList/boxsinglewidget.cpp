@@ -87,9 +87,9 @@
 
 QPixmap* BoxSingleWidget::VISIBLE_ICON;
 
-namespace {
 // Translate internal (lowercase) property names for display in the timeline.
-// lupdate extracts the tr() literals below.
+// lupdate extracts the tr() literals below. Global (declared in the
+// header): aepropertiesinspector.cpp calls it too.
 QString translatePropertyName(const QString& name) {
     static const QHash<QString, QString> map = {
         { QStringLiteral("transform"), BoxSingleWidget::tr("transform") },
@@ -189,6 +189,7 @@ QString translatePropertyName(const QString& name) {
     return map.value(name, name);
 }
 
+namespace {
 // AE-style layer label color swatch shown in place of the type icon
 QPixmap* labelColorPixmap(const QColor& color) {
     static QHash<QString, QPixmap*> cache;

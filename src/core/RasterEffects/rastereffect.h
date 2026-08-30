@@ -29,6 +29,17 @@
 #include "../glhelpers.h"
 #include "rastereffectcaller.h"
 
+// Windows GDI defines these as macros
+#ifdef HALFTONE
+#undef HALFTONE
+#endif
+#ifdef INVERT
+#undef INVERT
+#endif
+#ifdef MIRROR
+#undef MIRROR
+#endif
+
 enum class RasterEffectType : short {
     BLUR,
     SHADOW,
@@ -41,8 +52,42 @@ enum class RasterEffectType : short {
     NOISE_FADE = 7,
     COLORIZE,
     BRIGHTNESS_CONTRAST,
-    CHROMA_KEY,
-    LIQUID_GLASS
+    CHROMA_KEY,      // 10, as in every build since the chroma-key commit
+    LIQUID_GLASS,    // 11, ditto - keep 0..11 stable for saved projects
+    // ported AE effect family re-appended after the fork's own slots
+    // (merge fix: the rebase dropped these while their .cpps stayed)
+    VIGNETTE,
+    CHROMATIC_ABERRATION,
+    LETTERBOX,
+    SCANLINES,
+    GLOW,
+    DIRECTIONAL_BLUR,
+    RADIAL_BLUR,
+    WAVE_WARP,
+    RAIN,
+    EDGE_DETECT,
+    INVERT,
+    TINT,
+    PIXELATE,
+    NOISE,
+    MIRROR,
+    GLITCH,
+    POSTERIZE,
+    TWIRL,
+    CHANNEL_BLUR,
+    HALFTONE,
+    SHAKE,
+    DROP_SHADOW,
+    ZOOM_BLUR,
+    COLOR_GRADING,
+    STRIPE,
+    MOTION_TILE,
+    FRACTAL_NOISE,
+    LIGHT_SWEEP,
+    DISPLACEMENT_WARP,
+    FILM_GRAIN,
+    BLACK_WHITE_FLASH,
+    PIXEL_ART
 };
 
 struct BoxRenderData;

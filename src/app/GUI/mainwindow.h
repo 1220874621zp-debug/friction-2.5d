@@ -80,6 +80,7 @@ class BoxScrollWidget;
 class ScrollArea;
 class ScriptManager;
 class ProjectPanel;
+class QuickEffectSearchDialog;
 
 class MainWindow : public QMainWindow
 {
@@ -190,6 +191,13 @@ public:
     void openExpressionDialog(QrealAnimator* const target);
     void openApplyExpressionDialog(QrealAnimator* const target);
     static void installDebugLogHandler();
+    void showQuickEffectSearch();
+
+    // called by the quick effect search / presets panels
+    void addRasterEffect(const qsptr<RasterEffect> &effect);
+    void addBlendEffect(const qsptr<BlendEffect> &effect);
+    void addTransformEffect(const qsptr<TransformEffect> &effect);
+    void addPathEffect(const qsptr<PathEffect> &effect);
 
 protected:
     void lockFinished();
@@ -250,6 +258,8 @@ private:
     // JS plugin system (Scripts menu + console dock)
     ScriptManager *mScriptManager = nullptr;
     void setupScripting();
+
+    QuickEffectSearchDialog *mQuickEffectSearch = nullptr;
 
     QMenu *mWorkspaceMenu = nullptr;
     void rebuildWorkspaceMenu();
@@ -348,10 +358,6 @@ private:
 
     BoundingBox* getCurrentBox();
 
-    void addRasterEffect(const qsptr<RasterEffect> &effect);
-    void addBlendEffect(const qsptr<BlendEffect> &effect);
-    void addTransformEffect(const qsptr<TransformEffect> &effect);
-    void addPathEffect(const qsptr<PathEffect> &effect);
     void addFillPathEffect(const qsptr<PathEffect> &effect);
     void addOutlineBasePathEffect(const qsptr<PathEffect> &effect);
     void addOutlinePathEffect(const qsptr<PathEffect> &effect);

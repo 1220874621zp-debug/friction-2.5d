@@ -434,6 +434,9 @@ if(MSVC)
     # generate PDB so the hang watchdog stack dump
     # can resolve function names
     target_compile_options(${PROJECT_NAME} PRIVATE /Zi)
+    # all sources are UTF-8; without this MSVC reads Chinese string
+    # literals as GBK and fails with C2001 (newline in constant)
+    target_compile_options(${PROJECT_NAME} PRIVATE /utf-8)
     set_target_properties(${PROJECT_NAME} PROPERTIES
                           LINK_FLAGS "/DEBUG /OPT:REF /OPT:ICF")
 endif()
