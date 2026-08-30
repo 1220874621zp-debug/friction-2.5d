@@ -790,20 +790,31 @@ BoxRenderData *BoundingBox::updateCurrentRenderData(const qreal relFrame) {
 
 bool BoundingBox::hasCurrentRenderData(const qreal relFrame) const {
     const auto currentRenderData = mRenderDataHandler.getItemAtRelFrame(relFrame);
-    if(currentRenderData) return true;
+    if(currentRenderData) {
+        const auto data = currentRenderData->ref<BoxRenderData>();
+        // data from before the last content change (state bump) is
+        // not current: serving it skips re-renders the change needs
+        return data->fBoxStateId == mStateId;
+    }
     if(mDrawRenderContainer.isExpired()) return false;
     const auto drawData = mDrawRenderContainer.getSrcRenderData();
     if(!drawData) return false;
+    if(drawData->fBoxStateId != mStateId) return false;
     return !diffsIncludingInherited(drawData->fRelFrame, relFrame);
 }
 
 stdsptr<BoxRenderData> BoundingBox::getCurrentRenderData(const qreal relFrame) const {
     const auto currentRenderData =
             mRenderDataHandler.getItemAtRelFrame(relFrame);
-    if(currentRenderData) return currentRenderData->ref<BoxRenderData>();
+    if(currentRenderData) {
+        const auto data = currentRenderData->ref<BoxRenderData>();
+        if(data->fBoxStateId == mStateId) return data;
+        return nullptr;
+    }
     if(mDrawRenderContainer.isExpired()) return nullptr;
     const auto drawData = mDrawRenderContainer.getSrcRenderData();
     if(!drawData) return nullptr;
+    if(drawData->fBoxStateId != mStateId) return nullptr;
     if(!diffsIncludingInherited(drawData->fRelFrame, relFrame)) {
         const auto copy = drawData->makeCopy();
         copy->fRelFrame = relFrame;
@@ -1278,7 +1289,7 @@ void BoundingBox::setupRenderData(const qreal relFrame,
                                   Canvas* const scene) {
     {
         static int sSetupLog = 0;
-        if (sSetupLog++ < 8) {
+        if (sSetupLog++ < 30) {
             qWarning() << "[LG] setupRenderData box=" << prp_getName()
                        << "type=" << int(mType);
         }

@@ -81,6 +81,9 @@ void BoxRenderData::copyFrom(BoxRenderData *src) {
     fResolutionScale = src->fResolutionScale;
     fRenderedImage = src->requestImageCopy();
     fBoxStateId = src->fBoxStateId;
+    // backdrop-sampling effects live outside the effects renderer:
+    // a copy without them silently loses the composite-time treatment
+    fBackdropCallers = src->fBackdropCallers;
     mState = eTaskState::finished;
     fRelBoundingRectSet = true;
 }
