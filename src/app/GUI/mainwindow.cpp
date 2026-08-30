@@ -1533,6 +1533,8 @@ void MainWindow::setupLayout()
         const auto dock = new QDockWidget(title, this);
         dock->setObjectName(objectName); // required by saveState()
         dock->setWidget(widget);
+        dock->setPalette(ThemeSupport::getDarkPalette());
+        dock->setAutoFillBackground(true);
         dock->setFeatures(QDockWidget::DockWidgetClosable |
                           QDockWidget::DockWidgetMovable |
                           QDockWidget::DockWidgetFloatable);

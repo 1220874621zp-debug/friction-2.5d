@@ -38,6 +38,7 @@
 #include "GUI/layouthandler.h"
 #include "GUI/dialogsinterface.h"
 #include "dialogs/scenesettingsdialog.h"
+#include "themesupport.h"
 
 namespace {
 // the item data role carrying the raw Canvas pointer
@@ -83,7 +84,16 @@ const QString& ProjectPanel::sMimeFormat()
 ProjectPanel::ProjectPanel(Document& doc, QWidget* const parent) :
     QWidget(parent), mDocument(doc)
 {
+    setPalette(ThemeSupport::getDarkPalette());
+    setAutoFillBackground(true);
+
     mTree = new SceneTreeWidget(this);
+    mTree->setPalette(ThemeSupport::getDarkPalette());
+    mTree->setAutoFillBackground(true);
+    if (mTree->viewport()) {
+        mTree->viewport()->setPalette(ThemeSupport::getDarkPalette());
+        mTree->viewport()->setAutoFillBackground(true);
+    }
     mTree->setColumnCount(2);
     mTree->setHeaderLabels({tr("Scene"), tr("Info")});
     mTree->header()->setSectionResizeMode(0, QHeaderView::Interactive);
