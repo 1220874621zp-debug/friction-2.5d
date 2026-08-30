@@ -608,7 +608,7 @@
         </message>
         <message>
             <source>Blur</source>
-            <translation>模糊</translation>
+            <translation>模糊 (Blur)</translation>
         </message>
         <message>
             <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="141" />
@@ -618,7 +618,7 @@
         <message>
             <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="168" />
             <source>Color</source>
-            <translation>颜色</translation>
+            <translation>颜色 (Color)</translation>
         </message>
         <message>
             <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="160" />
@@ -1489,7 +1489,7 @@
         </message>
         <message>
             <source>Generate</source>
-            <translation>生成</translation>
+            <translation>生成 (Generate)</translation>
         </message>
         <message>
             <source>Glitch</source>
@@ -1723,7 +1723,7 @@
         </message>
         <message>
             <source>Simulation</source>
-            <translation>模拟</translation>
+            <translation>模拟 (Simulation)</translation>
         </message>
         <message>
             <source>Split Clip</source>
@@ -2278,7 +2278,7 @@
         </message>
         <message>
             <source>Generate</source>
-            <translation>生成</translation>
+            <translation>生成 (Generate)</translation>
         </message>
         <message>
             <source>Glitch</source>
@@ -2362,7 +2362,7 @@
         </message>
         <message>
             <source>Simulation</source>
-            <translation>模拟</translation>
+            <translation>模拟 (Simulation)</translation>
         </message>
         <message>
             <source>Stripe</source>
@@ -4952,7 +4952,7 @@ Added layers: %3</source>
             <location filename="../GUI/menu.cpp" line="243" />
             <source>Duplicate</source>
             <comment>MenuBar_Edit</comment>
-            <translation>创建副本</translation>
+            <translation>副本生成 (Duplicate)</translation>
         </message>
         <message>
             <location filename="../GUI/menu.cpp" line="644" />
@@ -5113,7 +5113,7 @@ Added layers: %3</source>
         </message>
         <message>
             <source>Generate</source>
-            <translation>生成</translation>
+            <translation>生成 (Generate)</translation>
         </message>
         <message>
             <location filename="../GUI/extraactions.cpp" line="168" />
@@ -5333,7 +5333,7 @@ Added layers: %3</source>
         <message>
             <source>Motion Blur</source>
             <comment>MenuBar_View</comment>
-            <translation>运动模糊</translation>
+            <translation>运动模糊 (Motion Blur)</translation>
         </message>
         <message>
             <source>Motion Tile</source>
@@ -5342,7 +5342,7 @@ Added layers: %3</source>
         <message>
             <location filename="../GUI/extraactions.cpp" line="59" />
             <source>Move</source>
-            <translation>移动</translation>
+            <translation>位移 (Move)</translation>
         </message>
         <message>
             <location filename="../GUI/extraactions.cpp" line="57" />
@@ -5478,7 +5478,7 @@ Added layers: %3</source>
             <location filename="../GUI/menu.cpp" line="425" />
             <source>Path</source>
             <comment>MenuBar</comment>
-            <translation>路径</translation>
+            <translation>路径 (Path)</translation>
         </message>
         <message>
             <location filename="../GUI/menu.cpp" line="692" />
@@ -5839,7 +5839,7 @@ Are you sure you want to save this project file?</source>
         </message>
         <message>
             <source>Simulation</source>
-            <translation>模拟</translation>
+            <translation>模拟 (Simulation)</translation>
         </message>
         <message>
             <source>Stripe</source>
@@ -6925,7 +6925,7 @@ Added layers: %3</source>
         </message>
         <message>
             <source>Blur</source>
-            <translation>模糊</translation>
+            <translation>模糊 (Blur)</translation>
         </message>
         <message>
             <source>Bone</source>
@@ -6937,7 +6937,7 @@ Added layers: %3</source>
         </message>
         <message>
             <source>Brightness-Contrast</source>
-            <translation>亮度-对比度</translation>
+            <translation>亮度对比度 (Brightness-Contrast)</translation>
         </message>
         <message>
             <source>Camera</source>
@@ -6959,7 +6959,7 @@ Added layers: %3</source>
         </message>
         <message>
             <source>Chroma Key</source>
-            <translation>色度键控（扣绿）</translation>
+            <translation>扣绿抠像 (Chroma Key)</translation>
         </message>
         <message>
             <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="69" />
@@ -6968,7 +6968,7 @@ Added layers: %3</source>
         </message>
         <message>
             <source>Color</source>
-            <translation>颜色</translation>
+            <translation>颜色 (Color)</translation>
         </message>
         <message>
             <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="59" />
@@ -6977,7 +6977,7 @@ Added layers: %3</source>
         </message>
         <message>
             <source>Colorize</source>
-            <translation>颜色替换</translation>
+            <translation>着色 (Colorize)</translation>
         </message>
         <message>
             <location filename="../../core/FileCacheHandlers/videostreamsdata.cpp" line="86" />
@@ -6997,7 +6997,7 @@ Added layers: %3</source>
         <message>
             <location filename="../../core/PathEffects/patheffectmenucreator.cpp" line="43" />
             <source>Dash</source>
-            <translation>虚线</translation>
+            <translation>虚线 (Dash)</translation>
         </message>
         <message>
             <location filename="../../core/Properties/namedproperty.h" line="39" />
@@ -7027,7 +7027,7 @@ Added layers: %3</source>
         <message>
             <location filename="../../core/PathEffects/patheffectmenucreator.cpp" line="39" />
             <source>Displace</source>
-            <translation>位移</translation>
+            <translation>置换 (Displace)</translation>
         </message>
         <message>
             <source>Displacement Warp</source>
@@ -7040,7 +7040,7 @@ Added layers: %3</source>
             <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="75" />
             <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="77" />
             <source>Distort</source>
-            <translation>扭曲变形 (Distort)</translation>
+            <translation>扭曲 (Distort)</translation>
         </message>
         <message>
             <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="52" />
@@ -7050,7 +7050,7 @@ Added layers: %3</source>
         <message>
             <location filename="../../core/PathEffects/patheffectmenucreator.cpp" line="45" />
             <source>Duplicate</source>
-            <translation>复制</translation>
+            <translation>副本生成 (Duplicate)</translation>
         </message>
         <message>
             <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="85" />
@@ -7124,17 +7124,17 @@ Added layers: %3</source>
         <message>
             <location filename="../../core/TransformEffects/transformeffectmenucreator.cpp" line="38" />
             <source>Follow Object</source>
-            <translation>跟随对象</translation>
+            <translation>跟随对象 (Follow Object)</translation>
         </message>
         <message>
             <location filename="../../core/TransformEffects/transformeffectmenucreator.cpp" line="40" />
             <source>Follow Object Relative</source>
-            <translation>跟随对象（相对）</translation>
+            <translation>相对跟随对象 (Follow Object Relative)</translation>
         </message>
         <message>
             <location filename="../../core/TransformEffects/transformeffectmenucreator.cpp" line="36" />
             <source>Follow Path</source>
-            <translation>跟随路径</translation>
+            <translation>沿路径运动 (Follow Path)</translation>
         </message>
         <message>
             <source>Fractal Noise</source>
@@ -7159,7 +7159,7 @@ Added layers: %3</source>
         </message>
         <message>
             <source>Generate</source>
-            <translation>生成</translation>
+            <translation>生成 (Generate)</translation>
         </message>
         <message>
             <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="91" />
@@ -7234,7 +7234,7 @@ Added layers: %3</source>
         <message>
             <location filename="../../core/PathEffects/patheffectmenucreator.cpp" line="53" />
             <source>Lines</source>
-            <translation>线条</translation>
+            <translation>线条填充 (Lines)</translation>
         </message>
         <message>
             <source>Liquid Glass</source>
@@ -7277,7 +7277,7 @@ Added layers: %3</source>
         </message>
         <message>
             <source>Motion Blur</source>
-            <translation>运动模糊</translation>
+            <translation>运动模糊 (Motion Blur)</translation>
         </message>
         <message>
             <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="95" />
@@ -7287,7 +7287,7 @@ Added layers: %3</source>
         <message>
             <location filename="../../core/BlendEffects/blendeffectmenucreator.cpp" line="31" />
             <source>Move</source>
-            <translation>移动</translation>
+            <translation>位移 (Move)</translation>
         </message>
         <message>
             <source>Multi-Layer</source>
@@ -7321,7 +7321,7 @@ Added layers: %3</source>
         </message>
         <message>
             <source>Noise Fade</source>
-            <translation>噪波渐变</translation>
+            <translation>杂色消融 (Noise Fade)</translation>
         </message>
         <message>
             <location filename="../../core/Psd/psdimagebox.cpp" line="91" />
@@ -7347,7 +7347,7 @@ Added layers: %3</source>
         <message>
             <location filename="../../core/TransformEffects/transformeffectmenucreator.cpp" line="42" />
             <source>Parent</source>
-            <translation>父级</translation>
+            <translation>父级绑定 (Parent)</translation>
         </message>
         <message>
             <source>Path Effects</source>
@@ -7437,7 +7437,7 @@ Added layers: %3</source>
         </message>
         <message>
             <source>Shadow</source>
-            <translation>阴影</translation>
+            <translation>投影 (Shadow)</translation>
         </message>
         <message>
             <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="77" />
@@ -7447,7 +7447,7 @@ Added layers: %3</source>
         <message>
             <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="97" />
             <source>Simulation</source>
-            <translation>模拟</translation>
+            <translation>模拟 (Simulation)</translation>
         </message>
         <message>
             <source>Solid Layer</source>
@@ -7456,12 +7456,12 @@ Added layers: %3</source>
         <message>
             <location filename="../../core/PathEffects/patheffectmenucreator.cpp" line="49" />
             <source>Solidify</source>
-            <translation>实体化</translation>
+            <translation>实体化 (Solidify)</translation>
         </message>
         <message>
             <location filename="../../core/PathEffects/patheffectmenucreator.cpp" line="41" />
             <source>Spatial Displace</source>
-            <translation>空间位移</translation>
+            <translation>空间置换 (Spatial Displace)</translation>
         </message>
         <message>
             <source>Spill Matte</source>
@@ -7488,22 +7488,22 @@ Added layers: %3</source>
         <message>
             <location filename="../../core/PathEffects/patheffectmenucreator.cpp" line="47" />
             <source>Sub-Path</source>
-            <translation>子路径</translation>
+            <translation>子路径 (Sub-Path)</translation>
         </message>
         <message>
             <location filename="../../core/PathEffects/patheffectmenucreator.cpp" line="57" />
             <source>Subdivide</source>
-            <translation>细分</translation>
+            <translation>细分 (Subdivide)</translation>
         </message>
         <message>
             <location filename="../../core/PathEffects/patheffectmenucreator.cpp" line="51" />
             <source>Sum</source>
-            <translation>求和</translation>
+            <translation>轮廓融合 (Sum)</translation>
         </message>
         <message>
             <location filename="../../core/BlendEffects/blendeffectmenucreator.cpp" line="33" />
             <source>Targeted</source>
-            <translation>定向</translation>
+            <translation>目标定向 (Targeted)</translation>
         </message>
         <message>
             <source>The following items were skipped:</source>
@@ -7532,11 +7532,11 @@ Select the layers you want to import:</source>
         <message>
             <location filename="../../core/TransformEffects/transformeffectmenucreator.cpp" line="34" />
             <source>Track</source>
-            <translation>跟踪</translation>
+            <translation>跟踪 (Track)</translation>
         </message>
         <message>
             <source>Transitions</source>
-            <translation>过渡</translation>
+            <translation>转场过渡 (Transitions)</translation>
         </message>
         <message>
             <location filename="../../core/RasterEffects/rastereffectmenucreator.cpp" line="75" />
@@ -7577,7 +7577,7 @@ Select the layers you want to import:</source>
         </message>
         <message>
             <source>Wipe</source>
-            <translation>擦除</translation>
+            <translation>线性擦除 (Wipe)</translation>
         </message>
         <message>
             <location filename="../../core/appsupport.cpp" line="1333" />
@@ -7591,7 +7591,7 @@ Select the layers you want to import:</source>
         <message>
             <location filename="../../core/PathEffects/patheffectmenucreator.cpp" line="55" />
             <source>ZigZag</source>
-            <translation>锯齿</translation>
+            <translation>波浪折线 (ZigZag)</translation>
         </message>
         <message>
             <source>Zoom</source>
@@ -7919,7 +7919,7 @@ Select the layers you want to import:</source>
         </message>
         <message>
             <source>Generate</source>
-            <translation>生成</translation>
+            <translation>生成 (Generate)</translation>
         </message>
         <message>
             <source>Glitch</source>
@@ -8018,7 +8018,7 @@ Select the layers you want to import:</source>
         </message>
         <message>
             <source>Simulation</source>
-            <translation>模拟</translation>
+            <translation>模拟 (Simulation)</translation>
         </message>
         <message>
             <source>Stripe</source>

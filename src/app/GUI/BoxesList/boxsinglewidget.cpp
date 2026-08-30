@@ -238,6 +238,27 @@ QString translatePropertyName(const QString& name) {
         { QStringLiteral("edge defringe"), QStringLiteral("\u8FB9\u7F18\u53BB\u8FB9 (Edge Defringe)") },
         { QStringLiteral("spill reduction"), QStringLiteral("\u6EA2\u8272\u6291\u5236 (Spill Reduction)") },
         { QStringLiteral("spill balance"), QStringLiteral("\u6EA2\u8272\u5E73\u8861 (Spill Balance)") },
+        // path effects
+        { QStringLiteral("displace"), QStringLiteral("\u7F6E\u6362 (Displace)") },
+        { QStringLiteral("spatial displace"), QStringLiteral("\u7A7A\u95F4\u7F6E\u6362 (Spatial Displace)") },
+        { QStringLiteral("dash"), QStringLiteral("\u865A\u7EBF (Dash)") },
+        { QStringLiteral("duplicate"), QStringLiteral("\u526F\u672C\u751F\u6210 (Duplicate)") },
+        { QStringLiteral("sub-path"), QStringLiteral("\u5B50\u8DEF\u5F84 (Sub-Path)") },
+        { QStringLiteral("sub path"), QStringLiteral("\u5B50\u8DEF\u5F84 (Sub-Path)") },
+        { QStringLiteral("solidify"), QStringLiteral("\u5B9E\u4F53\u5316 (Solidify)") },
+        { QStringLiteral("sum"), QStringLiteral("\u8F6E\u5ED3\u878D\u5408 (Sum)") },
+        { QStringLiteral("lines"), QStringLiteral("\u7EBF\u6761\u586B\u5145 (Lines)") },
+        { QStringLiteral("zigzag"), QStringLiteral("\u6CE2\u6D6A\u6298\u7EBF (ZigZag)") },
+        { QStringLiteral("subdivide"), QStringLiteral("\u7EC6\u5206 (Subdivide)") },
+        // blend effects
+        { QStringLiteral("move"), QStringLiteral("\u4F4D\u79FB (Move)") },
+        { QStringLiteral("targeted"), QStringLiteral("\u76EE\u6807\u5B9A\u5411 (Targeted)") },
+        // transform effects
+        { QStringLiteral("track"), QStringLiteral("\u8DDF\u8E2A (Track)") },
+        { QStringLiteral("follow path"), QStringLiteral("\u6CBF\u8DEF\u5F84\u8FD0\u52A8 (Follow Path)") },
+        { QStringLiteral("follow object"), QStringLiteral("\u8DDF\u968F\u5BF9\u8C61 (Follow Object)") },
+        { QStringLiteral("follow object relative"), QStringLiteral("\u76F8\u5BF9\u8DDF\u968F\u5BF9\u8C61 (Follow Object Relative)") },
+        { QStringLiteral("parent"), QStringLiteral("\u7236\u7EA7\u7ED1\u5B9A (Parent)") },
         { QStringLiteral("effects"), QStringLiteral("\u7279\u6548 (Effects)") },
         // effect parameters
         { QStringLiteral("edge"), QStringLiteral("\u8FB9\u7F18\u5F3A\u5EA6 (Edge)") },
