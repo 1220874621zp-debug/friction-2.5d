@@ -160,12 +160,12 @@ void SceneNavigatorBar::rebind(Canvas* const scene) {
     mRemConn = connect(scene, &ContainerBox::removedObject,
             this, [this](int, eBoxOrSound*) { rebuild(); });
 
-    QList<Canvas*> named = sPath;
-    for (const auto& linked : linkedScenes(scene)) {
-        if (!named.contains(linked)) named << linked;
+    QList<Canvas*> named;
+    for (const auto& scene : mDocument.fScenes) {
+        const auto s = scene.get();
+        if (s && !named.contains(s)) named << s;
     }
     for (const auto& s : named) {
-        if (!s) continue;
         mNameConns << connect(s, &Canvas::prp_nameChanged,
                 this, [this](const QString&) { rebuild(); });
     }
@@ -181,10 +181,10 @@ void SceneNavigatorBar::rebuild() {
     mMoreBtn = nullptr;
     mMoreMenu = nullptr;
     mCrumbBtns.clear();
-    mCrumbSeps.clear();
+    mChipScenes.clear();
 
     // left-most "..." overflow button, hidden unless the row is
-    // too narrow; its menu lists the collapsed breadcrumb entries
+    // too narrow; its menu lists the collapsed chips
     mMoreBtn = new QPushButton("...", this);
     setupFlatBtn(mMoreBtn);
     mMoreMenu = new QMenu(mMoreBtn);
@@ -192,65 +192,56 @@ void SceneNavigatorBar::rebuild() {
     mRowLayout->addWidget(mMoreBtn);
     mMoreBtn->hide();
 
-    // breadcrumb of the ANCESTORS only (path minus the current
-    // scene) - the row-start dropdown already shows the current
-    // scene name; rendering it here too read as two identical
-    // dropdowns side by side
-    for (int i = 0; i < sPath.count() - 1; i++) {
-        const auto scene = sPath.at(i);
-        const auto btn = new QPushButton(
-                    fontMetrics().elidedText(scene->prp_getName(),
+    // flat scene list: EVERY other scene of the project as a
+    // directly clickable chip (the current scene is shown by the
+    // row-start dropdown, rendering it here too read as two
+    // identical dropdowns). Scenes nested (linked) inside the
+    // current scene carry a bold marker - that is the
+    // folder-structure part
+    const auto cur = sPath.isEmpty() ? nullptr : sPath.last();
+    QList<Canvas*> nested;
+    if (cur) nested = linkedScenes(cur);
+
+    const auto addChip = [this](Canvas* const scene, const bool isNested) {
+        const QString name = scene->prp_getName();
+        const QString label = isNested
+                ? QString(QChar(0x25B8)) + QStringLiteral(" ") + name
+                : name;
+        const auto chip = new QPushButton(
+                    fontMetrics().elidedText(label,
                                              Qt::ElideMiddle, 160), this);
-        setupFlatBtn(btn);
-        btn->setToolTip(scene->prp_getName());
-        connect(btn, &QPushButton::clicked, this,
+        setupFlatBtn(chip);
+        chip->setToolTip(name);
+        if (isNested) {
+            auto font = chip->font();
+            font.setBold(true);
+            chip->setFont(font);
+        }
+        connect(chip, &QPushButton::clicked, this,
                 [this, scene]() {
-            const int idx = sPath.indexOf(scene);
-            if (idx >= 0) { sPath = sPath.mid(0, idx + 1); }
             emit sceneRequested(scene);
         });
-        mRowLayout->addWidget(btn);
-        mCrumbBtns << btn;
-        // separator AFTER this button, index-aligned with
-        // mCrumbBtns for the overflow collapse
-        const auto sep = new QLabel(QString(QChar(0x25B8)), this);
-        mRowLayout->addWidget(sep);
-        mCrumbSeps << sep;
-    }
+        mRowLayout->addWidget(chip);
+        mCrumbBtns << chip;
+        mChipScenes << scene;
+    };
 
-    // chips: scenes nested (linked) inside the current one, always
-    // directly clickable - never collapsed by the overflow logic
-    int chipsBuilt = 0;
-    if (!sPath.isEmpty()) {
-        const auto cur = sPath.last();
-        QList<Canvas*> chips;
-        for (const auto& linked : linkedScenes(cur)) {
-            // skip scenes already on the path (cycle protection)
-            if (!sPath.contains(linked)) chips << linked;
-        }
-        if (!chips.isEmpty()) {
-            const auto lbl = new QLabel(tr("Nested:"), this);
-            mRowLayout->addWidget(lbl);
-            for (const auto& chipScene : chips) {
-                const auto chip = new QPushButton(
-                            fontMetrics().elidedText(
-                                chipScene->prp_getName(),
-                                Qt::ElideMiddle, 160), this);
-                setupFlatBtn(chip);
-                chip->setToolTip(chipScene->prp_getName());
-                connect(chip, &QPushButton::clicked, this,
-                        [this, chipScene]() {
-                    emit sceneRequested(chipScene);
-                });
-                mRowLayout->addWidget(chip);
-                chipsBuilt++;
-            }
-        }
+    // plain sibling scenes first, nested ones last: the overflow
+    // collapse eats from the left, so the nested (drill-in) chips
+    // survive the longest
+    for (const auto& scene : mDocument.fScenes) {
+        const auto s = scene.get();
+        if (!s || s == cur || nested.contains(s)) { continue; }
+        addChip(s, false);
+    }
+    for (const auto& scene : mDocument.fScenes) {
+        const auto s = scene.get();
+        if (!s || s == cur || !nested.contains(s)) { continue; }
+        addChip(s, true);
     }
     updateOverflow();
-    qWarning() << "NAV: rebuild crumbs=" << mCrumbBtns.count()
-               << "chips=" << chipsBuilt
-               << "path=" << sPath.count()
+    qWarning() << "NAV: rebuild chips=" << mCrumbBtns.count()
+               << "nested=" << nested.count()
                << "w=" << width() << "visible=" << isVisible();
 }
 
@@ -258,7 +249,6 @@ void SceneNavigatorBar::updateOverflow() {
     if (!mMoreBtn || !mMoreMenu) { return; }
     mMoreMenu->clear();
     for (const auto& btn : mCrumbBtns) { btn->show(); }
-    for (const auto& sep : mCrumbSeps) { if (sep) sep->show(); }
 
     const auto totalWidth = [this]() {
         int w = 0;
@@ -276,26 +266,19 @@ void SceneNavigatorBar::updateOverflow() {
     int hiddenCount = 0;
     while (totalWidth() > width() &&
            hiddenCount < mCrumbBtns.count()) {
-        // collapse the breadcrumb from the left, one entry at a
-        // time; nested chips are never collapsed
-        const auto btn = mCrumbBtns.at(hiddenCount);
-        btn->hide();
-        if (hiddenCount < mCrumbSeps.count() &&
-            mCrumbSeps.at(hiddenCount)) {
-            mCrumbSeps.at(hiddenCount)->hide();
-        }
+        // collapse chips from the left; the bold nested chips are
+        // added last so they survive the longest
+        mCrumbBtns.at(hiddenCount)->hide();
         hiddenCount++;
     }
 
     if (hiddenCount > 0) {
         mMoreBtn->show();
         for (int i = 0; i < hiddenCount; i++) {
-            const auto scene = sPath.value(i);
+            const auto scene = mChipScenes.value(i);
             if (!scene) { continue; }
             const auto act = mMoreMenu->addAction(scene->prp_getName());
             connect(act, &QAction::triggered, this, [this, scene]() {
-                const int idx = sPath.indexOf(scene);
-                if (idx >= 0) { sPath = sPath.mid(0, idx + 1); }
                 emit sceneRequested(scene);
             });
         }

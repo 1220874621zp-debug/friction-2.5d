@@ -73,10 +73,10 @@ private:
     QHBoxLayout* mRowLayout = nullptr;
     QPushButton* mMoreBtn = nullptr;
     QMenu* mMoreMenu = nullptr;
-    // breadcrumb buttons in path order; mCrumbSeps[i] is the
-    // separator AFTER mCrumbBtns[i] (null for the last entry)
+    // flat chips, one per non-current scene (nested ones first);
+    // mChipScenes[i] is the scene of mCrumbBtns[i]
     QList<QPushButton*> mCrumbBtns;
-    QList<QLabel*> mCrumbSeps;
+    QList<Canvas*> mChipScenes;
 
     QMetaObject::Connection mInsConn;
     QMetaObject::Connection mRemConn;
