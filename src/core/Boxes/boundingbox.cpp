@@ -1276,6 +1276,13 @@ void BoundingBox::setupRenderData(const qreal relFrame,
                                   const QMatrix& parentM,
                                   BoxRenderData * const data,
                                   Canvas* const scene) {
+    {
+        static int sSetupLog = 0;
+        if (sSetupLog++ < 8) {
+            qWarning() << "[LG] setupRenderData box=" << prp_getName()
+                       << "type=" << int(mType);
+        }
+    }
     setupWithoutRasterEffects(relFrame, parentM, data, scene);
     setupRasterEffects(relFrame, data, scene);
     // track matte: queue the matte layer's independent render (main
@@ -1364,6 +1371,14 @@ void BoundingBox::setupRasterEffects(const qreal relFrame,
     const bool effectsVisible = scene->getRasterEffectsVisible();
     if(data->fOpacity > 0.001 && effectsVisible && mEffectsEnabled) {
         mRasterEffectsAnimators->addEffects(relFrame, data);
+    } else {
+        static int sGateLog = 0;
+        if (sGateLog++ < 8) {
+            qWarning() << "[LG] setupRasterEffects BLOCKED box="
+                       << prp_getName() << "op=" << data->fOpacity
+                       << "fxVis=" << effectsVisible
+                       << "enab=" << mEffectsEnabled;
+        }
     }
 }
 
@@ -1444,7 +1459,22 @@ bool BoundingBox::isAnimated() const {
 }
 
 void BoundingBox::addRasterEffect(const qsptr<RasterEffect>& rasterEffect) {
+    {
+        static int sAddLog = 0;
+        if (sAddLog++ < 8) {
+            qWarning() << "[LG] addRasterEffect box=" << prp_getName()
+                       << "type=" << int(mType);
+        }
+    }
     mRasterEffectsAnimators->addChild(rasterEffect);
+    // make sure the change propagates even if the fresh effect's
+    // influence range intersects empty against the collection's
+    rasterEffect->prp_afterWholeInfluenceRangeChanged();
+    // and force a canvas repaint so composite-time backdrop effects
+    // become visible immediately (the box render alone does not
+    // retrigger the canvas composite in every path)
+    const auto scene = getParentScene();
+    if (scene) scene->requestUpdate();
 }
 
 void BoundingBox::removeRasterEffect(const qsptr<RasterEffect> &effect) {
@@ -1923,6 +1953,12 @@ void BoundingBox::renderDataFinished(BoxRenderData *renderData) {
     }
     if(newerSate || closerFrame) {
         mDrawRenderContainer.setSrcRenderData(renderData);
+        // dense one-shot diagnostic for backdrop-effect debugging
+        static int sFinLog = 0;
+        if (renderData->fBackdropCallers.count() > 0 && sFinLog++ < 12) {
+            qWarning() << "[LG] renderDataFinished -> container, callers="
+                       << renderData->fBackdropCallers.count();
+        }
         const bool currentFrame = isZero4Dec(relFrame - anim_getCurrentRelFrame());
         const bool expired = !currentState || !currentFrame;
         mDrawRenderContainer.setExpired(expired);

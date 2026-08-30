@@ -163,6 +163,7 @@ LiquidGlassEffect::LiquidGlassEffect() :
                  true,
                  RasterEffectType::LIQUID_GLASS)
 {
+    qWarning() << "[LG] effect constructed";
     mRefraction = enve::make_shared<QrealAnimator>(3, 0, 6, 0.05,
                                                    QObject::tr("refraction"));
     ca_addChild(mRefraction);
@@ -193,11 +194,24 @@ public:
                          const BoxRenderData& box,
                          const SkPaint& paint) {
         Q_UNUSED(paint)
+        // dense one-shot diagnostics: identify exactly where the
+        // pipeline stops when the effect shows nothing
+        static int sTrace = 0;
+        const bool trace = sTrace++ < 12;
+        if (trace) {
+            qWarning() << "[LG] processBackdrop enter canvas=" << canvas
+                       << "img=" << bool(box.fRenderedImage)
+                       << "opacity=" << box.fOpacity
+                       << "callers= see divert";
+        }
         if(!canvas || !box.fRenderedImage) return;
         const SkIRect dev = canvas->getDeviceClipBounds();
         if(dev.isEmpty()) return;
         auto* surf = canvas->getSurface();
-        if(!surf) return;
+        if(!surf) {
+            if (trace) qWarning() << "[LG] no surface, abort";
+            return;
+        }
 
         canvas->flush();
         const auto snap = surf->makeImageSnapshot(dev);
@@ -271,6 +285,18 @@ public:
         // throttled diagnostic for the runtime debug log
         static int sLog = 0;
         if (sLog++ < 8) {
+            // transform consistency: expected device bbox of the drawn
+            // image rect (fGlobalRect through the same matrix the mask
+            // used) vs the measured mask bbox
+            SkMatrix tm = canvas->getTotalMatrix();
+            if (box.fUseRenderTransform) {
+                tm.preConcat(toSkMatrix(box.fRenderTransform));
+            }
+            const SkRect imgR = SkRect::MakeXYWH(
+                        float(box.fGlobalRect.x()), float(box.fGlobalRect.y()),
+                        float(box.fRenderedImage->width()),
+                        float(box.fRenderedImage->height()));
+            const SkRect expR = tm.mapRect(imgR);
             qWarning() << "[LG] backdrop dev=" << dev.width() << "x"
                        << dev.height() << "shape=" << bw << "x" << bh
                        << "maxDist=" << int(maxDist)
@@ -278,6 +304,15 @@ public:
                                             float(bw * bh))
                        << "rect=" << box.fGlobalRect
                        << "useT=" << box.fUseRenderTransform
+                       << "tm=[" << double(tm.getScaleX())
+                       << double(tm.getScaleY())
+                       << double(tm.getSkewX()) << "]"
+                       << "maskAt=" << (bxMin + dev.left())
+                       << (byMin + dev.top())
+                       << "expAt=" << int(expR.left() + 0.5f)
+                       << int(expR.top() + 0.5f)
+                       << int(expR.width() + 0.5f) << "x"
+                       << int(expR.height() + 0.5f)
                        << "refr=" << mData.mRefraction;
         }
 
@@ -368,6 +403,12 @@ stdsptr<RasterEffectCaller> LiquidGlassEffect::getEffectCaller(
         const qreal influence, BoxRenderData * const data) const {
     Q_UNUSED(resolution)
     Q_UNUSED(data)
+
+    static int sCallerLog = 0;
+    if (sCallerLog++ < 12) {
+        qWarning() << "[LG] getEffectCaller refr="
+                   << mRefraction->getEffectiveValue(relFrame);
+    }
 
     LiquidGlassEffectData effData;
     effData.mRefraction = mRefraction->getEffectiveValue(relFrame);
