@@ -243,6 +243,16 @@ public:
         }
         if (bxMax < bxMin) return; // empty shape
 
+        // how much of the bbox actually is shape (diagnostic aid)
+        int insideCount = 0;
+        for (int y = 0; y < maskB.height(); y++) {
+            const uchar* row = static_cast<const uchar*>(
+                        maskB.getAddr(0, y));
+            for (int x = 0; x < maskB.width(); x++) {
+                if (row[x * 4 + 3] > 127) insideCount++;
+            }
+        }
+
         // 2) distance field inside the shape
         const int bw = bxMax - bxMin + 1;
         const int bh = byMax - byMin + 1;
@@ -264,6 +274,10 @@ public:
             qWarning() << "[LG] backdrop dev=" << dev.width() << "x"
                        << dev.height() << "shape=" << bw << "x" << bh
                        << "maxDist=" << int(maxDist)
+                       << "inside%=" << int(100.f * insideCount /
+                                            float(bw * bh))
+                       << "rect=" << box.fGlobalRect
+                       << "useT=" << box.fUseRenderTransform
                        << "refr=" << mData.mRefraction;
         }
 
@@ -335,10 +349,14 @@ public:
             }
         }
 
-        // 5) draw the glass over the backdrop, device space
+        // 5) the glass REPLACES the layer pixels: draw it over the
+        // backdrop with the layer's own opacity (device space)
+        if (isZero4Dec(box.fOpacity)) return;
         canvas->save();
         canvas->resetMatrix(); // the snapshot is in device space
-        canvas->drawImage(SkImage::MakeFromBitmap(dstB), 0, 0);
+        SkPaint dp;
+        dp.setAlpha(static_cast<U8CPU>(qRound(box.fOpacity * 2.55)));
+        canvas->drawImage(SkImage::MakeFromBitmap(dstB), 0, 0, &dp);
         canvas->restore();
     }
 private:

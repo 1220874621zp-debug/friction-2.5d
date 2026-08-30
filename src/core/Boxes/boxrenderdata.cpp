@@ -105,13 +105,15 @@ void BoxRenderData::drawOnParentLayer(SkCanvas * const canvas) {
 
 void BoxRenderData::drawOnParentLayer(SkCanvas * const canvas,
                                       SkPaint& paint) {
-    // backdrop-sampling effects run before anything else so the layer's
-    // own (semi-transparent) content composites over the treated
-    // backdrop; runs even at zero opacity since the distortion is not
-    // part of the layer image. The preview path reaches this same code
+    // backdrop-sampling effects REPLACE the layer pixels with the
+    // treated backdrop: the layer's alpha is the glass shape, its own
+    // content does not draw. The preview path reaches this same code
     // through RenderContainer::drawSk
-    for(const auto& c : fBackdropCallers) {
-        if(c) c->processBackdrop(canvas, *this, paint);
+    if(!fBackdropCallers.isEmpty()) {
+        for(const auto& c : fBackdropCallers) {
+            if(c) c->processBackdrop(canvas, *this, paint);
+        }
+        return;
     }
     if(isZero4Dec(fOpacity) || !fRenderedImage) return;
     if(fUseRenderTransform) canvas->concat(toSkMatrix(fRenderTransform));
