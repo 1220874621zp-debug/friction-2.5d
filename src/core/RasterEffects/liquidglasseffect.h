@@ -40,12 +40,18 @@
 
 #include "rastereffect.h"
 #include "Animators/qrealanimator.h"
+#include "Properties/boxtargetproperty.h"
 
 struct LiquidGlassEffectData {
     float mRefraction = 3.f;
     float mNoise = 0.06f;
     float mGlowWeight = 0.35f;
     float mGlowBias = 0.f;
+    // picked background layer (AE-style): when set the refraction
+    // samples this layer's independently rendered image instead of
+    // the live composite below
+    bool mUseBgLayer = false;
+    stdsptr<BoxRenderData> mBgSample;
 };
 
 class LiquidGlassEffect : public RasterEffect {
@@ -60,6 +66,7 @@ private:
     qsptr<QrealAnimator> mNoise;
     qsptr<QrealAnimator> mGlowWeight;
     qsptr<QrealAnimator> mGlowBias;
+    qsptr<BoxTargetProperty> mBackgroundTarget;
 };
 
 #endif // LIQUIDGLASSEFFECT_H

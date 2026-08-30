@@ -37,14 +37,14 @@
 // reference. The glass REPLACES the layer pixels: the layer's own
 // content does not draw, its alpha only shapes the glass.
 //
-// Deliberate deviations from the Shadertoy port: the `targetUV+0.1`
-// sample offset (a demo shift of the sampled background, physically
-// wrong for real refraction) and the magenta out-of-bounds marker are
-// dropped -- inward sampling stays within the footprint bounding box,
-// bilinear reads clamp at the snapshot edges as a safety.
+// An AE-style "background layer" picker (a dropdown of the scene's
+// layers, tracked by a BoxTargetProperty) chooses what the glass
+// refracts: the picked layer's independently rendered image, or --
+// in "auto" -- the live composite below the layer.
 
 #include "liquidglasseffect.h"
 
+#include "Boxes/boundingbox.h"
 #include "Boxes/boxrenderdata.h"
 #include "skia/skqtconversions.h"
 
@@ -186,6 +186,19 @@ LiquidGlassEffect::LiquidGlassEffect() :
     mGlowBias = enve::make_shared<QrealAnimator>(0, -1, 1, 0.01,
                                                  QObject::tr("glow bias"));
     ca_addChild(mGlowBias);
+
+    // AE-style background layer picker: when a layer is picked, its
+    // independently rendered image becomes the refraction source;
+    // empty ("auto") keeps the live composite below
+    mBackgroundTarget = enve::make_shared<BoxTargetProperty>(
+                QStringLiteral("\u80CC\u666F\u56FE\u5C42")); // 背景图层
+    mBackgroundTarget->setComboPicker(true);
+    connect(mBackgroundTarget.data(), &BoxTargetProperty::targetSet,
+            this, [this](BoundingBox * const box) {
+        Q_UNUSED(box)
+        prp_afterWholeInfluenceRangeChanged();
+    });
+    ca_addChild(mBackgroundTarget);
 }
 
 class LiquidGlassEffectCaller : public RasterEffectCaller {
@@ -271,14 +284,49 @@ public:
         for (const float v : field) maxDist = std::max(maxDist, v);
         if (maxDist < 0.5f) maxDist = 0.5f;
 
-        // 3) backdrop: read the canvas device pixels below the layer.
-        //    readPixels works for both bitmap-backed CPU canvases --
-        //    where getSurface() is null and snapshotting is impossible
-        //    -- and GPU-backed surfaces (it syncs internally)
+        // 3) backdrop: the picked background layer drawn into device
+        //    space (replicating its scene placement), or -- in auto
+        //    mode -- the canvas device pixels below the layer
         SkBitmap backB;
         backB.allocPixels(info);
         backB.eraseColor(SK_ColorTRANSPARENT);
-        if (!canvas->readPixels(backB.pixmap(), dev.left(), dev.top())) return;
+        bool haveBg = false;
+        if(mData.mUseBgLayer && mData.mBgSample &&
+           mData.mBgSample->fRenderedImage) {
+            const auto& s = *mData.mBgSample;
+            const qreal devRes = box.fResolution > 0. ?
+                        box.fResolution : 1.;
+            const qreal sRes = s.fResolution > 0. ? s.fResolution : 1.;
+            SkMatrix m = canvas->getTotalMatrix();
+            if(box.fUseRenderTransform) {
+                m.postConcat(toSkMatrix(box.fRenderTransform));
+            }
+            // scene(1x) -> device -> the sample's res-scaled scene
+            // space (the space its fGlobalRect lives in): the two
+            // resolutions are the only bridge needed between the
+            // placements (plain 2D chains, no perspective/camera)
+            m.postScale(toSkScalar(devRes / sRes),
+                        toSkScalar(devRes / sRes));
+            m.postTranslate(-float(dev.left()), -float(dev.top()));
+            SkCanvas bc(backB);
+            bc.setMatrix(m);
+            if(s.fUseRenderTransform) {
+                bc.concat(toSkMatrix(s.fRenderTransform));
+            }
+            SkPaint bp;
+            bp.setFilterQuality(box.fAntiAlias ? kLow_SkFilterQuality
+                                               : kNone_SkFilterQuality);
+            bc.drawImage(s.fRenderedImage,
+                         s.fGlobalRect.x(), s.fGlobalRect.y(), &bp);
+            haveBg = true;
+        }
+        if(!haveBg) {
+            // readPixels works for both bitmap-backed CPU canvases --
+            // where getSurface() is null and snapshotting is impossible
+            // -- and GPU-backed surfaces (it syncs internally)
+            if (!canvas->readPixels(backB.pixmap(),
+                                    dev.left(), dev.top())) return;
+        }
 
         // throttled diagnostic for the runtime debug log
         static int sLog = 0;
@@ -304,6 +352,7 @@ public:
                        << (byMin + dev.top())
                        << "expAt=" << int(expR.left() + 0.5f)
                        << int(expR.top() + 0.5f)
+                       << "bg=" << (mData.mUseBgLayer ? "layer" : "auto")
                        << "refr=" << mData.mRefraction;
         }
 
@@ -399,6 +448,24 @@ stdsptr<RasterEffectCaller> LiquidGlassEffect::getEffectCaller(
     effData.mNoise = mNoise->getEffectiveValue(relFrame);
     effData.mGlowWeight = mGlowWeight->getEffectiveValue(relFrame);
     effData.mGlowBias = mGlowBias->getEffectiveValue(relFrame);
+
+    // queue the picked background layer for an independent render; the
+    // dependency delays this box's data until the sample finishes (the
+    // track-matte queExternalRender pattern). Picking a box inside this
+    // layer's own subtree would recurse (its render queues us again).
+    const auto bgBox = mBackgroundTarget ?
+                mBackgroundTarget->getTarget() : nullptr;
+    const auto parentBox = data ? data->fParentBox.data() : nullptr;
+    if(bgBox && bgBox->isVisibleAndInVisibleDurationRect() &&
+       bgBox != parentBox &&
+       !(parentBox && parentBox->isAncestor(bgBox))) {
+        const auto sample = bgBox->queExternalRender(relFrame, true);
+        if(sample) {
+            sample->addDependent(data);
+            effData.mBgSample = sample;
+            effData.mUseBgLayer = true;
+        }
+    }
 
     return enve::make_shared<LiquidGlassEffectCaller>(
                 instanceHwSupport(), effData);
