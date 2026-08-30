@@ -167,6 +167,72 @@ qsptr<RasterEffect> createRasterEffectForNonCustomType(const RasterEffectType ty
             return enve::make_shared<ColorizeEffect>();
         case(RasterEffectType::BRIGHTNESS_CONTRAST):
             return enve::make_shared<BrightnessContrastEffect>();
+        case(RasterEffectType::VIGNETTE):
+            return enve::make_shared<VignetteEffect>();
+        case(RasterEffectType::CHROMATIC_ABERRATION):
+            return enve::make_shared<ChromaticAberrationEffect>();
+        case(RasterEffectType::LETTERBOX):
+            return enve::make_shared<LetterboxEffect>();
+        case(RasterEffectType::SCANLINES):
+            return enve::make_shared<ScanlinesEffect>();
+        case(RasterEffectType::GLOW):
+            return enve::make_shared<GlowEffect>();
+        case(RasterEffectType::DIRECTIONAL_BLUR):
+            return enve::make_shared<DirectionalBlurEffect>();
+        case(RasterEffectType::RADIAL_BLUR):
+            return enve::make_shared<RadialBlurEffect>();
+        case(RasterEffectType::WAVE_WARP):
+            return enve::make_shared<WaveWarpEffect>();
+        case(RasterEffectType::RAIN):
+            return enve::make_shared<RainEffect>();
+        case(RasterEffectType::EDGE_DETECT):
+            return enve::make_shared<EdgeDetectEffect>();
+        case(RasterEffectType::INVERT):
+            return enve::make_shared<InvertEffect>();
+        case(RasterEffectType::TINT):
+            return enve::make_shared<TintEffect>();
+        case(RasterEffectType::PIXELATE):
+            return enve::make_shared<PixelateEffect>();
+        case(RasterEffectType::NOISE):
+            return enve::make_shared<NoiseEffect>();
+        case(RasterEffectType::MIRROR):
+            return enve::make_shared<MirrorEffect>();
+        case(RasterEffectType::GLITCH):
+            return enve::make_shared<GlitchEffect>();
+        case(RasterEffectType::POSTERIZE):
+            return enve::make_shared<PosterizeEffect>();
+        case(RasterEffectType::TWIRL):
+            return enve::make_shared<TwirlEffect>();
+        case(RasterEffectType::CHANNEL_BLUR):
+            return enve::make_shared<ChannelBlurEffect>();
+        case(RasterEffectType::HALFTONE):
+            return enve::make_shared<HalftoneEffect>();
+        case(RasterEffectType::SHAKE):
+            return enve::make_shared<ShakeEffect>();
+        case(RasterEffectType::DROP_SHADOW):
+            return enve::make_shared<DropShadowEffect>();
+        case(RasterEffectType::ZOOM_BLUR):
+            return enve::make_shared<ZoomBlurEffect>();
+        case(RasterEffectType::COLOR_GRADING):
+            return enve::make_shared<ColorGradingEffect>();
+        case(RasterEffectType::STRIPE):
+            return enve::make_shared<StripeEffect>();
+        case(RasterEffectType::MOTION_TILE):
+            return enve::make_shared<MotionTileEffect>();
+        case(RasterEffectType::FRACTAL_NOISE):
+            return enve::make_shared<FractalNoiseEffect>();
+        case(RasterEffectType::LIGHT_SWEEP):
+            return enve::make_shared<LightSweepEffect>();
+        case(RasterEffectType::DISPLACEMENT_WARP):
+            return enve::make_shared<DisplacementWarpEffect>();
+        case(RasterEffectType::FILM_GRAIN):
+            return enve::make_shared<FilmGrainEffect>();
+        case(RasterEffectType::BLACK_WHITE_FLASH):
+            return enve::make_shared<BlackWhiteFlashEffect>();
+        case(RasterEffectType::LIQUID_GLASS):
+            return enve::make_shared<LiquidGlassEffect>();
+        case(RasterEffectType::PIXEL_ART):
+            return enve::make_shared<PixelArtEffect>();
         case(RasterEffectType::CHROMA_KEY):
             return enve::make_shared<ChromaKeyEffect>();
         default: return nullptr;

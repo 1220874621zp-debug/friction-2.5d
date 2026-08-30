@@ -34,7 +34,7 @@
 NoiseFadeEffect::NoiseFadeEffect() :
     RasterEffect("noise fade",
                  AppSupport::getRasterEffectHardwareSupport("NoiseFade",
-                                                            HardwareSupport::cpuOnly),
+                                                            HardwareSupport::gpuPreffered),
                  false,
                  RasterEffectType::NOISE_FADE)
 {

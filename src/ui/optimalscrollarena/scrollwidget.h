@@ -67,6 +67,7 @@ public:
 
     SWT_RulesCollection getRulesCollection();
     bool getAlwaysShowChildren();
+    void setAlwaysShowChildren(const bool always);
 
     SWT_Abstraction* getMainAbstration() const;
 

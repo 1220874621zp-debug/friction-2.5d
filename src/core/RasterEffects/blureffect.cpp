@@ -22,7 +22,7 @@ private:
 BlurEffect::BlurEffect() :
     RasterEffect("blur",
                  AppSupport::getRasterEffectHardwareSupport("Blur",
-                                                            HardwareSupport::cpuOnly),
+                                                            HardwareSupport::gpuPreffered),
                  false,
                  RasterEffectType::BLUR)
 {

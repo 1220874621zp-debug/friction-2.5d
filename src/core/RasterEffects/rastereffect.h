@@ -29,6 +29,16 @@
 #include "../glhelpers.h"
 #include "rastereffectcaller.h"
 
+#ifdef HALFTONE
+#undef HALFTONE
+#endif
+#ifdef INVERT
+#undef INVERT
+#endif
+#ifdef MIRROR
+#undef MIRROR
+#endif
+
 enum class RasterEffectType : short {
     BLUR,
     SHADOW,
@@ -41,6 +51,39 @@ enum class RasterEffectType : short {
     NOISE_FADE = 7,
     COLORIZE,
     BRIGHTNESS_CONTRAST,
+    VIGNETTE,
+    CHROMATIC_ABERRATION,
+    LETTERBOX,
+    SCANLINES,
+    GLOW,
+    DIRECTIONAL_BLUR,
+    RADIAL_BLUR,
+    WAVE_WARP,
+    RAIN,
+    EDGE_DETECT,
+    INVERT,
+    TINT,
+    PIXELATE,
+    NOISE,
+    MIRROR,
+    GLITCH,
+    POSTERIZE,
+    TWIRL,
+    CHANNEL_BLUR,
+    HALFTONE,
+    SHAKE,
+    DROP_SHADOW,
+    ZOOM_BLUR,
+    COLOR_GRADING,
+    STRIPE,
+    MOTION_TILE,
+    FRACTAL_NOISE,
+    LIGHT_SWEEP,
+    DISPLACEMENT_WARP,
+    FILM_GRAIN,
+    BLACK_WHITE_FLASH,
+    LIQUID_GLASS,
+    PIXEL_ART,
     CHROMA_KEY
 };
 
@@ -70,6 +113,10 @@ public:
 
     void writeIdentifier(eWriteStream& dst) const;
     void writeIdentifierXEV(QDomElement& ele) const;
+
+    RasterEffectType getEffectType() const {
+        return mType;
+    }
 
     HardwareSupport instanceHwSupport() const {
         return mInstHwSupport;

@@ -151,6 +151,9 @@ private:
 
     QAction *mFrameRewindAct;
     QAction *mFrameFastForwardAct;
+    QAction *mSetInPointAct;
+    QAction *mSetOutPointAct;
+    QAction *mSplitClipAct;
     QAction *mCurrentFrameSpinAct;
     FrameSpinBox *mCurrentFrameSpin;
 

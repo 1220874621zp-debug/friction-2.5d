@@ -99,44 +99,57 @@ QString readUnicodeString(QDataStream &s, qint64 blockEnd)
 QByteArray uncompressRLE(const QByteArray &src, int dstSize)
 {
     QByteArray dst(dstSize, Qt::Uninitialized);
+    const char *srcPtr = src.constData();
+    char *dstPtr = dst.data();
     int srcPos = 0;
     int dstPos = 0;
     const int srcSize = src.size();
     while (srcPos < srcSize && dstPos < dstSize) {
-        const qint8 n = qint8(src.at(srcPos));
-        srcPos++;
+        const qint8 n = qint8(srcPtr[srcPos++]);
         if (n >= 0) {
-            const int count = qMin(n + 1, dstSize - dstPos);
-            for (int i = 0; i < count && srcPos < srcSize; i++) {
-                dst[dstPos++] = src.at(srcPos++);
+            const int count = qMin(int(n) + 1, dstSize - dstPos);
+            const int available = srcSize - srcPos;
+            const int toCopy = qMin(count, available);
+            if (toCopy > 0) {
+                memcpy(dstPtr + dstPos, srcPtr + srcPos, size_t(toCopy));
+                srcPos += toCopy;
+                dstPos += toCopy;
             }
+            if (toCopy < count) { break; }
         } else if (n > -128) {
             const int count = qMin(1 - int(n), dstSize - dstPos);
             if (srcPos >= srcSize) { break; }
-            const char value = src.at(srcPos++);
-            for (int i = 0; i < count; i++) { dst[dstPos++] = value; }
+            const char value = srcPtr[srcPos++];
+            memset(dstPtr + dstPos, value, size_t(count));
+            dstPos += count;
         } // -128: no-op
     }
     if (dstPos < dstSize) { dst.resize(dstPos); }
     return dst;
 }
 
-quint8 depthTo8(const QByteArray &data, int pos, int channelSize)
+inline quint8 depthTo8Raw(const uchar *data, int channelSize)
 {
     if (channelSize == 1) {
-        return quint8(data.at(pos));
+        return *data;
     } else if (channelSize == 2) {
-        const quint16 v = (quint8(data.at(pos)) << 8) | quint8(data.at(pos + 1));
+        const quint16 v = (data[0] << 8) | data[1];
         return quint8(qRound(v * 255.0 / 65535.0));
     } else { // 4-byte float
-        const quint32 raw = (quint8(data.at(pos)) << 24)
-                          | (quint8(data.at(pos + 1)) << 16)
-                          | (quint8(data.at(pos + 2)) << 8)
-                          | quint8(data.at(pos + 3));
+        const quint32 raw = (quint32(data[0]) << 24)
+                          | (quint32(data[1]) << 16)
+                          | (quint32(data[2]) << 8)
+                          | quint32(data[3]);
         const float f = *reinterpret_cast<const float*>(&raw);
         const float c = qBound(0.0f, f, 1.0f);
         return quint8(qRound(c * 255.0f));
     }
+}
+
+quint8 depthTo8(const QByteArray &data, int pos, int channelSize)
+{
+    if (pos + channelSize > data.size()) { return 0; }
+    return depthTo8Raw(reinterpret_cast<const uchar*>(data.constData()) + pos, channelSize);
 }
 
 } // namespace
@@ -553,32 +566,72 @@ QByteArray PsdFile::assembleRGBA(const QMap<int, QByteArray> &planes,
                                  const int w, const int h) const
 {
     const int channelSize = mDepth / 8;
-    QByteArray rgba(4 * w * h, 255);
+    const int numPixels = w * h;
+    if (numPixels <= 0 || channelSize <= 0) { return QByteArray(); }
+    const int expectedPlaneBytes = numPixels * channelSize;
+    QByteArray rgba(4 * numPixels, 255);
     const bool gray = (mMode == ColorMode::Grayscale);
 
-    const auto hasPlane = [&planes](int id) {
-        return planes.contains(id) && planes.value(id).size() > 0;
-    };
-    if (!gray && (!hasPlane(0) || !hasPlane(1) || !hasPlane(2))) {
-        return QByteArray();
-    }
-    if (gray && !hasPlane(0)) { return QByteArray(); }
+    const auto p0It = planes.find(0);
+    const auto p1It = planes.find(1);
+    const auto p2It = planes.find(2);
+    const auto paIt = planes.find(-1);
 
-    for (int i = 0; i < w * h; i++) {
-        quint8 r = 0, g = 0, b = 0;
+    if (gray) {
+        if (p0It == planes.end() || p0It.value().size() < expectedPlaneBytes) {
+            return QByteArray();
+        }
+    } else {
+        if (p0It == planes.end() || p0It.value().size() < expectedPlaneBytes ||
+            p1It == planes.end() || p1It.value().size() < expectedPlaneBytes ||
+            p2It == planes.end() || p2It.value().size() < expectedPlaneBytes) {
+            return QByteArray();
+        }
+    }
+
+    const uchar *p0 = reinterpret_cast<const uchar*>(p0It.value().constData());
+    const uchar *p1 = (!gray && p1It != planes.end()) ? reinterpret_cast<const uchar*>(p1It.value().constData()) : nullptr;
+    const uchar *p2 = (!gray && p2It != planes.end()) ? reinterpret_cast<const uchar*>(p2It.value().constData()) : nullptr;
+    const bool hasAlpha = (paIt != planes.end() && paIt.value().size() >= expectedPlaneBytes);
+    const uchar *pa = hasAlpha ? reinterpret_cast<const uchar*>(paIt.value().constData()) : nullptr;
+
+    uchar *dst = reinterpret_cast<uchar*>(rgba.data());
+
+    if (channelSize == 1) {
         if (gray) {
-            r = g = b = depthTo8(planes.value(0), i * channelSize, channelSize);
+            for (int i = 0; i < numPixels; i++) {
+                const quint8 val = p0[i];
+                dst[0] = val;
+                dst[1] = val;
+                dst[2] = val;
+                dst[3] = pa ? pa[i] : 255;
+                dst += 4;
+            }
         } else {
-            r = depthTo8(planes.value(0), i * channelSize, channelSize);
-            g = depthTo8(planes.value(1), i * channelSize, channelSize);
-            b = depthTo8(planes.value(2), i * channelSize, channelSize);
+            for (int i = 0; i < numPixels; i++) {
+                dst[0] = p0[i];
+                dst[1] = p1[i];
+                dst[2] = p2[i];
+                dst[3] = pa ? pa[i] : 255;
+                dst += 4;
+            }
         }
-        quint8 a = 255;
-        if (hasPlane(-1)) {
-            a = depthTo8(planes.value(-1), i * channelSize, channelSize);
+    } else {
+        for (int i = 0; i < numPixels; i++) {
+            const int offset = i * channelSize;
+            if (gray) {
+                const quint8 val = depthTo8Raw(p0 + offset, channelSize);
+                dst[0] = val;
+                dst[1] = val;
+                dst[2] = val;
+            } else {
+                dst[0] = depthTo8Raw(p0 + offset, channelSize);
+                dst[1] = depthTo8Raw(p1 + offset, channelSize);
+                dst[2] = depthTo8Raw(p2 + offset, channelSize);
+            }
+            dst[3] = pa ? depthTo8Raw(pa + offset, channelSize) : 255;
+            dst += 4;
         }
-        uchar *px = reinterpret_cast<uchar*>(rgba.data()) + 4 * i;
-        px[0] = r; px[1] = g; px[2] = b; px[3] = a;
     }
     return rgba;
 }
@@ -613,18 +666,22 @@ QByteArray PsdFile::extractLayerRGBA(const LayerRecord &layer,
         const int mw = layer.maskRect.width();
         const int mh = layer.maskRect.height();
         const int channelSize = mDepth / 8;
+        const uchar *maskPtr = reinterpret_cast<const uchar*>(maskPlane.constData());
+        const int maskPlaneSize = maskPlane.size();
+        uchar *px = reinterpret_cast<uchar*>(rgba.data());
         for (int y = 0; y < h; y++) {
+            const int my = y + layer.rect.top() - layer.maskRect.top();
+            const bool yValid = (my >= 0 && my < mh);
             for (int x = 0; x < w; x++) {
                 const int mx = x + layer.rect.left() - layer.maskRect.left();
-                const int my = y + layer.rect.top() - layer.maskRect.top();
-                uchar *px = reinterpret_cast<uchar*>(rgba.data())
-                          + 4 * (y * w + x);
-                if (mx >= 0 && my >= 0 && mx < mw && my < mh) {
-                    const quint8 m = depthTo8(maskPlane,
-                                              (my * mw + mx) * channelSize,
-                                              channelSize);
-                    px[3] = quint8(int(px[3]) * int(m) / 255);
+                if (yValid && mx >= 0 && mx < mw) {
+                    const int maskOffset = (my * mw + mx) * channelSize;
+                    if (maskOffset + channelSize <= maskPlaneSize) {
+                        const quint8 m = depthTo8Raw(maskPtr + maskOffset, channelSize);
+                        px[3] = quint8(int(px[3]) * int(m) / 255);
+                    }
                 }
+                px += 4;
             }
         }
     }

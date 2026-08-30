@@ -32,7 +32,7 @@ include(friction-ffmpeg)
 
 add_definitions(-DPROJECT_VERSION="${PROJECT_VERSION}")
 
-if(${LINUX_DEPLOY})
+if(UNIX AND NOT APPLE)
     set(CMAKE_INSTALL_RPATH "$ORIGIN/../lib")
 endif()
 
@@ -235,12 +235,15 @@ set(
     GUI/RenderWidgets/outputsettingsdisplaywidget.cpp
     GUI/animationdockwidget.cpp
     GUI/easingpresetspanel.cpp
+    GUI/effectspresetspanel.cpp
+    GUI/quickeffectsearchdialog.cpp
     GUI/scriptmanager.cpp
     GUI/scriptconsole.cpp
     GUI/canvaswindow.cpp
     GUI/graphboxeslist.cpp
     GUI/keysview.cpp
     GUI/mainwindow.cpp
+    GUI/aepropertiesinspector.cpp
     GUI/hangwatchdog.cpp
     GUI/extraactions.cpp
     GUI/effectactions.cpp
@@ -249,6 +252,7 @@ set(
 
 set(
     HEADERS
+    GUI/aepropertiesinspector.h
     GUI/BoxesList/boxscroller.h
     GUI/Dialogs/dialogsinterfaceimpl.h
     GUI/Expressions/expressiondialog.h
@@ -289,6 +293,8 @@ set(
     GUI/RenderWidgets/outputsettingsdisplaywidget.h
     GUI/animationdockwidget.h
     GUI/easingpresetspanel.h
+    GUI/effectspresetspanel.h
+    GUI/quickeffectsearchdialog.h
     GUI/scriptmanager.h
     GUI/scriptconsole.h
     GUI/canvaswindow.h
@@ -320,6 +326,22 @@ add_executable(
     ${SOURCES}
     ${RESOURCES}
     ${WINDOWS_RESOURCE_FILE}
+)
+
+add_executable(friction_effects_test effects_unittest.cpp ${RESOURCES})
+target_link_directories(
+    friction_effects_test
+    PRIVATE
+    ${FFMPEG_LIBRARIES_DIRS}
+    ${SKIA_LIBRARIES_DIRS}
+)
+target_link_libraries(
+    friction_effects_test
+    PRIVATE
+    ${PROJECT_NAME}core
+    ${QT_LIBRARIES}
+    ${FFMPEG_LIBRARIES}
+    ${SKIA_LIBRARIES}
 )
 
 if(WIN32)
@@ -426,17 +448,33 @@ if(${SKIA_USE_SYSTEM_LIBS} AND UNIX)
         ${WEBPDEMUX_LIBRARIES}
         ${ZLIB_LIBRARIES}
     )
+    target_link_libraries(
+        friction_effects_test
+        PRIVATE
+        ${EXPAT_LIBRARIES}
+        ${FREETYPE_LIBRARIES}
+        ${FONTCONFIG_LIBRARIES}
+        ${JPEG_LIBRARIES}
+        ${PNG_LIBRARIES}
+        ${WEBP_LIBRARIES}
+        ${WEBPMUX_LIBRARIES}
+        ${WEBPDEMUX_LIBRARIES}
+        ${ZLIB_LIBRARIES}
+    )
 endif()
 
 if(${SKIA_STATIC})
     if(UNIX AND NOT APPLE)
         if(${SKIA_USE_EGL})
-            target_link_libraries(${PROJECT_NAME} PRIVATE ${EGL_LIBRARIES} ${GLES_LIBRARIES} ${FONTCONFIG_LIBRARIES})
+            target_link_libraries(${PROJECT_NAME} PRIVATE ${EGL_LIBRARIES} ${GLES_LIBRARIES} ${FONTCONFIG_LIBRARIES} pthread dl)
+            target_link_libraries(friction_effects_test PRIVATE ${EGL_LIBRARIES} ${GLES_LIBRARIES} ${FONTCONFIG_LIBRARIES} pthread dl)
         else()
-            target_link_libraries(${PROJECT_NAME} PRIVATE OpenGL::GLX ${FONTCONFIG_LIBRARIES})
+            target_link_libraries(${PROJECT_NAME} PRIVATE OpenGL::GLX ${FONTCONFIG_LIBRARIES} pthread dl)
+            target_link_libraries(friction_effects_test PRIVATE OpenGL::GLX ${FONTCONFIG_LIBRARIES} pthread dl)
         endif()
         if(NOT ${SKIA_USE_SYSTEM_LIBS})
             target_link_libraries(${PROJECT_NAME} PRIVATE ${FONTCONFIG_LIBRARIES})
+            target_link_libraries(friction_effects_test PRIVATE ${FONTCONFIG_LIBRARIES})
         endif()
     endif()
     if(APPLE)
@@ -449,7 +487,21 @@ if(${SKIA_STATIC})
             "-framework CoreServices"
             "-framework ImageIO"
         )
+        target_link_libraries(
+            friction_effects_test
+            PRIVATE
+            "-framework CoreFoundation"
+            "-framework CoreGraphics"
+            "-framework CoreText"
+            "-framework CoreServices"
+            "-framework ImageIO"
+        )
     endif()
+endif()
+
+if(UNIX AND NOT APPLE)
+    target_link_libraries(${PROJECT_NAME} PRIVATE pthread dl)
+    target_link_libraries(friction_effects_test PRIVATE pthread dl)
 endif()
 
 if(APPLE)

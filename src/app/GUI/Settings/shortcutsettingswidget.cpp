@@ -64,8 +64,9 @@ const QList<ShortcutEntry> &ShortcutSettingsWidget::entries()
         {"showOpacity", tr("Show Opacity Property"), tr("Properties"), "", "T", true},
         {"showAnimated", tr("Show Animated Properties (U)"), tr("Properties"), "", "U", true},
         // --- global (bound in Menu / main window) ---
+        {"quickEffects", tr("Quick Search Effects (AE: FX Console)"), tr("Effects"), "Ctrl+Space", "Ctrl+Space", true},
         {"fullScreen", tr("Full Screen Preview"), tr("View"), "F11", "`", true},
-        {"cmdPalette", tr("Command Palette"), tr("View"), "Ctrl+Space", "Ctrl+Space", true},
+        {"cmdPalette", tr("Command Palette"), tr("View"), "Ctrl+P", "Ctrl+P", true},
         {"previewSVG", tr("Preview SVG"), tr("File"), "Ctrl+F12", "Ctrl+F12", true},
         {"exportSVG", tr("Export SVG"), tr("File"), "Shift+F12", "Shift+F12", true},
         {"addToQue", tr("Add to Render Queue"), tr("Scene"), "F12", "F12", true},

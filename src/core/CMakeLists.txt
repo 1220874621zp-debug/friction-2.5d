@@ -238,6 +238,39 @@ set(
     RasterEffects/rastereffectcollection.cpp
     RasterEffects/rastereffectmenucreator.cpp
     RasterEffects/shadoweffect.cpp
+    RasterEffects/vignetteeffect.cpp
+    RasterEffects/chromaticaberrationeffect.cpp
+    RasterEffects/letterboxeffect.cpp
+    RasterEffects/scanlineseffect.cpp
+    RasterEffects/gloweffect.cpp
+    RasterEffects/directionalblureffect.cpp
+    RasterEffects/radialblureffect.cpp
+    RasterEffects/wavewarpeffect.cpp
+    RasterEffects/raineffect.cpp
+    RasterEffects/edgedetecteffect.cpp
+    RasterEffects/inverteffect.cpp
+    RasterEffects/tinteffect.cpp
+    RasterEffects/pixelateeffect.cpp
+    RasterEffects/noiseeffect.cpp
+    RasterEffects/mirroreffect.cpp
+    RasterEffects/glitcheffect.cpp
+    RasterEffects/posterizeeffect.cpp
+    RasterEffects/twirleffect.cpp
+    RasterEffects/channelblureffect.cpp
+    RasterEffects/halftoneeffect.cpp
+    RasterEffects/shakeeffect.cpp
+    RasterEffects/dropshadoweffect.cpp
+    RasterEffects/zoomblureffect.cpp
+    RasterEffects/colorgradingeffect.cpp
+    RasterEffects/stripeeffect.cpp
+    RasterEffects/motiontileeffect.cpp
+    RasterEffects/fractalnoiseeffect.cpp
+    RasterEffects/lightsweepeffect.cpp
+    RasterEffects/displacementwarpeffect.cpp
+    RasterEffects/filmgraineffect.cpp
+    RasterEffects/blackwhiteflasheffect.cpp
+    RasterEffects/liquidglasseffect.cpp
+    RasterEffects/pixelarteffect.cpp
     RasterEffects/wipeeffect.cpp
     ReadWrite/ereadstream.cpp
     ReadWrite/ewritestream.cpp
@@ -566,6 +599,39 @@ set(
     RasterEffects/rastereffectmenucreator.h
     RasterEffects/rastereffectsinclude.h
     RasterEffects/shadoweffect.h
+    RasterEffects/vignetteeffect.h
+    RasterEffects/chromaticaberrationeffect.h
+    RasterEffects/letterboxeffect.h
+    RasterEffects/scanlineseffect.h
+    RasterEffects/gloweffect.h
+    RasterEffects/directionalblureffect.h
+    RasterEffects/radialblureffect.h
+    RasterEffects/wavewarpeffect.h
+    RasterEffects/raineffect.h
+    RasterEffects/edgedetecteffect.h
+    RasterEffects/inverteffect.h
+    RasterEffects/tinteffect.h
+    RasterEffects/pixelateeffect.h
+    RasterEffects/noiseeffect.h
+    RasterEffects/mirroreffect.h
+    RasterEffects/glitcheffect.h
+    RasterEffects/posterizeeffect.h
+    RasterEffects/twirleffect.h
+    RasterEffects/channelblureffect.h
+    RasterEffects/halftoneeffect.h
+    RasterEffects/shakeeffect.h
+    RasterEffects/dropshadoweffect.h
+    RasterEffects/zoomblureffect.h
+    RasterEffects/colorgradingeffect.h
+    RasterEffects/stripeeffect.h
+    RasterEffects/motiontileeffect.h
+    RasterEffects/fractalnoiseeffect.h
+    RasterEffects/lightsweepeffect.h
+    RasterEffects/displacementwarpeffect.h
+    RasterEffects/filmgraineffect.h
+    RasterEffects/blackwhiteflasheffect.h
+    RasterEffects/liquidglasseffect.h
+    RasterEffects/pixelarteffect.h
     RasterEffects/wipeeffect.h
     ReadWrite/efuturepos.h
     ReadWrite/ereadstream.h

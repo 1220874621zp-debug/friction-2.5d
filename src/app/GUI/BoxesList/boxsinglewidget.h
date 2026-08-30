@@ -255,4 +255,6 @@ protected:
     ConnContext mTargetConn;
 };
 
+QString translatePropertyName(const QString& name);
+
 #endif // BOXSINGLEWIDGET_H

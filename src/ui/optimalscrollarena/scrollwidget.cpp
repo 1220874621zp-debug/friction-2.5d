@@ -81,7 +81,10 @@ SWT_RulesCollection ScrollWidget::getRulesCollection()
 { return mVisiblePartWidget->getRulesCollection(); }
 
 bool ScrollWidget::getAlwaysShowChildren()
-{ return mVisiblePartWidget->getAlwaysShowChildren();; }
+{ return mVisiblePartWidget->getAlwaysShowChildren(); }
+
+void ScrollWidget::setAlwaysShowChildren(const bool always)
+{ mVisiblePartWidget->setAlwaysShowChildren(always); }
 
 SWT_Abstraction *ScrollWidget::getMainAbstration() const
 { return mMainAbstraction; }

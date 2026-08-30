@@ -809,9 +809,9 @@ void MainWindow::setupMenuBar()
                                           &MainWindow::openAboutWindow);
     cmdAddAction(aboutAct);
 
-    QString cmdDefKey = "Ctrl+Space";
+    QString cmdDefKey = "Ctrl+P";
 #ifdef Q_OS_MAC
-    cmdDefKey = "Alt+Space";
+    cmdDefKey = "Meta+P";
 #endif
 
     help->addAction(QIcon::fromTheme("cmd"),
