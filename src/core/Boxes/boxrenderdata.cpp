@@ -108,13 +108,13 @@ void BoxRenderData::drawOnParentLayer(SkCanvas * const canvas) {
 
 void BoxRenderData::drawOnParentLayer(SkCanvas * const canvas,
                                       SkPaint& paint) {
-    // composite probe: every layer composite passes here; c>0 means
-    // the backdrop treatment should run for this draw
-    static int sCallLog = 0;
-    if (sCallLog++ < 24) {
+    // backdrop probe: relevant-only (burn-proof -- consumes budget
+    // solely on caller-bearing draws), logs the dispatch decision
+    static int sBdLog = 0;
+    if (!fBackdropCallers.isEmpty() && sBdLog++ < 30) {
         const auto box = fParentBox.data();
-        qWarning() << "[LG] drawOnParent" <<
-                      (box ? box->prp_getName() : QStringLiteral("?"))
+        qWarning() << "[LG] backdropDispatch box="
+                   << (box ? box->prp_getName() : QStringLiteral("?"))
                    << "callers=" << fBackdropCallers.count();
     }
     // backdrop-sampling effects REPLACE the layer pixels with the

@@ -217,18 +217,25 @@ public:
                          const BoxRenderData& box,
                          const SkPaint& paint) {
         Q_UNUSED(paint)
+        // first-line probe with bail reasons: burns budget only when
+        // the treatment actually runs (relevant-only)
+        {
+            static int sEnter = 0;
+            if (sEnter++ < 30) {
+                const SkIRect dc = canvas ? canvas->getDeviceClipBounds()
+                                          : SkIRect::MakeEmpty();
+                const auto lgBox = box.fParentBox.data();
+                qWarning() << "[LG] glass enter box="
+                           << (lgBox ? lgBox->prp_getName()
+                                     : QStringLiteral("?"))
+                           << "img=" << bool(box.fRenderedImage)
+                           << "dev=" << dc.width() << "x" << dc.height()
+                           << "surf=" << bool(canvas && canvas->getSurface());
+            }
+        }
         if(!canvas || !box.fRenderedImage) return;
         const SkIRect dev = canvas->getDeviceClipBounds();
         if(dev.isEmpty()) return;
-
-        // entry probe: absence of this line next round means the
-        // composite never reaches the backdrop treatment
-        static int sEnter = 0;
-        if (sEnter++ < 8) {
-            qWarning() << "[LG] glass enter dev=" << dev.left() << dev.top()
-                       << dev.width() << "x" << dev.height()
-                       << "surf=" << bool(canvas->getSurface());
-        }
 
         // 1) the layer's shape: rasterize its own image into a
         //    device-space mask, replicating the standard placement
