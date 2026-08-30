@@ -497,6 +497,11 @@ set(
     Boxes/internallinkgroupbox.h
     Boxes/layerboxrenderdata.h
     Boxes/linkcanvasrenderdata.h
+    Boxes/adjustmentlayer.h
+    Boxes/bone.h
+    Boxes/bonelayer.h
+    Boxes/cameralayer.h
+    Boxes/solidlayer.h
     Boxes/pathbox.h
     Boxes/pathboxrenderdata.h
     Boxes/patheffectsmenu.h
@@ -507,6 +512,8 @@ set(
     Boxes/textbox.h
     Boxes/textboxrenderdata.h
     Boxes/videobox.h
+    Psd/ocaimporter.h
+    RasterEffects/trackmattecaller.h
     CacheHandlers/cachecontainer.h
     CacheHandlers/hddcachablecachehandler.h
     CacheHandlers/hddcachablecont.h

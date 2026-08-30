@@ -171,6 +171,7 @@ set(
     widgets/colortoolbutton.h
     widgets/colorlabel.h
     widgets/colorsettingswidget.h
+    widgets/colorwheelwidget.h
     widgets/colorvaluerect.h
     widgets/colorwidget.h
     widgets/colorwidgetshaders.h
