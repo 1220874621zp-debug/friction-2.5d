@@ -187,6 +187,16 @@ LiquidGlassEffect::LiquidGlassEffect() :
                                                  QObject::tr("glow bias"));
     ca_addChild(mGlowBias);
 
+    mHighlight = enve::make_shared<QrealAnimator>(0.6, 0, 2, 0.01,
+            QObject::tr("\u9AD8\u5149\u5F3A\u5EA6")); // 高光强度
+    ca_addChild(mHighlight);
+    mHlWidth = enve::make_shared<QrealAnimator>(3, 0.5, 20, 0.1,
+            QObject::tr("\u9AD8\u5149\u5BBD\u5EA6")); // 高光宽度
+    ca_addChild(mHlWidth);
+    mHlAngle = enve::make_shared<QrealAnimator>(135, 0, 360, 1,
+            QObject::tr("\u5149\u7167\u89D2\u5EA6")); // 光照角度
+    ca_addChild(mHlAngle);
+
     // AE-style background layer picker: when a layer is picked, its
     // independently rendered image becomes the refraction source;
     // empty ("auto") keeps the live composite below
@@ -217,22 +227,6 @@ public:
                          const BoxRenderData& box,
                          const SkPaint& paint) {
         Q_UNUSED(paint)
-        // first-line probe with bail reasons: burns budget only when
-        // the treatment actually runs (relevant-only)
-        {
-            static int sEnter = 0;
-            if (sEnter++ < 30) {
-                const SkIRect dc = canvas ? canvas->getDeviceClipBounds()
-                                          : SkIRect::MakeEmpty();
-                const auto lgBox = box.fParentBox.data();
-                qWarning() << "[LG] glass enter box="
-                           << (lgBox ? lgBox->prp_getName()
-                                     : QStringLiteral("?"))
-                           << "img=" << bool(box.fRenderedImage)
-                           << "dev=" << dc.width() << "x" << dc.height()
-                           << "surf=" << bool(canvas && canvas->getSurface());
-            }
-        }
         if(!canvas || !box.fRenderedImage) return;
         const SkIRect dev = canvas->getDeviceClipBounds();
         if(dev.isEmpty()) return;
@@ -263,7 +257,6 @@ public:
 
         // shape bounding box (device space, relative to dev origin)
         int bxMin = dev.width(), bxMax = -1, byMin = dev.height(), byMax = -1;
-        int insideCount = 0;
         for (int y = 0; y < maskB.height(); y++) {
             const uchar* row = static_cast<const uchar*>(
                         maskB.getAddr(0, y));
@@ -273,7 +266,6 @@ public:
                     if (x > bxMax) bxMax = x;
                     if (y < byMin) byMin = y;
                     if (y > byMax) byMax = y;
-                    insideCount++;
                 }
             }
         }
@@ -335,34 +327,6 @@ public:
                                     dev.left(), dev.top())) return;
         }
 
-        // throttled diagnostic for the runtime debug log
-        static int sLog = 0;
-        if (sLog++ < 8) {
-            // transform consistency: expected device bbox of the drawn
-            // image rect (fGlobalRect through the same matrix the mask
-            // used) vs the measured mask bbox
-            SkMatrix tm = canvas->getTotalMatrix();
-            if (box.fUseRenderTransform) {
-                tm.preConcat(toSkMatrix(box.fRenderTransform));
-            }
-            const SkRect imgR = SkRect::MakeXYWH(
-                        float(box.fGlobalRect.x()), float(box.fGlobalRect.y()),
-                        float(box.fRenderedImage->width()),
-                        float(box.fRenderedImage->height()));
-            const SkRect expR = tm.mapRect(imgR);
-            qWarning() << "[LG] glass dev=" << dev.width() << "x"
-                       << dev.height() << "shape=" << bw << "x" << bh
-                       << "inside%=" << int(100.f * insideCount /
-                                            float(bw * bh))
-                       << "maxDist=" << int(maxDist)
-                       << "maskAt=" << (bxMin + dev.left())
-                       << (byMin + dev.top())
-                       << "expAt=" << int(expR.left() + 0.5f)
-                       << int(expR.top() + 0.5f)
-                       << "bg=" << (mData.mUseBgLayer ? "layer" : "auto")
-                       << "refr=" << mData.mRefraction;
-        }
-
         // 4) radial remap shading inside the shape (all coordinates
         //    are dev-relative pixels)
         SkBitmap dstB;
@@ -414,9 +378,29 @@ public:
                                             float(y + dev.top()) * 1e-3f) - 0.5f) *
                         mData.mNoise;
 
-                float rr = r * glowFactor + noise;
-                float gg = g * glowFactor + noise;
-                float bb2 = b * glowFactor + noise;
+                // crisp rim highlight: narrow band hugging the shape
+                // edge, lit only on the side facing the light (the rim
+                // normal is approximated by the radial direction for
+                // convex shapes); facing^3 keeps the lit arc tight
+                float highlight = 0.f;
+                if(mData.mHighlightI > 0.f) {
+                    const float rlen = std::sqrt(vx * vx + vy * vy);
+                    if(rlen > 0.001f) {
+                        const float facing = (vx * mData.mHlLightX +
+                                              vy * mData.mHlLightY) / rlen;
+                        if(facing > 0.f) {
+                            const float t = distN / mData.mHlWidthN;
+                            const float k = t < 0.f ? 0.f : (t > 1.f ? 1.f : t);
+                            const float band = 1.f - k * k * (3.f - 2.f * k);
+                            highlight = mData.mHighlightI * band *
+                                        facing * facing * facing;
+                        }
+                    }
+                }
+
+                float rr = r * glowFactor + noise + highlight;
+                float gg = g * glowFactor + noise + highlight;
+                float bb2 = b * glowFactor + noise + highlight;
                 // keep the premultiplied invariant against the aa alpha
                 drow[0] = static_cast<uchar>(
                             sat1(std::min(std::max(rr, 0.f), alpha)) * 255.f + 0.5f);
@@ -455,6 +439,14 @@ stdsptr<RasterEffectCaller> LiquidGlassEffect::getEffectCaller(
     effData.mNoise = mNoise->getEffectiveValue(relFrame);
     effData.mGlowWeight = mGlowWeight->getEffectiveValue(relFrame);
     effData.mGlowBias = mGlowBias->getEffectiveValue(relFrame);
+    effData.mHighlightI = mHighlight->getEffectiveValue(relFrame);
+    effData.mHlWidthN = std::max(static_cast<float>(
+                                     mHlWidth->getEffectiveValue(relFrame)) *
+                                 0.01f, 0.001f);
+    const float hlRad = float(mHlAngle->getEffectiveValue(relFrame)) *
+            0.017453293f; // deg -> rad
+    effData.mHlLightX = std::cos(hlRad);
+    effData.mHlLightY = std::sin(hlRad);
 
     // queue the picked background layer for an independent render; the
     // dependency delays this box's data until the sample finishes (the

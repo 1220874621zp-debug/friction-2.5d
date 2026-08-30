@@ -47,6 +47,12 @@ struct LiquidGlassEffectData {
     float mNoise = 0.06f;
     float mGlowWeight = 0.35f;
     float mGlowBias = 0.f;
+    // crisp rim highlight: narrow band hugging the shape edge, lit on
+    // the side facing the light direction (rim normal ~ radial dir)
+    float mHighlightI = 0.6f;
+    float mHlWidthN = 0.03f;
+    float mHlLightX = -0.707f;
+    float mHlLightY = 0.707f;
     // picked background layer (AE-style): when set the refraction
     // samples this layer's independently rendered image instead of
     // the live composite below
@@ -66,6 +72,9 @@ private:
     qsptr<QrealAnimator> mNoise;
     qsptr<QrealAnimator> mGlowWeight;
     qsptr<QrealAnimator> mGlowBias;
+    qsptr<QrealAnimator> mHighlight;
+    qsptr<QrealAnimator> mHlWidth;
+    qsptr<QrealAnimator> mHlAngle;
     qsptr<BoxTargetProperty> mBackgroundTarget;
 };
 

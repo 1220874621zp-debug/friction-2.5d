@@ -95,12 +95,6 @@ void RasterEffectCollection::addEffects(const qreal relFrame,
         // they are applied against the canvas snapshot below the layer
         // at composite time (adjustment-layer machinery)
         if(effectRenderData->samplesBackdrop()) {
-            // probe: proves the diversion happened for this render
-            // data (absence while the effect exists = gate/skip issue)
-            static int sDivLog = 0;
-            if (sDivLog++ < 8) {
-                qWarning() << "[LG] diverted effect added to box data";
-            }
             data->fBackdropCallers.append(effectRenderData);
         } else data->addEffect(effectRenderData);
     }

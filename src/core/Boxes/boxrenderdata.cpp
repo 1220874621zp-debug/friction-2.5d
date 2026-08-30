@@ -108,15 +108,6 @@ void BoxRenderData::drawOnParentLayer(SkCanvas * const canvas) {
 
 void BoxRenderData::drawOnParentLayer(SkCanvas * const canvas,
                                       SkPaint& paint) {
-    // backdrop probe: relevant-only (burn-proof -- consumes budget
-    // solely on caller-bearing draws), logs the dispatch decision
-    static int sBdLog = 0;
-    if (!fBackdropCallers.isEmpty() && sBdLog++ < 30) {
-        const auto box = fParentBox.data();
-        qWarning() << "[LG] backdropDispatch box="
-                   << (box ? box->prp_getName() : QStringLiteral("?"))
-                   << "callers=" << fBackdropCallers.count();
-    }
     // backdrop-sampling effects REPLACE the layer pixels with the
     // treated backdrop: the layer's alpha is the glass shape, its own
     // content does not draw. The preview path reaches this same code
