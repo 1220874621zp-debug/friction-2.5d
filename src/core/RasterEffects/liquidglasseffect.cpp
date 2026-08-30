@@ -207,12 +207,15 @@ public:
         if(!canvas || !box.fRenderedImage) return;
         const SkIRect dev = canvas->getDeviceClipBounds();
         if(dev.isEmpty()) return;
-        auto* surf = canvas->getSurface();
-        if(!surf) return;
 
-        canvas->flush();
-        const auto snap = surf->makeImageSnapshot(dev);
-        if(!snap) return;
+        // entry probe: absence of this line next round means the
+        // composite never reaches the backdrop treatment
+        static int sEnter = 0;
+        if (sEnter++ < 8) {
+            qWarning() << "[LG] glass enter dev=" << dev.left() << dev.top()
+                       << dev.width() << "x" << dev.height()
+                       << "surf=" << bool(canvas->getSurface());
+        }
 
         // 1) the layer's shape: rasterize its own image into a
         //    device-space mask, replicating the standard placement
@@ -268,11 +271,14 @@ public:
         for (const float v : field) maxDist = std::max(maxDist, v);
         if (maxDist < 0.5f) maxDist = 0.5f;
 
-        // 3) backdrop snapshot as a raster bitmap
+        // 3) backdrop: read the canvas device pixels below the layer.
+        //    readPixels works for both bitmap-backed CPU canvases --
+        //    where getSurface() is null and snapshotting is impossible
+        //    -- and GPU-backed surfaces (it syncs internally)
         SkBitmap backB;
         backB.allocPixels(info);
         backB.eraseColor(SK_ColorTRANSPARENT);
-        if (!snap->readPixels(backB.pixmap(), 0, 0)) return;
+        if (!canvas->readPixels(backB.pixmap(), dev.left(), dev.top())) return;
 
         // throttled diagnostic for the runtime debug log
         static int sLog = 0;
