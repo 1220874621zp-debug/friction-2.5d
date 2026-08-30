@@ -1532,7 +1532,16 @@ void MainWindow::setupLayout()
                                  QWidget *widget) {
         const auto dock = new QDockWidget(title, this);
         dock->setObjectName(objectName); // required by saveState()
-        dock->setWidget(widget);
+        // thin inner bevel: wrap the content in a plain QWidget holder
+        // (exact QWidget picks up the qss border without needing
+        // WA_StyledBackground on custom subclasses)
+        const auto holder = new QWidget();
+        holder->setProperty("panelBevel", true);
+        const auto holderLayout = new QVBoxLayout(holder);
+        holderLayout->setContentsMargins(1, 1, 1, 1);
+        holderLayout->setSpacing(0);
+        holderLayout->addWidget(widget);
+        dock->setWidget(holder);
         dock->setPalette(ThemeSupport::getDarkPalette());
         dock->setAutoFillBackground(true);
         dock->setFeatures(QDockWidget::DockWidgetClosable |

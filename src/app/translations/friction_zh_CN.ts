@@ -2084,52 +2084,52 @@
     <message>
         <location filename="../GUI/effectspresetspanel.cpp" line="59"/>
         <source>Search Effects &amp; Presets...</source>
-        <translation type="unfinished"></translation>
+        <translation>搜索特效与预设...</translation>
     </message>
     <message>
         <location filename="../GUI/effectspresetspanel.cpp" line="87"/>
         <source>Import...</source>
-        <translation type="unfinished"></translation>
+        <translation>导入...</translation>
     </message>
     <message>
         <location filename="../GUI/effectspresetspanel.cpp" line="88"/>
         <source>Import custom GLSL shader effect (.frag / .json)</source>
-        <translation type="unfinished"></translation>
+        <translation>导入自定义 GLSL 着色器特效（.frag / .json）</translation>
     </message>
     <message>
         <location filename="../GUI/effectspresetspanel.cpp" line="92"/>
         <source>Folder</source>
-        <translation type="unfinished"></translation>
+        <translation>文件夹</translation>
     </message>
     <message>
         <location filename="../GUI/effectspresetspanel.cpp" line="93"/>
         <source>Open custom effects &amp; shaders directory</source>
-        <translation type="unfinished"></translation>
+        <translation>打开自定义特效与着色器目录</translation>
     </message>
     <message>
         <location filename="../GUI/effectspresetspanel.cpp" line="97"/>
         <source>Refresh</source>
-        <translation type="unfinished"></translation>
+        <translation>刷新</translation>
     </message>
     <message>
         <location filename="../GUI/effectspresetspanel.cpp" line="98"/>
         <source>Reload shader effects and presets</source>
-        <translation type="unfinished"></translation>
+        <translation>重新加载着色器特效与预设</translation>
     </message>
     <message>
         <location filename="../GUI/effectspresetspanel.cpp" line="153"/>
         <source>General</source>
-        <translation type="unfinished">常规</translation>
+        <translation>通用</translation>
     </message>
     <message>
         <location filename="../GUI/effectspresetspanel.cpp" line="162"/>
         <source>Custom</source>
-        <translation type="unfinished"></translation>
+        <translation>自定义</translation>
     </message>
     <message>
         <location filename="../GUI/effectspresetspanel.cpp" line="171"/>
         <source>Shader</source>
-        <translation type="unfinished">着色器</translation>
+        <translation>着色器</translation>
     </message>
     <message>
         <location filename="../GUI/effectspresetspanel.cpp" line="181"/>
@@ -8440,7 +8440,7 @@ Select the layers you want to import:</source>
         <location filename="../GUI/timelinedockwidget.cpp" line="564"/>
         <location filename="../GUI/timelinedockwidget.cpp" line="566"/>
         <source>Set Layer In Point (Alt+[)</source>
-        <translation>设置图层入点 (Alt+[)</translation>
+        <translation>设置图层入点 (Alt+[</translation>
     </message>
     <message>
         <location filename="../GUI/timelinedockwidget.cpp" line="576"/>

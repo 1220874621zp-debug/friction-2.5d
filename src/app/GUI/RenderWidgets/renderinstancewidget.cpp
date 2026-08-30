@@ -112,21 +112,8 @@ void RenderInstanceWidget::iniGUI()
 
     addContentWidget(contWid);
 
-    // action column (left): every button stacked together
-    QWidget *buttonsWidget = new QWidget(this);
-    buttonsWidget->setContentsMargins(0, 0, 0, 0);
-    const auto buttonsLayout = new QVBoxLayout(buttonsWidget);
-    buttonsLayout->setContentsMargins(0, 0, 0, 0);
-    buttonsLayout->setSpacing(2);
-
-    // info column (right): read-only settings displays and the
-    // destination path (was interleaved button/info rows)
-    QWidget *infoWidget = new QWidget(this);
-    infoWidget->setContentsMargins(0, 0, 0, 0);
-    const auto infoLayout = new QVBoxLayout(infoWidget);
-    infoLayout->setContentsMargins(0, 0, 0, 0);
-    infoLayout->setSpacing(2);
-
+    // action column setup: buttons added to a horizontal row further
+    // down; info displays go to the bottom row
     mRenderSettingsDisplayWidget = new RenderSettingsDisplayWidget(this);
 
     const auto renderSettingsButton = new QPushButton(QIcon::fromTheme("sequence"),
@@ -138,9 +125,6 @@ void RenderInstanceWidget::iniGUI()
 
     connect(renderSettingsButton, &QPushButton::pressed,
             this, &RenderInstanceWidget::openRenderSettingsDialog);
-
-    buttonsLayout->addWidget(renderSettingsButton);
-    infoLayout->addWidget(mRenderSettingsDisplayWidget);
 
     mOutputSettingsDisplayWidget = new OutputSettingsDisplayWidget(this);
 
@@ -160,10 +144,6 @@ void RenderInstanceWidget::iniGUI()
 
     connect(mOutputSettingsButton, &QPushButton::pressed,
             this, &RenderInstanceWidget::openOutputSettingsDialog);
-
-    buttonsLayout->addWidget(mOutputSettingsProfilesButton);
-    buttonsLayout->addWidget(mOutputSettingsButton);
-    infoLayout->addWidget(mOutputSettingsDisplayWidget);
 
     const auto outputDestinationButton = new QPushButton(QIcon::fromTheme("disk_drive"),
                                                          QString(),
@@ -210,30 +190,29 @@ void RenderInstanceWidget::iniGUI()
         mOutputDestinationLineEdit->setFixedHeight(eSizesUI::button);
     });
 
-    // destination pick + play back grouped side by side under the
-    // other buttons
-    QWidget *outputDestinationWidget = new QWidget(this);
-    outputDestinationWidget->setContentsMargins(0, 0, 0, 0);
-    const auto outputDestinationLayout = new QHBoxLayout(outputDestinationWidget);
-    outputDestinationLayout->setMargin(0);
-    outputDestinationLayout->setSpacing(2);
+    // horizontal queue row: all buttons in one top row, the
+    // destination path box under them, read-only info at the bottom
+    const auto buttonsRow = new QHBoxLayout();
+    buttonsRow->setContentsMargins(0, 0, 0, 0);
+    buttonsRow->setSpacing(2);
+    buttonsRow->addWidget(renderSettingsButton);
+    buttonsRow->addWidget(mOutputSettingsProfilesButton);
+    buttonsRow->addWidget(mOutputSettingsButton);
+    buttonsRow->addStretch();
+    buttonsRow->addWidget(outputDestinationButton);
+    buttonsRow->addWidget(playButton);
 
-    outputDestinationLayout->addWidget(outputDestinationButton);
-    outputDestinationLayout->addWidget(playButton);
+    const auto infoRow = new QHBoxLayout();
+    infoRow->setContentsMargins(0, 0, 0, 0);
+    infoRow->setSpacing(4);
+    infoRow->addWidget(mRenderSettingsDisplayWidget, 1);
+    infoRow->addWidget(mOutputSettingsDisplayWidget, 1);
 
-    buttonsLayout->addWidget(outputDestinationWidget);
-    buttonsLayout->addStretch();
-    infoLayout->addWidget(mOutputDestinationLineEdit);
-
-    const auto rowLayout = new QHBoxLayout();
-    rowLayout->setContentsMargins(0, 0, 0, 0);
-    rowLayout->setSpacing(4);
-    rowLayout->addWidget(buttonsWidget);
-    rowLayout->addWidget(infoWidget, 1);
-    contLayout->addLayout(rowLayout);
-
-    contLayout->setSpacing(0);
-    contLayout->setContentsMargins(0, 0, 0, 0);
+    contLayout->addLayout(buttonsRow);
+    contLayout->addWidget(mOutputDestinationLineEdit);
+    contLayout->addLayout(infoRow);
+    contLayout->setSpacing(2);
+    contLayout->setContentsMargins(2, 2, 2, 2);
 }
 
 void RenderInstanceWidget::updateFromSettings()

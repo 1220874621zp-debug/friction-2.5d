@@ -168,6 +168,18 @@ TABLE = {
     'Snapshot timed out - the frame did not render in time':
         '快照超时——帧未能及时渲染完成',
 },
+'EffectsPresetsPanel': {
+    'Search Effects & Presets...': '搜索特效与预设...',
+    'Import...': '导入...',
+    'Import custom GLSL shader effect (.frag / .json)': '导入自定义 GLSL 着色器特效（.frag / .json）',
+    'Folder': '文件夹',
+    'Open custom effects & shaders directory': '打开自定义特效与着色器目录',
+    'Refresh': '刷新',
+    'Reload shader effects and presets': '重新加载着色器特效与预设',
+    'General': '通用',
+    'Custom': '自定义',
+    'Shader': '着色器',
+},
 }
 
 ctx_re = re.compile(r'<context>\s*<name>([^<]+)</name>.*?</context>', re.DOTALL)
