@@ -25,6 +25,7 @@
 
 #include "layerboxrenderdata.h"
 #include "skia/skqtconversions.h"
+#include "Boxes/boundingbox.h"
 
 ContainerBoxRenderData::ContainerBoxRenderData(BoundingBox * const parentBox) :
     BoxRenderData(parentBox) {
@@ -74,6 +75,22 @@ void ContainerBoxRenderData::updateRelBoundingRect() {
 }
 
 void ContainerBoxRenderData::drawSk(SkCanvas * const canvas) {
+    // composite probe: which children reach the container composite
+    // and whether their backdrop callers survived
+    static int sDrawSkLog = 0;
+    if (sDrawSkLog++ < 16) {
+        QString kids;
+        for(const auto &child : fChildrenRenderData) {
+            const auto d = child.fData.get();
+            kids += QStringLiteral("[%1 c=%2]").arg(
+                        d && d->fParentBox.data() ?
+                            d->fParentBox.data()->prp_getName() :
+                            QStringLiteral("?")).arg(
+                        d ? d->fBackdropCallers.count() : -1);
+        }
+        qWarning() << "[LG] containerDrawSk n=" <<
+                      fChildrenRenderData.count() << kids;
+    }
     for(const auto &child : fChildrenRenderData) {
         canvas->save();
         if(!child.fClip.fClipOps.isEmpty()) {

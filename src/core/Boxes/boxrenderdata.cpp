@@ -108,6 +108,15 @@ void BoxRenderData::drawOnParentLayer(SkCanvas * const canvas) {
 
 void BoxRenderData::drawOnParentLayer(SkCanvas * const canvas,
                                       SkPaint& paint) {
+    // composite probe: every layer composite passes here; c>0 means
+    // the backdrop treatment should run for this draw
+    static int sCallLog = 0;
+    if (sCallLog++ < 24) {
+        const auto box = fParentBox.data();
+        qWarning() << "[LG] drawOnParent" <<
+                      (box ? box->prp_getName() : QStringLiteral("?"))
+                   << "callers=" << fBackdropCallers.count();
+    }
     // backdrop-sampling effects REPLACE the layer pixels with the
     // treated backdrop: the layer's alpha is the glass shape, its own
     // content does not draw. The preview path reaches this same code
