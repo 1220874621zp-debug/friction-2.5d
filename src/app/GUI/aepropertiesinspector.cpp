@@ -609,7 +609,7 @@ void AEPropertiesInspector::setupTransformControls(QGridLayout *grid, BoundingBo
 
     int rowIdx = 0;
 
-    auto addDualRow = [grid, this, &rowIdx](const QString &label, QrealAnimator *animX, QrealAnimator *animY, qreal defaultVal = 0.0) {
+    auto addDualRow = [grid, this, &rowIdx](const QString &label, QrealAnimator *animX, QrealAnimator *animY, qreal defaultVal = 0.0, bool isScale = false) {
         if (!animX || !animY) { return; }
 
         grid->addWidget(createDualKeyframeNav(animX, animY), rowIdx, 0, Qt::AlignCenter);
@@ -633,6 +633,18 @@ void AEPropertiesInspector::setupTransformControls(QGridLayout *grid, BoundingBo
         sliderX->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
         ih->addWidget(sliderX, 1);
 
+        QToolButton *linkBtn = nullptr;
+        if (isScale) {
+            linkBtn = new QToolButton(inputContainer);
+            linkBtn->setObjectName(QStringLiteral("FlatButton"));
+            linkBtn->setCheckable(true);
+            linkBtn->setChecked(true);
+            linkBtn->setIcon(QIcon::fromTheme(QStringLiteral("linked")));
+            linkBtn->setFixedSize(14, 16);
+            linkBtn->setToolTip(tr("锁定等比缩放 (Constrain Proportions)"));
+            ih->addWidget(linkBtn);
+        }
+
         auto sliderY = new QrealAnimatorValueSlider(animY, inputContainer);
         sliderY->setAutoAdjustWidth(false);
         sliderY->setName(QStringLiteral("Y"));
@@ -640,6 +652,23 @@ void AEPropertiesInspector::setupTransformControls(QGridLayout *grid, BoundingBo
         sliderY->setIsRightSlider(true);
         sliderY->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
         ih->addWidget(sliderY, 1);
+
+        if (isScale && linkBtn) {
+            connect(sliderX, &QrealAnimatorValueSlider::valueEdited, [animY, sliderY, linkBtn, this](qreal val) {
+                if (linkBtn->isChecked() && animY) {
+                    animY->setCurrentBaseValue(val);
+                    sliderY->setDisplayedValue(val);
+                    if (mScene) { mScene->requestUpdate(); }
+                }
+            });
+            connect(sliderY, &QrealAnimatorValueSlider::valueEdited, [animX, sliderX, linkBtn, this](qreal val) {
+                if (linkBtn->isChecked() && animX) {
+                    animX->setCurrentBaseValue(val);
+                    sliderX->setDisplayedValue(val);
+                    if (mScene) { mScene->requestUpdate(); }
+                }
+            });
+        }
 
         grid->addWidget(inputContainer, rowIdx, 2);
 
@@ -707,7 +736,7 @@ void AEPropertiesInspector::setupTransformControls(QGridLayout *grid, BoundingBo
 
     // 3. Scale
     if (const auto scaleAnim = advTrans->getScaleAnimator()) {
-        addDualRow(tr("缩放"), scaleAnim->getXAnimator(), scaleAnim->getYAnimator(), 100.0);
+        addDualRow(tr("缩放"), scaleAnim->getXAnimator(), scaleAnim->getYAnimator(), 1.0, true);
     }
 
     // 4. Rotation
