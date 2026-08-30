@@ -153,7 +153,11 @@ public:
     // drawOnParentLayer/drawPixmapSk instead of the box-image phase
     QList<stdsptr<RasterEffectCaller>> fBackdropCallers;
 protected:
-    bool hasEffects() const { return !mEffectsRenderer.isEmpty(); }
+    // backdrop-sampling callers count as effects: they force the
+    // rasterized composite path (disables PathBox direct draw, which
+    // would bypass the drawOnParentLayer backdrop hook entirely)
+    bool hasEffects() const
+    { return !mEffectsRenderer.isEmpty() || !fBackdropCallers.isEmpty(); }
 
     void setBaseGlobalRect(const QRectF &baseRectF);
 
