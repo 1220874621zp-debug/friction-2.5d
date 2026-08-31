@@ -101,6 +101,7 @@ public:
     const QMatrix &getRelativeTransform() const;
 
     void setParentTransformAnimator(BasicTransformAnimator *parent);
+    BasicTransformAnimator *getParentTransformAnimator() const;
 
     QPointFAnimator *getPosAnimator() const;
     QPointFAnimator *getScaleAnimator() const;

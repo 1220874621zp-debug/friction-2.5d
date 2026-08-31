@@ -27,6 +27,7 @@
 #include "Animators/qpointfanimator.h"
 #include "Animators/graphkey.h"
 #include "Animators/qrealkey.h"
+#include "Animators/eboxorsound.h"
 #include "MovablePoints/pointshandler.h"
 #include "Private/document.h"
 #include "themesupport.h"
@@ -227,7 +228,12 @@ bool MotionPathHandler::shouldDraw() const
     const auto xAnim = pos->getXAnimator();
     if (!xAnim) { return false; }
     if (xAnim->anim_getKeys().count() < 2) { return false; }
-    return prp_isParentBoxSelected();
+    // the handler deliberately lives outside the property tree
+    // (overlay, not serialized), so prp_isParentBoxSelected() cannot
+    // walk mParent_k here; resolve the owning box through the target
+    // animator instead - it is a direct child of the box
+    const auto box = mTarget->getFirstAncestor<eBoxOrSound>();
+    return box && box->isSelected();
 }
 
 void MotionPathHandler::syncPoints()
@@ -273,6 +279,14 @@ void MotionPathHandler::prp_drawCanvasControls(
         const float invScale, const bool ctrlPressed)
 {
     if (!shouldDraw()) { return; }
+
+    // key/handle points map parent-space values through the parent
+    // chain; Property::setPointsHandler seeded them with this
+    // handler's (null) transform. Keep them on the target's parent
+    // transform so absolute == inheritedTransform * relative, the
+    // same mapping the path below uses (idempotent, reparent-safe).
+    mPoints->setTransform(mTarget->getParentTransformAnimator());
+
     syncPoints();
 
     const auto pos = mTarget->getPosAnimator();

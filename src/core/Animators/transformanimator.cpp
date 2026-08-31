@@ -265,6 +265,10 @@ const QMatrix &BasicTransformAnimator::getRelativeTransform() const {
     return mRelTransform;
 }
 
+BasicTransformAnimator *BasicTransformAnimator::getParentTransformAnimator() const {
+    return mParentTransform;
+}
+
 void BasicTransformAnimator::setParentTransformAnimator(
         BasicTransformAnimator* parent) {
     auto& conn = mParentTransform.assign(parent);
