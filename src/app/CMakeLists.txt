@@ -195,6 +195,7 @@ set(
     GUI/BoxesList/boxscroller.cpp
     GUI/Dialogs/dialogsinterfaceimpl.cpp
     GUI/Dialogs/animationtopaintdialog.cpp
+    GUI/Dialogs/vectortracedialog.cpp
     GUI/Expressions/expressiondialog.cpp
     GUI/Expressions/expressioneditor.cpp
     GUI/Expressions/expressionhighlighter.cpp
@@ -261,6 +262,7 @@ set(
     GUI/BoxesList/boxscroller.h
     GUI/Dialogs/dialogsinterfaceimpl.h
     GUI/Dialogs/animationtopaintdialog.h
+    GUI/Dialogs/vectortracedialog.h
     GUI/Expressions/expressiondialog.h
     GUI/Expressions/expressioneditor.h
     GUI/Expressions/expressionhighlighter.h

@@ -191,6 +191,7 @@ public:
     void importOCA();
     void importFile();
     void openSammieRoto();
+    void traceSelectedImage();
     void revert();
     void updateAutoSaveBackupState();
     void openRendererWindow();
@@ -323,6 +324,7 @@ private:
     QMenu *mPathMenu;
     QMenu *mEffectsMenu;
     QMenu *mSceneMenu;
+    QMenu *mVectorTraceMenu;
 #ifndef Q_OS_MAC
     Friction::Ui::PersistentMenu *mViewMenu;
 #else
@@ -359,6 +361,7 @@ private:
     void setupToolBar();
     void setupMenuBar();
     void setupMenuScene();
+    void setupMenuVectorTrace();
     void setupMenuEffects();
     void setupMenuExtras();
     void setupPropertiesActions();

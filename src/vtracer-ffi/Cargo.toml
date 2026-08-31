@@ -1,0 +1,20 @@
+[package]
+name = "vtracer_ffi"
+version = "0.1.0"
+edition = "2021"
+description = "C ABI wrapper around the vtracer bitmap-to-SVG library for Friction"
+license = "MIT"
+
+[lib]
+name = "vtracer"
+crate-type = ["cdylib"]
+
+[dependencies]
+vtracer = "0.6.5"
+visioncortex = "0.8"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

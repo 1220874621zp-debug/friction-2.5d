@@ -103,11 +103,17 @@
 
 #include "dialogs/adjustscenedialog.h"
 #include "dialogs/commandpalette.h"
+#include "dialogs/vectortracedialog.h"
 #include "wizards/installpresets.h"
 #include "Boxes/videobox.h"
+#include "Boxes/imagebox.h"
+#include "svgimporter.h"
+#include "vtracerprovider.h"
 #include <QProcess>
 #include <QFileInfo>
 #include <QDir>
+#include <QFile>
+#include <QProgressDialog>
 
 using namespace Friction;
 
@@ -1961,6 +1967,125 @@ void MainWindow::importOCA()
         } catch(const std::exception& e) {
             gPrintExceptionCritical(e);
         }
+    }
+}
+
+void MainWindow::traceSelectedImage()
+{
+    const auto scene = *mDocument.fActiveScene;
+    if (!scene) {
+        QMessageBox::information(this, tr("矢量描摹"),
+                                 tr("请先打开场景。"));
+        return;
+    }
+    if (!VTracer::available()) {
+        QMessageBox::warning(this, tr("矢量描摹"),
+                             tr("未找到 vtracer.dll，请确认它已随程序一起部署。"));
+        return;
+    }
+
+    QList<ImageBox*> images;
+    const auto selected = scene->getSelectedBoxesList();
+    for (const auto &box : selected) {
+        if (const auto imgBox = enve_cast<ImageBox*>(box)) {
+            images << imgBox;
+        }
+    }
+    if (images.isEmpty()) {
+        QMessageBox::information(this, tr("矢量描摹"),
+                                 tr("请先选中一个或多个位图图层再转绘。"));
+        return;
+    }
+
+    VTracer::Options opts;
+    if (!VectorTraceDialog::sExec(opts, this)) { return; }
+
+    QProgressDialog progress(tr("正在转绘..."), QString(),
+                             0, images.count(), this);
+    progress.setWindowModality(Qt::WindowModal);
+    progress.setMinimumDuration(0);
+
+    int traced = 0;
+    QStringList failedNames;
+    for (const auto &imgBox : images) {
+        if (progress.wasCanceled()) { break; }
+        progress.setValue(traced);
+        progress.setLabelText(tr("正在转绘「%1」...").arg(imgBox->prp_getName()));
+        QCoreApplication::processEvents();
+
+        // decode synchronously from the source file; QFile handles
+        // Unicode paths on Windows (same rationale as ImageLoader)
+        sk_sp<SkImage> image;
+        QFile file(imgBox->filePath());
+        if (file.open(QIODevice::ReadOnly)) {
+            const QByteArray bytes = file.readAll();
+            image = SkImage::MakeFromEncoded(SkData::MakeWithCopy(
+                    bytes.constData(), bytes.size()));
+        }
+        if (!image) {
+            failedNames << tr("%1（无法读取图像）").arg(imgBox->prp_getName());
+            continue;
+        }
+
+        QString svg;
+        int pathCount = 0;
+        QString err;
+        const auto status = VTracer::traceToSvg(image, opts,
+                                                svg, pathCount, err);
+        if (status == VTracer::TraceStatus::PathLimit) {
+            failedNames << tr("%1（过于复杂：%2 条路径 > 上限 %3）")
+                           .arg(imgBox->prp_getName())
+                           .arg(pathCount).arg(opts.maxPaths);
+            continue;
+        }
+        if (status != VTracer::TraceStatus::Ok) {
+            failedNames << tr("%1（转绘失败：%2）")
+                           .arg(imgBox->prp_getName()).arg(err);
+            continue;
+        }
+
+        const auto gradientCreator = [scene]() {
+            return scene->createNewGradient();
+        };
+        qsptr<BoundingBox> result;
+        try {
+            result = ImportSVG::loadSVGFile(svg.toUtf8(), gradientCreator);
+        } catch(const std::exception& e) {
+            gPrintExceptionCritical(e);
+            failedNames << tr("%1（导入结果失败）").arg(imgBox->prp_getName());
+            continue;
+        }
+        if (!result) {
+            failedNames << tr("%1（导入结果失败）").arg(imgBox->prp_getName());
+            continue;
+        }
+
+        const auto parentGroup = imgBox->getParentGroup();
+        parentGroup->prp_pushUndoRedoName(tr("矢量描摹"));
+        parentGroup->insertContained(-1, result);
+        result->rename(tr("描摹 - %1").arg(imgBox->prp_getName()));
+
+        // place the traced group centered on the source layer
+        const auto imgTransform = imgBox->getTotalTransform();
+        const qreal halfW = image->width() / 2.0;
+        const qreal halfH = image->height() / 2.0;
+        const QPointF target = imgTransform.map(QPointF(halfW, halfH));
+        result->planCenterPivotPosition();
+        result->startPosTransform();
+        result->moveByAbs(target - QPointF(halfW, halfH));
+        result->finishTransform();
+        traced++;
+    }
+
+    progress.setValue(images.count());
+    mDocument.actionFinished();
+
+    if (!failedNames.isEmpty()) {
+        QMessageBox::warning(this, tr("矢量描摹"),
+            tr("以下 %1 项未转绘（矢量描摹适用于文字、Logo 与简单图形，"
+               "插画与照片类图像不建议使用）：\n\n• %2")
+                .arg(failedNames.count())
+                .arg(failedNames.join(QStringLiteral("\n• "))));
     }
 }
 

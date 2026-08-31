@@ -27,8 +27,10 @@ include(friction-meta)
 include(friction-common)
 #include(friction-quazip)
 include(friction-ffmpeg)
+include(friction-vtracer)
 
 message("-- ffmpeg include: ${FFMPEG_INCLUDE_DIRS}")
+message("-- vtracer include: ${VTRACER_INCLUDE_DIRS}")
 message("-- ffmpeg libraries: ${FFMPEG_LIBRARIES_DIRS} ${FFMPEG_LIBRARIES}")
 message("-- skia libraries: ${SKIA_LIBRARIES_DIRS} ${SKIA_LIBRARIES}")
 
@@ -72,6 +74,7 @@ message("-- git branch: ${GIT_BRANCH}")
 include_directories(
     #${QUAZIP_INCLUDE_DIRS}
     ${FFMPEG_INCLUDE_DIRS}
+    ${VTRACER_INCLUDE_DIRS}
     ${CMAKE_CURRENT_SOURCE_DIR}/../skia
 )
 
@@ -360,6 +363,7 @@ set(
     svgexporter.cpp
     svgexporthelpers.cpp
     svgimporter.cpp
+    vtracerprovider.cpp
     Psd/psdfile.cpp
     Psd/psdimporter.cpp
     Psd/ocaimporter.cpp
@@ -748,6 +752,7 @@ set(
     svgexporter.h
     svgexporthelpers.h
     svgimporter.h
+    vtracerprovider.h
     Psd/psdfile.h
     Psd/psdimporter.h
     Psd/fpsdpackage.h

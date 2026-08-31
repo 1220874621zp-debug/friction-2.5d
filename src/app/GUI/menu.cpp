@@ -29,9 +29,11 @@
 #include "misc/noshortcutaction.h"
 #include "dialogs/scenesettingsdialog.h"
 #include "system/svgclipboard.h"
+#include "vtracerprovider.h"
 
 #include <QDesktopServices>
 #include <QClipboard>
+#include <QMessageBox>
 #include <QStatusBar>
 #include <QPainter>
 
@@ -513,6 +515,8 @@ void MainWindow::setupMenuBar()
 
     setupMenuScene();
 
+    setupMenuVectorTrace();
+
     mEffectsMenu = mMenuBar->addMenu(tr("Effects"));
     mEffectsMenu->setEnabled(false);
     setupMenuEffects();
@@ -913,6 +917,31 @@ void MainWindow::setupMenuBar()
         });
         mViewMenu->addAction(act);
     }
+}
+
+void MainWindow::setupMenuVectorTrace()
+{
+    mVectorTraceMenu = mMenuBar->addMenu(tr("矢量描摹", "MenuBar"));
+
+    const auto traceAct = mVectorTraceMenu->addAction(QIcon::fromTheme("group"),
+                                                      tr("转绘选中图像..."),
+                                                      this, &MainWindow::traceSelectedImage);
+    cmdAddAction(traceAct);
+
+    mVectorTraceMenu->addAction(QIcon::fromTheme("cmd"),
+                                tr("使用说明"),
+                                this, [this]() {
+        QMessageBox::information(this,
+            tr("矢量描摹 使用说明"),
+            tr("矢量描摹（基于开源库 vtracer）\n\n"
+               "把选中的位图图层转绘为可编辑的矢量路径图层：\n"
+               "• 适用：文字截图、Logo、图标、简单图形\n"
+               "• 不适用：插画、照片等复杂图像（会被路径数上限拦截）\n"
+               "• 结果以图层形式叠放在原图层位置，节点可编辑\n\n"
+               "参数建议：文字或单色 Logo 使用默认参数即可；"
+               "细节丢失时可调低「斑点过滤」或调高「颜色精度」。"
+               "\n\n当前组件版本：%1").arg(VTracer::versionString()));
+    });
 }
 
 void MainWindow::setupMenuScene()
