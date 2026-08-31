@@ -987,6 +987,45 @@ void AEPropertiesInspector::setupEffectsControls(QVBoxLayout *layout, BoundingBo
         menu.exec(addBtn->mapToGlobal(QPoint(0, addBtn->height())));
     });
 
+    // master visibility switch: one click enables/disables every
+    // effect of the layer; state = all effects visible
+    auto masterBtn = new QToolButton(topBar);
+    masterBtn->setObjectName(QStringLiteral("FlatButton"));
+    masterBtn->setCheckable(true);
+    masterBtn->setFixedSize(QSize(18, 16));
+    masterBtn->setToolTip(tr("启用/禁用全部特效"));
+    const auto setMasterIcon = [masterBtn](const bool on) {
+        masterBtn->setIcon(QIcon::fromTheme(on
+                ? QStringLiteral("visible")
+                : QStringLiteral("hidden")));
+    };
+    const auto syncMaster = [coll, masterBtn, setMasterIcon]() {
+        bool all = true;
+        const int n = coll->ca_getNumberOfChildren();
+        for (int i = 0; i < n; ++i) {
+            const auto eff = coll->ca_getChildAt<RasterEffect>(i);
+            if (eff && !eff->isVisible()) { all = false; break; }
+        }
+        masterBtn->blockSignals(true);
+        masterBtn->setChecked(all);
+        masterBtn->blockSignals(false);
+        setMasterIcon(all);
+    };
+    syncMaster();
+    connect(masterBtn, &QToolButton::clicked,
+            this, [coll, masterBtn, setMasterIcon, this]() {
+        const bool on = masterBtn->isChecked();
+        const int n = coll->ca_getNumberOfChildren();
+        for (int i = 0; i < n; ++i) {
+            const auto eff = coll->ca_getChildAt<RasterEffect>(i);
+            if (eff) { eff->setVisible(on); }
+        }
+        setMasterIcon(on);
+        if (mScene) { mScene->requestUpdate(); }
+        Document::sInstance->actionFinished();
+    });
+
+    topBarLayout->addWidget(masterBtn);
     topBarLayout->addWidget(addBtn);
     layout->addWidget(topBar);
 
@@ -1016,6 +1055,45 @@ void AEPropertiesInspector::setupEffectsControls(QVBoxLayout *layout, BoundingBo
         auto titleLbl = new QLabel(effTitle, eHeader);
         titleLbl->setStyleSheet(QStringLiteral("font-weight: bold; color: #ffffff; font-size: 12px;"));
         ehLayout->addWidget(titleLbl, 1);
+
+        // per-effect visibility eye
+        auto eyeBtn = new QToolButton(eHeader);
+        eyeBtn->setObjectName(QStringLiteral("FlatButton"));
+        eyeBtn->setCheckable(true);
+        eyeBtn->setChecked(effect->isVisible());
+        eyeBtn->setFixedSize(QSize(18, 16));
+        eyeBtn->setIcon(QIcon::fromTheme(effect->isVisible()
+                ? QStringLiteral("visible")
+                : QStringLiteral("hidden")));
+        eyeBtn->setToolTip(tr("启用/禁用此特效"));
+        connect(eyeBtn, &QToolButton::toggled,
+                this, [effect, eyeBtn, syncMaster, this](const bool on) {
+            effect->setVisible(on);
+            eyeBtn->setIcon(QIcon::fromTheme(on
+                    ? QStringLiteral("visible")
+                    : QStringLiteral("hidden")));
+            syncMaster();
+            if (mScene) { mScene->requestUpdate(); }
+        });
+        ehLayout->addWidget(eyeBtn);
+
+        // right-click anywhere on the effect card offers delete
+        effectWidget->setContextMenuPolicy(Qt::CustomContextMenu);
+        connect(effectWidget, &QWidget::customContextMenuRequested,
+                this, [effectWidget, box, effect, this](const QPoint &pos) {
+            QMenu menu(effectWidget);
+            menu.setPalette(ThemeSupport::getDefaultPalette());
+            const auto delAct = menu.addAction(
+                        QIcon::fromTheme(QStringLiteral("edit-delete")),
+                        tr("删除特效"));
+            connect(delAct, &QAction::triggered,
+                    this, [box, effect, this]() {
+                box->removeRasterEffect(effect->ref<RasterEffect>());
+                if (mScene) { mScene->requestUpdate(); }
+                refreshSelection();
+            });
+            menu.exec(effectWidget->mapToGlobal(pos));
+        });
 
         auto delBtn = new QToolButton(eHeader);
         delBtn->setObjectName(QStringLiteral("FlatButton"));
