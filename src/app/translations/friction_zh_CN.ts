@@ -1600,6 +1600,11 @@
 <context>
     <name>Canvas</name>
     <message>
+        <location filename="../../core/canvas.cpp" line="1314"/>
+        <source>Split Clip</source>
+        <translation>拆分片段</translation>
+    </message>
+    <message>
         <location filename="../../core/canvasselectedboxesactions.cpp" line="1213"/>
         <source>Match Canvas Width</source>
         <translation>匹配画布宽度</translation>

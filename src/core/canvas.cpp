@@ -1307,12 +1307,16 @@ void Canvas::splitAction()
     if (!dRect) { return; }
 
     const auto frame = getCurrentFrame();
-    const auto values = dRect->getValues();
     const auto range = dRect->getAbsFrameRange();
 
     if (!range.inRange(frame)) { return; }
 
-    int offset = values.fMax - (range.fMax - frame);
+    // one named undo set for the whole split: paste + both duration
+    // trims; the trims go through the undoable transform path (same
+    // as the in/out point actions) - raw setValues would stay out of
+    // the undo stack, so undo removed the pasted copy but kept the
+    // original trimmed
+    pushUndoRedoName(tr("Split Clip"));
 
     copyAction();
     pasteAction();
@@ -1325,8 +1329,13 @@ void Canvas::splitAction()
     const auto cRect = box->getDurationRectangle();
     if (!cRect) { return; }
 
-    dRect->setValues({values.fShift, offset, values.fMax});
-    cRect->setValues({values.fShift, values.fMin, offset});
+    bBox->startMinFramePosTransform();
+    dRect->setMinAbsFrame(frame);
+    bBox->finishMinFramePosTransform();
+
+    box->startMaxFramePosTransform();
+    cRect->setMaxAbsFrame(frame);
+    box->finishMaxFramePosTransform();
 
     for (int i = box->getZIndex(); i < bBox->getZIndex(); i = box->getZIndex()) {
         box->moveDown();
