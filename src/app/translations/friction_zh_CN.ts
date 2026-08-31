@@ -7460,9 +7460,34 @@ Select the layers you want to import:</source>
         <translation>高度</translation>
     </message>
     <message>
-        <location filename="../../ui/dialogs/scenesettingsdialog.cpp" line="133"/>
+        <location filename="../../ui/dialogs/scenesettingsdialog.cpp" line="200"/>
         <source>Duration</source>
-        <translation>时长</translation>
+        <translation>持续时间</translation>
+    </message>
+    <message>
+        <location filename="../../ui/dialogs/scenesettingsdialog.cpp" line="196"/>
+        <source>Duration as timecode hours:minutes:seconds:frames, e.g. 0:00:10:00 is 10 seconds</source>
+        <translation>持续时间按 时:分:秒:帧 时间码输入，例如 0:00:10:00 表示 10 秒</translation>
+    </message>
+    <message>
+        <location filename="../../ui/dialogs/scenesettingsdialog.cpp" line="128"/>
+        <source>Preset</source>
+        <translation>预设</translation>
+    </message>
+    <message>
+        <location filename="../../ui/dialogs/scenesettingsdialog.cpp" line="316"/>
+        <source>Select resolution preset</source>
+        <translation>选择分辨率预设</translation>
+    </message>
+    <message>
+        <location filename="../../ui/dialogs/scenesettingsdialog.cpp" line="196"/>
+        <source>Time Ruler</source>
+        <translation>时间标尺</translation>
+    </message>
+    <message>
+        <location filename="../../ui/dialogs/scenesettingsdialog.cpp" line="102"/>
+        <source>Invalid duration</source>
+        <translation>持续时间无效</translation>
     </message>
     <message>
         <location filename="../../ui/dialogs/scenesettingsdialog.cpp" line="143"/>

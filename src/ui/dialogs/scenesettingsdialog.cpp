@@ -30,6 +30,70 @@
 #include "Private/document.h"
 #include "Private/esettings.h"
 
+namespace {
+
+// timecode H:MM:SS:FF <-> frame count at the given fps
+QString durationTimecode(const int frames, const qreal fps)
+{
+    const int ifps = qMax(1, qRound(fps));
+    const int clamped = qMax(0, frames);
+    const int f = clamped % ifps;
+    int s = clamped / ifps;
+    const int ss = s % 60;
+    s /= 60;
+    const int mm = s % 60;
+    s /= 60;
+    return QString("%1:%2:%3:%4").arg(s)
+            .arg(mm, 2, 10, QChar('0'))
+            .arg(ss, 2, 10, QChar('0'))
+            .arg(f, 2, 10, QChar('0'));
+}
+
+// accepts 1-4 colon-separated numeric segments (FF, SS:FF,
+// MM:SS:FF, H:MM:SS:FF) in frames mode, a plain decimal number of
+// seconds in seconds mode
+bool parseDurationField(const QString &text,
+                        const bool secondsMode,
+                        const qreal fps,
+                        int &outFrames)
+{
+    const QString trimmed = text.trimmed();
+    if (trimmed.isEmpty()) { return false; }
+    if (secondsMode) {
+        bool ok = false;
+        const double secs = QLocale().toDouble(
+                    QString(trimmed).replace(QLatin1Char(','),
+                                             QLatin1Char('.')), &ok);
+        if (!ok || secs < 0.) { return false; }
+        outFrames = qRound(secs * fps);
+        return true;
+    }
+    const auto parts = trimmed.split(QLatin1Char(':'), Qt::SkipEmptyParts);
+    if (parts.isEmpty() || parts.count() > 4) { return false; }
+    qint64 h = 0, m = 0, s = 0, f = 0;
+    const int n = parts.count();
+    bool ok = true;
+    f = parts.at(n - 1).toLongLong(&ok);
+    if (!ok || f < 0) { return false; }
+    if (n >= 2) {
+        s = parts.at(n - 2).toLongLong(&ok);
+        if (!ok || s < 0) { return false; }
+    }
+    if (n >= 3) {
+        m = parts.at(n - 3).toLongLong(&ok);
+        if (!ok || m < 0) { return false; }
+    }
+    if (n >= 4) {
+        h = parts.at(n - 4).toLongLong(&ok);
+        if (!ok || h < 0) { return false; }
+    }
+    const qint64 total = qRound((h * 3600 + m * 60 + s) * fps) + f;
+    outFrames = int(qBound<qint64>(0, total, INT_MAX));
+    return true;
+}
+
+} // namespace
+
 SceneSettingsDialog::SceneSettingsDialog(Canvas * const canvas,
                                          QWidget * const parent)
     : SceneSettingsDialog(canvas->prp_getName(),
@@ -101,68 +165,85 @@ SceneSettingsDialog::SceneSettingsDialog(const QString &name,
     mFormGrid->setHorizontalSpacing(6);
     mFormGrid->setVerticalSpacing(6);
     const auto formLabel = [](QLabel * const w) {
-        w->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        w->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     };
     // uniform number-field widths so the columns read as one block
-    const int inputMinWidth = 86;
+    const int inputMinWidth = 96;
 
+    // row 0: name
     mNameEditLabel = new QLabel(tr("Name"), this);
     formLabel(mNameEditLabel);
     mNameEdit = new QLineEdit(name, this);
     connect(mNameEdit, &QLineEdit::textChanged,
             this, &SceneSettingsDialog::validate);
     mFormGrid->addWidget(mNameEditLabel, 0, 0);
-    mFormGrid->addWidget(mNameEdit, 0, 1, 1, 4);
+    mFormGrid->addWidget(mNameEdit, 0, 1, 1, 3);
 
+    // row 1: resolution presets - picking one fills width/height
+    mResPresetLabel = new QLabel(tr("Preset"), this);
+    formLabel(mResPresetLabel);
+    mResPresetCombo = new QComboBox(this);
+    connect(mResPresetCombo,
+            QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, [this](const int index) {
+        if (index <= 0) { return; }
+        const QSize sz = mResPresetCombo->itemData(index).toSize();
+        if (sz.width() <= 0 || sz.height() <= 0) { return; }
+        mWidthSpinBox->setValue(sz.width());
+        mHeightSpinBox->setValue(sz.height());
+    });
+    mFormGrid->addWidget(mResPresetLabel, 1, 0);
+    mFormGrid->addWidget(mResPresetCombo, 1, 1, 1, 3);
+
+    // rows 2-3: width / height
     mWidthLabel = new QLabel(tr("Width"), this);
     formLabel(mWidthLabel);
     mWidthSpinBox = new QSpinBox(this);
     mWidthSpinBox->setRange(1, INT_MAX);
     mWidthSpinBox->setMinimumWidth(inputMinWidth);
     mWidthSpinBox->setValue(width);
+    connect(mWidthSpinBox, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, &SceneSettingsDialog::syncResPresetCombo);
+    mFormGrid->addWidget(mWidthLabel, 2, 0);
+    mFormGrid->addWidget(mWidthSpinBox, 2, 1);
 
     mHeightLabel = new QLabel(tr("Height"), this);
+    formLabel(mHeightLabel);
     mHeightSpinBox = new QSpinBox(this);
     mHeightSpinBox->setRange(1, INT_MAX);
     mHeightSpinBox->setMinimumWidth(inputMinWidth);
     mHeightSpinBox->setValue(height);
+    connect(mHeightSpinBox, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, &SceneSettingsDialog::syncResPresetCombo);
+    mFormGrid->addWidget(mHeightLabel, 3, 0);
+    mFormGrid->addWidget(mHeightSpinBox, 3, 1);
 
-    mResToolButton = new QToolButton(this);
-    mResToolButton->setArrowType(Qt::NoArrow);
-    mResToolButton->setPopupMode(QToolButton::InstantPopup);
-    mResToolButton->setObjectName("FlatButton");
-    mResToolButton->setIcon(QIcon::fromTheme("dots"));
-    mResToolButton->setVisible(mEnableResolutionPresets);
-    mResToolButton->setEnabled(mEnableResolutionPresets);
-    mResToolButton->setIconSize(QSize(eSizesUI::widget, eSizesUI::widget));
-    mResToolButton->setFixedSize(QSize(eSizesUI::widget, eSizesUI::widget));
+    // row 4: duration typed directly as timecode H:MM:SS:FF (or plain
+    // seconds when the time ruler below is set to seconds); the scene
+    // start frame is preserved, the field only sets the length
+    mRangeMin = range.fMin;
+    mInitialFrames = qMax(1, range.fMax - range.fMin + 1);
+    mDurationLabel = new QLabel(tr("Duration"), this);
+    formLabel(mDurationLabel);
+    mDurationEdit = new QLineEdit(
+                durationTimecode(mInitialFrames, fps), this);
+    mDurationEdit->setMinimumWidth(110);
+    mDurationEdit->setToolTip(tr(
+        "Duration as timecode hours:minutes:seconds:frames, "
+        "e.g. 0:00:10:00 is 10 seconds"));
+    connect(mDurationEdit, &QLineEdit::textChanged,
+            this, &SceneSettingsDialog::validate);
+    mFormGrid->addWidget(mDurationLabel, 4, 0);
+    mFormGrid->addWidget(mDurationEdit, 4, 1);
 
-    mFormGrid->addWidget(mWidthLabel, 1, 0);
-    mFormGrid->addWidget(mWidthSpinBox, 1, 1);
-    mFormGrid->addWidget(mHeightLabel, 1, 2, Qt::AlignRight | Qt::AlignVCenter);
-    mFormGrid->addWidget(mHeightSpinBox, 1, 3);
-    mFormGrid->addWidget(mResToolButton, 1, 4, Qt::AlignCenter);
-
-    mFrameRangeLabel = new QLabel(tr("Duration"), this);
-    formLabel(mFrameRangeLabel);
-    mMinFrameSpin = new QSpinBox(this);
-    mMinFrameSpin->setRange(-INT_MAX, INT_MAX);
-    mMinFrameSpin->setMinimumWidth(inputMinWidth);
-    mMinFrameSpin->setValue(range.fMin);
-
-    mMaxFrameSpin = new QSpinBox(this);
-    mMaxFrameSpin->setRange(-INT_MAX, INT_MAX);
-    mMaxFrameSpin->setMinimumWidth(inputMinWidth);
-    mMaxFrameSpin->setValue(range.fMax);
-
+    // row 5: time ruler - the unit the duration field is entered in
+    mRulerLabel = new QLabel(tr("Time Ruler"), this);
+    formLabel(mRulerLabel);
     mTypeTime = new QComboBox(this);
     mTypeTime->addItem(tr("Frames"), "Frames");
     mTypeTime->addItem(tr("Seconds"), "Seconds");
-
-    mFormGrid->addWidget(mFrameRangeLabel, 2, 0);
-    mFormGrid->addWidget(mMinFrameSpin, 2, 1);
-    mFormGrid->addWidget(mMaxFrameSpin, 2, 2);
-    mFormGrid->addWidget(mTypeTime, 2, 3, 1, 2);
+    mFormGrid->addWidget(mRulerLabel, 5, 0);
+    mFormGrid->addWidget(mTypeTime, 5, 1);
 
     mFpsToolButton = new QToolButton(this);
     mFpsToolButton->setArrowType(Qt::NoArrow);
@@ -174,6 +255,7 @@ SceneSettingsDialog::SceneSettingsDialog(const QString &name,
     mFpsToolButton->setIconSize(QSize(eSizesUI::widget, eSizesUI::widget));
     mFpsToolButton->setFixedSize(QSize(eSizesUI::widget, eSizesUI::widget));
 
+    // row 6: fps (+ presets dropdown)
     mFPSLabel = new QLabel(tr("Fps"), this);
     formLabel(mFPSLabel);
     mFPSSpinBox = new QDoubleSpinBox(this);
@@ -184,10 +266,11 @@ SceneSettingsDialog::SceneSettingsDialog(const QString &name,
     mFPSSpinBox->setDecimals(3);
     mFPSSpinBox->setValue(fps);
 
-    mFormGrid->addWidget(mFPSLabel, 3, 0);
-    mFormGrid->addWidget(mFPSSpinBox, 3, 1);
-    mFormGrid->addWidget(mFpsToolButton, 3, 2, 1, 2, Qt::AlignVCenter);
+    mFormGrid->addWidget(mFPSLabel, 6, 0);
+    mFormGrid->addWidget(mFPSSpinBox, 6, 1);
+    mFormGrid->addWidget(mFpsToolButton, 6, 2, Qt::AlignVCenter);
 
+    // row 7: background color
     mBgColorLabel = new QLabel(tr("Background"), this);
     formLabel(mBgColorLabel);
     mBgColorButton = new ColorAnimatorButton(bg, this);
@@ -199,11 +282,10 @@ SceneSettingsDialog::SceneSettingsDialog(const QString &name,
         } else { mBgColorButton->setColor(Qt::black); }
     }
 
-    mFormGrid->addWidget(mBgColorLabel, 4, 0);
-    mFormGrid->addWidget(mBgColorButton, 4, 1);
+    mFormGrid->addWidget(mBgColorLabel, 7, 0);
+    mFormGrid->addWidget(mBgColorButton, 7, 1);
 
     mFormGrid->setColumnStretch(1, 1);
-    mFormGrid->setColumnStretch(3, 1);
     mMainLayout->addLayout(mFormGrid);
 
     mErrorLabel = new QLabel(this);
@@ -269,9 +351,16 @@ bool SceneSettingsDialog::validate()
     QString nameError;
     const bool validName = Property::prp_sValidateName(mNameEdit->text(),
                                                        &nameError);
-    if (!nameError.isEmpty()) { nameError += "\n"; }
+    if (!validName) { nameError += "\n"; }
+    int frames = 0;
+    const bool secondsMode =
+            mTypeTime->currentData().toString() == QLatin1String("Seconds");
+    if (!parseDurationField(mDurationEdit->text(), secondsMode,
+                            mFPSSpinBox->value(), frames)) {
+        nameError += tr("Invalid duration");
+    }
     mErrorLabel->setText(nameError);
-    const bool valid = validName;
+    const bool valid = validName && nameError.isEmpty();
     mOkButton->setEnabled(valid);
     return valid;
 }
@@ -293,21 +382,16 @@ QString SceneSettingsDialog::getCanvasName() const
 
 FrameRange SceneSettingsDialog::getFrameRange() const
 {
+    // the duration field sets the scene length; the start frame set at
+    // construction (existing scene min / default min) is preserved
     FrameRange range;
-    const QString typetime = mTypeTime->currentData().toString();
-    const qreal fpsFrame = mFPSSpinBox->value();
-    const qreal minVal = mMinFrameSpin->value();
-    const qreal maxVal = mMaxFrameSpin->value();
-
-    if (typetime == "Frames") {
-        range = {static_cast<int>(qRound(minVal)),
-                 static_cast<int>(qRound(maxVal))};
-    } else {
-        qreal minFrame = qRound(minVal * fpsFrame);
-        qreal maxFrame = qRound(maxVal * fpsFrame) - 1;
-        range = {static_cast<int>(minFrame),
-                 static_cast<int>(qMax(minFrame, maxFrame))};
-    }
+    const bool secondsMode =
+            mTypeTime->currentData().toString() == QLatin1String("Seconds");
+    int frames = mInitialFrames;
+    parseDurationField(mDurationEdit->text(), secondsMode,
+                       mFPSSpinBox->value(), frames);
+    frames = qMax(1, frames);
+    range = {mRangeMin, mRangeMin + frames - 1};
     range.fixOrder();
     return range;
 }
@@ -337,19 +421,39 @@ void SceneSettingsDialog::populateFpsPresets()
 
 void SceneSettingsDialog::populateResPresets()
 {
-    if (!mEnableResolutionPresets) { return; }
-    const auto presets = AppSupport::getResolutionPresets();
-    for (const auto &preset : presets) {
-        const auto act = new QAction(QString("%1 x %2")
+    mResPresetCombo->blockSignals(true);
+    mResPresetCombo->clear();
+    // index 0 = placeholder: picking any other entry fills width/height
+    mResPresetCombo->addItem(tr("Select resolution preset"), QSize());
+    if (mEnableResolutionPresets) {
+        const auto presets = AppSupport::getResolutionPresets();
+        for (const auto &preset : presets) {
+            mResPresetCombo->addItem(QString("%1 x %2")
                                      .arg(preset.first)
                                      .arg(preset.second),
-                                     this);
-        connect (act, &QAction::triggered, [this, preset]() {
-            mWidthSpinBox->setValue(preset.first);
-            mHeightSpinBox->setValue(preset.second);
-        });
-        mResToolButton->addAction(act);
+                                     QSize(preset.first, preset.second));
+        }
     }
+    mResPresetCombo->setEnabled(mEnableResolutionPresets);
+    syncResPresetCombo();
+    mResPresetCombo->blockSignals(false);
+}
+
+void SceneSettingsDialog::syncResPresetCombo()
+{
+    if (!mResPresetCombo) { return; }
+    mResPresetCombo->blockSignals(true);
+    int match = 0;
+    for (int i = 1; i < mResPresetCombo->count(); i++) {
+        const QSize sz = mResPresetCombo->itemData(i).toSize();
+        if (sz.width() == mWidthSpinBox->value() &&
+            sz.height() == mHeightSpinBox->value()) {
+            match = i;
+            break;
+        }
+    }
+    mResPresetCombo->setCurrentIndex(match);
+    mResPresetCombo->blockSignals(false);
 }
 
 void SceneSettingsDialog::applySettingsToCanvas(Canvas * const canvas) const
@@ -417,29 +521,20 @@ void SceneSettingsDialog::updateDuration(int index)
 {
     const qreal fps = mFPSSpinBox->value();
     if (fps <= 0) { return; }
-    qreal minVal = mMinFrameSpin->value();
-    qreal maxVal = mMaxFrameSpin->value();
-
-    switch (index) {
-    case 0: // Convert seconds to frames
-    {
-        qreal newMinFrame = qRound(minVal * fps);
-        qreal newMaxFrame = qRound(maxVal * fps) - 1;
-
-        mMinFrameSpin->setValue(newMinFrame);
-        mMaxFrameSpin->setValue(qMax(newMinFrame, newMaxFrame));
-        break;
+    // switching the time ruler re-expresses the current duration in
+    // the new unit: index 1 (seconds) means the field held a timecode,
+    // index 0 (frames) means it held plain seconds
+    int frames = 0;
+    const bool textWasSeconds = index == 0;
+    if (!parseDurationField(mDurationEdit->text(), textWasSeconds,
+                            fps, frames)) {
+        validate(); // unparseable: let the error label speak
+        return;
     }
-    case 1: // Convert frames to seconds
-    {
-        qreal newStartTime = minVal / fps;
-        qreal frameCount = (maxVal - minVal) + 1.0;
-        qreal newEndTime = frameCount / fps;
-
-        mMinFrameSpin->setValue(newStartTime);
-        mMaxFrameSpin->setValue(newEndTime);
-        break;
+    if (index == 1) {
+        mDurationEdit->setText(QString::number(frames / fps, 'f', 3));
+    } else {
+        mDurationEdit->setText(durationTimecode(frames, fps));
     }
-    default:;
-    }
+    validate();
 }

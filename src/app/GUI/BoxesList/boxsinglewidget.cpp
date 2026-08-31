@@ -69,6 +69,8 @@
 #include <QApplication>
 #include <QPainter>
 #include <QPlainTextEdit>
+#include <QFile>
+#include <QSvgRenderer>
 
 #include <QtMath>
 #include <cmath>
@@ -282,6 +284,8 @@ QPixmap* BoxSingleWidget::ICON_T_ON;
 QPixmap* BoxSingleWidget::ICON_T_OFF;
 QPixmap* BoxSingleWidget::ICON_LINKNODE_ON;
 QPixmap* BoxSingleWidget::ICON_LINKNODE_OFF;
+QPixmap* BoxSingleWidget::ICON_SCALE_LINK_ON;
+QPixmap* BoxSingleWidget::ICON_SCALE_LINK_OFF;
 QPixmap* BoxSingleWidget::ICON_TM_ALPHA;
 QPixmap* BoxSingleWidget::ICON_TM_ALPHAINV;
 QPixmap* BoxSingleWidget::ICON_TM_LUMA;
@@ -850,12 +854,11 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
     mValueSlider = new QrealAnimatorValueSlider(nullptr, this);
     mMainLayout->addWidget(mValueSlider, Qt::AlignRight);
 
-    // scale X/Y proportional link: same link glyph as the layer
-    // parent-link button (ICON_LINKNODE, bright = linked); linking
-    // stores the state in the "linkedScale" dynamic property on the
-    // scale point animator, so every slider bound to x/y (this row,
-    // its expanded children, the AE properties inspector) shares it;
-    // QrealAnimatorValueSlider applies it like the built-in
+    // scale X/Y proportional link: the bone parent-link chain glyph;
+    // linking stores the state in the "linkedScale" dynamic property
+    // on the scale point animator, so every slider bound to x/y (this
+    // row, its expanded children, the AE properties inspector) shares
+    // it; QrealAnimatorValueSlider applies it like the built-in
     // Shift+drag uniform scaling
     mScaleLinkButton = new PixmapActionButton(this);
     mScaleLinkButton->setToolTip(tr(
@@ -872,8 +875,8 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
             return static_cast<QPixmap*>(nullptr);
         }
         return qpf->property("linkedScale").toBool()
-                ? BoxSingleWidget::ICON_LINKNODE_ON
-                : BoxSingleWidget::ICON_LINKNODE_OFF;
+                ? BoxSingleWidget::ICON_SCALE_LINK_ON
+                : BoxSingleWidget::ICON_SCALE_LINK_OFF;
     });
     mMainLayout->addWidget(mScaleLinkButton);
     connect(mScaleLinkButton, &BoxesListActionButton::pressed,
@@ -1656,6 +1659,34 @@ void BoxSingleWidget::loadStaticPixmaps(int iconSize)
         ICON_RESET = pm;
     }
 
+    // scale X/Y link: the bone parent-link chain glyph
+    // (bone_parent.svg, same icon as the toolbox bone-parent tool)
+    // rasterized at the actual device size and recolored - bright
+    // white when linked, dim gray when not
+    {
+        QFile svgFile(QStringLiteral(":/icons/bone_parent.svg"));
+        if (svgFile.open(QIODevice::ReadOnly)) {
+            const QByteArray svgData = svgFile.readAll();
+            const qreal dpr = qApp->desktop()->devicePixelRatioF();
+            const auto makeBoneLinkIcon =
+                    [&pixmapSize, dpr, &svgData](const QColor& color) {
+                auto pm = new QPixmap(pixmapSize * dpr);
+                pm->setDevicePixelRatio(dpr);
+                pm->fill(Qt::transparent);
+                QSvgRenderer renderer(svgData);
+                QPainter p(pm);
+                p.setRenderHint(QPainter::Antialiasing);
+                renderer.render(&p, QRectF(QPointF(0, 0), pixmapSize));
+                p.setCompositionMode(QPainter::CompositionMode_SourceIn);
+                p.fillRect(QRectF(QPointF(0, 0), pixmapSize), color);
+                p.end();
+                return pm;
+            };
+            ICON_SCALE_LINK_ON = makeBoneLinkIcon(QColor(255, 255, 255));
+            ICON_SCALE_LINK_OFF = makeBoneLinkIcon(QColor(150, 150, 150));
+        }
+    }
+
     // AE-style layer switch glyphs: plain text characters rasterized at
     // the actual device size (S = solo, H = shy, fx = effects, T = preserve
     // underlying transparency); bright = active, dim = inactive
@@ -1809,6 +1840,8 @@ void BoxSingleWidget::clearStaticPixmaps()
     delete ICON_T_OFF;
     delete ICON_LINKNODE_ON;
     delete ICON_LINKNODE_OFF;
+    delete ICON_SCALE_LINK_ON;
+    delete ICON_SCALE_LINK_OFF;
 
     delete BOX_PATH;
     delete BOX_CIRCLE;

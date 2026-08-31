@@ -72,6 +72,9 @@ public:
 
     void populateFpsPresets();
     void populateResPresets();
+    // pick the combo entry matching the current width/height (or the
+    // placeholder when the size is custom)
+    void syncResPresetCombo();
 
     void applySettingsToCanvas(Canvas * const canvas) const;
 
@@ -91,14 +94,21 @@ private:
     QLabel *mNameEditLabel;
     QLineEdit *mNameEdit;
 
+    QLabel *mResPresetLabel;
+    QComboBox *mResPresetCombo;
     QLabel *mWidthLabel;
     QSpinBox *mWidthSpinBox;
     QLabel *mHeightLabel;
     QSpinBox *mHeightSpinBox;
 
-    QLabel *mFrameRangeLabel;
-    QSpinBox *mMinFrameSpin;
-    QSpinBox *mMaxFrameSpin;
+    // duration typed directly as timecode H:MM:SS:FF (or plain seconds
+    // when the time ruler is set to seconds); mRangeMin keeps the
+    // scene's start frame, the duration only sets the length
+    QLabel *mDurationLabel;
+    QLineEdit *mDurationEdit;
+    int mRangeMin = 0;
+    int mInitialFrames = 1;
+    QLabel *mRulerLabel;
     QComboBox *mTypeTime;
 
     QLabel *mFPSLabel;
@@ -113,7 +123,6 @@ private:
     QPushButton *mCancelButton;
     QHBoxLayout *mButtonsLayout;
 
-    QToolButton *mResToolButton;
     QToolButton *mFpsToolButton;
 
     QCheckBox *mSaveAsDefault = nullptr;

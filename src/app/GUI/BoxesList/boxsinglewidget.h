@@ -96,6 +96,10 @@ public:
     static QPixmap* ICON_T_OFF;
     static QPixmap* ICON_LINKNODE_ON;
     static QPixmap* ICON_LINKNODE_OFF;
+    // scale X/Y proportional link: the bone parent-link chain glyph
+    // (bone_parent.svg rasterized, bright = linked)
+    static QPixmap* ICON_SCALE_LINK_ON;
+    static QPixmap* ICON_SCALE_LINK_OFF;
     // track matte mode glyphs: alpha / alphaInv / luma / lumaInv
     static QPixmap* ICON_TM_ALPHA;
     static QPixmap* ICON_TM_ALPHAINV;
