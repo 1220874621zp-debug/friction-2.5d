@@ -400,8 +400,7 @@
         ],
         extraButtons: [
             { label: "▶ 执行排列", tooltip: "按当前设置排列选中的图层", onClick: runArrange },
-            { label: "? 帮助", tooltip: "功能与参数说明", onClick: showHelp },
-            { label: "☰ 调试日志", tooltip: "查看脚本运行日志", onClick: showDebugLog }
+            { label: "? 帮助", tooltip: "功能与参数说明", onClick: showHelp }
         ]
     });
     registerCommand("自动排列图层: 执行排列", runArrange);

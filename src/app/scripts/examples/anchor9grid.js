@@ -176,11 +176,6 @@
                 label: "\u2299 空对象",
                 tooltip: "创建控制器并链接所有选中图层",
                 onClick: createNullAndParent
-            },
-            {
-                label: "\u2630 调试日志",
-                tooltip: "查看脚本运行日志（脚本控制台中也可查看）",
-                onClick: showDebugLog
             }
         ]
     });

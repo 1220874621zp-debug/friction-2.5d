@@ -185,15 +185,7 @@
             }
         }],
         extraButtons: [
-            { label: "重置", tooltip: "回到默认平滑手柄", onClick: reset },
-            {
-                label: "日志",
-                tooltip: "查看运行日志（脚本控制台同步输出）",
-                onClick: function () {
-                    alert(logEntries.length > 0
-                          ? logEntries.join("\n") : "暂无日志记录");
-                }
-            }
+            { label: "重置", tooltip: "回到默认平滑手柄", onClick: reset }
         ]
     });
 })();

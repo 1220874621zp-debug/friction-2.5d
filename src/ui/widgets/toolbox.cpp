@@ -362,6 +362,14 @@ void ToolBox::setupMainActions()
                                                          "F8").toString()),
                     {CanvasMode::nullCreate},
                     false);
+    // bone tool group: separated from the shape tools above and the
+    // camera/pick tools below so the strip reads as its own block
+    const auto addMainSeparator = [this]() {
+        auto sep = new QAction(mMain);
+        sep->setSeparator(true);
+        mGroupMain->addAction(sep);
+    };
+    addMainSeparator();
     setupMainAction(boneSvgIcon(ThemeSupport::getIconSize(64).width()),
                     tr("Add Bone"),
                     QKeySequence(AppSupport::getSettings("shortcuts",
@@ -401,6 +409,7 @@ void ToolBox::setupMainActions()
                                                          "K").toString()),
                     {CanvasMode::boneSelect},
                     false);
+    addMainSeparator();
     // scene camera (AE-like): orbit/pan/zoom the whole composition -
     // LMB orbit, Shift+LMB pan, Ctrl+LMB zoom
     setupMainAction(svgToolIcon(QStringLiteral(":/icons/camera_tool.svg"),
