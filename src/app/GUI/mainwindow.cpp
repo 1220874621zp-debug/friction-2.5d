@@ -69,6 +69,7 @@
 #include "effectspresetspanel.h"
 #include "quickeffectsearchdialog.h"
 #include "projectpanel.h"
+#include "switchpanel.h"
 #include <QShortcut>
 #include "textanimpresetpanel.h"
 #include "scriptmanager.h"
@@ -1407,6 +1408,9 @@ void MainWindow::rebuildWorkspaceMenu()
     if (mTextAnimDock) {
         panelsMenu->addAction(mTextAnimDock->toggleViewAction());
     }
+    if (mSwitchPanelDock) {
+        panelsMenu->addAction(mSwitchPanelDock->toggleViewAction());
+    }
     if (mScriptManager && mScriptManager->console()) {
         panelsMenu->addAction(mScriptManager->console()->toggleViewAction());
     }
@@ -1600,6 +1604,13 @@ void MainWindow::setupLayout()
                              QStringLiteral("dockTextAnimPresets"),
                              mTextAnimPanel);
 
+    // Moho-style switch panel: bound to a switch group, ruler slider
+    // drives the children's visibility keyframes
+    mSwitchPanel = new SwitchPanel(mDocument, this);
+    mSwitchPanelDock = makeDock(tr("切换图层"),
+                                QStringLiteral("dockSwitchLayers"),
+                                mSwitchPanel);
+
     setCentralWidget(mStackWidget);
     addDockWidget(Qt::RightDockWidgetArea, mFillStrokeDock);
     addDockWidget(Qt::RightDockWidgetArea, mPropertiesDock);
@@ -1609,10 +1620,20 @@ void MainWindow::setupLayout()
     addDockWidget(Qt::BottomDockWidgetArea, mTimelineDock);
 
     addDockWidget(Qt::RightDockWidgetArea, mTextAnimDock);
+    addDockWidget(Qt::RightDockWidgetArea, mSwitchPanelDock);
 
     // hidden by default, can be opened from the Panels menu
     mEasingDock->hide();
     mTextAnimDock->hide();
+    mSwitchPanelDock->hide();
+
+    // switch panel listening is gated on the dock being visible:
+    // closed = all scene/group signal connections dropped (zero cost)
+    connect(mSwitchPanelDock, &QDockWidget::visibilityChanged,
+            this, [this](const bool visible) {
+        if(!mSwitchPanel) return;
+        mSwitchPanel->setListeningEnabled(visible);
+    });
 
     // window-level Space shortcut: playback toggles from any focus
     // context; text inputs still receive spaces because line edits

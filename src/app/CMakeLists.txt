@@ -216,6 +216,7 @@ set(
     GUI/layouthandler.cpp
     GUI/scenenavigatorbar.cpp
     GUI/projectpanel.cpp
+    GUI/switchpanel.cpp
     GUI/textanimpresetpanel.cpp
     GUI/timelinebasewrappernode.cpp
     GUI/timelinedockwidget.cpp

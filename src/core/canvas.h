@@ -153,7 +153,7 @@ public:
     // only visual tracks; returns false when combining is not allowed
     bool combineIntoTrack(eBoxOrSound* const anchor,
                           const QList<eBoxOrSound*>& layers);
-    void groupSelectedBoxes();
+    ContainerBox* groupSelectedBoxes();
 
     //void selectAllBoxes();
     void deselectAllBoxes();
@@ -840,6 +840,8 @@ public:
     void addBoneLayerAction();
     void addAdjustmentLayerAction();
     void addSolidLayerAction();
+    // empty group flagged as a switch group, ready to receive layers
+    void addSwitchGroupAction();
 
     // ---- scene camera (AE-like): driven by a CameraLayer box (the
     // camera tool auto-creates one on first use). Affects ONLY layers

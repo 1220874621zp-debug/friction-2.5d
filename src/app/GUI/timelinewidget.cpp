@@ -282,6 +282,15 @@ TimelineWidget::TimelineWidget(Document &document,
                 scene->addCameraLayerAction();
             }
         });
+        // Moho-style switch group: empty group flagged as switch layer
+        layerMenu->addAction(tr("新建切换组"), this, [this]() {
+            const auto scroller = mBoxesListWidget ?
+                        mBoxesListWidget->getBoxScroller() : nullptr;
+            if(const auto scene = scroller ?
+                        scroller->currentScene() : nullptr) {
+                scene->addSwitchGroupAction();
+            }
+        });
         layerBtn->setMenu(layerMenu);
         mMenuLayout->addWidget(layerBtn);
     }

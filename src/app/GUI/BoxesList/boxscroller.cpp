@@ -80,12 +80,15 @@
 
 
 #include <QPainter>
-
+#include <QApplication>
+#include <QMouseEvent>
 
 #include "Animators/qrealanimator.h"
 
-
 #include "boxscrollwidget.h"
+
+#include "canvas.h"
+#include "Private/document.h"
 
 
 #include <QTimer>
@@ -188,11 +191,106 @@ BoxScroller::BoxScroller(ScrollWidget * const parent) :
 
 
 QWidget *BoxScroller::createNewSingleWidget() {
+    const auto wid = new BoxSingleWidget(this);
+    // track row gestures for rubber-band selection (see eventFilter)
+    wid->installEventFilter(this);
+    return wid;
+}
 
+void BoxScroller::mousePressEvent(QMouseEvent *e) {
+    // plain left press on the empty area below the rows
+    if(e->button() == Qt::LeftButton &&
+       e->modifiers() == Qt::NoModifier) {
+        mRubberPotential = true;
+        mRubberStart = e->pos();
+    }
+}
 
-    return new BoxSingleWidget(this);
+void BoxScroller::mouseMoveEvent(QMouseEvent *e) {
+    if(mRubberPotential) rubberUpdateRect(e->pos());
+}
 
+void BoxScroller::mouseReleaseEvent(QMouseEvent *e) {
+    if(mRubberStarted) rubberFinish(e->pos());
+    else mRubberPotential = false;
+}
 
+bool BoxScroller::eventFilter(QObject *obj, QEvent *event) {
+    // row gestures: the press flows on natively (clicks, shift-clicks,
+    // double-clicks and row drags keep their behavior); once the move
+    // distance passes the drag threshold we take the gesture over as a
+    // rubber band and swallow everything until release
+    const auto type = event->type();
+    if(type == QEvent::MouseButtonPress) {
+        const auto me = static_cast<QMouseEvent*>(event);
+        if(me->button() == Qt::LeftButton &&
+           me->modifiers() == Qt::NoModifier) {
+            mRubberPotential = true;
+            mRubberStart = static_cast<QWidget*>(obj)->mapTo(this, me->pos());
+        }
+    } else if(type == QEvent::MouseMove && mRubberPotential) {
+        const auto me = static_cast<QMouseEvent*>(event);
+        rubberUpdateRect(static_cast<QWidget*>(obj)->mapTo(this, me->pos()));
+        return mRubberStarted; // swallow once the band is live: blocks
+                               // the row's QDrag reorder takeover
+    } else if(type == QEvent::MouseButtonRelease) {
+        if(mRubberStarted) {
+            const auto me = static_cast<QMouseEvent*>(event);
+            rubberFinish(static_cast<QWidget*>(obj)->mapTo(this, me->pos()));
+            return true; // the gesture was a band, not a click
+        } else if(mRubberPotential) {
+            mRubberPotential = false; // plain click: let it through
+        }
+    }
+    return QWidget::eventFilter(obj, event);
+}
+
+void BoxScroller::rubberUpdateRect(const QPoint& pos) {
+    if(!mRubberStarted) {
+        if((pos - mRubberStart).manhattanLength() <
+           QApplication::startDragDistance()) return;
+        mRubberStarted = true;
+    }
+    mRubberRect = QRect(mRubberStart, pos).normalized();
+    update();
+}
+
+void BoxScroller::rubberFinish(const QPoint& pos) {
+    const QRect band = QRect(mRubberStart, pos).normalized();
+    rubberReset();
+    update();
+
+    const auto scene = currentScene();
+    if(!scene || band.width() < 3 || band.height() < 3) return;
+
+    // rows intersecting the band (row i lives at y = i * rowHeight)
+    const auto& wids = widgets();
+    const int rowH = eSizesUI::widget;
+    const int i0 = qMax(0, band.top() / rowH);
+    const int i1 = qMin(wids.count() - 1, band.bottom() / rowH);
+    QList<eBoxOrSound*> targets;
+    for(int i = i0; i <= i1; i++) {
+        const auto bsw = static_cast<BoxSingleWidget*>(wids.at(i));
+        if(bsw->isHidden()) continue;
+        const auto abs = bsw->getTargetAbstraction();
+        if(!abs) continue;
+        const auto bos = enve_cast<eBoxOrSound*>(abs->getTarget());
+        if(bos) targets << bos;
+    }
+    if(targets.isEmpty()) return;
+
+    scene->clearBoxesSelection();
+    for(const auto& bos : targets) {
+        const auto box = enve_cast<BoundingBox*>(bos);
+        if(box) scene->addBoxToSelection(box);
+        else bos->setSelected(true); // sounds keep their own flag
+    }
+    Document::sInstance->actionFinished();
+}
+
+void BoxScroller::rubberReset() {
+    mRubberPotential = false;
+    mRubberStarted = false;
 }
 
 
@@ -309,9 +407,12 @@ void BoxScroller::paintEvent(QPaintEvent *) {
 
     }
 
-
-
-
+    // rubber-band selection rectangle
+    if(mRubberStarted) {
+        p.setPen(QPen(Qt::white, 1, Qt::DashLine));
+        p.setBrush(Qt::NoBrush);
+        p.drawRect(mRubberRect.adjusted(0, 0, -1, -1));
+    }
 
     if(mDropTarget.isValid()) {
 

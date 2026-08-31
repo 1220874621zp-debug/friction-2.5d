@@ -78,6 +78,13 @@ protected:
     void dragLeaveEvent(QDragLeaveEvent *event);
     void dragMoveEvent(QDragMoveEvent *event);
     void dragEnterEvent(QDragEnterEvent *event);
+    // rubber-band multi-row selection (AE-like layer marquee): row
+    // presses keep flowing natively so clicks/shift-clicks/double-clicks
+    // are untouched; only moves past the drag threshold turn into a band
+    void mousePressEvent(QMouseEvent *e);
+    void mouseMoveEvent(QMouseEvent *e);
+    void mouseReleaseEvent(QMouseEvent *e);
+    bool eventFilter(QObject *obj, QEvent *event);
 private:
     enum class DropType {
         none, on, into
@@ -127,6 +134,15 @@ private:
     bool mDropIsCombine = false;
 
     DropTarget mDropTarget{nullptr, 0, DropType::none};
+
+    // rubber band state (see the mouse overrides above)
+    bool mRubberPotential = false; // plain left press seen, threshold unmet
+    bool mRubberStarted = false;   // band visible, moves are ours
+    QPoint mRubberStart;
+    QRect mRubberRect;
+    void rubberUpdateRect(const QPoint& pos);
+    void rubberFinish(const QPoint& pos);
+    void rubberReset();
 
     // parent-link drag visual state
     static bool  sPlActive;

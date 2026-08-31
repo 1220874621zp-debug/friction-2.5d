@@ -1880,6 +1880,67 @@ void BoxSingleWidget::mousePressEvent(QMouseEvent *event) {
                 });
             }
         }
+        // multiple selected layers -> group them into a new switch
+        // group in one step (the entry below covers an existing plain
+        // group row; skip it here so the two never duplicate)
+        if(const auto box = enve_cast<BoundingBox*>(target)) {
+            const auto contT = enve_cast<ContainerBox*>(target);
+            const bool targetIsPlainGroup =
+                    contT && contT->getBoxType() == eBoxType::group;
+            if(!targetIsPlainGroup && box->isSelected() &&
+               mParent && mParent->currentScene()) {
+                const auto scene = mParent->currentScene();
+                if(scene && scene->getSelectedBoxesList().count() > 1) {
+                    menu.addSeparator();
+                    menu.addAction(
+                                BoxSingleWidget::tr("转换为切换组"),
+                                this,
+                                [sceneQ = QPointer<Canvas>(scene)]() {
+                        if(!sceneQ) return;
+                        const auto group = sceneQ->groupSelectedBoxes();
+                        if(group) {
+                            group->enableSwitchLayer();
+                            Document::sInstance->actionFinished();
+                        }
+                    });
+                }
+            }
+        }
+        // Moho-style switch group: mark the group so exactly one child
+        // renders (derived from the children's visibility channels);
+        // the switch panel then drives the switch keyframes
+        if(const auto cont = enve_cast<ContainerBox*>(target)) {
+            if(cont->getBoxType() == eBoxType::group && !cont->isLink() &&
+               !cont->isFlipBook()) {
+                menu.addSeparator();
+                if(cont->isSwitchLayer()) {
+                    menu.addAction(
+                                BoxSingleWidget::tr("取消切换组"),
+                                this,
+                                [contQ = QPointer<ContainerBox>(cont)]() {
+                        if(!contQ) return;
+                        contQ->disableSwitchLayer();
+                        Document::sInstance->actionFinished();
+                    });
+                } else {
+                    menu.addAction(
+                                BoxSingleWidget::tr("转换为切换组"),
+                                this,
+                                [contQ = QPointer<ContainerBox>(cont),
+                                 sceneQ = QPointer<Canvas>(
+                                     mParent->currentScene())]() {
+                        if(!contQ) return;
+                        contQ->enableSwitchLayer();
+                        // select the group so the switch panel auto-binds
+                        if(sceneQ) {
+                            sceneQ->clearBoxesSelection();
+                            sceneQ->addBoxToSelection(contQ.data());
+                        }
+                        Document::sInstance->actionFinished();
+                    });
+                }
+            }
+        }
         // layer-side bone binding: list every bone in the scene, picking
         // one re-parents the currently selected layers into it (world
         // position preserved) - Moho-style bind flow

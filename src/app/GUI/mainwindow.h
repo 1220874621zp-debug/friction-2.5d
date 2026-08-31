@@ -262,6 +262,8 @@ private:
     ProjectPanel *mProjectPanel = nullptr;
     QDockWidget *mTextAnimDock = nullptr;
     class TextAnimPresetPanel *mTextAnimPanel = nullptr;
+    QDockWidget *mSwitchPanelDock = nullptr;
+    class SwitchPanel *mSwitchPanel = nullptr;
     EffectsPresetsPanel *mEffectsPresetsPanel = nullptr;
     QuickEffectSearchDialog *mQuickEffectSearch = nullptr;
     // JS plugin system (Scripts menu + console dock)

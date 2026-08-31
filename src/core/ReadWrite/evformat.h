@@ -69,6 +69,9 @@ namespace EvFormat {
         // serialized child of every eBoxOrSound; older files lack the
         // block and must skip it (positional binary property tree)
         visibilityKeyframes = 41,
+        // Moho-style switch group marker (ContainerBox child property);
+        // older files lack the block and must skip it (positional)
+        switchLayers = 42,
 
         nextVersion
     };

@@ -37,8 +37,8 @@
 #include "eevent.h"
 #include "Boxes/textbox.h"
 
-void Canvas::groupSelectedBoxes() {
-    if(mSelectedBoxes.isEmpty()) return;
+ContainerBox* Canvas::groupSelectedBoxes() {
+    if(mSelectedBoxes.isEmpty()) return nullptr;
     const auto newGroup = enve::make_shared<ContainerBox>(eBoxType::group);
     mCurrentContainer->addContained(newGroup);
     for(int i = mSelectedBoxes.count() - 1; i >= 0; i--) {
@@ -50,6 +50,7 @@ void Canvas::groupSelectedBoxes() {
     newGroup->planCenterPivotPosition();
     schedulePivotUpdate();
     addBoxToSelection(newGroup.get());
+    return newGroup.get();
 }
 
 bool Canvas::anim_nextRelFrameWithKey(const int relFrame,

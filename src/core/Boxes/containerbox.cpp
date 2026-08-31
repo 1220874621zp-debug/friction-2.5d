@@ -78,6 +78,21 @@ private:
     qsptr<IntAnimator> mIndex;
 };
 
+// Moho-style switch group marker: a plain boolean on the group, no
+// index is stored - the active child is always DERIVED from the
+// children's visibility channels (see getContainedMinMax), so manual
+// edits and re-ordering cannot desync the exclusive rendering
+class SwitchLayerProperty : public BoolPropertyContainer {
+    e_OBJECT
+
+    SwitchLayerProperty(const QString& name) : BoolPropertyContainer(name) {}
+public:
+    void prp_readProperty(eReadStream &src) override {
+        if(src.evFileVersion() < EvFormat::switchLayers) return;
+        BoolPropertyContainer::prp_readProperty(src);
+    }
+};
+
 ContainerBox::ContainerBox(const eBoxType type) :
     BoxWithPathEffects(type == eBoxType::group ? "Group" : "Layer",
                        type) {
@@ -90,10 +105,14 @@ ContainerBox::ContainerBox(const eBoxType type) :
     mFlipBook = enve::make_shared<FlipBookProperty>("flip book");
     ca_addChild(mFlipBook);
 
+    mSwitchLayer = enve::make_shared<SwitchLayerProperty>("switch layer");
+    ca_addChild(mSwitchLayer);
+
     // 2.5D billboard transform is not supported on containers
     // (children are rendered individually, group 3D would not apply)
     mTransformAnimator->set3DPropertiesVisible(false);
     mFlipBook->SWT_hide();
+    mSwitchLayer->SWT_hide();
 }
 
 ContainerBox::ContainerBox(const QString &name, const eBoxType type) :
@@ -767,6 +786,55 @@ bool ContainerBox::isFlipBook() const {
     return mFlipBook->getValue();
 }
 
+bool ContainerBox::isSwitchLayer() const {
+    return mSwitchLayer->getValue();
+}
+
+void ContainerBox::hookSwitchChildKey(BoundingBox* const child) {
+    const auto va = child->getVisibleAnim();
+    if(!va) return;
+    connect(va, &Animator::anim_addedKey,
+            this, &ComplexAnimator::ca_addDescendantsKey);
+    connect(va, &Animator::anim_removedKey,
+            this, &ComplexAnimator::ca_removeDescendantsKey);
+    va->anim_addAllKeysToComplexAnimator(this);
+}
+
+void ContainerBox::unhookSwitchChildKey(BoundingBox* const child) {
+    const auto va = child->getVisibleAnim();
+    if(!va) return;
+    disconnect(va, nullptr, this, nullptr);
+    va->anim_removeAllKeysFromComplexAnimator(this);
+}
+
+void ContainerBox::enableSwitchLayer() {
+    if(mFlipBook->getValue()) mFlipBook->setValue(false);
+    if(!mSwitchLayer->getValue()) mSwitchLayer->setValue(true);
+    // seed base values so exactly the topmost child stays on: the group
+    // renders one child even before the first switch key is set;
+    // children already carrying keys keep them untouched
+    const auto& boxes = getContainedBoxes();
+    for(int i = 0; i < boxes.count(); i++) {
+        const auto va = boxes.at(i)->getVisibleAnim();
+        if(va && !va->anim_hasKeys()) va->setCurrentBoolValue(i == 0);
+    }
+    // merged switch-key display on the group row
+    for(const auto& b : boxes) hookSwitchChildKey(b);
+}
+
+void ContainerBox::disableSwitchLayer() {
+    if(!mSwitchLayer->getValue()) return;
+    for(const auto& b : getContainedBoxes()) unhookSwitchChildKey(b);
+    mSwitchLayer->setValue(false);
+    // restore the legacy default for untouched children; keyed children
+    // keep their switch keys - they simply stop being mutually exclusive
+    const auto& boxes = getContainedBoxes();
+    for(const auto& b : boxes) {
+        const auto va = b->getVisibleAnim();
+        if(va && !va->anim_hasKeys()) va->setCurrentBoolValue(true);
+    }
+}
+
 void ContainerBox::updateContainedBoxes() {
     mContainedBoxes.clear();
     for(const auto& child : mContained) {
@@ -1347,6 +1415,10 @@ void ContainerBox::insertContained(const int id, const qsptr<eBoxOrSound>& child
                            this, &Property::prp_afterChangedAbsRange);
         connCtx << connect(box, &BoundingBox::blendEffectChanged,
                            this, &ContainerBox::afterChildBlendEffectChanged);
+        // switch group: mirror the newcomer's visibility keys onto the
+        // group row (covers interactive drops AND file loading, whose
+        // props are read before the box is inserted)
+        if (mSwitchLayer->getValue()) hookSwitchChildKey(box);
         const auto pLayer = mIsLayer ? this : box->getFirstParentLayer();
         if (pLayer) {
             if (box->blendEffectsEnabled()) {
@@ -1394,6 +1466,12 @@ void ContainerBox::removeAllContained() {
 void ContainerBox::removeContainedFromList(const int id)
 {
     const auto child = mContained.takeObjAt(id);
+    // switch group: stop mirroring the departing child's visibility
+    // keys (ca_removeDescendantsKey drops the merged ComplexKey)
+    if (mSwitchLayer->getValue()) {
+        const auto rbox = enve_cast<BoundingBox*>(child);
+        if (rbox) unhookSwitchChildKey(rbox);
+    }
     if (const auto group = enve_cast<ContainerBox*>(child)) {
         const auto pScene = getParentScene();
         if (group->isCurrentGroup() && pScene) {
@@ -1464,6 +1542,28 @@ iValueRange ContainerBox::getContainedMinMax() const {
         iMax = index;
         const bool outsideRange = index < 0 || index >= count;
         if(outsideRange) iMax = iMin - 1;
+    } else if(mSwitchLayer->getValue()) {
+        // switch group: exactly one child renders - the topmost whose
+        // visibility channel is on at the current frame (eye gate is
+        // applied again per child downstream); nothing active draws
+        // nothing, which is a deliberate all-off state
+        int index = -1;
+        for(int i = 0; i < count; i++) {
+            const auto& b = mContainedBoxes.at(i);
+            const auto va = b->getVisibleAnim();
+            if(b->isVisible() && va &&
+               va->getEffectiveIntValue() == 1) {
+                index = i;
+                break;
+            }
+        }
+        if(index < 0) {
+            iMin = 0;
+            iMax = -1;
+        } else {
+            iMin = index;
+            iMax = index;
+        }
     } else {
         iMin = 0;
         iMax = count - 1;

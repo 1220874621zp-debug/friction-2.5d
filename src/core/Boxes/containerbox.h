@@ -32,6 +32,7 @@ class PathBox;
 class PathEffectCollection;
 class BlendEffectBoxShadow;
 class FlipBookProperty;
+class SwitchLayerProperty;
 
 class CORE_EXPORT ContainerBox : public BoxWithPathEffects {
     Q_OBJECT
@@ -147,6 +148,13 @@ public:
 
     virtual bool isFlipBook() const;
     virtual iValueRange getContainedMinMax() const;
+
+    // Moho-style switch group: exactly one child renders - the topmost
+    // whose visibility channel is on at the current frame; the switch
+    // keyframes live on the children's "Visible" rows
+    bool isSwitchLayer() const;
+    void enableSwitchLayer();
+    void disableSwitchLayer();
 
     void readAllContainedXEV(XevReadBoxesHandler& boxReadHandler,
                              ZipFileLoader& fileLoader, const QString& path,
@@ -299,6 +307,12 @@ protected:
                              const PathUpdater func);
 private:
     void iniPathEffects();
+    // switch group key aggregation: mirror each child's visibility
+    // keys onto this group's timeline row (ComplexKey), so the group
+    // shows one merged switch key per frame and the existing key
+    // select/drag machinery moves a whole switch event at once
+    void hookSwitchChildKey(BoundingBox* const child);
+    void unhookSwitchChildKey(BoundingBox* const child);
     void updateRelBoundingRect();
     void removeContained(const qsptr<eBoxOrSound> &child);
 
@@ -312,6 +326,7 @@ private:
     QList<qsptr<BlendEffectBoxShadow>> mBlendShadows;
     ConnContextObjList<qsptr<eBoxOrSound>> mContained;
     qsptr<FlipBookProperty> mFlipBook;
+    qsptr<SwitchLayerProperty> mSwitchLayer;
 };
 
 #endif // CONTAINERBOX_H

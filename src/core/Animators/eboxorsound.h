@@ -123,6 +123,10 @@ public:
     void setVisible(const bool visible);
     void switchVisible();
 
+    // keyframable visibility channel ("Visible" row); consumed by the
+    // switch group exclusive rendering and the switch panel
+    BoolAnimator *getVisibleAnim() const { return mVisibleAnim.get(); }
+
     void lock();
     void unlock();
     void setLocked(const bool locked);
