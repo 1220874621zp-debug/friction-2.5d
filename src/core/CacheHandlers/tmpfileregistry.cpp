@@ -17,21 +17,46 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
-# See 'README.md' for more information.
-#
 */
 
-// Fork of enve - Copyright (C) 2016-2020 Maurycy Liebner
-
-#include "tmpdeleter.h"
-#include "imagecachecontainer.h"
 #include "CacheHandlers/tmpfileregistry.h"
-#include "skia/skiahelpers.h"
 
-TmpDeleter::TmpDeleter(const qsptr<QTemporaryFile> &file) :
-    mTmpFile(file) {}
+#include <QDir>
+#include <QMutex>
+#include <QMutexLocker>
 
-void TmpDeleter::process() {
-    if(mTmpFile) TmpFileRegistry::remove(mTmpFile->fileName());
-    mTmpFile.reset();
+namespace {
+
+QString normalize(const QString& path)
+{
+    return QDir::cleanPath(path).toLower();
 }
+
+// shared by add/remove/livePaths; TmpSaver and TmpDeleter run on HDD
+// worker threads, so access is guarded
+QMutex gMutex;
+QSet<QString> gFiles;
+
+} // namespace
+
+namespace TmpFileRegistry {
+
+void add(const QString& path)
+{
+    QMutexLocker lock(&gMutex);
+    gFiles.insert(normalize(path));
+}
+
+void remove(const QString& path)
+{
+    QMutexLocker lock(&gMutex);
+    gFiles.remove(normalize(path));
+}
+
+QSet<QString> livePaths()
+{
+    QMutexLocker lock(&gMutex);
+    return gFiles;
+}
+
+} // namespace TmpFileRegistry

@@ -26,6 +26,7 @@
 #include "tmpsaver.h"
 
 #include "appsupport.h"
+#include "CacheHandlers/tmpfileregistry.h"
 
 #include <QDir>
 
@@ -41,6 +42,9 @@ void TmpSaver::process() {
     mTmpFile = qsptr<QTemporaryFile>(
                 new QTemporaryFile(cacheDir + "/eCache_XXXXXX"));
     if(mTmpFile->open()) {
+        // register before writing so cache cleanup never races a save
+        // that is mid-flight
+        TmpFileRegistry::add(mTmpFile->fileName());
         eWriteStream dst(mTmpFile.get());
         write(dst);
         mTmpFile->close();

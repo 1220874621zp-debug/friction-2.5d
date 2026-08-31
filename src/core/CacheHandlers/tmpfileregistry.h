@@ -17,21 +17,26 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
-# See 'README.md' for more information.
-#
 */
 
-// Fork of enve - Copyright (C) 2016-2020 Maurycy Liebner
+#ifndef TMPFILEREGISTRY_H
+#define TMPFILEREGISTRY_H
 
-#include "tmpdeleter.h"
-#include "imagecachecontainer.h"
-#include "CacheHandlers/tmpfileregistry.h"
-#include "skia/skiahelpers.h"
+#include "core_global.h"
 
-TmpDeleter::TmpDeleter(const qsptr<QTemporaryFile> &file) :
-    mTmpFile(file) {}
+#include <QSet>
+#include <QString>
 
-void TmpDeleter::process() {
-    if(mTmpFile) TmpFileRegistry::remove(mTmpFile->fileName());
-    mTmpFile.reset();
-}
+// Tracks which eCache spill files are owned by live cache containers
+// (created by TmpSaver, destroyed by TmpDeleter). The preferences cache
+// cleaner uses this to skip files that are currently in use. Called from
+// HDD worker threads, hence the internal mutex.
+namespace TmpFileRegistry {
+
+CORE_EXPORT void add(const QString& path);
+CORE_EXPORT void remove(const QString& path);
+CORE_EXPORT QSet<QString> livePaths();
+
+} // namespace TmpFileRegistry
+
+#endif // TMPFILEREGISTRY_H

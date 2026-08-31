@@ -366,6 +366,7 @@ set(
     vtracerprovider.cpp
     Depth/modelcatalog.cpp
     Depth/aidepthprovider.cpp
+    CacheHandlers/tmpfileregistry.cpp
     Psd/psdfile.cpp
     Psd/psdimporter.cpp
     Psd/ocaimporter.cpp
@@ -757,6 +758,7 @@ set(
     vtracerprovider.h
     Depth/modelcatalog.h
     Depth/aidepthprovider.h
+    CacheHandlers/tmpfileregistry.h
     Psd/psdfile.h
     Psd/psdimporter.h
     Psd/fpsdpackage.h

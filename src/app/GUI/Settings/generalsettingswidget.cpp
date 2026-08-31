@@ -47,6 +47,7 @@
 #include "Private/document.h"
 #include "canvas.h"
 #include "Boxes/containerbox.h"
+#include "CacheHandlers/tmpfileregistry.h"
 #include "fileshandler.h"
 #include "Psd/psdimagebox.h"
 
@@ -457,6 +458,79 @@ GeneralSettingsWidget::GeneralSettingsWidget(QWidget *parent)
         } else {
             QMessageBox::information(this, tr("Cache"),
                 tr("清理完成，共删除 %1 张，释放约 %2 MB。")
+                .arg(toDelete.count())
+                .arg(QString::number(bytes / (1024.0 * 1024.0), 'f', 1)));
+        }
+    });
+
+    // memory spill cache (eCache): pure performance cache, safe to
+    // clear; files owned by live containers are skipped via the
+    // tmp-file registry
+    mCacheLayout->addSpacing(10);
+
+    const auto eCacheInfoLabel = new QLabel(tr(
+            "内存换页缓存（eCache）：内存吃紧时被暂存到磁盘的图片/视频帧像素，"
+            "属纯性能缓存，清理不影响任何工程数据；"
+            "被清理的数据下次使用时会从源文件重新解码。"), this);
+    eCacheInfoLabel->setWordWrap(true);
+    mCacheLayout->addWidget(eCacheInfoLabel);
+
+    const auto eCacheBtnRow = new QWidget(this);
+    eCacheBtnRow->setContentsMargins(0, 0, 0, 0);
+    const auto eCacheBtnLayout = new QHBoxLayout(eCacheBtnRow);
+    eCacheBtnLayout->setContentsMargins(0, 0, 0, 0);
+    eCacheBtnLayout->setMargin(0);
+    const auto clearECacheBtn =
+            new QPushButton(tr("清除内存换页缓存"), this);
+    eCacheBtnLayout->addWidget(clearECacheBtn);
+    eCacheBtnLayout->addStretch();
+    mCacheLayout->addWidget(eCacheBtnRow);
+
+    connect(clearECacheBtn, &QPushButton::clicked, this, [this]() {
+        const QSet<QString> live = TmpFileRegistry::livePaths();
+
+        const QDir dir(AppSupport::getAppCachePath() + "/eCache");
+        QStringList toDelete;
+        qint64 bytes = 0;
+        int skipped = 0;
+        const auto files = dir.entryInfoList(
+                    {QStringLiteral("eCache_*")}, QDir::Files);
+        for (const auto& fi : files) {
+            if (live.contains(
+                        QDir::cleanPath(fi.absoluteFilePath()).toLower())) {
+                skipped++;
+            } else {
+                toDelete << fi.absoluteFilePath();
+                bytes += fi.size();
+            }
+        }
+        if (toDelete.isEmpty()) {
+            QMessageBox::information(this, tr("Cache"),
+                tr("没有可清理的换页缓存%1。")
+                .arg(skipped > 0 ? tr("（%1 个正被使用，已跳过）").arg(skipped)
+                                 : QString()));
+            return;
+        }
+        const auto btn = QMessageBox::question(this, tr("Cache"),
+            tr("将删除 %1 个换页缓存文件，共约 %2 MB，"
+               "跳过 %3 个（正在使用中）。\n\n"
+               "纯性能缓存：不影响任何工程数据，被清理的内容"
+               "下次使用时会从源文件重新解码（稍慢）。\n\n是否继续？")
+            .arg(toDelete.count())
+            .arg(QString::number(bytes / (1024.0 * 1024.0), 'f', 1))
+            .arg(skipped));
+        if (btn != QMessageBox::Yes) { return; }
+
+        int failed = 0;
+        for (const auto& path : toDelete) {
+            if (!QFile::remove(path)) { failed++; }
+        }
+        if (failed > 0) {
+            QMessageBox::information(this, tr("Cache"),
+                tr("清理完成，另有 %1 个文件因被占用跳过。").arg(failed));
+        } else {
+            QMessageBox::information(this, tr("Cache"),
+                tr("清理完成，共删除 %1 个文件，释放约 %2 MB。")
                 .arg(toDelete.count())
                 .arg(QString::number(bytes / (1024.0 * 1024.0), 'f', 1)));
         }
