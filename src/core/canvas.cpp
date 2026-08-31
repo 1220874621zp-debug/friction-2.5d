@@ -1148,13 +1148,20 @@ void Canvas::startSelectionAtPoint(const QPointF &pos)
 
 void Canvas::updatePivot()
 {
-    if (mCurrentMode == CanvasMode::pointTransform) {
+    const bool havePoints = !mSelectedPoints_d.isEmpty();
+    if (mCurrentMode == CanvasMode::pointTransform && havePoints) {
         mRotPivot->setAbsolutePos(getSelectedPointsAbsPivotPos());
         mDocument.fPivotPosForGizmosValid = false;
-    } else if (mCurrentMode == CanvasMode::boxTransform) {
+    } else if (mCurrentMode == CanvasMode::boxTransform ||
+               mCurrentMode == CanvasMode::pointTransform) {
+        // no point selection in node mode: fall back to the boxes'
+        // pivot (an empty point set used to send the handle to the
+        // canvas origin, reading as "the pivot does not follow")
         mRotPivot->setAbsolutePos(getSelectedBoxesAbsPivotPos());
         mDocument.fPivotPosForGizmosValid = false;
     }
+    // diagnostic: only log actual moves
+    qWarning() << "[PIVOT] update to" << mRotPivot->getAbsolutePos();
 }
 
 void Canvas::setCanvasMode(const CanvasMode mode)
@@ -1978,6 +1985,20 @@ void Canvas::addAdjustmentLayerAction() {
     mCurrentContainer ? mCurrentContainer->addContained(adj) :
                         addContained(adj);
     adj->planUpdate(UpdateReason::userChange);
+    if(Document::sInstance) Document::sInstance->actionFinished();
+}
+
+// Moho-style switch group: an empty group flagged as switch layer, the
+// user then drops the alternative layers into it
+void Canvas::addSwitchGroupAction() {
+    const auto group = enve::make_shared<ContainerBox>(
+                QObject::tr("切换组"), eBoxType::group);
+    mCurrentContainer ? mCurrentContainer->addContained(group) :
+                        addContained(group);
+    group->enableSwitchLayer();
+    group->planUpdate(UpdateReason::userChange);
+    clearBoxesSelection();
+    addBoxToSelection(group.get());
     if(Document::sInstance) Document::sInstance->actionFinished();
 }
 
