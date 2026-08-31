@@ -793,8 +793,13 @@ void TimelineDockWidget::snapshotCurrentFrame()
 void TimelineDockWidget::spaceToggle()
 {
     const auto state = RenderHandler::sInstance->currentPreviewState();
+    // Space toggles "edit <-> preview": running, rendering AND paused
+    // all exit back to the editor (a paused preview stays in preview
+    // mode with gizmos suppressed, so resuming from Space made it
+    // feel like Space could not leave the preview at all)
     if (state == PreviewState::playing ||
-        state == PreviewState::rendering) {
+        state == PreviewState::rendering ||
+        state == PreviewState::paused) {
         interruptPreview();
     } else if (mStepPreviewTimer->isActive()) {
         pausePreview();
