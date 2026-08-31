@@ -797,17 +797,13 @@ void TimelineDockWidget::spaceToggle()
     // "reached but wrong branch" when users report dead Space keys
     qWarning() << "[SPACE] spaceToggle state=" << int(state)
                << "stepTimer=" << mStepPreviewTimer->isActive();
-    // AE-style play/pause toggle: pausing keeps the current frame and
-    // returns to editing; interrupting (stop) would jump the playhead
-    // back to the pre-play frame, which reads as "Space never leaves
-    // the preview". Rendering has no frame to pause on yet, so it
-    // still interrupts.
-    if (state == PreviewState::rendering) {
+    // Space = play <-> full stop: any preview activity (rendering,
+    // playing, paused) stops the preview completely; the next press
+    // starts playback again
+    if (state == PreviewState::rendering ||
+        state == PreviewState::playing ||
+        state == PreviewState::paused) {
         interruptPreview();
-    } else if (state == PreviewState::playing) {
-        pausePreview();
-    } else if (state == PreviewState::paused) {
-        resumePreview();
     } else if (mStepPreviewTimer->isActive()) {
         pausePreview();
     } else {
@@ -839,26 +835,10 @@ bool TimelineDockWidget::processKeyPress(QKeyEvent *event)
         scene->anim_setAbsFrame(scene->getFrameRange().fMin);
         renderPreview();*/
         if (!setPreviewFromStart(state)) { return false; }
-    } else if (key == Qt::Key_Space) { // start/resume playback
-        if (!eSettings::instance().fPreviewCache) {
-            if (mStepPreviewTimer->isActive()) { pausePreview(); }
-            else { playPreview(); }
-        } else {
-            switch (state) {
-            case PreviewState::stopped: renderPreview(); break;
-            // play what has been rendered so far; if nothing is playable
-            // yet, interrupt the rendering so space is never a dead key
-            case PreviewState::rendering:
-                if (!playPreview()) { interruptPreview(); }
-                break;
-            // stop preview directly so the canvas becomes editable
-            // right after space is released (no extra pause state)
-            case PreviewState::playing: interruptPreview(); break;
-            // stop preview so the user returns to edit state
-            // (preview mode blocks canvas editing)
-            case PreviewState::paused: interruptPreview(); break;
-        }
-        }
+    } else if (key == Qt::Key_Space) { // play <-> full stop
+        // keep both Space paths (window shortcut and timeline keys)
+        // on the exact same behavior
+        spaceToggle();
     } else if (key == Qt::Key_K && mods == Qt::NoModifier) { // split clip
         splitClip();
     } else if (key == Qt::Key_M) { // set marker
