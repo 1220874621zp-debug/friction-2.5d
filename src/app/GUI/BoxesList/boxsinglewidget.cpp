@@ -282,8 +282,6 @@ QPixmap* BoxSingleWidget::ICON_T_ON;
 QPixmap* BoxSingleWidget::ICON_T_OFF;
 QPixmap* BoxSingleWidget::ICON_LINKNODE_ON;
 QPixmap* BoxSingleWidget::ICON_LINKNODE_OFF;
-QPixmap* BoxSingleWidget::ICON_SCALE_LINK_ON;
-QPixmap* BoxSingleWidget::ICON_SCALE_LINK_OFF;
 QPixmap* BoxSingleWidget::ICON_TM_ALPHA;
 QPixmap* BoxSingleWidget::ICON_TM_ALPHAINV;
 QPixmap* BoxSingleWidget::ICON_TM_LUMA;
@@ -852,12 +850,13 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
     mValueSlider = new QrealAnimatorValueSlider(nullptr, this);
     mMainLayout->addWidget(mValueSlider, Qt::AlignRight);
 
-    // scale X/Y proportional link: chain icon between the x and y
-    // sliders of collapsed scale rows; linking stores the state in the
-    // "linkedScale" dynamic property on the scale point animator, so
-    // every slider bound to x/y (this row, its expanded children, the
-    // AE properties inspector) shares it; QrealAnimatorValueSlider
-    // applies it like the built-in Shift+drag uniform scaling
+    // scale X/Y proportional link: same link glyph as the layer
+    // parent-link button (ICON_LINKNODE, bright = linked); linking
+    // stores the state in the "linkedScale" dynamic property on the
+    // scale point animator, so every slider bound to x/y (this row,
+    // its expanded children, the AE properties inspector) shares it;
+    // QrealAnimatorValueSlider applies it like the built-in
+    // Shift+drag uniform scaling
     mScaleLinkButton = new PixmapActionButton(this);
     mScaleLinkButton->setToolTip(tr(
         "Constrain scale proportions: link the X and Y scale, editing "
@@ -873,8 +872,8 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
             return static_cast<QPixmap*>(nullptr);
         }
         return qpf->property("linkedScale").toBool()
-                ? BoxSingleWidget::ICON_SCALE_LINK_ON
-                : BoxSingleWidget::ICON_SCALE_LINK_OFF;
+                ? BoxSingleWidget::ICON_LINKNODE_ON
+                : BoxSingleWidget::ICON_LINKNODE_OFF;
     });
     mMainLayout->addWidget(mScaleLinkButton);
     connect(mScaleLinkButton, &BoxesListActionButton::pressed,
@@ -1657,41 +1656,6 @@ void BoxSingleWidget::loadStaticPixmaps(int iconSize)
         ICON_RESET = pm;
     }
 
-    // scale X/Y link chain: two ovals rotated to a chain angle -
-    // interlocked (white) when linked, pulled apart (dim) when not
-    {
-        const qreal dpr = qApp->desktop()->devicePixelRatioF();
-        const auto makeChainIcon = [&pixmapSize, dpr](const bool linked) {
-            auto pm = new QPixmap(pixmapSize * dpr);
-            pm->setDevicePixelRatio(dpr);
-            pm->fill(Qt::transparent);
-            QPainter p(pm);
-            p.setRenderHint(QPainter::Antialiasing);
-            QPen pen(linked ? QColor(255, 255, 255, 235)
-                            : QColor(150, 150, 150, 200), 2.2);
-            p.setPen(pen);
-            p.setBrush(Qt::NoBrush);
-            const qreal w = pixmapSize.width();
-            const qreal h = pixmapSize.height();
-            const qreal lw = 0.36 * w;
-            const qreal lh = 0.46 * h;
-            const qreal gap = linked ? 0.22 * w : 0.40 * w;
-            const qreal cx = 0.5 * w - gap / 2;
-            const qreal cy = 0.52 * h;
-            for (int k = 0; k < 2; k++) {
-                p.save();
-                p.translate(cx + k * gap, cy);
-                p.rotate(-30);
-                p.drawEllipse(QRectF(-lw / 2, -lh / 2, lw, lh));
-                p.restore();
-            }
-            p.end();
-            return pm;
-        };
-        ICON_SCALE_LINK_ON = makeChainIcon(true);
-        ICON_SCALE_LINK_OFF = makeChainIcon(false);
-    }
-
     // AE-style layer switch glyphs: plain text characters rasterized at
     // the actual device size (S = solo, H = shy, fx = effects, T = preserve
     // underlying transparency); bright = active, dim = inactive
@@ -1845,8 +1809,6 @@ void BoxSingleWidget::clearStaticPixmaps()
     delete ICON_T_OFF;
     delete ICON_LINKNODE_ON;
     delete ICON_LINKNODE_OFF;
-    delete ICON_SCALE_LINK_ON;
-    delete ICON_SCALE_LINK_OFF;
 
     delete BOX_PATH;
     delete BOX_CIRCLE;

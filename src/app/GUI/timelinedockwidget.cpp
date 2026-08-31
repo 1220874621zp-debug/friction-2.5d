@@ -440,18 +440,18 @@ TimelineDockWidget::TimelineDockWidget(Document& document,
     // or height matches the canvas, then center it (AE fit-to-comp
     // alike); one click = one undo step for the whole batch
     {
-        // canvas frame + double arrow along the matched axis
+        // canvas frame + white double arrow along the matched axis
         const auto makeMatchIcon = [](const bool horizontal) {
             QPixmap pm(64, 64);
             pm.fill(Qt::transparent);
             QPainter p(&pm);
             p.setRenderHint(QPainter::Antialiasing);
-            QPen frame(QColor(255, 255, 255, 190));
+            QPen frame(QColor(255, 255, 255, 170));
             frame.setWidthF(3.);
             p.setBrush(Qt::NoBrush);
             p.setPen(frame);
             p.drawRoundedRect(QRectF(6, 6, 52, 52), 6, 6);
-            QPen arrow(QColor(120, 200, 255, 235));
+            QPen arrow(QColor(255, 255, 255, 240));
             arrow.setWidthF(4.5);
             arrow.setCapStyle(Qt::RoundCap);
             p.setPen(arrow);

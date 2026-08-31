@@ -29,6 +29,7 @@
 #include "ui_global.h"
 
 #include <QVBoxLayout>
+#include <QGridLayout>
 #include <QPushButton>
 #include <QSpinBox>
 #include <QLineEdit>
@@ -84,27 +85,25 @@ private:
 
     QVBoxLayout *mMainLayout;
 
-    QHBoxLayout *mNameLayout;
+    // one grid for the whole form: column 0 holds the labels so every
+    // input column shares the same left edge
+    QGridLayout *mFormGrid;
     QLabel *mNameEditLabel;
     QLineEdit *mNameEdit;
 
-    QHBoxLayout *mSizeLayout;
     QLabel *mWidthLabel;
     QSpinBox *mWidthSpinBox;
     QLabel *mHeightLabel;
     QSpinBox *mHeightSpinBox;
 
-    QHBoxLayout *mFrameRangeLayout;
     QLabel *mFrameRangeLabel;
     QSpinBox *mMinFrameSpin;
     QSpinBox *mMaxFrameSpin;
     QComboBox *mTypeTime;
 
-    QHBoxLayout *mFPSLayout;
     QLabel *mFPSLabel;
     QDoubleSpinBox *mFPSSpinBox;
 
-    QHBoxLayout *mBgColorLayout;
     QLabel *mBgColorLabel;
     ColorAnimatorButton *mBgColorButton;
 

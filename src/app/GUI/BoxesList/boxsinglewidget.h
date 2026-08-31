@@ -96,9 +96,6 @@ public:
     static QPixmap* ICON_T_OFF;
     static QPixmap* ICON_LINKNODE_ON;
     static QPixmap* ICON_LINKNODE_OFF;
-    // scale X/Y proportional link chain (on = interlocked ovals)
-    static QPixmap* ICON_SCALE_LINK_ON;
-    static QPixmap* ICON_SCALE_LINK_OFF;
     // track matte mode glyphs: alpha / alphaInv / luma / lumaInv
     static QPixmap* ICON_TM_ALPHA;
     static QPixmap* ICON_TM_ALPHAINV;

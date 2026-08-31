@@ -93,23 +93,38 @@ SceneSettingsDialog::SceneSettingsDialog(const QString &name,
 
     setLayout(mMainLayout);
 
-    mNameLayout = new QHBoxLayout();
+    // form grid: labels live in column 0 and every input column starts
+    // at the same left edge, so name/size/duration/fps/background rows
+    // line up instead of each input trailing its own label width
+    mFormGrid = new QGridLayout();
+    mFormGrid->setContentsMargins(0, 0, 0, 0);
+    mFormGrid->setHorizontalSpacing(6);
+    mFormGrid->setVerticalSpacing(6);
+    const auto formLabel = [](QLabel * const w) {
+        w->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    };
+    // uniform number-field widths so the columns read as one block
+    const int inputMinWidth = 86;
+
     mNameEditLabel = new QLabel(tr("Name"), this);
+    formLabel(mNameEditLabel);
     mNameEdit = new QLineEdit(name, this);
     connect(mNameEdit, &QLineEdit::textChanged,
             this, &SceneSettingsDialog::validate);
-    mNameLayout->addWidget(mNameEditLabel);
-    mNameLayout->addWidget(mNameEdit);
-    mMainLayout->addLayout(mNameLayout);
+    mFormGrid->addWidget(mNameEditLabel, 0, 0);
+    mFormGrid->addWidget(mNameEdit, 0, 1, 1, 4);
 
     mWidthLabel = new QLabel(tr("Width"), this);
+    formLabel(mWidthLabel);
     mWidthSpinBox = new QSpinBox(this);
     mWidthSpinBox->setRange(1, INT_MAX);
+    mWidthSpinBox->setMinimumWidth(inputMinWidth);
     mWidthSpinBox->setValue(width);
 
     mHeightLabel = new QLabel(tr("Height"), this);
     mHeightSpinBox = new QSpinBox(this);
     mHeightSpinBox->setRange(1, INT_MAX);
+    mHeightSpinBox->setMinimumWidth(inputMinWidth);
     mHeightSpinBox->setValue(height);
 
     mResToolButton = new QToolButton(this);
@@ -122,34 +137,32 @@ SceneSettingsDialog::SceneSettingsDialog(const QString &name,
     mResToolButton->setIconSize(QSize(eSizesUI::widget, eSizesUI::widget));
     mResToolButton->setFixedSize(QSize(eSizesUI::widget, eSizesUI::widget));
 
-    mSizeLayout = new QHBoxLayout();
-    mSizeLayout->addWidget(mWidthLabel);
-    mSizeLayout->addWidget(mWidthSpinBox);
-    mSizeLayout->addWidget(mHeightLabel);
-    mSizeLayout->addWidget(mHeightSpinBox);
-    mSizeLayout->addWidget(mResToolButton);
-    mMainLayout->addLayout(mSizeLayout);
+    mFormGrid->addWidget(mWidthLabel, 1, 0);
+    mFormGrid->addWidget(mWidthSpinBox, 1, 1);
+    mFormGrid->addWidget(mHeightLabel, 1, 2, Qt::AlignRight | Qt::AlignVCenter);
+    mFormGrid->addWidget(mHeightSpinBox, 1, 3);
+    mFormGrid->addWidget(mResToolButton, 1, 4, Qt::AlignCenter);
 
     mFrameRangeLabel = new QLabel(tr("Duration"), this);
+    formLabel(mFrameRangeLabel);
     mMinFrameSpin = new QSpinBox(this);
     mMinFrameSpin->setRange(-INT_MAX, INT_MAX);
+    mMinFrameSpin->setMinimumWidth(inputMinWidth);
     mMinFrameSpin->setValue(range.fMin);
 
     mMaxFrameSpin = new QSpinBox(this);
     mMaxFrameSpin->setRange(-INT_MAX, INT_MAX);
+    mMaxFrameSpin->setMinimumWidth(inputMinWidth);
     mMaxFrameSpin->setValue(range.fMax);
 
     mTypeTime = new QComboBox(this);
     mTypeTime->addItem(tr("Frames"), "Frames");
     mTypeTime->addItem(tr("Seconds"), "Seconds");
 
-    mFrameRangeLayout = new QHBoxLayout();
-    mFrameRangeLayout->addWidget(mFrameRangeLabel);
-    mFrameRangeLayout->addWidget(mMinFrameSpin);
-    mFrameRangeLayout->addWidget(mMaxFrameSpin);
-    mFrameRangeLayout->addWidget(mTypeTime);
-
-    mMainLayout->addLayout(mFrameRangeLayout);
+    mFormGrid->addWidget(mFrameRangeLabel, 2, 0);
+    mFormGrid->addWidget(mMinFrameSpin, 2, 1);
+    mFormGrid->addWidget(mMaxFrameSpin, 2, 2);
+    mFormGrid->addWidget(mTypeTime, 2, 3, 1, 2);
 
     mFpsToolButton = new QToolButton(this);
     mFpsToolButton->setArrowType(Qt::NoArrow);
@@ -162,20 +175,21 @@ SceneSettingsDialog::SceneSettingsDialog(const QString &name,
     mFpsToolButton->setFixedSize(QSize(eSizesUI::widget, eSizesUI::widget));
 
     mFPSLabel = new QLabel(tr("Fps"), this);
+    formLabel(mFPSLabel);
     mFPSSpinBox = new QDoubleSpinBox(this);
     mFPSSpinBox->setLocale(QLocale(QLocale::English,
                                    QLocale::UnitedStates));
     mFPSSpinBox->setRange(1, INT_MAX);
+    mFPSSpinBox->setMinimumWidth(inputMinWidth);
     mFPSSpinBox->setDecimals(3);
     mFPSSpinBox->setValue(fps);
 
-    mFPSLayout = new QHBoxLayout();
-    mFPSLayout->addWidget(mFPSLabel);
-    mFPSLayout->addWidget(mFPSSpinBox);
-    mFPSLayout->addWidget(mFpsToolButton);
-    mMainLayout->addLayout(mFPSLayout);
+    mFormGrid->addWidget(mFPSLabel, 3, 0);
+    mFormGrid->addWidget(mFPSSpinBox, 3, 1);
+    mFormGrid->addWidget(mFpsToolButton, 3, 2, 1, 2, Qt::AlignVCenter);
 
     mBgColorLabel = new QLabel(tr("Background"), this);
+    formLabel(mBgColorLabel);
     mBgColorButton = new ColorAnimatorButton(bg, this);
     if (!bg) {
         if (isNew) {
@@ -185,10 +199,12 @@ SceneSettingsDialog::SceneSettingsDialog(const QString &name,
         } else { mBgColorButton->setColor(Qt::black); }
     }
 
-    mBgColorLayout = new QHBoxLayout();
-    mBgColorLayout->addWidget(mBgColorLabel);
-    mBgColorLayout->addWidget(mBgColorButton);
-    mMainLayout->addLayout(mBgColorLayout);
+    mFormGrid->addWidget(mBgColorLabel, 4, 0);
+    mFormGrid->addWidget(mBgColorButton, 4, 1);
+
+    mFormGrid->setColumnStretch(1, 1);
+    mFormGrid->setColumnStretch(3, 1);
+    mMainLayout->addLayout(mFormGrid);
 
     mErrorLabel = new QLabel(this);
     mErrorLabel->setObjectName("errorLabel");
