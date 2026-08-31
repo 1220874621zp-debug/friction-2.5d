@@ -199,6 +199,10 @@ AiDepthDialog::AiDepthDialog(Document& doc,
     mInsertBtn = new QPushButton(tr("插入为图层"), this);
     connect(mInsertBtn, &QPushButton::clicked,
             this, [this]() { startPreview(true); });
+    mSettingsBtn = new QPushButton(tr("设置"), this);
+    mSettingsBtn->setToolTip(tr("打开模型文件夹，查看手动放置模型的目录结构"));
+    connect(mSettingsBtn, &QPushButton::clicked,
+            this, &AiDepthDialog::openSettings);
     mCloseBtn = new QPushButton(tr("关闭"), this);
     connect(mCloseBtn, &QPushButton::clicked, this, &QDialog::reject);
 
@@ -206,6 +210,7 @@ AiDepthDialog::AiDepthDialog(Document& doc,
     btnRow->addWidget(mPreviewBtn);
     btnRow->addWidget(mInsertBtn);
     btnRow->addStretch();
+    btnRow->addWidget(mSettingsBtn);
     btnRow->addWidget(mCloseBtn);
 
     const auto mainLayout = new QVBoxLayout(this);
@@ -462,6 +467,72 @@ void AiDepthDialog::insertDepthLayer()
         QMessageBox::warning(this, tr("AI 深度估计"),
                              tr("插入图层失败，详见日志。"));
     }
+}
+
+void AiDepthDialog::openSettings()
+{
+    QDialog dlg(this);
+    dlg.setWindowTitle(tr("AI 深度估计 设置"));
+    dlg.setMinimumWidth(520);
+
+    const QString dlDir = AiDepth::ModelCatalog::downloadDir();
+    const QString bdDir = AiDepth::ModelCatalog::bundledDir();
+
+    const auto hint = new QLabel(
+        tr("手动下载的模型放到<b>模型文件夹</b>（在线下载也会保存到这里）。"
+           "每个模型一个子文件夹，含两个同名文件、缺一不可："
+           "<ul>"
+           "<li><code>depth_anything_v2_small/model_fp16.onnx</code>"
+           " + <code>model_fp16.onnx_data</code>（约 50 MB）</li>"
+           "<li><code>depth_anything_v2_base/model_fp16.onnx</code>"
+           " + <code>model_fp16.onnx_data</code>（约 196 MB）</li>"
+           "</ul>"
+           "文件放好后回到这里点「刷新状态」。"), &dlg);
+    hint->setWordWrap(true);
+
+    const auto dirLabel = new QLabel(tr("模型文件夹：<code>%1</code>").arg(dlDir), &dlg);
+    dirLabel->setWordWrap(true);
+    dirLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+
+    QLabel* bundledLabel = nullptr;
+    if (bdDir != dlDir) {
+        bundledLabel = new QLabel(
+                    tr("内置模型目录（随程序安装，只读）：<code>%1</code>").arg(bdDir),
+                    &dlg);
+        bundledLabel->setWordWrap(true);
+    }
+
+    const auto openBtn = new QPushButton(tr("打开模型文件夹"), &dlg);
+    const auto refreshBtn = new QPushButton(tr("刷新状态"), &dlg);
+    const auto closeBtn = new QPushButton(tr("关闭"), &dlg);
+    connect(openBtn, &QPushButton::clicked, &dlg, [dlDir]() {
+        QDir().mkpath(dlDir);
+        QDesktopServices::openUrl(QUrl::fromLocalFile(dlDir));
+    });
+    connect(refreshBtn, &QPushButton::clicked, &dlg, [this, &dlg]() {
+        updateModelState();
+        const bool ready = !AiDepth::ModelCatalog::resolveModelDir(
+                    currentModelId()).isEmpty();
+        QMessageBox::information(&dlg, tr("AI 深度估计"),
+            ready ? tr("当前所选模型已就绪 ✓（可切换上方模型逐个检查）")
+                  : tr("当前所选模型仍未就绪：文件缺失、大小或校验不符。"));
+    });
+    connect(closeBtn, &QPushButton::clicked, &dlg, &QDialog::accept);
+
+    const auto row = new QHBoxLayout;
+    row->addWidget(openBtn);
+    row->addWidget(refreshBtn);
+    row->addStretch();
+    row->addWidget(closeBtn);
+
+    const auto lay = new QVBoxLayout(&dlg);
+    lay->addWidget(hint);
+    lay->addWidget(dirLabel);
+    if (bundledLabel) { lay->addWidget(bundledLabel); }
+    lay->addLayout(row);
+
+    dlg.exec();
+    updateModelState(); // files may have been placed while it was open
 }
 
 void AiDepthDialog::startDownload()

@@ -71,6 +71,7 @@ private:
     void startInference(const bool insertAfter);
     void insertDepthLayer();
     void updateDepthPreview();
+    void openSettings();
 
     void startDownload();
     void abortDownload();
@@ -95,6 +96,7 @@ private:
     QLabel* mStatusLine = nullptr;
     QPushButton* mPreviewBtn = nullptr;
     QPushButton* mInsertBtn = nullptr;
+    QPushButton* mSettingsBtn = nullptr;
     QPushButton* mCloseBtn = nullptr;
 
     // inference state
