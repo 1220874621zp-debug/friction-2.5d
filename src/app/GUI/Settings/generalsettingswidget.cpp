@@ -31,6 +31,7 @@
 #include <QScrollArea>
 #include <QPushButton>
 #include <QLineEdit>
+#include <QSet>
 #include <QStandardPaths>
 #include <QDesktopServices>
 #include <QDir>
@@ -46,6 +47,7 @@
 #include "Private/document.h"
 #include "canvas.h"
 #include "Boxes/containerbox.h"
+#include "fileshandler.h"
 #include "Psd/psdimagebox.h"
 
 GeneralSettingsWidget::GeneralSettingsWidget(QWidget *parent)
@@ -312,6 +314,152 @@ GeneralSettingsWidget::GeneralSettingsWidget(QWidget *parent)
         QMessageBox::information(this, tr("Cache"),
                 tr("Removed %1 cache file(s). Re-extracted %2 layer(s) "
                    "currently in use.").arg(removed).arg(refreshed));
+    });
+
+    // KRA import cache: configurable location + reference-aware clear
+    mCacheLayout->addSpacing(10);
+
+    const auto kraDefaultRoot = AppSupport::getAppCachePath() +
+            QStringLiteral("/KRACache");
+    const auto kraCurrentRoot = [kraDefaultRoot]() {
+        const QString custom = AppSupport::getSettings(
+                    QStringLiteral("settings"),
+                    QStringLiteral("KraCachePath")).toString();
+        return custom.isEmpty() ? kraDefaultRoot
+                                : QDir::cleanPath(custom);
+    }();
+
+    const auto kraPathRow = new QWidget(this);
+    kraPathRow->setContentsMargins(0, 0, 0, 0);
+    const auto kraPathLayout = new QHBoxLayout(kraPathRow);
+    kraPathLayout->setContentsMargins(0, 0, 0, 0);
+    kraPathLayout->setMargin(0);
+    const auto kraPathLabel = new QLabel(tr("KRA 缓存文件夹"), this);
+    const auto kraPathEdit = new QLineEdit(this);
+    kraPathEdit->setReadOnly(true);
+    kraPathEdit->setText(kraCurrentRoot);
+    const auto kraPathBrowse = new QPushButton(tr("浏览..."), this);
+    const auto kraPathReset = new QPushButton(tr("恢复默认"), this);
+    kraPathLayout->addWidget(kraPathLabel);
+    kraPathLayout->addWidget(kraPathEdit, 1);
+    kraPathLayout->addWidget(kraPathBrowse);
+    kraPathLayout->addWidget(kraPathReset);
+    mCacheLayout->addWidget(kraPathRow);
+
+    const auto kraInfoLabel = new QLabel(tr(
+            "导入 .kra 工程时解码的图层图存放于此。路径只影响之后的导入，"
+            "已有缓存不会被移动。"), this);
+    kraInfoLabel->setWordWrap(true);
+    mCacheLayout->addWidget(kraInfoLabel);
+
+    const auto kraBtnRow = new QWidget(this);
+    kraBtnRow->setContentsMargins(0, 0, 0, 0);
+    const auto kraBtnLayout = new QHBoxLayout(kraBtnRow);
+    kraBtnLayout->setContentsMargins(0, 0, 0, 0);
+    kraBtnLayout->setMargin(0);
+    const auto openKraCacheBtn = new QPushButton(tr("打开 KRA 缓存目录"), this);
+    const auto clearKraCacheBtn = new QPushButton(tr("清除 KRA 缓存"), this);
+    kraBtnLayout->addWidget(openKraCacheBtn);
+    kraBtnLayout->addWidget(clearKraCacheBtn);
+    kraBtnLayout->addStretch();
+    mCacheLayout->addWidget(kraBtnRow);
+
+    const auto applyKraPath = [kraPathEdit, kraDefaultRoot](
+            const QString& dir) {
+        if (dir.isEmpty()) {
+            AppSupport::setSettings(QStringLiteral("settings"),
+                                    QStringLiteral("KraCachePath"),
+                                    QString());
+            kraPathEdit->setText(kraDefaultRoot);
+        } else {
+            AppSupport::setSettings(QStringLiteral("settings"),
+                                    QStringLiteral("KraCachePath"), dir);
+            kraPathEdit->setText(QDir::cleanPath(dir));
+        }
+    };
+    connect(kraPathBrowse, &QPushButton::clicked, this,
+            [this, applyKraPath, kraPathEdit]() {
+        const QString dir = AppSupport::getExistingDirectory(
+                    this, tr("选择 KRA 缓存文件夹"),
+                    kraPathEdit->text());
+        if (!dir.isEmpty()) { applyKraPath(dir); }
+    });
+    connect(kraPathReset, &QPushButton::clicked, this, [applyKraPath]() {
+        applyKraPath(QString());
+    });
+    connect(openKraCacheBtn, &QPushButton::clicked, this,
+            [kraPathEdit]() {
+        QDir().mkpath(kraPathEdit->text());
+        QDesktopServices::openUrl(
+                    QUrl::fromLocalFile(kraPathEdit->text()));
+    });
+    connect(clearKraCacheBtn, &QPushButton::clicked, this, [this, kraPathEdit]() {
+        // files referenced by live layers must survive the clear
+        QSet<QString> referenced;
+        const auto handlers = FilesHandler::sInstance->fileHandlers();
+        for (const auto& h : handlers) {
+            if (h && h->refCount() > 0) {
+                referenced.insert(QDir::cleanPath(h->path()).toLower());
+            }
+        }
+
+        const QDir root(kraPathEdit->text());
+        QStringList toDelete;
+        qint64 bytes = 0;
+        int skipped = 0;
+        const auto hashDirs = root.entryList(
+                    QDir::Dirs | QDir::NoDotAndDotDot);
+        for (const auto& d : hashDirs) {
+            const auto pngs = QDir(root.absoluteFilePath(d)).entryInfoList(
+                        {QStringLiteral("*.png")}, QDir::Files);
+            for (const auto& fi : pngs) {
+                if (referenced.contains(
+                            QDir::cleanPath(fi.absoluteFilePath()).toLower())) {
+                    skipped++;
+                } else {
+                    toDelete << fi.absoluteFilePath();
+                    bytes += fi.size();
+                }
+            }
+        }
+        if (toDelete.isEmpty()) {
+            QMessageBox::information(this, tr("Cache"),
+                tr("没有可清理的 KRA 缓存%1。")
+                .arg(skipped > 0 ? tr("（%1 张正被引用，已跳过）").arg(skipped)
+                                 : QString()));
+            return;
+        }
+        const auto btn = QMessageBox::question(this, tr("Cache"),
+            tr("将删除 %1 张 KRA 图层图，共约 %2 MB，"
+               "跳过 %3 张（当前工程正在引用）。\n\n"
+               "⚠ 注意：清理只保护当前已打开工程引用的文件；"
+               "其它未打开的工程若含有 .kra 导入的图层，"
+               "重新打开后这些图层会断链失效。\n\n是否继续清理？")
+            .arg(toDelete.count())
+            .arg(QString::number(bytes / (1024.0 * 1024.0), 'f', 1))
+            .arg(skipped));
+        if (btn != QMessageBox::Yes) { return; }
+
+        int failed = 0;
+        for (const auto& path : toDelete) {
+            if (!QFile::remove(path)) { failed++; }
+        }
+        // drop hash folders that became empty
+        for (const auto& d : hashDirs) {
+            const QString abs = root.absoluteFilePath(d);
+            QDir sub(abs);
+            if (sub.isEmpty()) { root.rmdir(d); }
+        }
+        if (failed > 0) {
+            QMessageBox::information(this, tr("Cache"),
+                tr("清理完成，另有 %1 张因文件被占用跳过"
+                   "（关闭相关工程后可重试）。").arg(failed));
+        } else {
+            QMessageBox::information(this, tr("Cache"),
+                tr("清理完成，共删除 %1 张，释放约 %2 MB。")
+                .arg(toDelete.count())
+                .arg(QString::number(bytes / (1024.0 * 1024.0), 'f', 1)));
+        }
     });
 
     mGeneralLayout->addWidget(mCacheWidget);

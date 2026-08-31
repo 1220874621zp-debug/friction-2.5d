@@ -1093,8 +1093,15 @@ qsptr<ContainerBox> ImportKRA::loadKRAFile(const QString& filePath,
         const QString clean = QDir::cleanPath(filePath);
         const QString hash = QString::fromLatin1(QCryptographicHash::hash(
                     clean.toUtf8(), QCryptographicHash::Md5).toHex().left(12));
-        st.mCacheDir = AppSupport::getAppCachePath() +
-                QStringLiteral("/KRACache/") + hash;
+        // configurable root (preferences); empty setting = cache default
+        QString kraRoot = AppSupport::getSettings(
+                    QStringLiteral("settings"),
+                    QStringLiteral("KraCachePath")).toString();
+        kraRoot = kraRoot.isEmpty() ?
+                    AppSupport::getAppCachePath() +
+                        QStringLiteral("/KRACache") :
+                    QDir::cleanPath(kraRoot);
+        st.mCacheDir = kraRoot + QLatin1Char('/') + hash;
     }
 
     // configure an empty scene with the document's canvas + framerate
