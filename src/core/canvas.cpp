@@ -104,6 +104,12 @@ Canvas::Canvas(Document &document,
     setIsCurrentGroup_k(true);
 
     mRotPivot = enve::make_shared<PathPivot>(this);
+    // consume pending pivot updates on every repaint: value changes
+    // (dragged motion path keys, timeline edits, playback) schedule a
+    // pivot refresh, but nothing executed it outside mode/scene
+    // switches, so the pivot handle kept sticking to a stale spot
+    connect(this, &Canvas::requestUpdate,
+            this, &Canvas::updatePivotIfNeeded);
 
     mTransformAnimator->SWT_hide();
 
