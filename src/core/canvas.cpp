@@ -104,12 +104,6 @@ Canvas::Canvas(Document &document,
     setIsCurrentGroup_k(true);
 
     mRotPivot = enve::make_shared<PathPivot>(this);
-    // consume pending pivot updates on every repaint: value changes
-    // (dragged motion path keys, timeline edits, playback) schedule a
-    // pivot refresh, but nothing executed it outside mode/scene
-    // switches, so the pivot handle kept sticking to a stale spot
-    connect(this, &Canvas::requestUpdate,
-            this, &Canvas::updatePivotIfNeeded);
 
     mTransformAnimator->SWT_hide();
 
@@ -491,6 +485,13 @@ void Canvas::renderSk(SkCanvas* const canvas,
     //}
 
     renderGizmos(canvas, qInvZoom, invZoom);
+
+    // consume pending pivot updates right before the handle is drawn:
+    // value changes (dragged motion path keys, timeline edits,
+    // playback) schedule a refresh, but repaints driven by the render
+    // pipeline never emit requestUpdate, so the handle stuck to a
+    // stale spot until the next mode/scene switch
+    updatePivotIfNeeded();
 
     if (mCurrentMode == CanvasMode::boxTransform ||
        mCurrentMode == CanvasMode::pointTransform) {

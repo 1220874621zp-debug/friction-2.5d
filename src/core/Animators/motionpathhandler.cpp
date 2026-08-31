@@ -119,7 +119,7 @@ public:
         , mXAnim(xAnim), mYAnim(yAnim), mFrame(frame), mKind(kind)
     {
         disableSelection();
-        setRadius(3);
+        setRadius(6);
     }
 
     GraphKey *xKey() const {
