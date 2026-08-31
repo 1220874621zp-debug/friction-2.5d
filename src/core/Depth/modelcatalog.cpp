@@ -31,6 +31,13 @@
 namespace AiDepth {
 namespace ModelCatalog {
 
+// filled from the actual downloaded files; defined so the table below
+// stays readable and a mismatch shows up at compile time
+#define AIDEPTH_LARGE_GRAPH_BYTES 213378LL
+#define AIDEPTH_LARGE_GRAPH_SHA "33a6a11a325ad08041d0bc8ca9e5f9e6bbbc6ee6b504b2bfa7848f836f0bbebb"
+#define AIDEPTH_LARGE_DATA_BYTES 670965760LL
+#define AIDEPTH_LARGE_DATA_SHA "787f75d5dd75a882cdeec5f9e694823c5e09ac3d847a4c279659a78f69ba7694"
+
 const QList<ModelInfo>& models()
 {
     static const QList<ModelInfo> table = [] {
@@ -88,6 +95,35 @@ const QList<ModelInfo>& models()
                   hfBase + QStringLiteral("model_fp16.onnx_data") },
                 { ghBase + QStringLiteral("dav2_base_model_fp16.onnx"),
                   ghBase + QStringLiteral("dav2_base_model_fp16.onnx_data") },
+            };
+            list << m;
+        }
+
+        // Depth Anything V2 Large, fp16 weights (CC-BY-NC-4.0, non
+        // commercial — download only, best quality / temporal
+        // stability, slowest inference).
+        {
+            ModelInfo m;
+            m.fId = QStringLiteral("large");
+            m.fDirName = QStringLiteral("depth_anything_v2_large");
+            m.fBundled = false;
+            m.fFiles = {
+                { QStringLiteral("model_fp16.onnx"), AIDEPTH_LARGE_GRAPH_BYTES,
+                  QStringLiteral(AIDEPTH_LARGE_GRAPH_SHA) },
+                { QStringLiteral("model_fp16.onnx_data"), AIDEPTH_LARGE_DATA_BYTES,
+                  QStringLiteral(AIDEPTH_LARGE_DATA_SHA) },
+            };
+            const QString hfBase = QStringLiteral(
+                        "https://hf-mirror.com/onnx-community/"
+                        "depth-anything-v2-large-ONNX/resolve/main/onnx/");
+            const QString ghBase = QStringLiteral(
+                        "https://github.com/1220874621zp-debug/friction-2.5d/"
+                        "releases/download/ai-models/");
+            m.fSources = {
+                { hfBase + QStringLiteral("model_fp16.onnx"),
+                  hfBase + QStringLiteral("model_fp16.onnx_data") },
+                { ghBase + QStringLiteral("dav2_large_model_fp16.onnx"),
+                  ghBase + QStringLiteral("dav2_large_model_fp16.onnx_data") },
             };
             list << m;
         }

@@ -142,11 +142,16 @@ AiDepthDialog::AiDepthDialog(Document& doc,
     mModelCombo = new QComboBox(this);
     mModelCombo->addItem(tr("小型（快，随程序内置）"));
     mModelCombo->addItem(tr("基础（更精细，需下载）"));
+    mModelCombo->addItem(tr("大型（最精细，需下载）"));
     mModelCombo->setItemData(0, tr("Depth Anything V2 Small · 24.8M 参数 · "
                                    "Apache-2.0 许可"), Qt::ToolTipRole);
     mModelCombo->setItemData(1, tr("Depth Anything V2 Base · 97.5M 参数 · "
                                    "CC-BY-NC-4.0（非商业）许可，约 196 MB，"
                                    "联网下载后保存在本机"), Qt::ToolTipRole);
+    mModelCombo->setItemData(2, tr("Depth Anything V2 Large · 335.3M 参数 · "
+                                   "CC-BY-NC-4.0（非商业）许可，约 630 MB，"
+                                   "联网下载后保存在本机；视频时序稳定性最好，"
+                                   "推理也最慢"), Qt::ToolTipRole);
     connect(mModelCombo, qOverload<int>(&QComboBox::currentIndexChanged),
             this, &AiDepthDialog::updateModelState);
 
@@ -269,8 +274,11 @@ AiDepthDialog::~AiDepthDialog()
 
 QString AiDepthDialog::currentModelId() const
 {
-    return mModelCombo->currentIndex() == 1 ?
-                QStringLiteral("base") : QStringLiteral("small");
+    switch (mModelCombo->currentIndex()) {
+    case 1: return QStringLiteral("base");
+    case 2: return QStringLiteral("large");
+    default: return QStringLiteral("small");
+    }
 }
 
 int AiDepthDialog::currentInputSize() const
@@ -567,8 +575,9 @@ void AiDepthDialog::startBatch()
         QMessageBox::information(this, tr("AI 深度估计"), why);
         return;
     }
-    const qreal secPerFrame = currentModelId() == QStringLiteral("small") ?
-                0.8 : 2.2;
+    qreal secPerFrame = 0.8;
+    if (currentModelId() == QStringLiteral("base")) { secPerFrame = 2.2; }
+    else if (currentModelId() == QStringLiteral("large")) { secPerFrame = 8.0; }
     const auto btn = QMessageBox::question(this, tr("帧批量"),
         tr("将处理 %1 帧（第 %2 ~ %3 帧，含时序平滑），预计约 %4 分钟，"
            "结果将作为图片序列图层插入。是否开始？")
@@ -905,13 +914,16 @@ void AiDepthDialog::startDownload()
     mDlModel = AiDepth::ModelCatalog::model(id);
     if (!mDlModel) { return; }
 
-    if (id == QStringLiteral("base")) {
+    if (id != QStringLiteral("small")) {
+        QString name = tr("基础模型");
+        if (id == QStringLiteral("large")) { name = tr("大型模型"); }
         const auto btn = QMessageBox::question(
                     this, tr("许可确认"),
-                    tr("基础模型采用 <b>CC-BY-NC-4.0</b> 许可："
+                    tr("%1采用 <b>CC-BY-NC-4.0</b> 许可："
                        "个人学习与非商业创作可自由使用，"
                        "<b>禁止商业用途</b>。下载即表示你接受该许可。<br><br>"
-                       "需要商业用途时请改用小型模型（Apache-2.0）。是否下载？"));
+                       "需要商业用途时请改用小型模型（Apache-2.0）。是否下载？")
+                    .arg(name));
         if (btn != QMessageBox::Yes) { return; }
     }
 
