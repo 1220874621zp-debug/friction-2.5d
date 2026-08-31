@@ -808,11 +808,13 @@ void TimelineDockWidget::spaceToggle()
     } else if (mStepPreviewTimer->isActive()) {
         pausePreview();
     } else {
-        // playPreview() alone fails silently before the render
-        // handler has a scene wired / anything playable (e.g. on a
-        // fresh project) - fall back to starting exactly like the
-        // toolbar play button does, so Space works from any state
-        if (!playPreview()) { renderPreview(); }
+        // diagnostic: distinguishes "playPreview failed because no scene
+        // is wired" from other silent failures on a dead Space key
+        const bool started = playPreview();
+        qWarning() << "[SPACE] start playPreview=" << started
+                   << "activeScene="
+                   << (*mDocument.fActiveScene ? "yes" : "null");
+        if (!started) { renderPreview(); }
     }
 }
 

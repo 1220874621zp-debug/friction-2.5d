@@ -1100,6 +1100,7 @@ void Canvas::schedulePivotUpdate()
         mTransMode == TransformMode::rotateY ||
         mTransMode == TransformMode::scale ||
         mRotPivot->isSelected()) { return; }
+    qWarning() << "[PIVOT] refresh scheduled";
     mPivotUpdateNeeded = true;
 }
 
@@ -1148,6 +1149,8 @@ void Canvas::startSelectionAtPoint(const QPointF &pos)
 
 void Canvas::updatePivot()
 {
+    // diagnostic: log every actual pivot refresh with its new spot
+    const auto before = mRotPivot->getAbsolutePos();
     if (mCurrentMode == CanvasMode::pointTransform) {
         mRotPivot->setAbsolutePos(getSelectedPointsAbsPivotPos());
         mDocument.fPivotPosForGizmosValid = false;
@@ -1155,6 +1158,8 @@ void Canvas::updatePivot()
         mRotPivot->setAbsolutePos(getSelectedBoxesAbsPivotPos());
         mDocument.fPivotPosForGizmosValid = false;
     }
+    qWarning() << "[PIVOT] update mode=" << int(mCurrentMode)
+               << " from" << before << "to" << mRotPivot->getAbsolutePos();
 }
 
 void Canvas::setCanvasMode(const CanvasMode mode)
