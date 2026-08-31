@@ -110,6 +110,8 @@
 #include "Boxes/imagebox.h"
 #include "svgimporter.h"
 #include "vtracerprovider.h"
+#include "Depth/aidepthprovider.h"
+#include "Dialogs/aidepthdialog.h"
 #include <QProcess>
 #include <QFileInfo>
 #include <QDir>
@@ -2109,6 +2111,31 @@ void MainWindow::traceSelectedImage()
                 .arg(failedNames.count())
                 .arg(failedNames.join(QStringLiteral("\n• "))));
     }
+}
+
+void MainWindow::openAiDepthDialog()
+{
+    const auto scene = *mDocument.fActiveScene;
+    if (!scene) {
+        QMessageBox::information(this, tr("AI 深度估计"),
+                                 tr("请先打开场景。"));
+        return;
+    }
+
+    QList<BoundingBox*> boxes;
+    const auto selected = scene->getSelectedBoxesList();
+    for (const auto& box : selected) {
+        if (box && !boxes.contains(box)) { boxes << box; }
+    }
+    if (boxes.isEmpty()) {
+        QMessageBox::information(this, tr("AI 深度估计"),
+                                 tr("请先选中一个或多个图层"
+                                    "（任意类型：组、矢量、位图均可）。"));
+        return;
+    }
+
+    AiDepthDialog dialog(mDocument, boxes, this);
+    dialog.exec();
 }
 
 void MainWindow::openSammieRoto()

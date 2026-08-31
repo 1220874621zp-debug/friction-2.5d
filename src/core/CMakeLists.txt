@@ -364,6 +364,8 @@ set(
     svgexporthelpers.cpp
     svgimporter.cpp
     vtracerprovider.cpp
+    Depth/modelcatalog.cpp
+    Depth/aidepthprovider.cpp
     Psd/psdfile.cpp
     Psd/psdimporter.cpp
     Psd/ocaimporter.cpp
@@ -753,6 +755,8 @@ set(
     svgexporthelpers.h
     svgimporter.h
     vtracerprovider.h
+    Depth/modelcatalog.h
+    Depth/aidepthprovider.h
     Psd/psdfile.h
     Psd/psdimporter.h
     Psd/fpsdpackage.h

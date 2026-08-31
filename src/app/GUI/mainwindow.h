@@ -192,6 +192,7 @@ public:
     void importFile();
     void openSammieRoto();
     void traceSelectedImage();
+    void openAiDepthDialog();
     void revert();
     void updateAutoSaveBackupState();
     void openRendererWindow();
@@ -327,6 +328,7 @@ private:
     QMenu *mEffectsMenu;
     QMenu *mSceneMenu;
     QMenu *mVectorTraceMenu;
+    QMenu *mAiToolsMenu;
 #ifndef Q_OS_MAC
     Friction::Ui::PersistentMenu *mViewMenu;
 #else
@@ -364,6 +366,7 @@ private:
     void setupMenuBar();
     void setupMenuScene();
     void setupMenuVectorTrace();
+    void setupMenuAiTools();
     void setupMenuEffects();
     void setupMenuExtras();
     void setupPropertiesActions();

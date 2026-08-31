@@ -196,6 +196,7 @@ set(
     GUI/Dialogs/dialogsinterfaceimpl.cpp
     GUI/Dialogs/animationtopaintdialog.cpp
     GUI/Dialogs/vectortracedialog.cpp
+    GUI/Dialogs/aidepthdialog.cpp
     GUI/Expressions/expressiondialog.cpp
     GUI/Expressions/expressioneditor.cpp
     GUI/Expressions/expressionhighlighter.cpp
@@ -264,6 +265,7 @@ set(
     GUI/Dialogs/dialogsinterfaceimpl.h
     GUI/Dialogs/animationtopaintdialog.h
     GUI/Dialogs/vectortracedialog.h
+    GUI/Dialogs/aidepthdialog.h
     GUI/Expressions/expressiondialog.h
     GUI/Expressions/expressioneditor.h
     GUI/Expressions/expressionhighlighter.h

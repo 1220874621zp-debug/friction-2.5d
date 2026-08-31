@@ -4,12 +4,18 @@
 // loading path (no MainWindow / layout / render widget), with breadcrumb
 // checkpoints on stderr so the last printed line brackets the phase
 // that corrupts the heap.
+#ifndef NOMINMAX
+#define NOMINMAX // Skia headers need std::min/std::max without macros
+#endif
 #include <windows.h>
 #include <dbghelp.h>
 #include <cstring>
 #include <QApplication>
 #include <QFile>
+#include <QDateTime>
 #include <cstdio>
+#include "Depth/aidepthprovider.h"
+#include "Depth/modelcatalog.h"
 #include "ReadWrite/filefooter.h"
 #include "ReadWrite/ewritestream.h"
 #include "ReadWrite/evformat.h"
@@ -401,6 +407,102 @@ static int runSynthetic(Document& document, TaskScheduler& tasks,
     return 0;
 }
 
+// AI depth end-to-end (no GUI): model catalog resolution + sha256 +
+// ONNX Runtime inference on a synthetic two-tone image; verifies the
+// provider chain (preprocess -> session -> postprocess) for all three
+// output modes. The model dir comes from argv when the harness runs
+// outside the portable deploy tree.
+static int runAiDepthTest(const QString& modelDirArg)
+{
+    if (!AiDepth::available()) {
+        fprintf(stderr, "[harness] AIDEPTH FAIL: no onnxruntime.dll\n");
+        return 20;
+    }
+    fprintf(stderr, "[harness] aidepth: runtime '%s'\n",
+            AiDepth::versionString().toLocal8Bit().constData());
+
+    QString modelDir = modelDirArg;
+    if (modelDir.isEmpty()) {
+        modelDir = AiDepth::ModelCatalog::resolveModelDir(
+                    QStringLiteral("small"));
+    }
+    if (modelDir.isEmpty()) {
+        fprintf(stderr, "[harness] AIDEPTH FAIL: small model not resolved\n");
+        return 21;
+    }
+    fprintf(stderr, "[harness] aidepth: modelDir '%s'\n",
+            modelDir.toLocal8Bit().constData());
+
+    {
+        const auto* info = AiDepth::ModelCatalog::model(
+                    QStringLiteral("small"));
+        QString err;
+        if (!info || !AiDepth::ModelCatalog::verifySha256(modelDir, *info, &err)) {
+            fprintf(stderr, "[harness] AIDEPTH FAIL: sha256 (%s)\n",
+                    err.toLocal8Bit().constData());
+            return 22;
+        }
+        fprintf(stderr, "[harness] aidepth: sha256 ok\n");
+    }
+
+    // synthetic 640x480, dark left half vs bright right half: the depth
+    // map must show contrast between both halves
+    const int W = 640;
+    const int H = 480;
+    SkBitmap bmp;
+    bmp.allocPixels(SkImageInfo::Make(W, H, kRGBA_8888_SkColorType,
+                                      kUnpremul_SkAlphaType));
+    bmp.eraseColor(SK_ColorBLACK);
+    SkCanvas canvas(bmp);
+    SkPaint paint;
+    paint.setColor(SK_ColorWHITE);
+    canvas.drawRect(SkRect::MakeXYWH(W / 2, 0, W / 2, H), paint);
+    const auto srcImg = SkImage::MakeFromBitmap(bmp);
+
+    for (int mode = 0; mode < 3; mode++) {
+        AiDepth::Options opts;
+        opts.fInputSize = 518;
+        opts.fOutputMode = mode;
+        sk_sp<SkImage> depth;
+        QString err;
+        const auto t1 = QDateTime::currentMSecsSinceEpoch();
+        const auto st = AiDepth::runDepth(srcImg, modelDir, opts, depth, err);
+        const qint64 dt = QDateTime::currentMSecsSinceEpoch() - t1;
+        if (st != AiDepth::DepthStatus::Ok) {
+            fprintf(stderr, "[harness] AIDEPTH FAIL: mode %d status=%d err='%s'\n",
+                    mode, int(st), err.toLocal8Bit().constData());
+            return 23;
+        }
+        if (!depth || depth->width() != W || depth->height() != H) {
+            fprintf(stderr, "[harness] AIDEPTH FAIL: mode %d dims %dx%d (want %dx%d)\n",
+                    mode, depth ? depth->width() : -1, depth ? depth->height() : -1, W, H);
+            return 24;
+        }
+        SkPixmap pm;
+        const auto raster = depth->makeRasterImage();
+        if (!raster || !raster->peekPixels(&pm)) {
+            fprintf(stderr, "[harness] AIDEPTH FAIL: mode %d peek\n", mode);
+            return 25;
+        }
+        const SkColor lC = pm.getColor(W / 4, H / 2);
+        const SkColor rC = pm.getColor(3 * W / 4, H / 2);
+        // SkColorGetR/G/B return U8CPU: subtract in signed or it wraps
+        const int diff = qAbs(int(SkColorGetR(lC)) - int(SkColorGetR(rC)))
+                + qAbs(int(SkColorGetG(lC)) - int(SkColorGetG(rC)))
+                + qAbs(int(SkColorGetB(lC)) - int(SkColorGetB(rC)));
+        if (diff < 24) {
+            fprintf(stderr, "[harness] AIDEPTH FAIL: mode %d no contrast "
+                    "L=%06x R=%06x diff=%d\n",
+                    mode, lC, rC, diff);
+            return 26;
+        }
+        fprintf(stderr, "[harness] aidepth: mode %d ok %lld ms L=%06x R=%06x\n",
+                mode, dt, lC, rC);
+    }
+    fprintf(stderr, "[harness] AIDEPTH PASS\n");
+    return 0;
+}
+
 int main(int argc, char *argv[]) {
     SetUnhandledExceptionFilter(writeHarnessDump);
     cacheModules();
@@ -434,6 +536,14 @@ int main(int argc, char *argv[]) {
         MemoryHandler memoryHandler;
         eFilterSettings filterSettings;
         return runBindTest(document, taskScheduler);
+    }
+    if(!args.isEmpty() && args.first() == "--aidepth") {
+        eSettings settings(HardwareInfo::sCpuThreads(),
+                           HardwareInfo::sRamKB());
+        ImportHandler importHandler;
+        TaskScheduler taskScheduler;
+        Document document(taskScheduler);
+        return runAiDepthTest(args.count() > 1 ? args.at(1) : QString());
     }
     if(!args.isEmpty() && args.first() == "--synthetic") {
         const int cycles = args.count() > 1 ? args.at(1).toInt() : 5;
