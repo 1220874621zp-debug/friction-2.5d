@@ -86,10 +86,14 @@ void MovablePoint::drawOnAbsPosSk(SkCanvas * const canvas,
                                   const SkColor &fillColor,
                                   const bool keyOnCurrent)
 {
-    // Update global pivot used for gizmos with this point's absolute position
-    const auto doc = Document::sInstance;
-    doc->fPivotPosForGizmos = getAbsolutePos();
-    doc->fPivotPosForGizmosValid = true;
+    // Pin the gizmo pivot only to real pivot points; every drawn point
+    // used to pin it, so e.g. motion path key points froze the XYZ
+    // gizmo on the path while the shape itself kept moving
+    if (mType == TYPE_PIVOT_POINT) {
+        const auto doc = Document::sInstance;
+        doc->fPivotPosForGizmos = getAbsolutePos();
+        doc->fPivotPosForGizmosValid = true;
+    }
 
     const float scaledRadius = static_cast<float>(mRadius)*invScale;
 

@@ -43,7 +43,7 @@ public:
                    QrealAnimator * const xAnim,
                    QrealAnimator * const yAnim,
                    const int frame)
-        : MovablePoint(trans, TYPE_PIVOT_POINT)
+        : MovablePoint(trans, TYPE_PATH_POINT)
         , mXAnim(xAnim), mYAnim(yAnim), mFrame(frame)
     {
         setRadius(5);
