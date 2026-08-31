@@ -37,15 +37,21 @@
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QProgressBar>
+#include <QProgressDialog>
 #include <QPushButton>
 #include <QVBoxLayout>
+
+#include <utility>
 
 #include "appsupport.h"
 #include "Boxes/boundingbox.h"
 #include "Boxes/containerbox.h"
 #include "Boxes/imagebox.h"
+#include "Boxes/imagesequencebox.h"
+#include "canvas.h"
 #include "exceptions.h"
 #include "Private/document.h"
+#include "Timeline/durationrectangle.h"
 
 namespace {
 
@@ -69,10 +75,11 @@ QImage skImageToQImage(const sk_sp<SkImage>& image, const int maxSize)
 }
 
 // PNG-encodes the depth map into a cache temp file. Runs on the CPU
-// worker thread; QFile is used because it copes with Unicode paths.
-QString writeDepthPng(const sk_sp<SkImage>& image)
+// PNG-encodes the image to the given path. Runs on the CPU worker
+// thread; QFile is used because it copes with Unicode paths.
+QString writeDepthPngTo(const QString& path, const sk_sp<SkImage>& image)
 {
-    if (!image) { return QString(); }
+    if (!image || path.isEmpty()) { return QString(); }
     const auto raster = image->makeRasterImage();
     if (!raster) { return QString(); }
     SkPixmap pixmap;
@@ -82,9 +89,6 @@ QString writeDepthPng(const sk_sp<SkImage>& image)
         return QString();
     }
     const auto data = stream.detachAsData();
-    const QString path = AppSupport::getAppTempPath(
-                QStringLiteral("ai_depth_%1.png")
-                .arg(QDateTime::currentMSecsSinceEpoch()));
     QFile file(path);
     if (!file.open(QIODevice::WriteOnly)) { return QString(); }
     if (file.write(static_cast<const char*>(data->data()),
@@ -92,6 +96,22 @@ QString writeDepthPng(const sk_sp<SkImage>& image)
         return QString();
     }
     return path;
+}
+
+QString writeDepthPng(const sk_sp<SkImage>& image)
+{
+    return writeDepthPngTo(AppSupport::getAppTempPath(
+                QStringLiteral("ai_depth_%1.png")
+                .arg(QDateTime::currentMSecsSinceEpoch())), image);
+}
+
+float median3(const float a, const float b, const float c)
+{
+    float x = a, y = b, z = c;
+    if (x > y) { std::swap(x, y); }
+    if (y > z) { std::swap(y, z); }
+    if (x > y) { std::swap(x, y); }
+    return y;
 }
 
 } // namespace
@@ -199,6 +219,11 @@ AiDepthDialog::AiDepthDialog(Document& doc,
     mInsertBtn = new QPushButton(tr("插入为图层"), this);
     connect(mInsertBtn, &QPushButton::clicked,
             this, [this]() { startPreview(true); });
+    mBatchBtn = new QPushButton(tr("帧批量..."), this);
+    mBatchBtn->setToolTip(tr("按时间轴入出点（或图层自身时长）逐帧推理，"
+                             "含时序平滑，生成图片序列图层"));
+    connect(mBatchBtn, &QPushButton::clicked,
+            this, &AiDepthDialog::startBatch);
     mSettingsBtn = new QPushButton(tr("设置"), this);
     mSettingsBtn->setToolTip(tr("打开模型文件夹，查看手动放置模型的目录结构"));
     connect(mSettingsBtn, &QPushButton::clicked,
@@ -209,6 +234,7 @@ AiDepthDialog::AiDepthDialog(Document& doc,
     const auto btnRow = new QHBoxLayout;
     btnRow->addWidget(mPreviewBtn);
     btnRow->addWidget(mInsertBtn);
+    btnRow->addWidget(mBatchBtn);
     btnRow->addStretch();
     btnRow->addWidget(mSettingsBtn);
     btnRow->addWidget(mCloseBtn);
@@ -231,10 +257,13 @@ AiDepthDialog::AiDepthDialog(Document& doc,
     }
     updateModelState();
     syncButtons();
+    const QString pthWarning = pthHint();
+    if (!pthWarning.isEmpty()) { setStatus(pthWarning); }
 }
 
 AiDepthDialog::~AiDepthDialog()
 {
+    if (mBatch) { mBatch->fCanceled = true; }
     if (mDownloading) { abortDownload(); }
 }
 
@@ -448,16 +477,27 @@ void AiDepthDialog::insertDepthLayer()
         parentGroup->prp_pushUndoRedoName(tr("AI 深度估计"));
         parentGroup->addContained(imgBox);
 
-        // place the depth layer exactly on top of the source layer
-        // (same placement recipe as the vector trace flow)
-        const auto srcTransform = box->getTotalTransform();
-        const qreal halfW = mDepthImage->width() / 2.0;
-        const qreal halfH = mDepthImage->height() / 2.0;
-        const QPointF target = srcTransform.map(QPointF(halfW, halfH));
-        imgBox->planCenterPivotPosition();
-        imgBox->startPosTransform();
-        imgBox->moveByAbs(target - QPointF(halfW, halfH));
-        imgBox->finishTransform();
+        // scale to fit the canvas (aspect preserved) and center on it
+        const auto scene = *mDocument.fActiveScene;
+        if (scene) {
+            const qreal fit = qMin(
+                        static_cast<qreal>(scene->getCanvasWidth()) / mDepthImage->width(),
+                        static_cast<qreal>(scene->getCanvasHeight()) / mDepthImage->height());
+            imgBox->planCenterPivotPosition();
+            imgBox->startScaleTransform();
+            imgBox->setScale(fit);
+            imgBox->finishTransform();
+            const QPointF imgCenter = imgBox->getTotalTransform().map(
+                        QPointF(mDepthImage->width() / 2.0,
+                                mDepthImage->height() / 2.0));
+            imgBox->startPosTransform();
+            imgBox->moveByAbs(QPointF(scene->getCanvasWidth() / 2.0,
+                                      scene->getCanvasHeight() / 2.0)
+                              - imgCenter);
+            imgBox->finishTransform();
+        } else {
+            imgBox->planCenterPivotPosition();
+        }
         imgBox->rename(tr("深度 - %1").arg(box->prp_getName()));
 
         mDocument.actionFinished();
@@ -466,6 +506,321 @@ void AiDepthDialog::insertDepthLayer()
         gPrintExceptionCritical(e);
         QMessageBox::warning(this, tr("AI 深度估计"),
                              tr("插入图层失败，详见日志。"));
+    }
+}
+
+QString AiDepthDialog::pthHint() const
+{
+    const auto scan = [](const QString& dir) {
+        return QDir(dir).entryList({QStringLiteral("*.pth")}, QDir::Files);
+    };
+    const QStringList found = scan(AiDepth::ModelCatalog::downloadDir())
+            + scan(AiDepth::ModelCatalog::bundledDir());
+    if (found.isEmpty()) { return QString(); }
+    return tr("⚠ 检测到 %1 个 .pth 文件（PyTorch 权重）：本程序需要 ONNX 格式，"
+              "无法直接使用；正确的目录与文件结构见「设置」。").arg(found.count());
+}
+
+bool AiDepthDialog::computeBatchFrames(QList<int>& frames, QString& why) const
+{
+    const auto scene = *mDocument.fActiveScene;
+    if (!scene) { why = tr("没有活动场景"); return false; }
+    if (mSourceCombo->currentIndex() < 0) { why = tr("没有源图层"); return false; }
+    const auto box = mBoxes.at(mSourceCombo->currentIndex());
+    if (!box) { why = tr("源图层无效"); return false; }
+
+    // timeline in/out range (scene duration), clamped to the layer's
+    // own span when it has one (e.g. the video length)
+    const auto sceneRange = scene->getFrameRange();
+    int lo = sceneRange.fMin;
+    int hi = sceneRange.fMax;
+    if (const auto durRect = box->getDurationRectangle()) {
+        const auto boxRange = durRect->getAbsFrameRange();
+        lo = qMax(lo, boxRange.fMin);
+        hi = qMin(hi, boxRange.fMax);
+    }
+    lo = qMax(0, lo);
+    if (hi < lo) {
+        why = tr("可用帧范围为空（时间轴范围与图层时长无交集）");
+        return false;
+    }
+    for (int f = lo; f <= hi; f++) { frames << f; }
+    return true;
+}
+
+void AiDepthDialog::startBatch()
+{
+    if (mBusy || mDownloading) { return; }
+    if (!AiDepth::available()) {
+        QMessageBox::warning(this, tr("AI 深度估计"),
+                             tr("未找到 onnxruntime.dll，无法推理。"));
+        return;
+    }
+    if (AiDepth::ModelCatalog::resolveModelDir(currentModelId()).isEmpty()) {
+        QMessageBox::information(this, tr("AI 深度估计"),
+                                 tr("所选模型尚未就绪，请先点击「下载模型」。"));
+        return;
+    }
+    QList<int> frames;
+    QString why;
+    if (!computeBatchFrames(frames, why)) {
+        QMessageBox::information(this, tr("AI 深度估计"), why);
+        return;
+    }
+    const qreal secPerFrame = currentModelId() == QStringLiteral("small") ?
+                0.8 : 2.2;
+    const auto btn = QMessageBox::question(this, tr("帧批量"),
+        tr("将处理 %1 帧（第 %2 ~ %3 帧，含时序平滑），预计约 %4 分钟，"
+           "结果将作为图片序列图层插入。是否开始？")
+        .arg(frames.count())
+        .arg(frames.first()).arg(frames.last())
+        .arg(int(frames.count() * secPerFrame / 60) + 1));
+    if (btn != QMessageBox::Yes) { return; }
+
+    const auto box = mBoxes.at(mSourceCombo->currentIndex());
+    mBatch = std::make_shared<BatchState>();
+    mBatch->fBox = box;
+    mBatch->fAbsFrames = frames;
+    mBatch->fOpts.fInputSize = currentInputSize();
+    mBatch->fOpts.fOutputMode = mOutputCombo->currentIndex();
+    mBatch->fOutDir = AppSupport::getAppTempPath(
+                QStringLiteral("ai_depth_seq_%1")
+                .arg(QDateTime::currentMSecsSinceEpoch()));
+    QDir().mkpath(mBatch->fOutDir);
+
+    mBusy = true;
+    syncButtons();
+    mBatchProgress = new QProgressDialog(
+                tr("批量推理中（含时序平滑）..."), tr("取消"),
+                0, frames.count(), this);
+    mBatchProgress->setWindowModality(Qt::WindowModal);
+    mBatchProgress->setMinimumDuration(0);
+    mBatchProgress->setValue(0);
+    connect(mBatchProgress, &QProgressDialog::canceled, this, [this]() {
+        if (mBatch) { mBatch->fCanceled = true; }
+    });
+    setStatus(tr("批量推理：共 %1 帧...").arg(frames.count()));
+    nextBatchFrame();
+}
+
+void AiDepthDialog::nextBatchFrame()
+{
+    if (!mBatch) { return; }
+    if (!mBatch->fErr.isEmpty()) {
+        finishBatch(false, tr("推理失败：%1").arg(mBatch->fErr));
+        return;
+    }
+    if (mBatch->fCanceled) { finishBatch(false, tr("已取消")); return; }
+    if (mBatch->fIdx >= mBatch->fAbsFrames.count()) {
+        finishBatch(true, QString());
+        return;
+    }
+    const auto box = mBatch->fBox.data();
+    if (!box) { finishBatch(false, tr("源图层已失效")); return; }
+
+    const int absFrame = mBatch->fAbsFrames.at(mBatch->fIdx);
+    const int relFrame = box->prp_absFrameToRelFrame(absFrame);
+    const auto renderData = box->queExternalRender(relFrame, true);
+    if (!renderData) {
+        finishBatch(false, tr("第 %1 帧渲染任务创建失败").arg(absFrame));
+        return;
+    }
+    const QPointer<AiDepthDialog> guard(this);
+    renderData->addDependent({
+        [guard, renderData, absFrame]() {
+            if (!guard || !guard->mBatch) { return; }
+            guard->mBatch->fSrc = renderData->fRenderedImage;
+            if (!guard->mBatch->fSrc) {
+                guard->finishBatch(false,
+                    guard->tr("第 %1 帧渲染失败（内容为空）").arg(absFrame));
+                return;
+            }
+            guard->runBatchInference();
+        },
+        [guard]() {
+            if (guard && guard->mBatch) {
+                guard->finishBatch(false, guard->tr("源渲染已取消"));
+            }
+        }
+    });
+}
+
+void AiDepthDialog::runBatchInference()
+{
+    const auto state = mBatch;
+    const int idx = state->fIdx;
+    const int absFrame = state->fAbsFrames.at(idx);
+    const QString modelDir = AiDepth::ModelCatalog::resolveModelDir(
+                currentModelId());
+    const QPointer<AiDepthDialog> guard(this);
+
+    mTask = enve::make_shared<eCustomCpuTask>(
+        nullptr,
+        [state, modelDir, idx]() {
+            std::vector<float> raw;
+            int w = 0, h = 0;
+            QString err;
+            const auto st = AiDepth::runDepthRaw(state->fSrc, modelDir,
+                                                 state->fOpts.fInputSize,
+                                                 raw, w, h, err);
+            if (st != AiDepth::DepthStatus::Ok) {
+                state->fErr = err;
+                return;
+            }
+            const size_t n = static_cast<size_t>(w) * h;
+            if (state->fH1.size() != n || state->fOutPrev.size() != n ||
+                w != state->fW || h != state->fH) {
+                // first frame or resolution change: reset the history
+                state->fH1.clear();
+                state->fH2.clear();
+                state->fOutPrev.clear();
+                state->fW = w;
+                state->fH = h;
+                state->fSrcW = state->fSrc->width();
+                state->fSrcH = state->fSrc->height();
+            }
+            // one global value range for the whole clip (taken from the
+            // first frame, padded) keeps overall brightness from pumping
+            if (!state->fRangeSet) {
+                float mn = raw[0];
+                float mx = raw[0];
+                for (const auto v : raw) {
+                    if (v < mn) { mn = v; }
+                    if (v > mx) { mx = v; }
+                }
+                const float pad = qMax(1e-4f, (mx - mn) * 0.02f);
+                state->fRangeMin = mn - pad;
+                state->fRangeMax = mx + pad;
+                state->fRangeSet = true;
+            }
+            const float range = state->fRangeMax - state->fRangeMin;
+            const float inv = range > 1e-6f ? 1.f / range : 0.f;
+            std::vector<float> nrm(n);
+            for (size_t i = 0; i < n; i++) {
+                float v = (raw[i] - state->fRangeMin) * inv;
+                if (v < 0.f) { v = 0.f; }
+                else if (v > 1.f) { v = 1.f; }
+                nrm[i] = v;
+            }
+            // temporal smoothing: median-3 kills single-frame spikes,
+            // EMA (alpha 0.7) smooths residual jitter
+            std::vector<float> smooth(n);
+            if (state->fH2.size() == n) {
+                for (size_t i = 0; i < n; i++) {
+                    smooth[i] = median3(state->fH2[i], state->fH1[i], nrm[i]);
+                }
+            } else {
+                smooth = nrm;
+            }
+            if (state->fOutPrev.size() == n) {
+                const float a = 0.7f;
+                for (size_t i = 0; i < n; i++) {
+                    smooth[i] = a * smooth[i] + (1.f - a) * state->fOutPrev[i];
+                }
+            }
+            state->fH2 = state->fH1;
+            state->fH1 = nrm;
+            state->fOutPrev = smooth;
+
+            const auto img = AiDepth::colorizeDepth(
+                        smooth, w, h, 0.f, 1.f,
+                        state->fOpts.fOutputMode,
+                        state->fSrcW, state->fSrcH);
+            if (!img) {
+                state->fErr = QStringLiteral("colorize failed");
+                return;
+            }
+            state->fPngPath = writeDepthPngTo(
+                        state->fOutDir + QStringLiteral("/depth_%1.png")
+                        .arg(idx, 5, 10, QLatin1Char('0')), img);
+            if (state->fPngPath.isEmpty()) {
+                state->fErr = QStringLiteral("png write failed");
+            }
+        },
+        [guard, state, absFrame]() {
+            if (!guard || !guard->mBatch) { return; }
+            if (!state->fErr.isEmpty()) {
+                guard->finishBatch(false,
+                    guard->tr("第 %1 帧推理失败：%2")
+                        .arg(absFrame).arg(state->fErr));
+                return;
+            }
+            if (guard->mBatchProgress) {
+                guard->mBatchProgress->setValue(state->fIdx + 1);
+            }
+            state->fIdx++;
+            guard->nextBatchFrame();
+        },
+        [guard]() {
+            if (guard && guard->mBatch) {
+                guard->finishBatch(false, guard->tr("推理任务已取消"));
+            }
+        });
+    mTask->queTask();
+}
+
+void AiDepthDialog::finishBatch(const bool ok, const QString& failReason)
+{
+    const auto state = mBatch;
+    mBatch.reset();
+    if (mBatchProgress) {
+        mBatchProgress->close();
+        mBatchProgress->deleteLater();
+        mBatchProgress = nullptr;
+    }
+    mBusy = false;
+    syncButtons();
+    if (!state) { return; }
+    if (!ok) {
+        setStatus(tr("批量未完成：%1。已生成 %2/%3 帧，文件保留在 %4")
+                  .arg(failReason)
+                  .arg(state->fIdx).arg(state->fAbsFrames.count())
+                  .arg(state->fOutDir));
+        return;
+    }
+    const auto scene = *mDocument.fActiveScene;
+    const auto box = state->fBox.data();
+    if (!scene || !box || !box->getParentGroup()) {
+        setStatus(tr("帧图已生成于 %1，但场景/源图层已失效，未插入图层。")
+                  .arg(state->fOutDir));
+        return;
+    }
+    try {
+        const auto seqBox = enve::make_shared<ImageSequenceBox>();
+        seqBox->setFolderPath(state->fOutDir);
+        // play the sequence exactly over the processed frame range
+        seqBox->createDurationRectangle();
+        if (const auto durRect = seqBox->getDurationRectangle()) {
+            durRect->setMinAbsFrame(state->fAbsFrames.first());
+            durRect->setFramesDuration(state->fAbsFrames.count());
+        }
+        const auto parentGroup = box->getParentGroup();
+        parentGroup->prp_pushUndoRedoName(tr("AI 深度估计（帧批量）"));
+        parentGroup->addContained(seqBox);
+
+        // scale to fit the canvas (aspect preserved) and center on it
+        const qreal fit = qMin(
+                    static_cast<qreal>(scene->getCanvasWidth()) / state->fSrcW,
+                    static_cast<qreal>(scene->getCanvasHeight()) / state->fSrcH);
+        seqBox->planCenterPivotPosition();
+        seqBox->startScaleTransform();
+        seqBox->setScale(fit);
+        seqBox->finishTransform();
+        const QPointF center = seqBox->getTotalTransform().map(
+                    QPointF(state->fSrcW / 2.0, state->fSrcH / 2.0));
+        seqBox->startPosTransform();
+        seqBox->moveByAbs(QPointF(scene->getCanvasWidth() / 2.0,
+                                  scene->getCanvasHeight() / 2.0) - center);
+        seqBox->finishTransform();
+        seqBox->rename(tr("深度序列 - %1").arg(box->prp_getName()));
+        mDocument.actionFinished();
+        setStatus(tr("已插入深度序列图层（%1 帧，含时序平滑，可 Ctrl+Z 撤销）。")
+                  .arg(state->fAbsFrames.count()));
+    } catch(const std::exception& e) {
+        gPrintExceptionCritical(e);
+        QMessageBox::warning(this, tr("AI 深度估计"),
+                             tr("插入序列图层失败，帧图保留在：%1")
+                             .arg(state->fOutDir));
     }
 }
 
@@ -513,9 +868,12 @@ void AiDepthDialog::openSettings()
         updateModelState();
         const bool ready = !AiDepth::ModelCatalog::resolveModelDir(
                     currentModelId()).isEmpty();
-        QMessageBox::information(&dlg, tr("AI 深度估计"),
-            ready ? tr("当前所选模型已就绪 ✓（可切换上方模型逐个检查）")
-                  : tr("当前所选模型仍未就绪：文件缺失、大小或校验不符。"));
+        QString msg = ready ?
+                    tr("当前所选模型已就绪 ✓（可切换上方模型逐个检查）") :
+                    tr("当前所选模型仍未就绪：文件缺失、大小或校验不符。");
+        const QString hint = pthHint();
+        if (!hint.isEmpty()) { msg += QStringLiteral("\n\n") + hint; }
+        QMessageBox::information(&dlg, tr("AI 深度估计"), msg);
     });
     connect(closeBtn, &QPushButton::clicked, &dlg, &QDialog::accept);
 

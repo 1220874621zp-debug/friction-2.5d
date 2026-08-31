@@ -25,6 +25,7 @@
 #include "core_global.h"
 
 #include <QString>
+#include <vector>
 
 #include "skia/skiaincludes.h"
 
@@ -53,6 +54,25 @@ CORE_EXPORT DepthStatus runDepth(const sk_sp<SkImage>& srcImage,
                                  const Options& opts,
                                  sk_sp<SkImage>& depthOut,
                                  QString& errOut);
+
+// Raw single-frame inference: un-normalized disparity values at the
+// inference resolution (sides are multiples of 14, long side clamped to
+// inputSize). For video pipelines that smooth raw values across frames.
+CORE_EXPORT DepthStatus runDepthRaw(const sk_sp<SkImage>& srcImage,
+                                    const QString& modelDir,
+                                    const int inputSize,
+                                    std::vector<float>& depthOut,
+                                    int& wOut, int& hOut,
+                                    QString& errOut);
+
+// Colorizes a raw depth map with the given value range (values are
+// clamped) and resamples the result to dstW x dstH. outputMode as in
+// Options; pass mn = 0 and mx = 1 for data that is already normalized.
+CORE_EXPORT sk_sp<SkImage> colorizeDepth(const std::vector<float>& data,
+                                         const int w, const int h,
+                                         const float mn, const float mx,
+                                         const int outputMode,
+                                         const int dstW, const int dstH);
 
 } // namespace AiDepth
 

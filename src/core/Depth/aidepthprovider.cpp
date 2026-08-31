@@ -209,13 +209,17 @@ QString versionString()
     return QString::fromLatin1(lib.mBase->GetVersionString());
 }
 
-DepthStatus runDepth(const sk_sp<SkImage>& srcImage,
-                     const QString& modelDir,
-                     const Options& opts,
-                     sk_sp<SkImage>& depthOut,
-                     QString& errOut)
+// shared inference core: preprocess + session run; returns the raw
+// (un-normalized) disparity map at the inference resolution
+static DepthStatus inferRaw(const sk_sp<SkImage>& srcImage,
+                            const QString& modelDir,
+                            const int inputSize,
+                            std::vector<float>& rawOut,
+                            int& wOut, int& hOut,
+                            int& srcWOut, int& srcHOut,
+                            QString& errOut)
 {
-    depthOut = nullptr;
+    rawOut.clear();
     errOut.clear();
 
     const auto& lib = ortLib();
@@ -244,8 +248,8 @@ DepthStatus runDepth(const sk_sp<SkImage>& srcImage,
     }
 
     // ---- preprocess: bicubic resize keeping aspect, sides as
-    // multiples of 14 with the longest side clamped to fInputSize
-    const int target = qMax(14, opts.fInputSize - opts.fInputSize % 14);
+    // multiples of 14 with the longest side clamped to inputSize
+    const int target = qMax(14, inputSize - inputSize % 14);
     int tw, th;
     if (srcW >= srcH) {
         tw = target;
@@ -432,13 +436,41 @@ DepthStatus runDepth(const sk_sp<SkImage>& srcImage,
         }
     }
 
-    // ---- postprocess: min-max normalize, colorize, scale to source
+    // ---- hand the raw values to the caller
     const size_t count = outH * outW;
-    float mn = outData[0];
-    float mx = outData[0];
-    for (size_t i = 1; i < count; i++) {
-        if (outData[i] < mn) { mn = outData[i]; }
-        if (outData[i] > mx) { mx = outData[i]; }
+    rawOut.resize(count);
+    std::memcpy(rawOut.data(), outData, count * sizeof(float));
+    if (ownOutData) { free(outData); }
+    api->ReleaseValue(outputVal);
+
+    wOut = static_cast<int>(outW);
+    hOut = static_cast<int>(outH);
+    srcWOut = srcW;
+    srcHOut = srcH;
+    return DepthStatus::Ok;
+}
+
+DepthStatus runDepthRaw(const sk_sp<SkImage>& srcImage,
+                        const QString& modelDir,
+                        const int inputSize,
+                        std::vector<float>& depthOut,
+                        int& wOut, int& hOut,
+                        QString& errOut)
+{
+    int srcW, srcH;
+    return inferRaw(srcImage, modelDir, inputSize, depthOut,
+                    wOut, hOut, srcW, srcH, errOut);
+}
+
+sk_sp<SkImage> colorizeDepth(const std::vector<float>& data,
+                             const int w, const int h,
+                             const float mn, const float mx,
+                             const int outputMode,
+                             const int dstW, const int dstH)
+{
+    const size_t count = static_cast<size_t>(w) * h;
+    if (count == 0 || data.size() < count || dstW <= 0 || dstH <= 0) {
+        return nullptr;
     }
     const float range = mx - mn;
     const float invRange = range > 1e-6f ? 1.f / range : 0.f;
@@ -446,10 +478,12 @@ DepthStatus runDepth(const sk_sp<SkImage>& srcImage,
     std::vector<unsigned char> depthRgba(count * 4);
     for (size_t i = 0; i < count; i++) {
         // larger disparity = closer to camera
-        float v = (outData[i] - mn) * invRange;
-        if (opts.fOutputMode == 1) { v = 1.f - v; } // inverted: far = bright
+        float v = (data[i] - mn) * invRange;
+        if (v < 0.f) { v = 0.f; }
+        else if (v > 1.f) { v = 1.f; }
+        if (outputMode == 1) { v = 1.f - v; } // inverted: far = bright
         unsigned char r, g, b;
-        if (opts.fOutputMode == 2) {
+        if (outputMode == 2) {
             jetColor(v, r, g, b);
         } else {
             const auto u = static_cast<unsigned char>(v * 255.f + 0.5f);
@@ -460,23 +494,41 @@ DepthStatus runDepth(const sk_sp<SkImage>& srcImage,
         depthRgba[i * 4 + 2] = b;
         depthRgba[i * 4 + 3] = 255;
     }
-    if (ownOutData) { free(outData); }
-    api->ReleaseValue(outputVal);
 
-    const auto depthInfo = SkImageInfo::Make(
-                static_cast<int>(outW), static_cast<int>(outH),
-                kRGBA_8888_SkColorType, kUnpremul_SkAlphaType);
+    const auto depthInfo = SkImageInfo::Make(w, h,
+                                             kRGBA_8888_SkColorType,
+                                             kUnpremul_SkAlphaType);
     const auto depthSmall = SkImage::MakeRasterCopy(
                 SkPixmap(depthInfo, depthRgba.data(),
-                         static_cast<size_t>(outW) * 4));
-    if (!depthSmall) {
-        errOut = QStringLiteral("depth image build failed");
-        return DepthStatus::Error;
-    }
+                         static_cast<size_t>(w) * 4));
+    if (!depthSmall) { return nullptr; }
+    if (w == dstW && h == dstH) { return depthSmall; }
+    return resampleImage(depthSmall, dstW, dstH);
+}
 
-    depthOut = resampleImage(depthSmall, srcW, srcH);
+DepthStatus runDepth(const sk_sp<SkImage>& srcImage,
+                     const QString& modelDir,
+                     const Options& opts,
+                     sk_sp<SkImage>& depthOut,
+                     QString& errOut)
+{
+    depthOut = nullptr;
+    std::vector<float> raw;
+    int w, h, srcW, srcH;
+    const auto st = inferRaw(srcImage, modelDir, opts.fInputSize,
+                             raw, w, h, srcW, srcH, errOut);
+    if (st != DepthStatus::Ok) { return st; }
+
+    float mn = raw[0];
+    float mx = raw[0];
+    for (const auto v : raw) {
+        if (v < mn) { mn = v; }
+        if (v > mx) { mx = v; }
+    }
+    depthOut = colorizeDepth(raw, w, h, mn, mx, opts.fOutputMode,
+                             srcW, srcH);
     if (!depthOut) {
-        errOut = QStringLiteral("depth upscale failed");
+        errOut = QStringLiteral("depth image build failed");
         return DepthStatus::Error;
     }
     return DepthStatus::Ok;

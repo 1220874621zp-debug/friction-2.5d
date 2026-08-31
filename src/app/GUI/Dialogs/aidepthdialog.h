@@ -23,6 +23,10 @@
 #define AIDEPTHDIALOG_H
 
 #include <QDialog>
+#include <QPointer>
+
+#include <memory>
+#include <vector>
 
 #include "Depth/aidepthprovider.h"
 #include "Depth/modelcatalog.h"
@@ -36,6 +40,7 @@ class Document;
 class QComboBox;
 class QLabel;
 class QProgressBar;
+class QProgressDialog;
 class QPushButton;
 class QNetworkAccessManager;
 class QNetworkReply;
@@ -59,9 +64,31 @@ private:
         AiDepth::Options fOpts;
     };
 
+    // per-frame batch pipeline: render -> raw inference -> temporal
+    // smoothing (median-3 + EMA) -> colorize -> png -> next frame
+    struct BatchState {
+        QPointer<BoundingBox> fBox;
+        QList<int> fAbsFrames;
+        int fIdx = 0;
+        QString fOutDir;
+        AiDepth::Options fOpts;
+        sk_sp<SkImage> fSrc;
+        std::vector<float> fH1, fH2, fOutPrev; // smoothing history
+        float fRangeMin = 0.f;
+        float fRangeMax = 1.f;
+        bool fRangeSet = false;
+        int fW = 0, fH = 0;
+        int fSrcW = 0, fSrcH = 0;
+        bool fCanceled = false;
+        QString fErr;
+        QString fPngPath;
+    };
+
     QString currentModelId() const;
     int currentInputSize() const;
     QString resultKey() const;
+    QString pthHint() const;
+    bool computeBatchFrames(QList<int>& frames, QString& why) const;
 
     void updateModelState();
     void syncButtons();
@@ -72,6 +99,11 @@ private:
     void insertDepthLayer();
     void updateDepthPreview();
     void openSettings();
+
+    void startBatch();
+    void nextBatchFrame();
+    void runBatchInference();
+    void finishBatch(const bool ok, const QString& failReason);
 
     void startDownload();
     void abortDownload();
@@ -96,6 +128,7 @@ private:
     QLabel* mStatusLine = nullptr;
     QPushButton* mPreviewBtn = nullptr;
     QPushButton* mInsertBtn = nullptr;
+    QPushButton* mBatchBtn = nullptr;
     QPushButton* mSettingsBtn = nullptr;
     QPushButton* mCloseBtn = nullptr;
 
@@ -106,6 +139,10 @@ private:
     QString mResultKey;
     stdsptr<eCustomCpuTask> mTask;
     bool mBusy = false;
+
+    // batch (per-frame) state; BatchState defined above
+    std::shared_ptr<BatchState> mBatch;
+    QProgressDialog* mBatchProgress = nullptr;
 
     // download state
     QNetworkAccessManager* mNet = nullptr;
