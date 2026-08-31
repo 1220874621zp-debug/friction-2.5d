@@ -2000,8 +2000,11 @@ void MainWindow::traceSelectedImage()
     VTracer::Options opts;
     if (!VectorTraceDialog::sExec(opts, this)) { return; }
 
-    QProgressDialog progress(tr("正在转绘..."), QString(),
-                             0, images.count(), this);
+    // Indeterminate progress, and no processEvents while tracing: queued
+    // UI events firing between the FFI call and the container insert can
+    // re-enter container updates (blend effect UI crash).
+    QProgressDialog progress(tr("正在转绘，请稍候..."), QString(),
+                             0, 0, this);
     progress.setWindowModality(Qt::WindowModal);
     progress.setMinimumDuration(0);
 
@@ -2009,9 +2012,6 @@ void MainWindow::traceSelectedImage()
     QStringList failedNames;
     for (const auto &imgBox : images) {
         if (progress.wasCanceled()) { break; }
-        progress.setValue(traced);
-        progress.setLabelText(tr("正在转绘「%1」...").arg(imgBox->prp_getName()));
-        QCoreApplication::processEvents();
 
         // decode synchronously from the source file; QFile handles
         // Unicode paths on Windows (same rationale as ImageLoader)
@@ -2063,7 +2063,6 @@ void MainWindow::traceSelectedImage()
         const auto parentGroup = imgBox->getParentGroup();
         parentGroup->prp_pushUndoRedoName(tr("矢量描摹"));
         parentGroup->insertContained(-1, result);
-        result->rename(tr("描摹 - %1").arg(imgBox->prp_getName()));
 
         // place the traced group centered on the source layer
         const auto imgTransform = imgBox->getTotalTransform();
@@ -2074,10 +2073,12 @@ void MainWindow::traceSelectedImage()
         result->startPosTransform();
         result->moveByAbs(target - QPointF(halfW, halfH));
         result->finishTransform();
+        // rename only after all structural changes are done
+        result->rename(tr("描摹 - %1").arg(imgBox->prp_getName()));
         traced++;
     }
 
-    progress.setValue(images.count());
+    progress.close();
     mDocument.actionFinished();
 
     if (!failedNames.isEmpty()) {

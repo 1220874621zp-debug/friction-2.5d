@@ -915,11 +915,15 @@ void ContainerBox::handleUIDelayed(
         const int drawId,
         BoundingBox* const prevBox,
         BoundingBox* const nextBox) {
-    for(int i = 0; i < delayed.count(); i++) {
-        const auto& del = delayed.at(i);
+    // The del() callbacks may re-enter container updates (insertContained
+    // below) which can invalidate the list storage mid-iteration; work on
+    // a snapshot and requeue the entries that did not fire.
+    const auto snapshot = delayed;
+    delayed.clear();
+    for(const auto& del : snapshot) {
         if(const auto effect = del(drawId, prevBox, nextBox)) {
             const auto box = effect->getFirstAncestor<BoundingBox>();
-            if(!box) continue;
+            if(!box) { delayed << del; continue; }
             int contId;
             if(prevBox) {
                 contId = mContained.indexOf(prevBox->ref<eBoxOrSound>());
@@ -931,8 +935,7 @@ void ContainerBox::handleUIDelayed(
             const auto shadow = enve::make_shared<BlendEffectBoxShadow>(box, effect);
             mBlendShadows << shadow;
             insertContained(contId, shadow);
-            delayed.removeAt(i--);
-        }
+        } else { delayed << del; }
     }
 }
 
