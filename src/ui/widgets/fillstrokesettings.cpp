@@ -47,13 +47,9 @@ FillStrokeSettingsWidget::FillStrokeSettingsWidget(Document &document,
     , mCurrentStrokePaintType(NOPAINT)
     , mCurrentStrokeGradientType(GradientType::LINEAR)
     , mCurrentFillGradientType(GradientType::LINEAR)
-    , mFillTargetButton(nullptr)
-    , mStrokeTargetButton(nullptr)
-    , mFillNoneButton(nullptr)
-    , mFillFlatButton(nullptr)
-    , mFillGradientButton(nullptr)
-    , mStrokeSettingsWidget(nullptr)
-    , mStrokeJoinCapWidget(nullptr)
+    , mTargetCombo(nullptr)
+    , mPaintTypeCombo(nullptr)
+    , mStrokeSettingsWidget(nullptr)    , mStrokeJoinCapWidget(nullptr)
     , mBevelJoinStyleButton(nullptr)
     , mMiterJointStyleButton(nullptr)
     , mRoundJoinStyleButton(nullptr)
@@ -72,35 +68,36 @@ FillStrokeSettingsWidget::FillStrokeSettingsWidget(Document &document,
     connect(&mDocument, &Document::selectedPaintSettingsChanged,
             this, &FillStrokeSettingsWidget::updateCurrentSettings);
 
-    // main buttons
-    mFillTargetButton = new QPushButton(QIcon::fromTheme("fill_flat_2"), tr("Fill"), this);
-    mStrokeTargetButton = new QPushButton(QIcon::fromTheme("stroke_flat_2"), tr("Stroke"), this);
-    mFillNoneButton = new QPushButton(QIcon::fromTheme("fill_none_2"), tr("None"), this);
-    mFillFlatButton = new QPushButton(QIcon::fromTheme("fill_flat_2"), tr("Flat"), this);
-    mFillGradientButton = new QPushButton(QIcon::fromTheme("fill_gradient_2"), tr("Gradient"), this);
+    // main dropdowns (fill/stroke target + paint type), side by side;
+    // activated() only fires on user picks so programmatic index sync
+    // never re-triggers the actions
+    mTargetCombo = new QComboBox(this);
+    mTargetCombo->setIconSize(QSize(eSizesUI::widget, eSizesUI::widget));
+    mTargetCombo->addItem(QIcon::fromTheme("fill_flat_2"), tr("Fill"));
+    mTargetCombo->addItem(QIcon::fromTheme("stroke_flat_2"), tr("Stroke"));
+    mTargetCombo->setFocusPolicy(Qt::NoFocus);
+    mTargetCombo->setToolTip(tr("Choose whether the settings below edit the fill or the stroke"));
+    connect(mTargetCombo, QOverload<int>::of(&QComboBox::activated),
+            this, [this](const int index) {
+        if (index == 1) { setStrokeTarget(); }
+        else { setFillTarget(); }
+    });
 
-    mFillTargetButton->setCheckable(true);
-    mFillNoneButton->setCheckable(true);
-    mFillFlatButton->setCheckable(true);
-    mFillGradientButton->setCheckable(true);
-    mStrokeTargetButton->setCheckable(true);
-
-    mFillTargetButton->setFocusPolicy(Qt::NoFocus);
-    mFillNoneButton->setFocusPolicy(Qt::NoFocus);
-    mFillFlatButton->setFocusPolicy(Qt::NoFocus);
-    mFillGradientButton->setFocusPolicy(Qt::NoFocus);
-    mStrokeTargetButton->setFocusPolicy(Qt::NoFocus);
-
-    connect(mFillTargetButton, &QPushButton::released,
-            this, &FillStrokeSettingsWidget::setFillTarget);
-    connect(mFillNoneButton, &QPushButton::released,
-            this, &FillStrokeSettingsWidget::setNoneFillAction);
-    connect(mFillFlatButton, &QPushButton::released,
-            this, &FillStrokeSettingsWidget::setFlatFillAction);
-    connect(mFillGradientButton, &QPushButton::released,
-            this, &FillStrokeSettingsWidget::setGradientFillAction);
-    connect(mStrokeTargetButton, &QPushButton::released,
-            this, &FillStrokeSettingsWidget::setStrokeTarget);
+    mPaintTypeCombo = new QComboBox(this);
+    mPaintTypeCombo->setIconSize(QSize(eSizesUI::widget, eSizesUI::widget));
+    mPaintTypeCombo->addItem(QIcon::fromTheme("fill_none_2"), tr("None"));
+    mPaintTypeCombo->addItem(QIcon::fromTheme("fill_flat_2"), tr("Flat"));
+    mPaintTypeCombo->addItem(QIcon::fromTheme("fill_gradient_2"), tr("Gradient"));
+    mPaintTypeCombo->setFocusPolicy(Qt::NoFocus);
+    mPaintTypeCombo->setToolTip(tr("Paint type of the current target"));
+    connect(mPaintTypeCombo, QOverload<int>::of(&QComboBox::activated),
+            this, [this](const int index) {
+        switch (index) {
+        case 0: setNoneFillAction(); break;
+        case 2: setGradientFillAction(); break;
+        default: setFlatFillAction(); break;
+        }
+    });
 
     // stroke width
     const auto lineWidget = new QWidget(this);
@@ -267,11 +264,8 @@ FillStrokeSettingsWidget::FillStrokeSettingsWidget(Document &document,
         mFlatCapStyleButton->setFixedHeight(eSizesUI::button);
         mSquareCapStyleButton->setFixedHeight(eSizesUI::button);
         mRoundCapStyleButton->setFixedHeight(eSizesUI::button);
-        mFillTargetButton->setFixedHeight(eSizesUI::button);
-        mStrokeTargetButton->setFixedHeight(eSizesUI::button);
-        mFillNoneButton->setFixedHeight(eSizesUI::button);
-        mFillFlatButton->setFixedHeight(eSizesUI::button);
-        mFillGradientButton->setFixedHeight(eSizesUI::button);
+        mTargetCombo->setFixedHeight(eSizesUI::button);
+        mPaintTypeCombo->setFixedHeight(eSizesUI::button);
         mLinearGradientButton->setFixedHeight(eSizesUI::button);
         mRadialGradientButton->setFixedHeight(eSizesUI::button);
         mLineWidthSpin->setFixedHeight(eSizesUI::button);
@@ -287,24 +281,15 @@ FillStrokeSettingsWidget::FillStrokeSettingsWidget(Document &document,
     mStrokeSettingsLayout->addWidget(lineWidget);
     mStrokeSettingsLayout->addWidget(mStrokeJoinCapWidget);
 
+    // both dropdowns share one row
     const auto mTargetWidget = new QWidget(this);
     const auto mTargetLayout = new QHBoxLayout(mTargetWidget);
 
     mTargetWidget->setContentsMargins(0, 0, 0, 0);
     mTargetLayout->setMargin(0);
 
-    mTargetLayout->addWidget(mFillTargetButton);
-    mTargetLayout->addWidget(mStrokeTargetButton);
-
-    const auto mColorTypeWidget = new QWidget(this);
-    const auto mColorTypeLayout = new QHBoxLayout(mColorTypeWidget);
-
-    mColorTypeWidget->setContentsMargins(0, 0, 0, 0);
-    mColorTypeLayout->setMargin(0);
-
-    mColorTypeLayout->addWidget(mFillNoneButton);
-    mColorTypeLayout->addWidget(mFillFlatButton);
-    mColorTypeLayout->addWidget(mFillGradientButton);
+    mTargetLayout->addWidget(mTargetCombo, 1);
+    mTargetLayout->addWidget(mPaintTypeCombo, 1);
 
     const auto mFillAndStrokeWidget = new QWidget(this);
     mFillAndStrokeWidget->setContentsMargins(0, 0, 0, 0);
@@ -312,7 +297,6 @@ FillStrokeSettingsWidget::FillStrokeSettingsWidget(Document &document,
     const auto mMainLayout = new QVBoxLayout(mFillAndStrokeWidget);
 
     mMainLayout->addWidget(mTargetWidget);
-    mMainLayout->addWidget(mColorTypeWidget);
     mMainLayout->addWidget(mGradientTypeWidget);
     mMainLayout->addWidget(mStrokeSettingsWidget);
     mMainLayout->addWidget(mGradientWidget);
@@ -361,9 +345,7 @@ void FillStrokeSettingsWidget::setRadialGradientAction()
 void FillStrokeSettingsWidget::setGradientFillAction()
 {
     if (mTarget == PaintSetting::OUTLINE) { mStrokeJoinCapWidget->show(); }
-    mFillGradientButton->setChecked(true);
-    mFillFlatButton->setChecked(false);
-    mFillNoneButton->setChecked(false);
+    mPaintTypeCombo->setCurrentIndex(2);
     paintTypeSet(GRADIENTPAINT);
 
     const auto scene = *mDocument.fActiveScene;
@@ -385,9 +367,7 @@ void FillStrokeSettingsWidget::setBrushFillAction()
 void FillStrokeSettingsWidget::setFlatFillAction()
 {
     if (mTarget == PaintSetting::OUTLINE) { mStrokeJoinCapWidget->show(); }
-    mFillGradientButton->setChecked(false);
-    mFillFlatButton->setChecked(true);
-    mFillNoneButton->setChecked(false);
+    mPaintTypeCombo->setCurrentIndex(1);
     paintTypeSet(FLATPAINT);
     mDocument.actionFinished();
 }
@@ -395,9 +375,7 @@ void FillStrokeSettingsWidget::setFlatFillAction()
 void FillStrokeSettingsWidget::setNoneFillAction()
 {
     if (mTarget == PaintSetting::OUTLINE) { mStrokeJoinCapWidget->show(); }
-    mFillGradientButton->setChecked(false);
-    mFillFlatButton->setChecked(false);
-    mFillNoneButton->setChecked(true);
+    mPaintTypeCombo->setCurrentIndex(0);
     paintTypeSet(NOPAINT);
     mDocument.actionFinished();
 }
@@ -422,19 +400,13 @@ void FillStrokeSettingsWidget::updateAfterTargetChanged() {
     setCurrentPaintType(getCurrentPaintTypeVal());
     switch (getCurrentPaintTypeVal()) {
     case NOPAINT:
-        mFillGradientButton->setChecked(false);
-        mFillFlatButton->setChecked(false);
-        mFillNoneButton->setChecked(true);
+        mPaintTypeCombo->setCurrentIndex(0);
         break;
     case FLATPAINT:
-        mFillGradientButton->setChecked(false);
-        mFillFlatButton->setChecked(true);
-        mFillNoneButton->setChecked(false);
+        mPaintTypeCombo->setCurrentIndex(1);
         break;
     case GRADIENTPAINT:
-        mFillGradientButton->setChecked(true);
-        mFillFlatButton->setChecked(false);
-        mFillNoneButton->setChecked(false);
+        mPaintTypeCombo->setCurrentIndex(2);
         mGradientWidget->setCurrentGradient(getCurrentGradientVal());
         mLinearGradientButton->setChecked(getCurrentGradientTypeVal() == GradientType::LINEAR);
         mRadialGradientButton->setChecked(getCurrentGradientTypeVal() == GradientType::RADIAL);
@@ -846,8 +818,7 @@ void FillStrokeSettingsWidget::setRoundCapStyleAction()
 void FillStrokeSettingsWidget::setFillTarget()
 {
     mTarget = PaintSetting::FILL;
-    mFillTargetButton->setChecked(true);
-    mStrokeTargetButton->setChecked(false);
+    mTargetCombo->setCurrentIndex(0);
     mStrokeSettingsWidget->hide();
     updateAfterTargetChanged();
     updateColorAnimator();
@@ -856,8 +827,7 @@ void FillStrokeSettingsWidget::setFillTarget()
 void FillStrokeSettingsWidget::setStrokeTarget()
 {
     mTarget = PaintSetting::OUTLINE;
-    mStrokeTargetButton->setChecked(true);
-    mFillTargetButton->setChecked(false);
+    mTargetCombo->setCurrentIndex(1);
     mStrokeSettingsWidget->show();
     updateAfterTargetChanged();
     updateColorAnimator();

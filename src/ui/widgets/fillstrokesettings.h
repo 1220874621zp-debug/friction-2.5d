@@ -37,6 +37,7 @@
 #include <QTimer>
 #include <QPainterPathStroker>
 #include <QLabel>
+#include <QComboBox>
 #include <QHBoxLayout>
 
 #include "Animators/coloranimator.h"
@@ -162,12 +163,11 @@ private:
     void setFlatPaintType();
     void setGradientPaintType();
 
-    QPushButton *mFillTargetButton;
-    QPushButton *mStrokeTargetButton;
-
-    QPushButton *mFillNoneButton;
-    QPushButton *mFillFlatButton;
-    QPushButton *mFillGradientButton;
+    // two dropdowns side by side: target (fill/stroke) and paint type
+    // (none/flat/gradient); activated only fires on user picks, so
+    // programmatic setCurrentIndex sync never re-triggers
+    QComboBox *mTargetCombo;
+    QComboBox *mPaintTypeCombo;
 
     QWidget *mStrokeSettingsWidget;
     QWidget *mStrokeJoinCapWidget;
