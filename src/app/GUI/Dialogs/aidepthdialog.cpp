@@ -26,6 +26,7 @@
 #include <QDateTime>
 #include <QDesktopServices>
 #include <QDir>
+#include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
 #include <QFormLayout>
@@ -39,6 +40,7 @@
 #include <QProgressBar>
 #include <QProgressDialog>
 #include <QPushButton>
+#include <QSet>
 #include <QVBoxLayout>
 
 #include <utility>
@@ -50,6 +52,7 @@
 #include "Boxes/imagesequencebox.h"
 #include "canvas.h"
 #include "exceptions.h"
+#include "fileshandler.h"
 #include "Private/document.h"
 #include "Timeline/durationrectangle.h"
 
@@ -103,15 +106,6 @@ QString writeDepthPng(const sk_sp<SkImage>& image)
     return writeDepthPngTo(AppSupport::getAppTempPath(
                 QStringLiteral("ai_depth_%1.png")
                 .arg(QDateTime::currentMSecsSinceEpoch())), image);
-}
-
-float median3(const float a, const float b, const float c)
-{
-    float x = a, y = b, z = c;
-    if (x > y) { std::swap(x, y); }
-    if (y > z) { std::swap(y, z); }
-    if (x > y) { std::swap(x, y); }
-    return y;
 }
 
 } // namespace
@@ -226,7 +220,7 @@ AiDepthDialog::AiDepthDialog(Document& doc,
             this, [this]() { startPreview(true); });
     mBatchBtn = new QPushButton(tr("帧批量..."), this);
     mBatchBtn->setToolTip(tr("按时间轴入出点（或图层自身时长）逐帧推理，"
-                             "含时序平滑，生成图片序列图层"));
+                             "生成图片序列图层（逐帧独立，无时序平滑）"));
     connect(mBatchBtn, &QPushButton::clicked,
             this, &AiDepthDialog::startBatch);
     mSettingsBtn = new QPushButton(tr("设置"), this);
@@ -579,7 +573,7 @@ void AiDepthDialog::startBatch()
     if (currentModelId() == QStringLiteral("base")) { secPerFrame = 2.2; }
     else if (currentModelId() == QStringLiteral("large")) { secPerFrame = 8.0; }
     const auto btn = QMessageBox::question(this, tr("帧批量"),
-        tr("将处理 %1 帧（第 %2 ~ %3 帧，含时序平滑），预计约 %4 分钟，"
+        tr("将处理 %1 帧（第 %2 ~ %3 帧），预计约 %4 分钟，"
            "结果将作为图片序列图层插入。是否开始？")
         .arg(frames.count())
         .arg(frames.first()).arg(frames.last())
@@ -600,7 +594,7 @@ void AiDepthDialog::startBatch()
     mBusy = true;
     syncButtons();
     mBatchProgress = new QProgressDialog(
-                tr("批量推理中（含时序平滑）..."), tr("取消"),
+                tr("批量推理中..."), tr("取消"),
                 0, frames.count(), this);
     mBatchProgress->setWindowModality(Qt::WindowModal);
     mBatchProgress->setMinimumDuration(0);
@@ -677,12 +671,7 @@ void AiDepthDialog::runBatchInference()
                 return;
             }
             const size_t n = static_cast<size_t>(w) * h;
-            if (state->fH1.size() != n || state->fOutPrev.size() != n ||
-                w != state->fW || h != state->fH) {
-                // first frame or resolution change: reset the history
-                state->fH1.clear();
-                state->fH2.clear();
-                state->fOutPrev.clear();
+            if (w != state->fW || h != state->fH) {
                 state->fW = w;
                 state->fH = h;
                 state->fSrcW = state->fSrc->width();
@@ -702,6 +691,8 @@ void AiDepthDialog::runBatchInference()
                 state->fRangeMax = mx + pad;
                 state->fRangeSet = true;
             }
+            // per-frame independent depth (no temporal smoothing):
+            // normalize against the clip-wide range only
             const float range = state->fRangeMax - state->fRangeMin;
             const float inv = range > 1e-6f ? 1.f / range : 0.f;
             std::vector<float> nrm(n);
@@ -711,28 +702,9 @@ void AiDepthDialog::runBatchInference()
                 else if (v > 1.f) { v = 1.f; }
                 nrm[i] = v;
             }
-            // temporal smoothing: median-3 kills single-frame spikes,
-            // EMA (alpha 0.7) smooths residual jitter
-            std::vector<float> smooth(n);
-            if (state->fH2.size() == n) {
-                for (size_t i = 0; i < n; i++) {
-                    smooth[i] = median3(state->fH2[i], state->fH1[i], nrm[i]);
-                }
-            } else {
-                smooth = nrm;
-            }
-            if (state->fOutPrev.size() == n) {
-                const float a = 0.7f;
-                for (size_t i = 0; i < n; i++) {
-                    smooth[i] = a * smooth[i] + (1.f - a) * state->fOutPrev[i];
-                }
-            }
-            state->fH2 = state->fH1;
-            state->fH1 = nrm;
-            state->fOutPrev = smooth;
 
             const auto img = AiDepth::colorizeDepth(
-                        smooth, w, h, 0.f, 1.f,
+                        nrm, w, h, 0.f, 1.f,
                         state->fOpts.fOutputMode,
                         state->fSrcW, state->fSrcH);
             if (!img) {
@@ -823,7 +795,7 @@ void AiDepthDialog::finishBatch(const bool ok, const QString& failReason)
         seqBox->finishTransform();
         seqBox->rename(tr("深度序列 - %1").arg(box->prp_getName()));
         mDocument.actionFinished();
-        setStatus(tr("已插入深度序列图层（%1 帧，含时序平滑，可 Ctrl+Z 撤销）。")
+        setStatus(tr("已插入深度序列图层（%1 帧，可 Ctrl+Z 撤销）。")
                   .arg(state->fAbsFrames.count()));
     } catch(const std::exception& e) {
         gPrintExceptionCritical(e);
@@ -868,10 +840,17 @@ void AiDepthDialog::openSettings()
 
     const auto openBtn = new QPushButton(tr("打开模型文件夹"), &dlg);
     const auto refreshBtn = new QPushButton(tr("刷新状态"), &dlg);
+    const auto cleanupBtn = new QPushButton(tr("清除缓存"), &dlg);
+    cleanupBtn->setToolTip(tr("删除未被当前工程引用的深度图缓存"
+                              "（正在引用的单帧与序列会保留）"));
+    cleanupBtn->setEnabled(!mBusy && !mDownloading);
     const auto closeBtn = new QPushButton(tr("关闭"), &dlg);
     connect(openBtn, &QPushButton::clicked, &dlg, [dlDir]() {
         QDir().mkpath(dlDir);
         QDesktopServices::openUrl(QUrl::fromLocalFile(dlDir));
+    });
+    connect(cleanupBtn, &QPushButton::clicked, &dlg, [this]() {
+        cleanupCache();
     });
     connect(refreshBtn, &QPushButton::clicked, &dlg, [this, &dlg]() {
         updateModelState();
@@ -889,6 +868,7 @@ void AiDepthDialog::openSettings()
     const auto row = new QHBoxLayout;
     row->addWidget(openBtn);
     row->addWidget(refreshBtn);
+    row->addWidget(cleanupBtn);
     row->addStretch();
     row->addWidget(closeBtn);
 
@@ -900,6 +880,104 @@ void AiDepthDialog::openSettings()
 
     dlg.exec();
     updateModelState(); // files may have been placed while it was open
+}
+
+void AiDepthDialog::cleanupCache()
+{
+    if (mBusy || mDownloading) {
+        QMessageBox::information(this, tr("清除缓存"),
+                                 tr("推理或下载正在进行，请稍后再清理。"));
+        return;
+    }
+
+    // files/folders a live layer currently holds a reference to; the
+    // handler registry ref-counts layer references (assign ++, destroy --)
+    QSet<QString> referenced;
+    const auto handlers = FilesHandler::sInstance->fileHandlers();
+    for (const auto& h : handlers) {
+        if (h && h->refCount() > 0) {
+            referenced.insert(QDir::cleanPath(h->path()).toLower());
+        }
+    }
+
+    const QDir rootDir(AppSupport::getAppCachePath());
+    QStringList toDelete;
+    qint64 bytes = 0;
+    int skipped = 0;
+    int seqCount = 0;
+
+    // single-frame depth pngs
+    const auto files = rootDir.entryInfoList(
+                {QStringLiteral("ai_depth_*.png")}, QDir::Files);
+    for (const auto& fi : files) {
+        if (referenced.contains(
+                    QDir::cleanPath(fi.absoluteFilePath()).toLower())) {
+            skipped++;
+        } else {
+            toDelete << fi.absoluteFilePath();
+            bytes += fi.size();
+        }
+    }
+
+    // sequence folders (referenced as a whole folder path)
+    const auto dirs = rootDir.entryList(
+                {QStringLiteral("ai_depth_seq_*")},
+                QDir::Dirs | QDir::NoDotAndDotDot);
+    for (const auto& d : dirs) {
+        const QString abs = rootDir.absoluteFilePath(d);
+        if (referenced.contains(QDir::cleanPath(abs).toLower())) {
+            skipped++;
+        } else {
+            toDelete << abs;
+            seqCount++;
+            QDirIterator it(abs, {QStringLiteral("*.png")}, QDir::Files,
+                            QDirIterator::Subdirectories);
+            while (it.hasNext()) {
+                bytes += it.fileInfo().size();
+                it.next();
+            }
+        }
+    }
+
+    if (toDelete.isEmpty()) {
+        QMessageBox::information(this, tr("清除缓存"),
+            tr("没有可清理的深度图缓存%1。")
+            .arg(skipped > 0 ? tr("（%1 项正被引用，已跳过）").arg(skipped)
+                             : QString()));
+        return;
+    }
+
+    const int pngCount = toDelete.count() - seqCount;
+    const qreal mb = bytes / (1024.0 * 1024.0);
+    const auto btn = QMessageBox::question(this, tr("清除缓存"),
+        tr("将删除 %1 项深度图缓存，共约 %2 MB：\n"
+           "• 单帧深度图 %3 张\n"
+           "• 序列文件夹 %4 个\n\n"
+           "跳过 %5 项（当前工程正在引用）。\n\n"
+           "⚠ 注意：清理只保护<b>当前已打开工程</b>引用的文件；"
+           "其它未打开的工程若引用了这些缓存深度图，"
+           "重新打开后对应图层会断链失效。\n\n是否继续清理？")
+        .arg(toDelete.count())
+        .arg(QString::number(mb, 'f', 1))
+        .arg(pngCount).arg(seqCount).arg(skipped));
+    if (btn != QMessageBox::Yes) { return; }
+
+    int failed = 0;
+    for (const auto& path : toDelete) {
+        const QFileInfo fi(path);
+        const bool ok = fi.isDir() ? QDir(path).removeRecursively()
+                                   : QFile::remove(path);
+        if (!ok) { failed++; }
+    }
+    if (failed > 0) {
+        QMessageBox::information(this, tr("清除缓存"),
+            tr("清理完成，另有 %1 项因文件被占用跳过"
+               "（关闭相关工程后可重试）。").arg(failed));
+    } else {
+        QMessageBox::information(this, tr("清除缓存"),
+            tr("清理完成，共释放约 %1 MB。")
+            .arg(QString::number(mb, 'f', 1)));
+    }
 }
 
 void AiDepthDialog::startDownload()

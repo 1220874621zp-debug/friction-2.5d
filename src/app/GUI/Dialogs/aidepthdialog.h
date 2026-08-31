@@ -64,8 +64,8 @@ private:
         AiDepth::Options fOpts;
     };
 
-    // per-frame batch pipeline: render -> raw inference -> temporal
-    // smoothing (median-3 + EMA) -> colorize -> png -> next frame
+    // per-frame batch pipeline: render -> raw inference -> clip-wide
+    // normalization -> colorize -> png -> next frame
     struct BatchState {
         QPointer<BoundingBox> fBox;
         QList<int> fAbsFrames;
@@ -73,7 +73,6 @@ private:
         QString fOutDir;
         AiDepth::Options fOpts;
         sk_sp<SkImage> fSrc;
-        std::vector<float> fH1, fH2, fOutPrev; // smoothing history
         float fRangeMin = 0.f;
         float fRangeMax = 1.f;
         bool fRangeSet = false;
@@ -99,6 +98,7 @@ private:
     void insertDepthLayer();
     void updateDepthPreview();
     void openSettings();
+    void cleanupCache();
 
     void startBatch();
     void nextBatchFrame();
