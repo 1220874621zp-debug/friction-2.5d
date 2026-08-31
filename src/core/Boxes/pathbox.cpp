@@ -51,7 +51,6 @@ PathBox::PathBox(const QString &name,
             this, [this]() {
         setPathsOutdated(UpdateReason::userChange);
     });
-
     connect(mPathEffectsAnimators.get(),
             &Property::prp_currentFrameChanged,
             this, [this](const UpdateReason reason) {
@@ -246,7 +245,9 @@ void PathBox::addPathEffects(
         PathEffectsCList& fillEffects,
         PathEffectsCList& outlineBaseEffects,
         PathEffectsCList& outlineEffects) {
-    if(scene->getPathEffectsVisible()) {
+    // sceneless callers (preset preview renderer): apply effects
+    const bool visible = scene ? scene->getPathEffectsVisible() : true;
+    if(visible) {
         addBasePathEffects(relFrame, pathEffects);
         addFillEffects(relFrame, fillEffects);
         addOutlineBaseEffects(relFrame, outlineBaseEffects);

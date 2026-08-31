@@ -32,10 +32,13 @@ class QTreeWidget;
 class QTreeWidgetItem;
 class Canvas;
 class Document;
+class FileCacheHandler;
 
-// AE-like project panel: lists every scene in the project.
+// AE-like project panel: a single tree managing both the scenes
+// (compositions) and the imported file assets of the project.
 // Dragging a scene onto the active canvas creates an
-// InternalLinkCanvas (scene link) at the drop position.
+// InternalLinkCanvas (scene link), dragging a file asset out
+// imports/places it.
 class ProjectPanel : public QWidget {
     Q_OBJECT
 public:
@@ -53,8 +56,13 @@ private:
     void switchToScene(Canvas* const scene);
     void linkToActiveScene(Canvas* const scene);
     Canvas* sceneAt(QTreeWidgetItem* const item) const;
+    FileCacheHandler* fileAt(QTreeWidgetItem* const item) const;
     Canvas* activeScene() const;
     QString sceneInfo(const Canvas* const scene) const;
+    QString fileInfo(const FileCacheHandler* const handler) const;
+    void addFileItem(FileCacheHandler* const handler);
+    void removeFileItem(FileCacheHandler* const handler);
+    bool fileItemExists(FileCacheHandler* const handler) const;
     void showContextMenu(const QPoint& pos);
 
     Document& mDocument;

@@ -496,6 +496,10 @@ const QString& TextBox::getCurrentValue() const {
     return mText->getCurrentValue();
 }
 
+QString TextBox::getTextAtRelFrame(const qreal relFrame) const {
+    return mText->getValueAtRelFrame(relFrame);
+}
+
 qreal TextBox::getLetterSpacingAt(const qreal relFrame) const {
     return mLetterSpacing->getEffectiveValue(relFrame);
 }

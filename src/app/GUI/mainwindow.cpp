@@ -69,6 +69,8 @@
 #include "effectspresetspanel.h"
 #include "quickeffectsearchdialog.h"
 #include "projectpanel.h"
+#include <QShortcut>
+#include "textanimpresetpanel.h"
 #include "scriptmanager.h"
 #include "scriptconsole.h"
 #include "GUI/keysview.h"
@@ -99,7 +101,6 @@
 #include "appsupport.h"
 #include "themesupport.h"
 
-#include "widgets/assetswidget.h"
 #include "dialogs/adjustscenedialog.h"
 #include "dialogs/commandpalette.h"
 #include "wizards/installpresets.h"
@@ -360,7 +361,6 @@ MainWindow::MainWindow(Document& document,
     , mTabColorIndex(0)
     , mTabTextIndex(0)
     , mTabPropertiesIndex(0)
-    , mTabAssetsIndex(0)
     , mTabQueueIndex(0)
     , mColorToolBar(nullptr)
     , mCanvasToolBar(nullptr)
@@ -942,7 +942,12 @@ void MainWindow::setCurrentBoxFocus(BoundingBox *box)
 {
     if (!box) { return; }
     if (enve_cast<TextBox*>(box)) {
-        focusFontWidget(mDocument.fCanvasMode == CanvasMode::textCreate);
+        // selecting a text layer only reveals the text tab; the text
+        // input itself must never steal the keyboard on selection
+        // (it would swallow Space playback) - focus goes to it only
+        // via explicit edit actions: text tool click, double-click,
+        // text creation, or clicking into the field
+        focusFontWidget(false);
     } else {
         focusColorWidget();
     }
@@ -1333,6 +1338,7 @@ void MainWindow::applyDefaultWorkspace()
     const QList<QDockWidget*> docks = {mTimelineDock,
                                        mFillStrokeDock,
                                        mPropertiesDock,
+                                       mProjectDock,
                                        mEasingDock};
     for (const auto dock : docks) {
         if (!dock) { continue; }
@@ -1342,6 +1348,7 @@ void MainWindow::applyDefaultWorkspace()
 
     addDockWidget(Qt::RightDockWidgetArea, mFillStrokeDock);
     addDockWidget(Qt::RightDockWidgetArea, mPropertiesDock);
+    addDockWidget(Qt::RightDockWidgetArea, mProjectDock);
     addDockWidget(Qt::RightDockWidgetArea, mEasingDock);
     addDockWidget(Qt::BottomDockWidgetArea, mTimelineDock);
 
@@ -1390,6 +1397,9 @@ void MainWindow::rebuildWorkspaceMenu()
     panelsMenu->addAction(mEasingDock->toggleViewAction());
     if (mProjectDock) {
         panelsMenu->addAction(mProjectDock->toggleViewAction());
+    }
+    if (mTextAnimDock) {
+        panelsMenu->addAction(mTextAnimDock->toggleViewAction());
     }
     if (mScriptManager && mScriptManager->console()) {
         panelsMenu->addAction(mScriptManager->console()->toggleViewAction());
@@ -1468,9 +1478,6 @@ void MainWindow::setupPropertiesWidgets()
     // align widget
     const auto alignWidget = new Ui::AlignWidget(this);
 
-    // assets widget
-    const auto assets = new AssetsWidget(this);
-
     mTabProperties = new QTabWidget(this);
     mTabProperties->setObjectName("TabWidgetWide");
     mTabProperties->tabBar()->setFocusPolicy(Qt::NoFocus);
@@ -1505,10 +1512,6 @@ void MainWindow::setupPropertiesWidgets()
                                               ThemeSupport::themedToolIcon("effect",
                                                                            ThemeSupport::getThemeColorOrange(), 64),
                                               tr("Effects"));
-    mTabAssetsIndex = mTabProperties->addTab(assets,
-                                             ThemeSupport::themedToolIcon("asset_manager",
-                                                                          ThemeSupport::getThemeColorGreen(), 64),
-                                             tr("Assets"));
     mTabQueueIndex = mTabProperties->addTab(mRenderWidget,
                                             ThemeSupport::themedToolIcon("render_animation",
                                                                          ThemeSupport::getThemeColorRed(), 64),
@@ -1577,21 +1580,44 @@ void MainWindow::setupLayout()
     mEasingDock = makeDock(tr("Easing Presets"), QStringLiteral("dockEasingPresets"),
                            easingPresets);
 
-    // project panel (AE-like): lists every scene; scenes can be
-    // dragged onto the active canvas to create a scene link
+    // project panel (AE-like): a single tree managing the scenes
+    // AND the imported file assets; scenes can be dragged onto the
+    // active canvas to create a scene link
     mProjectPanel = new ProjectPanel(mDocument, this);
     mProjectDock = makeDock(tr("Project"), QStringLiteral("dockProject"),
                             mProjectPanel);
 
+    // text animation preset panel (AE "text animator" presets):
+    // animated thumbnails + big preview baked from the real engine
+    mTextAnimPanel = new TextAnimPresetPanel(mDocument, this);
+    mTextAnimDock = makeDock(tr("Text Animation Presets"),
+                             QStringLiteral("dockTextAnimPresets"),
+                             mTextAnimPanel);
+
     setCentralWidget(mStackWidget);
-    addDockWidget(Qt::LeftDockWidgetArea, mProjectDock);
     addDockWidget(Qt::RightDockWidgetArea, mFillStrokeDock);
     addDockWidget(Qt::RightDockWidgetArea, mPropertiesDock);
+    // project panel sits right beside the properties/queue dock
+    addDockWidget(Qt::RightDockWidgetArea, mProjectDock);
     addDockWidget(Qt::RightDockWidgetArea, mEasingDock);
     addDockWidget(Qt::BottomDockWidgetArea, mTimelineDock);
 
+    addDockWidget(Qt::RightDockWidgetArea, mTextAnimDock);
+
     // hidden by default, can be opened from the Panels menu
     mEasingDock->hide();
+    mTextAnimDock->hide();
+
+    // window-level Space shortcut: playback toggles from any focus
+    // context; text inputs still receive spaces because line edits
+    // and text edits claim the key via ShortcutOverride
+    const auto playShortcut = new QShortcut(Qt::Key_Space, this);
+    playShortcut->setContext(Qt::WindowShortcut);
+    playShortcut->setAutoRepeat(false);
+    connect(playShortcut, &QShortcut::activated, this, [this]() {
+        mTimeline->spaceToggle();
+        mDocument.actionFinished();
+    });
 
     // JS plugin system: Scripts menu + script console dock
     setupScripting();

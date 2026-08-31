@@ -35,6 +35,10 @@
         <file alias="loop_pingpong.svg">../ui/widgets/loop_pingpong.svg</file>
         <file alias="loop_skip.svg">../ui/widgets/loop_skip.svg</file>
     </qresource>
+    <qresource prefix="/assets">
+        <file alias="mascot.svg">assets/mascot.svg</file>
+    </qresource>
+
     <qresource prefix="/translations">
         <file alias="friction_zh_CN.qm">translations/friction_zh_CN.qm</file>
     </qresource>

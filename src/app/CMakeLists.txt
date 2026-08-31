@@ -215,6 +215,7 @@ set(
     GUI/layouthandler.cpp
     GUI/scenenavigatorbar.cpp
     GUI/projectpanel.cpp
+    GUI/textanimpresetpanel.cpp
     GUI/timelinebasewrappernode.cpp
     GUI/timelinedockwidget.cpp
     GUI/timelinehighlightwidget.cpp
@@ -279,6 +280,7 @@ set(
     GUI/layouthandler.h
     GUI/scenenavigatorbar.h
     GUI/projectpanel.h
+    GUI/textanimpresetpanel.h
     GUI/timelinebasewrappernode.h
     GUI/timelinedockwidget.h
     GUI/timelinehighlightwidget.h

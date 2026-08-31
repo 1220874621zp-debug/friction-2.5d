@@ -44,6 +44,29 @@ namespace Friction
 {
     namespace Ui
     {
+        // Font family picker with a searchable, categorized popup
+        // (favorites / Chinese / Latin fonts) and per-font favorite
+        // stars; API mimics the QComboBox it replaces.
+        class UI_EXPORT FontFamilyPicker : public QPushButton
+        {
+            Q_OBJECT
+        public:
+            explicit FontFamilyPicker(QWidget *parent = nullptr);
+
+            QString currentText() const;
+            void setCurrentText(const QString &family);
+            void setFontFamilies(const QStringList &families);
+
+        signals:
+            void currentTextChanged(const QString &family);
+
+        private:
+            void showPopup();
+
+            QString mCurrent;
+            QStringList mFamilies;
+        };
+
         class UI_EXPORT FontsWidget : public QWidget
         {
             Q_OBJECT
@@ -91,7 +114,7 @@ namespace Friction
             int mBlockEmit;
             bool mBlockTextUpdate;
 
-            QComboBox *mFontFamilyCombo;
+            FontFamilyPicker *mFontFamilyPicker;
             QComboBox *mFontStyleCombo;
             QDoubleSlider *mFontSizeSlider;
 

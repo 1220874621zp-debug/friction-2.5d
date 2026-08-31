@@ -31,9 +31,14 @@
 #include <QMenu>
 #include <QMimeData>
 #include <QDrag>
+#include <QUrl>
+#include <QFileInfo>
+#include <QDesktopServices>
 
 #include "Private/document.h"
 #include "canvas.h"
+#include "fileshandler.h"
+#include "FileCacheHandlers/filecachehandler.h"
 #include "GUI/mainwindow.h"
 #include "GUI/layouthandler.h"
 #include "GUI/dialogsinterface.h"
@@ -43,6 +48,31 @@
 namespace {
 // the item data role carrying the raw Canvas pointer
 const int kScenePtrRole = Qt::UserRole + 1;
+// the item data role carrying the raw FileCacheHandler pointer
+const int kFilePtrRole = Qt::UserRole + 2;
+
+QString fileIconName(const QString& path)
+{
+    static const QStringList imageExt = {"png", "jpg", "jpeg", "bmp",
+                                         "gif", "webp", "tif", "tiff",
+                                         "kra", "psd", "ora"};
+    static const QStringList videoExt = {"mp4", "mov", "avi", "mkv",
+                                         "webm", "gifv"};
+    static const QStringList audioExt = {"mp3", "wav", "ogg", "flac",
+                                         "aac", "m4a", "aiff"};
+    const QString suffix = QFileInfo(path).suffix().toLower();
+    if (imageExt.contains(suffix)) { return "file_image"; }
+    if (videoExt.contains(suffix)) { return "file_movie"; }
+    if (audioExt.contains(suffix)) { return "file_sound"; }
+    return "file_blank";
+}
+
+QString humanSize(const qint64 bytes)
+{
+    if (bytes < 1024) { return QString("%1 B").arg(bytes); }
+    if (bytes < 1024*1024) { return QString("%1 KB").arg(bytes/1024); }
+    return QString("%1 MB").arg(bytes/(1024*1024));
+}
 
 class SceneTreeWidget : public QTreeWidget {
 public:
@@ -50,18 +80,25 @@ public:
         QTreeWidget(parent) {}
 
 protected:
-    // custom drag payload: the raw scene pointer in our private
-    // mime format (same-process only, validated on drop)
+    // custom drag payload: scenes drag as their raw pointer in our
+    // private mime format, file assets drag as their file url (the
+    // canvas already accepts url drops as imports)
     void startDrag(Qt::DropActions) {
         const auto item = currentItem();
         if (!item) { return; }
         const auto scene = reinterpret_cast<Canvas*>(
                     item->data(0, kScenePtrRole).toULongLong());
-        if (!scene) { return; }
         auto mimeData = new QMimeData;
-        mimeData->setData(ProjectPanel::sMimeFormat(),
-                          QByteArray::number(
-                              reinterpret_cast<qulonglong>(scene)));
+        if (scene) {
+            mimeData->setData(ProjectPanel::sMimeFormat(),
+                              QByteArray::number(
+                                  reinterpret_cast<qulonglong>(scene)));
+        } else {
+            const auto handler = reinterpret_cast<FileCacheHandler*>(
+                        item->data(0, kFilePtrRole).toULongLong());
+            if (!handler) { delete mimeData; return; }
+            mimeData->setUrls({QUrl::fromLocalFile(handler->path())});
+        }
         QDrag drag(this);
         drag.setMimeData(mimeData);
         const auto pm = item->icon(0).pixmap(32, 32);
@@ -116,7 +153,13 @@ ProjectPanel::ProjectPanel(Document& doc, QWidget* const parent) :
 
     connect(mTree, &QTreeWidget::itemDoubleClicked,
             this, [this](QTreeWidgetItem* item, int) {
-        switchToScene(sceneAt(item));
+        if (const auto scene = sceneAt(item)) {
+            switchToScene(scene);
+        } else if (const auto handler = fileAt(item)) {
+            // preview with the system default viewer
+            QDesktopServices::openUrl(
+                        QUrl::fromLocalFile(handler->path()));
+        }
     });
     connect(mTree, &QTreeWidget::customContextMenuRequested,
             this, [this](const QPoint& pos) {
@@ -130,6 +173,21 @@ ProjectPanel::ProjectPanel(Document& doc, QWidget* const parent) :
             this, [this](Canvas*) { rebuild(); });
     connect(&mDocument, &Document::activeSceneSet,
             this, [this](Canvas*) { updateActiveMark(); });
+
+    // imported file assets live in the same tree (AE-style project
+    // panel: compositions and footage together)
+    if (FilesHandler::sInstance) {
+        connect(FilesHandler::sInstance,
+                &FilesHandler::addedCacheHandler,
+                this, [this](FileCacheHandler* const handler) {
+            addFileItem(handler);
+        });
+        connect(FilesHandler::sInstance,
+                &FilesHandler::removedCacheHandler,
+                this, [this](FileCacheHandler* const handler) {
+            removeFileItem(handler);
+        });
+    }
 
     rebuild();
 }
@@ -158,6 +216,70 @@ Canvas* ProjectPanel::sceneAt(QTreeWidgetItem* const item) const
 Canvas* ProjectPanel::activeScene() const
 {
     return *mDocument.fActiveScene;
+}
+
+FileCacheHandler* ProjectPanel::fileAt(QTreeWidgetItem* const item) const
+{
+    if (!item) { return nullptr; }
+    const auto raw = reinterpret_cast<FileCacheHandler*>(
+                item->data(0, kFilePtrRole).toULongLong());
+    // guard against a stale pointer (handler deleted after build)
+    if (FilesHandler::sInstance) {
+        for (const auto& fh : FilesHandler::sInstance->fileHandlers()) {
+            if (fh.get() == raw) { return raw; }
+        }
+    }
+    return nullptr;
+}
+
+QString ProjectPanel::fileInfo(const FileCacheHandler* const handler) const
+{
+    const QFileInfo info(handler->path());
+    if (!info.exists()) { return tr("Missing"); }
+    return QStringLiteral("%1 | %2")
+            .arg(info.suffix().toUpper())
+            .arg(humanSize(info.size()));
+}
+
+void ProjectPanel::addFileItem(FileCacheHandler* const handler)
+{
+    if (!handler || fileItemExists(handler)) { return; }
+    const auto item = new QTreeWidgetItem(mTree);
+    const QString path = handler->path();
+    const QFileInfo info(path);
+    item->setText(0, info.fileName());
+    item->setIcon(0, QIcon::fromTheme(fileIconName(path)));
+    item->setText(1, fileInfo(handler));
+    item->setToolTip(0, path);
+    item->setToolTip(1, path);
+    item->setData(0, kFilePtrRole,
+                  reinterpret_cast<qulonglong>(handler));
+    item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable |
+                   Qt::ItemIsDragEnabled | Qt::ItemNeverHasChildren);
+}
+
+void ProjectPanel::removeFileItem(FileCacheHandler* const handler)
+{
+    for (int i = 0; i < mTree->topLevelItemCount(); i++) {
+        const auto item = mTree->topLevelItem(i);
+        if (reinterpret_cast<FileCacheHandler*>(
+                    item->data(0, kFilePtrRole).toULongLong()) == handler) {
+            delete item;
+            return;
+        }
+    }
+}
+
+bool ProjectPanel::fileItemExists(FileCacheHandler* const handler) const
+{
+    for (int i = 0; i < mTree->topLevelItemCount(); i++) {
+        const auto item = mTree->topLevelItem(i);
+        if (reinterpret_cast<FileCacheHandler*>(
+                    item->data(0, kFilePtrRole).toULongLong()) == handler) {
+            return true;
+        }
+    }
+    return false;
 }
 
 QString ProjectPanel::sceneInfo(const Canvas* const scene) const
@@ -204,6 +326,12 @@ void ProjectPanel::rebuild()
             }
         });
     }
+    // imported file assets below the scenes (AE-style)
+    if (FilesHandler::sInstance) {
+        for (const auto& fh : FilesHandler::sInstance->fileHandlers()) {
+            if (fh) { addFileItem(fh.get()); }
+        }
+    }
     updateActiveMark();
 }
 
@@ -243,6 +371,7 @@ void ProjectPanel::showContextMenu(const QPoint& pos)
 {
     const auto item = mTree->itemAt(pos);
     const auto scene = sceneAt(item);
+    const auto handler = scene ? nullptr : fileAt(item);
 
     QMenu menu(this);
     menu.addAction(QIcon::fromTheme("file_new"),
@@ -269,6 +398,21 @@ void ProjectPanel::showContextMenu(const QPoint& pos)
                        this, [scene]() {
             const auto& dialogs = DialogsInterface::instance();
             dialogs.showSceneSettingsDialog(scene);
+        });
+    } else if (handler) {
+        const QString path = handler->path();
+        menu.addSeparator();
+        menu.addAction(QIcon::fromTheme(fileIconName(path)),
+                       tr("Open"),
+                       this, [path]() {
+            QDesktopServices::openUrl(QUrl::fromLocalFile(path));
+        });
+        menu.addAction(QIcon::fromTheme("file_folder"),
+                       tr("Reveal in Folder"),
+                       this, [path]() {
+            QDesktopServices::openUrl(
+                        QUrl::fromLocalFile(
+                            QFileInfo(path).absolutePath()));
         });
     }
 

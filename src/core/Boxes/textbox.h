@@ -69,6 +69,19 @@ public:
     const QString& getFontFamily() const;
     const SkFontStyle& getFontStyle() const;
     const QString& getCurrentValue() const;
+    // text value at a frame (animated text / baked text keys)
+    QString getTextAtRelFrame(const qreal relFrame) const;
+
+    // read access used by the text animation preset preview renderer
+    const SkFont& getSkFont() const { return mFont; }
+    QStringAnimator* getStringAnimator() const { return mText.get(); }
+    class TextEffectCollection* getTextEffects() const
+    { return mTextEffects.get(); }
+    qreal getLetterSpacingAt(const qreal relFrame) const;
+    qreal getWordSpacingAt(const qreal relFrame) const;
+    qreal getLineSpacingAt(const qreal relFrame) const;
+    Qt::Alignment getTextHAlignment() const { return mHAlignment; }
+    Qt::Alignment getTextVAlignment() const { return mVAlignment; }
 
     void openTextEditor(QWidget* dialogParent);
 

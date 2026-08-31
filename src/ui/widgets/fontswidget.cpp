@@ -27,10 +27,266 @@
 #include "GUI/global.h"
 #include "themesupport.h"
 #include "Private/document.h"
+#include "appsupport.h"
 
 #include <QLineEdit>
+#include <QListWidget>
+#include <QStyledItemDelegate>
+#include <QPainter>
+#include <QKeyEvent>
+#include <QScreen>
+#include <QGuiApplication>
+#include <functional>
+#include <cmath>
+#include <QPainterPath>
 
 using namespace Friction::Ui;
+
+namespace {
+
+QStringList loadFontFavorites()
+{
+    const auto var = AppSupport::getSettings("fonts",
+                                             "favorites",
+                                             QVariant());
+    return var.toStringList();
+}
+
+void saveFontFavorites(const QStringList &favorites)
+{
+    AppSupport::setSettings("fonts", "favorites",
+                            QVariant(favorites));
+}
+
+bool familyIsCJK(const QFontDatabase &db, const QString &family)
+{
+    const auto systems = db.writingSystems(family);
+    return systems.contains(QFontDatabase::SimplifiedChinese) ||
+           systems.contains(QFontDatabase::TraditionalChinese);
+}
+
+// one font row: draws the family name in its own font plus a
+// favorite star on the right; clicking the star toggles the
+// favorite instead of selecting the font
+class FontRowDelegate : public QStyledItemDelegate
+{
+public:
+    FontRowDelegate(QObject *parent, std::function<void()> favChanged)
+        : QStyledItemDelegate(parent)
+        , mFavChanged(std::move(favChanged)) {}
+
+    static constexpr int starWidth = 30;
+
+    void paint(QPainter *p, const QStyleOptionViewItem &option,
+               const QModelIndex &index) const override
+    {
+        p->save();
+        p->setRenderHint(QPainter::Antialiasing);
+        if (option.state & QStyle::State_Selected) {
+            p->fillRect(option.rect, QColor(60, 128, 200, 90));
+        } else if (option.state & QStyle::State_MouseOver) {
+            p->fillRect(option.rect, QColor(255, 255, 255, 18));
+        }
+        const auto family = index.data(Qt::UserRole).toString();
+        const bool isHeader = index.data(Qt::UserRole + 2).toBool();
+        QFont f = isHeader ? QFont() : QFont(family);
+        f.setPixelSize(isHeader ? 11 : 14);
+        if (isHeader) { f.setBold(true); }
+        p->setFont(f);
+        p->setPen(isHeader ? QColor(150, 150, 150) : QColor(220, 220, 220));
+        const QRect textRect = option.rect.adjusted(8, 0,
+                                                    -starWidth - 4, 0);
+        p->drawText(textRect, Qt::AlignVCenter | Qt::AlignLeft,
+                    family);
+        // star
+        if (!isHeader) {
+            const bool fav = index.data(Qt::UserRole + 1).toBool();
+            // vector star: star glyphs are missing from some fonts
+            // on user systems, drawing the shape works everywhere
+            const qreal cx = option.rect.right() - starWidth/2;
+            const qreal cy = option.rect.center().y();
+            const qreal r = option.rect.height()/2 - 7;
+            QPainterPath star;
+            for (int i = 0; i < 10; i++) {
+                const qreal ang = -M_PI/2 + i*M_PI/5;
+                const qreal rr = i % 2 == 0 ? r : r*0.45;
+                const QPointF pt(cx + rr*std::cos(ang),
+                                 cy + rr*std::sin(ang));
+                if (i == 0) { star.moveTo(pt); }
+                else { star.lineTo(pt); }
+            }
+            star.closeSubpath();
+            if (fav) {
+                p->setPen(Qt::NoPen);
+                p->setBrush(QColor(255, 200, 70));
+                p->drawPath(star);
+            } else {
+                QPen pen(QColor(130, 130, 130), 1.2);
+                p->setPen(pen);
+                p->setBrush(Qt::NoBrush);
+                p->drawPath(star);
+            }
+        }
+        p->restore();
+    }
+
+    bool editorEvent(QEvent *event, QAbstractItemModel *model,
+                     const QStyleOptionViewItem &option,
+                     const QModelIndex &index) override
+    {
+        if (event->type() == QEvent::MouseButtonRelease) {
+            const auto me = static_cast<QMouseEvent*>(event);
+            if (me->pos().x() > option.rect.right() - starWidth) {
+                // star click: toggle favorite and let the popup
+                // rebuild (keeps the current filter)
+                const auto family = index.data(Qt::UserRole).toString();
+                QStringList favorites = loadFontFavorites();
+                if (favorites.contains(family)) {
+                    favorites.removeAll(family);
+                } else {
+                    favorites << family;
+                }
+                saveFontFavorites(favorites);
+                if (mFavChanged) { mFavChanged(); }
+                return true;
+            }
+        }
+        return QStyledItemDelegate::editorEvent(event, model,
+                                                option, index);
+    }
+
+private:
+    std::function<void()> mFavChanged;
+};
+
+} // namespace
+
+// ---------------------------------------------------------------- picker
+
+FontFamilyPicker::FontFamilyPicker(QWidget *parent)
+    : QPushButton(parent)
+{
+    setFocusPolicy(Qt::NoFocus);
+    setToolTip(tr("Font family"));
+    setMinimumWidth(20);
+    connect(this, &QPushButton::clicked,
+            this, &FontFamilyPicker::showPopup);
+}
+
+QString FontFamilyPicker::currentText() const
+{ return mCurrent; }
+
+void FontFamilyPicker::setCurrentText(const QString &family)
+{
+    if (mCurrent == family) { return; }
+    mCurrent = family;
+    setText(family);
+    emit currentTextChanged(family);
+}
+
+void FontFamilyPicker::setFontFamilies(const QStringList &families)
+{
+    mFamilies = families;
+    // silent sync (no signal): pick a valid family when the current
+    // one is empty or no longer installed
+    if (!mFamilies.contains(mCurrent)) {
+        mCurrent = families.isEmpty() ? QString() : families.first();
+    }
+    setText(mCurrent);
+}
+
+void FontFamilyPicker::showPopup()
+{
+    const auto popup = new QFrame(this, Qt::Popup);
+    popup->setAttribute(Qt::WA_DeleteOnClose);
+    popup->setFrameShape(QFrame::NoFrame);
+    popup->setAutoFillBackground(true);
+    popup->setPalette(ThemeSupport::getDarkerPalette());
+
+    const auto lay = new QVBoxLayout(popup);
+    lay->setContentsMargins(4, 4, 4, 4);
+    lay->setSpacing(4);
+
+    const auto search = new QLineEdit(popup);
+    search->setPlaceholderText(tr("Search fonts"));
+    search->setClearButtonEnabled(true);
+    lay->addWidget(search);
+
+    const auto list = new QListWidget(popup);
+    list->setMouseTracking(true);
+    lay->addWidget(list);
+
+    const auto rebuild = [this, list](const QString &filter) {
+        list->clear();
+        QFontDatabase db;
+        const QStringList favorites = loadFontFavorites();
+        const QString filterLower = filter.toLower();
+
+        const auto addRow = [&](const QString &family, const bool fav) {
+            auto item = new QListWidgetItem(family, list);
+            item->setData(Qt::UserRole, family);
+            item->setData(Qt::UserRole + 1, fav);
+            item->setSizeHint(QSize(0, 30));
+        };
+        const auto addHeader = [&](const QString &title) {
+            auto item = new QListWidgetItem(title, list);
+            item->setFlags(Qt::NoItemFlags);
+            item->setData(Qt::UserRole + 2, true);
+            item->setSizeHint(QSize(0, 22));
+        };
+
+        const auto matches = [&](const QString &family) {
+            return filterLower.isEmpty() ||
+                   family.toLower().contains(filterLower);
+        };
+
+        QStringList favRows;
+        QStringList cjkRows;
+        QStringList latinRows;
+        for (const auto &family : mFamilies) {
+            if (!matches(family)) { continue; }
+            if (favorites.contains(family)) { favRows << family; }
+            else if (familyIsCJK(db, family)) { cjkRows << family; }
+            else { latinRows << family; }
+        }
+        if (!favRows.isEmpty()) {
+            addHeader(tr("Favorites"));
+            for (const auto &f : favRows) { addRow(f, true); }
+        }
+        if (!cjkRows.isEmpty()) {
+            addHeader(tr("Chinese fonts"));
+            for (const auto &f : cjkRows) { addRow(f, false); }
+        }
+        if (!latinRows.isEmpty()) {
+            addHeader(tr("Latin fonts"));
+            for (const auto &f : latinRows) { addRow(f, false); }
+        }
+    };
+
+    QObject::connect(search, &QLineEdit::textChanged, rebuild);
+    rebuild(QString());
+
+    list->setItemDelegate(new FontRowDelegate(
+                              popup, [search, rebuild]() {
+        rebuild(search->text());
+    }));
+
+    // capture popup BY VALUE: this lambda outlives showPopup(), a
+    // by-reference capture would dangle and crash on click
+    QObject::connect(list, &QListWidget::itemClicked,
+                     this, [this, popup](QListWidgetItem *item) {
+        const auto family = item->data(Qt::UserRole).toString();
+        if (item->flags() == Qt::NoItemFlags) { return; }
+        setCurrentText(family);
+        popup->close();
+    });
+
+    const int w = qMax(280, width());
+    popup->setFixedSize(w, 440);
+    popup->move(mapToGlobal(QPoint(0, height() + 2)));
+    popup->show();
+    search->setFocus();
+}
 
 FontsWidget::FontsWidget(QWidget *parent,
                          const bool toolbar)
@@ -38,7 +294,7 @@ FontsWidget::FontsWidget(QWidget *parent,
     , mToolbar(toolbar)
     , mBlockEmit(0)
     , mBlockTextUpdate(false)
-    , mFontFamilyCombo(nullptr)
+    , mFontFamilyPicker(nullptr)
     , mFontStyleCombo(nullptr)
     , mFontSizeSlider(nullptr)
     , mAlignLeft(nullptr)
@@ -54,19 +310,16 @@ FontsWidget::FontsWidget(QWidget *parent,
     mFontStyleCombo->setFocusPolicy(Qt::NoFocus);
     mFontStyleCombo->setToolTip(tr("Font style"));
 
-    mFontFamilyCombo = new QComboBox(this);
-    mFontFamilyCombo->setMinimumWidth(20);
-    mFontFamilyCombo->setFocusPolicy(Qt::NoFocus);
-    mFontFamilyCombo->setToolTip(tr("Font family"));
+    mFontFamilyPicker = new FontFamilyPicker(this);
 
     mFontSizeSlider = new QDoubleSlider(1, 999, 1, this, false);
     mFontSizeSlider->setMinimumWidth(20);
     mFontSizeSlider->setDisplayedValue(72);
     mFontSizeSlider->setToolTip(tr("Font size"));
 
-    mFontFamilyCombo->addItems(filterFonts());
+    mFontFamilyPicker->setFontFamilies(filterFonts());
 
-    connect(mFontFamilyCombo, &QComboBox::currentTextChanged,
+    connect(mFontFamilyPicker, &FontFamilyPicker::currentTextChanged,
             this, &FontsWidget::afterFamilyChange);
 
     connect(mFontStyleCombo, &QComboBox::currentTextChanged,
@@ -87,7 +340,7 @@ FontsWidget::FontsWidget(QWidget *parent,
 
     setLayout(mMainLayout);
 
-    mFontFamilyCombo->setSizePolicy(QSizePolicy::Expanding,
+    mFontFamilyPicker->setSizePolicy(QSizePolicy::Expanding,
                                     QSizePolicy::Preferred);
     mFontStyleCombo->setSizePolicy(QSizePolicy::Expanding,
                                    QSizePolicy::Preferred);
@@ -95,12 +348,12 @@ FontsWidget::FontsWidget(QWidget *parent,
                                    QSizePolicy::Preferred);
 
     if (mToolbar) {
-        mFontFamilyCombo->setMaximumWidth(200);
+        mFontFamilyPicker->setMaximumWidth(200);
         mFontStyleCombo->setMaximumWidth(120);
         mFontSizeSlider->setMaximumWidth(120);
         mFontSizeSlider->setMinimumWidth(80);
     } else {
-        mFontFamilyCombo->setMinimumWidth(120);
+        mFontFamilyPicker->setMinimumWidth(120);
         mFontStyleCombo->setMinimumWidth(80);
         mFontSizeSlider->setMinimumWidth(60);
     }
@@ -112,13 +365,13 @@ FontsWidget::FontsWidget(QWidget *parent,
         QHBoxLayout *fontFamilyLayout = new QHBoxLayout(fontFamilyWidget);
         fontFamilyLayout->setMargin(0);
 
-        fontFamilyLayout->addWidget(mFontFamilyCombo);
+        fontFamilyLayout->addWidget(mFontFamilyPicker);
         fontFamilyLayout->addWidget(mFontStyleCombo);
         fontFamilyLayout->addWidget(mFontSizeSlider);
 
         mMainLayout->addWidget(fontFamilyWidget);
     } else {
-        mMainLayout->addWidget(mFontFamilyCombo);
+        mMainLayout->addWidget(mFontFamilyPicker);
         mMainLayout->addWidget(mFontStyleCombo);
         mMainLayout->addWidget(mFontSizeSlider);
     }
@@ -277,7 +530,7 @@ QString FontsWidget::fontStyle() const
 
 QString FontsWidget::fontFamily() const
 {
-    return mFontFamilyCombo->currentText();
+    return mFontFamilyPicker->currentText();
 }
 
 void FontsWidget::setCurrentBox(BoundingBox * const box)
@@ -352,7 +605,7 @@ void FontsWidget::setDisplayedSettings(const float size,
     mTextInput->blockSignals(false);
 
     mBlockEmit++;
-    mFontFamilyCombo->setCurrentText(family);
+    mFontFamilyPicker->setCurrentText(family);
     const QString styleStr = styleStringHelper(style.weight(), style.slant());
     if (styleStr.isEmpty()) {
         mFontStyleCombo->setCurrentIndex(0);

@@ -790,6 +790,19 @@ void TimelineDockWidget::snapshotCurrentFrame()
     status(tr("Rendering snapshot at 100% resolution..."));
 }
 
+void TimelineDockWidget::spaceToggle()
+{
+    const auto state = RenderHandler::sInstance->currentPreviewState();
+    if (state == PreviewState::playing ||
+        state == PreviewState::rendering) {
+        interruptPreview();
+    } else if (mStepPreviewTimer->isActive()) {
+        pausePreview();
+    } else {
+        playPreview();
+    }
+}
+
 bool TimelineDockWidget::processKeyPress(QKeyEvent *event)
 {
     const int key = event->key();

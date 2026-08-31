@@ -40,6 +40,13 @@ class AnimatedPoint;
 
 enum class TextFragmentType : short;
 
+// recipe describing a baked text animation (see textanimpresets.h)
+struct TextAnimPreset;
+
+namespace TextAnim { enum Kind {
+    sweepIn, sweepOut, wave, pulse
+}; }
+
 class CORE_EXPORT TextEffect : public eEffect {
     Q_OBJECT
 public:
@@ -64,6 +71,16 @@ public:
     void apply(TextBoxRenderData * const textData) const;
     TextFragmentType target() const;
 
+    // configures this effect from an animation preset recipe
+    // (fragment type, stagger mode, transform start state and the
+    // baked keyframes); call before adding the effect to a box
+    void setupFromPreset(const TextAnimPreset &preset,
+                         const qreal textWidth,
+                         const qreal fontSize,
+                         const int startFrame,
+                         const qreal fps,
+                         const qreal durationScale);
+
     qreal getGuideLineWidth() const;
     qreal getGuideLineHeight() const;
 private:
@@ -80,6 +97,9 @@ private:
 
     qsptr<QrealAnimator> mInfluence;
     qsptr<ComboBoxProperty> mTarget;
+    // how the diminish guide domain is mapped onto fragments:
+    // 0 = by x/y position (default), 1 = by fragment index
+    qsptr<ComboBoxProperty> mStaggerBy;
     qsptr<QrealAnimator> mMinInfluence;
 
     qsptr<StaticComplexAnimator> mDiminishCont;

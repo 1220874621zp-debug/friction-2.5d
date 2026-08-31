@@ -98,6 +98,11 @@ public:
     void setMarker();
     void splitClip();
 
+public:
+    // instant play/pause for the Space shortcut: bypasses the
+    // preview-cache render pass (no flash, one press per toggle)
+    void spaceToggle();
+
 private:
     void setLoop(const bool loop);
     // quick PNG export of the current canvas frame

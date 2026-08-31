@@ -259,6 +259,8 @@ private:
     QDockWidget *mEasingDock = nullptr;
     QDockWidget *mProjectDock = nullptr;
     ProjectPanel *mProjectPanel = nullptr;
+    QDockWidget *mTextAnimDock = nullptr;
+    class TextAnimPresetPanel *mTextAnimPanel = nullptr;
     EffectsPresetsPanel *mEffectsPresetsPanel = nullptr;
     QuickEffectSearchDialog *mQuickEffectSearch = nullptr;
     // JS plugin system (Scripts menu + console dock)
@@ -372,7 +374,6 @@ private:
     int mTabTextIndex;
     int mTabPropertiesIndex;
     int mTabEffectsIndex;
-    int mTabAssetsIndex;
     int mTabQueueIndex;
 
     Friction::Ui::ColorToolBar *mColorToolBar;

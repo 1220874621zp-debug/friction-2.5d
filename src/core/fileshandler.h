@@ -40,6 +40,9 @@ public:
     T *getFileHandler(const QString &filePath);
     bool removeFileHandler(const qsptr<FileCacheHandler> &fh);
 
+    const QList<qsptr<FileCacheHandler>>& fileHandlers() const
+    { return mFileHandlers; }
+
     static FilesHandler* sInstance;
 private:    
     QList<qsptr<FileCacheHandler>> mFileHandlers;

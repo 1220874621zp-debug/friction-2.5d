@@ -4059,6 +4059,29 @@ Added layers: %3</source>
     </message>
 </context>
 <context>
+    <name>FontFamilyPicker</name>
+    <message>
+        <source>Font family</source>
+        <translation>Font family</translation>
+    </message>
+    <message>
+        <source>Search fonts</source>
+        <translation>Search fonts</translation>
+    </message>
+    <message>
+        <source>Favorites</source>
+        <translation>Favorites</translation>
+    </message>
+    <message>
+        <source>Chinese fonts</source>
+        <translation>Chinese fonts</translation>
+    </message>
+    <message>
+        <source>Latin fonts</source>
+        <translation>Latin fonts</translation>
+    </message>
+</context>
+<context>
     <name>MainWindow</name>
     <message>
         <location filename="../evfileio.cpp" line="87"/>
@@ -4590,6 +4613,11 @@ Added layers: %3</source>
         <location filename="../GUI/mainwindow.cpp" line="1545"/>
         <source>Easing Presets</source>
         <translation>缓动预设</translation>
+    </message>
+    <message>
+        <location filename="../GUI/mainwindow.cpp" line="1596"/>
+        <source>Text Animation Presets</source>
+        <translation>文字动画预设</translation>
     </message>
     <message>
         <location filename="../GUI/mainwindow.cpp" line="1621"/>
@@ -6108,6 +6136,18 @@ Are you sure you want to save this project file?</source>
 </context>
 <context>
     <name>ProjectPanel</name>
+    <message>
+        <source>Missing</source>
+        <translation>Missing</translation>
+    </message>
+    <message>
+        <source>Open</source>
+        <translation>Open</translation>
+    </message>
+    <message>
+        <source>Reveal in Folder</source>
+        <translation>Reveal in Folder</translation>
+    </message>
     <message>
         <location filename="../GUI/projectpanel.cpp" line="88"/>
         <source>Scene</source>

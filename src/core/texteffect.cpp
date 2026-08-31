@@ -25,11 +25,13 @@
 
 #include "texteffect.h"
 
+#include "textanimpresets.h"
 #include "Boxes/pathboxrenderdata.h"
 #include "Boxes/textboxrenderdata.h"
 #include "Boxes/textbox.h"
 
 #include "Animators/qpointfanimator.h"
+#include "Animators/transformanimator.h"
 #include "MovablePoints/animatedpoint.h"
 
 class TextEffectPoint : public AnimatedPoint {
@@ -65,6 +67,10 @@ TextEffect::TextEffect() : eEffect("text effect") {
                 "target", QStringList() << "letters" << "words" << "lines");
     mMinInfluence = enve::make_shared<QrealAnimator>(
                 0, 0, 1, 0.1, "min influence");
+    // appended last: keeps the serialized child order of older
+    // project files valid
+    mStaggerBy = enve::make_shared<ComboBoxProperty>(
+                "stagger", QStringList() << "position" << "index");
 
     mDiminishCont = enve::make_shared<StaticComplexAnimator>("diminish");
     mDiminishInfluence = enve::make_shared<QrealAnimator>(
@@ -135,6 +141,7 @@ TextEffect::TextEffect() : eEffect("text effect") {
     ca_addChild(mInfluence);
     ca_addChild(mTarget);
     ca_addChild(mMinInfluence);
+    ca_addChild(mStaggerBy);
 
     ca_addChild(mDiminishCont);
     mDiminishCont->ca_addChild(mDiminishInfluence);
@@ -175,8 +182,13 @@ qreal TextEffect::getGuideLineHeight() const {
 
 qreal TextEffect::getGuideLineWidth() const {
     const auto textBox = getFirstAncestor<TextBox>();
-    if(textBox) return textBox->getRelBoundingRect().width();
-    return 0;
+    if(!textBox) return 0;
+    const qreal w = textBox->getRelBoundingRect().width();
+    if(w > 1.) return w;
+    // sceneless boxes (preset preview) never got their cached
+    // bounding rect updated: measure the text directly instead
+    return qMax(horizontalAdvance(textBox->getSkFont(),
+                                  textBox->getCurrentValue()), 1.);
 }
 
 void TextEffect::prp_drawCanvasControls(
@@ -449,14 +461,31 @@ void TextEffect::apply(TextBoxRenderData * const textData) const {
 
     const qreal inflSum = qMin(1., dimInfl + perInfl);
     const auto baseGuide = diminishGuide(ampl, p1, p2, p3, p4, dimSmoothness);
+    const qreal guideWidth = getGuideLineWidth();
     const auto sinGuide = cyclicalGuide(ampl, period, perShift, perSmoothness,
-                                        getGuideLineWidth());
+                                        guideWidth);
+    const bool byIndex = mStaggerBy->getCurrentValue() == 1;
+    const auto fragmentX = [byIndex, guideWidth](
+                const qreal pos, const int index, const int count) {
+        if(!byIndex || count <= 0) return pos;
+        return guideWidth*(index + 0.5)/count;
+    };
     switch(target()) {
     case TextFragmentType::letter: {
+        int nFragments = 0;
+        if(byIndex) {
+            for(const auto& line : textData->fLines) {
+                for(const auto& word : line->fWords) {
+                    nFragments += word->fLetters.count();
+                }
+            }
+        }
+        int iFragments = 0;
         for(const auto& line : textData->fLines) {
             for(const auto& word : line->fWords) {
                 for(const auto& letter : word->fLetters) {
-                    const qreal xPos = letter->fOriginalPos.x();
+                    const qreal xPos = fragmentX(letter->fOriginalPos.x(),
+                                                 iFragments++, nFragments);
                     const qreal baseInfl = baseGuide.getValue(xPos)*dimInfl + inflSum - dimInfl;
                     const qreal sinInfl = sinGuide.getValue(xPos)*perInfl + inflSum - perInfl;
                     const qreal influence = qBound(minInfl, baseInfl*sinInfl, 1.);
@@ -466,9 +495,17 @@ void TextEffect::apply(TextBoxRenderData * const textData) const {
         }
     } break;
     case TextFragmentType::word: {
+        int nFragments = 0;
+        if(byIndex) {
+            for(const auto& line : textData->fLines) {
+                nFragments += line->fWords.count();
+            }
+        }
+        int iFragments = 0;
         for(const auto& line : textData->fLines) {
             for(const auto& word : line->fWords) {
-                const qreal xPos = word->fOriginalPos.x();
+                const qreal xPos = fragmentX(word->fOriginalPos.x(),
+                                             iFragments++, nFragments);
                 const qreal baseInfl = baseGuide.getValue(xPos)*dimInfl + inflSum - dimInfl;
                 const qreal sinInfl = sinGuide.getValue(xPos)*perInfl + inflSum - perInfl;
                 const qreal influence = qBound(minInfl, baseInfl*sinInfl, 1.);
@@ -477,8 +514,14 @@ void TextEffect::apply(TextBoxRenderData * const textData) const {
         }
     } break;
     case TextFragmentType::line: {
+        int nFragments = 0;
+        if(byIndex) nFragments = textData->fLines.count();
+        int iFragments = 0;
         for(const auto& line : textData->fLines) {
-            const qreal yPos = line->fOriginalPos.y();
+            const qreal yPos = byIndex ?
+                        fragmentX(line->fOriginalPos.y(),
+                                  iFragments++, nFragments) :
+                        line->fOriginalPos.y();
             const qreal baseInfl = baseGuide.getValue(yPos)*dimInfl + inflSum - dimInfl;
             const qreal sinInfl = sinGuide.getValue(yPos)*perInfl + inflSum - perInfl;
             const qreal influence = qBound(minInfl, baseInfl*sinInfl, 1.);
@@ -491,4 +534,106 @@ void TextEffect::apply(TextBoxRenderData * const textData) const {
 
 TextFragmentType TextEffect::target() const {
     return static_cast<TextFragmentType>(mTarget->getCurrentValue());
+}
+
+void TextEffect::setupFromPreset(const TextAnimPreset &preset,
+                                 const qreal textWidth,
+                                 const qreal fontSize,
+                                 const int startFrame,
+                                 const qreal fps,
+                                 const qreal durationScale) {
+    mTarget->setCurrentValue(preset.fragment);
+    mStaggerBy->setCurrentValue(preset.byIndex ? 1 : 0);
+
+    mTransform->setPosition(preset.posX, preset.posY);
+    mTransform->setRotation(preset.rot);
+    mTransform->setScale(preset.scaleX, preset.scaleY);
+    mTransform->setOpacity(preset.opacity);
+    if(preset.pivotCenter) {
+        mTransform->setPivot(0.3*fontSize, -0.35*fontSize);
+    } else {
+        mTransform->setPivot(0, 0);
+    }
+
+    const qreal W = qMax(textWidth, 1.);
+    const int durF = qMax(1, qRound(preset.duration*durationScale*fps));
+    const int F0 = startFrame;
+    const int F1 = F0 + durF;
+    const qreal soft = qBound(0.02*W, preset.softness*W, 0.9*W);
+    const qreal left = -0.15*W;
+    const qreal right = 1.15*W;
+
+    // keys the (x, y) of a guide control point: (x0, y0) at F0,
+    // interpolating to (x1, y1) at F1
+    const auto keyPoint = [F0, F1](QPointFAnimator * const anim,
+                                   const qreal x0, const qreal x1,
+                                   const qreal y0, const qreal y1) {
+        const auto xAnim = anim->getXAnimator();
+        const auto yAnim = anim->getYAnimator();
+        if(xAnim) {
+            xAnim->saveValueToKey(F0, x0);
+            xAnim->saveValueToKey(F1, x1);
+        }
+        if(yAnim) {
+            yAnim->saveValueToKey(F0, y0);
+            yAnim->saveValueToKey(F1, y1);
+        }
+    };
+
+    switch(preset.kind) {
+    case TextAnim::sweepIn:
+    case TextAnim::sweepOut: {
+        mDiminishInfluence->setCurrentBaseValue(1);
+        mPeriodicInfluence->setCurrentBaseValue(0);
+
+        // value to the left / right of the moving front:
+        // entrance:  left = arrived (0), right = start state (1)
+        // exit:      left = gone (1),   right = intact (0)
+        const bool ltr = preset.direction == TextAnimDirection::leftToRight;
+        const qreal inY0 = preset.kind == TextAnim::sweepIn ? 0 : 1;
+        const qreal inY1 = preset.kind == TextAnim::sweepIn ? 1 : 0;
+        const qreal yLeft = ltr ? inY0 : inY1;
+        const qreal yRight = ltr ? inY1 : inY0;
+
+        // anchors sit beyond the band's end positions so the four
+        // control points never collide mid-sweep
+        mP1Anim->setBaseValue(left - soft, yLeft);
+        mP4Anim->setBaseValue(right + soft, yRight);
+        // the [P2, P3] band is the moving front; at F0 it sits fully
+        // outside the text on one side, at F1 fully past it on the
+        // other, so the first/last frame is a clean rest state
+        if(ltr) {
+            keyPoint(mP2Anim.get(), left - soft, right, yLeft, yLeft);
+            keyPoint(mP3Anim.get(), left, right + soft, yRight, yRight);
+        } else {
+            keyPoint(mP2Anim.get(), right, left - soft, yLeft, yLeft);
+            keyPoint(mP3Anim.get(), right + soft, left, yRight, yRight);
+        }
+    } break;
+    case TextAnim::wave: {
+        mDiminishInfluence->setCurrentBaseValue(0);
+        mPeriodicInfluence->setCurrentBaseValue(1);
+        const qreal period = qMax(W/qMax(1, preset.waveCycles), 1.);
+        mPeriod->setCurrentBaseValue(period);
+        mPeriodicSmoothness->setCurrentBaseValue(0.5);
+        // one full period of shift travel per waveTime: seamless loop
+        const int waveF = qMax(1, qRound(preset.waveTime*fps));
+        mPeriodicShift->saveValueToKey(F0, 0);
+        mPeriodicShift->saveValueToKey(F0 + waveF, period);
+    } break;
+    case TextAnim::pulse: {
+        mDiminishInfluence->setCurrentBaseValue(1);
+        mPeriodicInfluence->setCurrentBaseValue(0);
+        // flat guide at 1: every fragment gets the same influence,
+        // driven over time by the influence animator itself
+        mP1Anim->setBaseValue(left, 1);
+        mP2Anim->setBaseValue(left + 0.01*W, 1);
+        mP3Anim->setBaseValue(right - 0.01*W, 1);
+        mP4Anim->setBaseValue(right, 1);
+        const qreal peak = qBound(0., preset.pulsePeak, 1.);
+        mInfluence->saveValueToKey(F0, 0);
+        mInfluence->saveValueToKey(F1, peak);
+        mInfluence->saveValueToKey(F1 + durF, 0);
+    } break;
+    }
 }

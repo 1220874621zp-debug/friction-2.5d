@@ -369,6 +369,8 @@ set(
     switchablecontext.cpp
     swt_abstraction.cpp
     swt_rulescollection.cpp
+    layeranimpresets.cpp
+    textanimpresets.cpp
     texteffect.cpp
     transformvalues.cpp
     undoredo.cpp
@@ -754,6 +756,8 @@ set(
     switchablecontext.h
     swt_abstraction.h
     swt_rulescollection.h
+    layeranimpresets.h
+    textanimpresets.h
     texteffect.h
     threadsafeqjsengine.h
     transformvalues.h
@@ -906,3 +910,11 @@ endif()
 #        ${CMAKE_INSTALL_LIBDIR}
 #    )
 #endif()
+
+# dev-only: text animation preview renderer check tool
+if(WIN32)
+    add_executable(textanimtest textanimtest.cpp)
+    target_compile_options(textanimtest PRIVATE /utf-8)
+    target_link_directories(textanimtest PRIVATE ${SKIA_LIBRARIES_DIRS})
+    target_link_libraries(textanimtest PRIVATE ${PROJECT_NAME} ${QT_LIBRARIES} ${SKIA_LIBRARIES})
+endif()

@@ -683,6 +683,10 @@ void Canvas::handleLeftButtonMousePress(const eMouseEvent& e)
             mCurrentTextBox = newPath.get();
             clearBoxesSelection();
             addBoxToSelection(newPath.get());
+            // creating text means the user is about to type: focus
+            // the text input explicitly (selection alone no longer
+            // does, so Space playback keeps working)
+            emit openTextEditor();
         }
     }
 }
