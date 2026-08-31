@@ -216,30 +216,32 @@ void BoxScroller::mouseReleaseEvent(QMouseEvent *e) {
 }
 
 bool BoxScroller::eventFilter(QObject *obj, QEvent *event) {
-    // row gestures: the press flows on natively (clicks, shift-clicks,
-    // double-clicks and row drags keep their behavior); once the move
-    // distance passes the drag threshold we take the gesture over as a
-    // rubber band and swallow everything until release
+    // marquee starts ONLY from a row's blank zone (left indent / right
+    // blank, natively gesture-dead) or the empty area below the list;
+    // presses on the row content flow natively, preserving click,
+    // shift-click, double-click AND long-press drag-to-reorder
     const auto type = event->type();
     if(type == QEvent::MouseButtonPress) {
         const auto me = static_cast<QMouseEvent*>(event);
         if(me->button() == Qt::LeftButton &&
            me->modifiers() == Qt::NoModifier) {
-            mRubberPotential = true;
-            mRubberStart = static_cast<QWidget*>(obj)->mapTo(this, me->pos());
+            const auto row = static_cast<BoxSingleWidget*>(obj);
+            if(row->inRowBlankZone(me->pos().x())) {
+                mRubberPotential = true;
+                mRubberStart = row->mapTo(this, me->pos());
+            }
         }
     } else if(type == QEvent::MouseMove && mRubberPotential) {
         const auto me = static_cast<QMouseEvent*>(event);
         rubberUpdateRect(static_cast<QWidget*>(obj)->mapTo(this, me->pos()));
-        return mRubberStarted; // swallow once the band is live: blocks
-                               // the row's QDrag reorder takeover
+        return mRubberStarted;
     } else if(type == QEvent::MouseButtonRelease) {
         if(mRubberStarted) {
             const auto me = static_cast<QMouseEvent*>(event);
             rubberFinish(static_cast<QWidget*>(obj)->mapTo(this, me->pos()));
             return true; // the gesture was a band, not a click
         } else if(mRubberPotential) {
-            mRubberPotential = false; // plain click: let it through
+            mRubberPotential = false; // blank-zone click: dead anyway
         }
     }
     return QWidget::eventFilter(obj, event);

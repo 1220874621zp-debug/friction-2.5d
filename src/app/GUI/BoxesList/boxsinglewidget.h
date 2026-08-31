@@ -148,6 +148,14 @@ public:
         selOverlayUpdate();
     }
     void selOverlayUpdate();
+
+    // true when x falls outside the interactive band (mFillWidget) -
+    // the left indent and the blank right side of the row; natively
+    // gesture-dead, used as the rubber-band selection start zone
+    bool inRowBlankZone(const int x) const {
+        return !mFillWidget || x < mFillWidget->x() ||
+               x > mFillWidget->x() + mFillWidget->width();
+    }
 protected:
     bool mSelected = false;
     bool eventFilter(QObject *obj, QEvent *event) override;
