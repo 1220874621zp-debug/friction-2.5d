@@ -170,7 +170,15 @@ void RenderHandler::setPreviewState(const PreviewState state)
 {
     if (mPreviewState == state) { return; }
     if (mPreviewState == PreviewState::stopped) {
-        setRenderingPreview(true);
+        if (state == PreviewState::playing) {
+            // resuming straight from stopped (Space / resume button
+            // after a full stop): entering playing without the
+            // mPreviewing flag left every later pause/resume a silent
+            // no-op - the preview kept rolling and Space seemed dead
+            setPreviewing(true);
+        } else {
+            setRenderingPreview(true);
+        }
     } else if (mPreviewState == PreviewState::rendering) {
         setRenderingPreview(false);
         if (state == PreviewState::playing) { setPreviewing(true); }
