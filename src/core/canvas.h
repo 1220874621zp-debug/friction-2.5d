@@ -302,6 +302,10 @@ public:
                             const AlignPivot pivot,
                             const AlignRelativeTo relativeTo);
 
+    // uniformly scale each selected box so its world-space width/height
+    // matches the canvas, then center it on the canvas (one undo step)
+    void scaleSelectedBoxesToCanvas(const bool byWidth);
+
     void selectAndAddContainedPointsToSelection(const QRectF &absRect);
 //
     //void newPaintBox(const QPointF &pos);

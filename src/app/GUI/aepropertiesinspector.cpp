@@ -655,10 +655,18 @@ void AEPropertiesInspector::setupTransformControls(QGridLayout *grid, BoundingBo
 
         QToolButton *linkBtn = nullptr;
         if (isScale) {
+            // shared link state: the "linkedScale" dynamic property on
+            // the scale point animator - the same state the chain
+            // button on the timeline property rows and the sliders
+            // themselves (uniform scaling) read and write
+            const auto scalePfa = enve_cast<QPointFAnimator*>(
+                        animX->getParent());
             linkBtn = new QToolButton(inputContainer);
             linkBtn->setObjectName(QStringLiteral("FlatButton"));
             linkBtn->setCheckable(true);
-            linkBtn->setChecked(true);
+            linkBtn->setChecked(
+                        scalePfa &&
+                        scalePfa->property("linkedScale").toBool());
             linkBtn->setIcon(QIcon::fromTheme(QStringLiteral("linked")));
             linkBtn->setFixedSize(16, 16);
 
@@ -687,8 +695,14 @@ void AEPropertiesInspector::setupTransformControls(QGridLayout *grid, BoundingBo
                     linkBtn->setToolTip(tr("等比缩放已解锁 (点击锁定等比缩放)"));
                 }
             };
-            updateLinkBtnStyle(true);
-            connect(linkBtn, &QToolButton::toggled, updateLinkBtnStyle);
+            updateLinkBtnStyle(linkBtn->isChecked());
+            connect(linkBtn, &QToolButton::toggled,
+                    this, [scalePfa, updateLinkBtnStyle](const bool locked) {
+                if (scalePfa) {
+                    scalePfa->setProperty("linkedScale", locked);
+                }
+                updateLinkBtnStyle(locked);
+            });
 
             ih->addWidget(linkBtn);
         }
@@ -702,15 +716,20 @@ void AEPropertiesInspector::setupTransformControls(QGridLayout *grid, BoundingBo
         ih->addWidget(sliderY, 1);
 
         if (isScale && linkBtn) {
-            connect(sliderX, &QrealAnimatorValueSlider::valueEdited, [animY, sliderY, linkBtn, this](qreal val) {
-                if (linkBtn->isChecked() && animY) {
+            // sync mirrors the shared state (same value the slider-
+            // level uniform scaling applies); the explicit copy keeps
+            // the sibling slider's displayed value in step
+            const auto scalePfa = enve_cast<QPointFAnimator*>(
+                        animX->getParent());
+            connect(sliderX, &QrealAnimatorValueSlider::valueEdited, [animY, sliderY, scalePfa, this](qreal val) {
+                if (scalePfa && scalePfa->property("linkedScale").toBool() && animY) {
                     animY->setCurrentBaseValue(val);
                     sliderY->setDisplayedValue(val);
                     if (mScene) { mScene->requestUpdate(); }
                 }
             });
-            connect(sliderY, &QrealAnimatorValueSlider::valueEdited, [animX, sliderX, linkBtn, this](qreal val) {
-                if (linkBtn->isChecked() && animX) {
+            connect(sliderY, &QrealAnimatorValueSlider::valueEdited, [animX, sliderX, scalePfa, this](qreal val) {
+                if (scalePfa && scalePfa->property("linkedScale").toBool() && animX) {
                     animX->setCurrentBaseValue(val);
                     sliderX->setDisplayedValue(val);
                     if (mScene) { mScene->requestUpdate(); }

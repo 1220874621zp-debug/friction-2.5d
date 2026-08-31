@@ -123,6 +123,10 @@ private:
     void applyLoopExpressions(const QString& header);
     void clearLoopExpressions();
 
+    // uniformly scale the selected layers so their width/height matches
+    // the canvas (see Canvas::scaleSelectedBoxesToCanvas)
+    void matchSelectedToCanvas(const bool byWidth);
+
     bool playPreview();
     void renderPreview();
     void pausePreview();
@@ -160,6 +164,8 @@ private:
     QAction *mLoopPoseFwdButton = nullptr;
     QAction *mLoopPosePingPongButton = nullptr;
     QAction *mLoopPoseSkipButton = nullptr;
+    QAction *mMatchCanvasWidthButton = nullptr;
+    QAction *mMatchCanvasHeightButton = nullptr;
 
     FrameSpinBox *mFrameStartSpin;
     FrameSpinBox *mFrameEndSpin;

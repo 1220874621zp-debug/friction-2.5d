@@ -88,6 +88,7 @@ protected:
 private:
     QrealAnimator *getTransformTargetSibling();
     QrealAnimator *getTargetSibling();
+    bool targetSiblingLinked() const;
     void targetHasExpressionChanged();
 
     QMetaObject::Connection mExprConn;

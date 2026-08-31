@@ -436,6 +436,63 @@ TimelineDockWidget::TimelineDockWidget(Document& document,
         });
     }
 
+    // match canvas: uniformly scale every selected layer so its width
+    // or height matches the canvas, then center it (AE fit-to-comp
+    // alike); one click = one undo step for the whole batch
+    {
+        // canvas frame + double arrow along the matched axis
+        const auto makeMatchIcon = [](const bool horizontal) {
+            QPixmap pm(64, 64);
+            pm.fill(Qt::transparent);
+            QPainter p(&pm);
+            p.setRenderHint(QPainter::Antialiasing);
+            QPen frame(QColor(255, 255, 255, 190));
+            frame.setWidthF(3.);
+            p.setBrush(Qt::NoBrush);
+            p.setPen(frame);
+            p.drawRoundedRect(QRectF(6, 6, 52, 52), 6, 6);
+            QPen arrow(QColor(120, 200, 255, 235));
+            arrow.setWidthF(4.5);
+            arrow.setCapStyle(Qt::RoundCap);
+            p.setPen(arrow);
+            const QPointF head(7.5, 7.5);
+            if (horizontal) {
+                p.drawLine(QPointF(15, 32), QPointF(49, 32));
+                p.drawLine(QPointF(15, 32), QPointF(22, 32) + QPointF(0, -head.y()));
+                p.drawLine(QPointF(15, 32), QPointF(22, 32) + QPointF(0, head.y()));
+                p.drawLine(QPointF(49, 32), QPointF(42, 32) + QPointF(0, -head.y()));
+                p.drawLine(QPointF(49, 32), QPointF(42, 32) + QPointF(0, head.y()));
+            } else {
+                p.drawLine(QPointF(32, 15), QPointF(32, 49));
+                p.drawLine(QPointF(32, 15), QPointF(32, 22) + QPointF(-head.x(), 0));
+                p.drawLine(QPointF(32, 15), QPointF(32, 22) + QPointF(head.x(), 0));
+                p.drawLine(QPointF(32, 49), QPointF(32, 42) + QPointF(-head.x(), 0));
+                p.drawLine(QPointF(32, 49), QPointF(32, 42) + QPointF(head.x(), 0));
+            }
+            p.end();
+            return pm;
+        };
+        mMatchCanvasWidthButton = new QAction(makeMatchIcon(true),
+                                              tr("Match Canvas Width"),
+                                              this);
+        mMatchCanvasWidthButton->setToolTip(tr(
+                "Uniformly scale each selected layer so its width "
+                "matches the canvas width, then center it on the "
+                "canvas (aspect ratio preserved)"));
+        connect(mMatchCanvasWidthButton, &QAction::triggered,
+                this, [this]() { matchSelectedToCanvas(true); });
+
+        mMatchCanvasHeightButton = new QAction(makeMatchIcon(false),
+                                               tr("Match Canvas Height"),
+                                               this);
+        mMatchCanvasHeightButton->setToolTip(tr(
+                "Uniformly scale each selected layer so its height "
+                "matches the canvas height, then center it on the "
+                "canvas (aspect ratio preserved)"));
+        connect(mMatchCanvasHeightButton, &QAction::triggered,
+                this, [this]() { matchSelectedToCanvas(false); });
+    }
+
     mStepPreviewTimer = new QTimer(this);
 
     mFrameStartSpin = new FrameSpinBox(this);
@@ -599,6 +656,8 @@ TimelineDockWidget::TimelineDockWidget(Document& document,
     mToolBar->addAction(mLoopPoseFwdButton);
     mToolBar->addAction(mLoopPosePingPongButton);
     mToolBar->addAction(mLoopPoseSkipButton);
+    mToolBar->addAction(mMatchCanvasWidthButton);
+    mToolBar->addAction(mMatchCanvasHeightButton);
 
     addSpacer();
 
@@ -1422,6 +1481,16 @@ void TimelineDockWidget::clearLoopExpressions()
                  .startsWith(QLatin1String("//loop:"))) continue;
         anim->clearExpressionAction();
     }
+    Document::sInstance->actionFinished();
+    scene->updateAllBoxes(UpdateReason::userChange);
+}
+
+void TimelineDockWidget::matchSelectedToCanvas(const bool byWidth)
+{
+    const auto scene = *mDocument.fActiveScene;
+    if (!scene) return;
+    if (scene->getSelectedBoxesList().isEmpty()) return;
+    scene->scaleSelectedBoxesToCanvas(byWidth);
     Document::sInstance->actionFinished();
     scene->updateAllBoxes(UpdateReason::userChange);
 }

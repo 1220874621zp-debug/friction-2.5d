@@ -225,6 +225,25 @@ SceneSettingsDialog::SceneSettingsDialog(const QString &name,
 
     validate();
 
+    // black input fields: name / size / duration / fps (user
+    // preference); only the input classes are restyled, the presets
+    // buttons and combo keep the themed look
+    setStyleSheet(QStringLiteral(
+        "QLineEdit, QSpinBox, QDoubleSpinBox {"
+        " background-color: #000000;"
+        " color: #f0f0f2;"
+        " border: 1px solid #3c3c42;"
+        " border-radius: 2px;"
+        " selection-background-color: #3d6a99;"
+        " selection-color: #ffffff;"
+        "}"
+        "QLineEdit:hover, QSpinBox:hover, QDoubleSpinBox:hover {"
+        " border-color: #55555f;"
+        "}"
+        "QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus {"
+        " border-color: #3d6a99;"
+        "}"));
+
     populateResPresets();
     populateFpsPresets();
 }

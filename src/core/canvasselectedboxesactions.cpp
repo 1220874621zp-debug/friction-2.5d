@@ -1209,3 +1209,34 @@ void Canvas::alignSelectedBoxes(const Qt::Alignment align,
         }
     }
 }
+
+void Canvas::scaleSelectedBoxesToCanvas(const bool byWidth) {
+    if (mSelectedBoxes.isEmpty()) { return; }
+    // per-layer: compute the uniform factor from the layer's
+    // world-space bounds (so parent group scaling is accounted for),
+    // scale about the saved transform pivot, then move the layer's
+    // world center onto the canvas center; all per-layer transforms
+    // merge into a single undo step via pushUndoRedoName
+    pushUndoRedoName(byWidth ? tr("Match Canvas Width")
+                             : tr("Match Canvas Height"));
+    const QRectF canvasRect(0., 0., mWidth, mHeight);
+    const QPointF canvasCenter = canvasRect.center();
+    for (const auto &box : mSelectedBoxes) {
+        const QRectF bounds = box->getAbsBoundingRect();
+        const qreal dim = byWidth ? bounds.width() : bounds.height();
+        const qreal target = byWidth ? canvasRect.width()
+                                     : canvasRect.height();
+        if (dim <= 0.) { continue; }
+        const qreal factor = target / dim;
+        box->startScaleTransform();
+        box->scale(factor);
+        box->finishTransform();
+        const QPointF newCenter = box->getAbsBoundingRect().center();
+        const QPointF shift = canvasCenter - newCenter;
+        if (!qFuzzyIsNull(shift.x()) || !qFuzzyIsNull(shift.y())) {
+            box->startPosTransform();
+            box->moveByAbs(shift);
+            box->finishTransform();
+        }
+    }
+}

@@ -115,6 +115,20 @@ QrealAnimator* QrealAnimatorValueSlider::getTransformTargetSibling()
     return nullptr;
 }
 
+bool QrealAnimatorValueSlider::targetSiblingLinked() const
+{
+    // "linkedScale" is a dynamic QObject property toggled by the chain
+    // button on the scale row; it lives on the parent point animator so
+    // every slider bound to x/y shares the same state
+    const Property* parent = nullptr;
+    if (mTarget) { parent = mTarget->getParent(); }
+    else if (mTransformTarget) { parent = mTransformTarget->getParent(); }
+    const auto qPA = enve_cast<QPointFAnimator*>(
+                const_cast<Property*>(parent));
+    if (!qPA) { return false; }
+    return qPA->property("linkedScale").toBool();
+}
+
 QrealAnimator *QrealAnimatorValueSlider::getTargetSibling()
 {
     if (mTarget) {
@@ -129,7 +143,8 @@ QrealAnimator *QrealAnimatorValueSlider::getTargetSibling()
 
 void QrealAnimatorValueSlider::mouseMoveEvent(QMouseEvent *e)
 {
-    const bool uniform = e->modifiers() & Qt::ShiftModifier;
+    const bool uniform = (e->modifiers() & Qt::ShiftModifier) ||
+                         targetSiblingLinked();
     QDoubleSlider::mouseMoveEvent(e);
     if (uniform) {
         const auto other = getTransformTargetSibling();
@@ -141,13 +156,15 @@ void QrealAnimatorValueSlider::mouseMoveEvent(QMouseEvent *e)
 
 void QrealAnimatorValueSlider::keyPressEvent(QKeyEvent *e)
 {
-    mUniform = e->modifiers() & Qt::ShiftModifier;
+    mUniform = (e->modifiers() & Qt::ShiftModifier) ||
+               targetSiblingLinked();
     QDoubleSlider::keyPressEvent(e);
 }
 
 void QrealAnimatorValueSlider::keyReleaseEvent(QKeyEvent *e)
 {
-    mUniform = e->modifiers() & Qt::ShiftModifier;
+    mUniform = (e->modifiers() & Qt::ShiftModifier) ||
+               targetSiblingLinked();
     QDoubleSlider::keyReleaseEvent(e);
 }
 
@@ -198,7 +215,7 @@ void QrealAnimatorValueSlider::finishTransform(const qreal value)
         mTransformTarget->prp_finishTransform();
         const auto other = getTransformTargetSibling();
         if (other) {
-            if (mUniform) {
+            if (mUniform || targetSiblingLinked()) {
                 other->prp_startTransform();
                 other->setCurrentBaseValue(mTarget->getCurrentBaseValue());
                 mUniform = false;
@@ -238,7 +255,8 @@ void QrealAnimatorValueSlider::wheelEvent(QWheelEvent *e)
 
     const bool alt = e->modifiers() & Qt::AltModifier;
     const bool ctrl = e->modifiers() & Qt::ControlModifier;
-    const bool uniform = e->modifiers() & Qt::ShiftModifier;
+    const bool uniform = (e->modifiers() & Qt::ShiftModifier) ||
+                         targetSiblingLinked();
 
     if (!mTransformTarget || !uniform) { return; }
     const auto other = getTransformTargetSibling();

@@ -1552,6 +1552,11 @@
         <source>Bind to Bone</source>
         <translation>绑定到骨骼</translation>
     </message>
+    <message>
+        <location filename="../GUI/BoxesList/boxsinglewidget.cpp" line="855"/>
+        <source>Constrain scale proportions: link the X and Y scale, editing either scales both (same as holding Shift while dragging)</source>
+        <translation>锁定等比缩放：链接 X/Y 缩放，编辑任一轴两轴同缩（与按住 Shift 拖动等效）</translation>
+    </message>
 </context>
 <context>
     <name>BoxTargetProperty</name>
@@ -1594,6 +1599,16 @@
 </context>
 <context>
     <name>Canvas</name>
+    <message>
+        <location filename="../../core/canvasselectedboxesactions.cpp" line="1213"/>
+        <source>Match Canvas Width</source>
+        <translation>匹配画布宽度</translation>
+    </message>
+    <message>
+        <location filename="../../core/canvasselectedboxesactions.cpp" line="1214"/>
+        <source>Match Canvas Height</source>
+        <translation>匹配画布高度</translation>
+    </message>
     <message>
         <location filename="../../core/canvas.cpp" line="608"/>
         <source>Scene Dimension Changed</source>
@@ -8620,6 +8635,26 @@ Select the layers you want to import:</source>
         <location filename="../GUI/timelinedockwidget.cpp" line="467"/>
         <source>Number of leading keys to skip:</source>
         <translation>跳过左侧关键帧的数量：</translation>
+    </message>
+    <message>
+        <location filename="../GUI/timelinedockwidget.cpp" line="480"/>
+        <source>Match Canvas Width</source>
+        <translation>按宽度匹配画布</translation>
+    </message>
+    <message>
+        <location filename="../GUI/timelinedockwidget.cpp" line="482"/>
+        <source>Uniformly scale each selected layer so its width matches the canvas width, then center it on the canvas (aspect ratio preserved)</source>
+        <translation>等比例缩放选中图层使其宽度匹配画布宽度，并居中到画布（保持宽高比）</translation>
+    </message>
+    <message>
+        <location filename="../GUI/timelinedockwidget.cpp" line="488"/>
+        <source>Match Canvas Height</source>
+        <translation>按高度匹配画布</translation>
+    </message>
+    <message>
+        <location filename="../GUI/timelinedockwidget.cpp" line="490"/>
+        <source>Uniformly scale each selected layer so its height matches the canvas height, then center it on the canvas (aspect ratio preserved)</source>
+        <translation>等比例缩放选中图层使其高度匹配画布高度，并居中到画布（保持宽高比）</translation>
     </message>
 </context>
 <context>
