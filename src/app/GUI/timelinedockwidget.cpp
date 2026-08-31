@@ -793,6 +793,10 @@ void TimelineDockWidget::snapshotCurrentFrame()
 void TimelineDockWidget::spaceToggle()
 {
     const auto state = RenderHandler::sInstance->currentPreviewState();
+    // diagnostic: distinguishes "Space never reached this slot" from
+    // "reached but wrong branch" when users report dead Space keys
+    qWarning() << "[SPACE] spaceToggle state=" << int(state)
+               << "stepTimer=" << mStepPreviewTimer->isActive();
     // Space toggles "edit <-> preview": running, rendering AND paused
     // all exit back to the editor (a paused preview stays in preview
     // mode with gizmos suppressed, so resuming from Space made it

@@ -65,17 +65,22 @@ BasicTransformAnimator::BasicTransformAnimator() :
             this, &BasicTransformAnimator::updateRelativeTransform);
     // value changes (dragged motion path keys, timeline edits) do not
     // propagate prp_currentFrameChanged up from children (only frame
-    // switches do), so the cached rel/total transforms - and the
-    // pivot refresh they trigger - went stale until the next frame
-    // switch; listen to the animators directly
+    // switches do), and they fire on the LEAF x/y QrealAnimators -
+    // the QPointFAnimator wrappers stay silent - so the cached
+    // rel/total transforms (and the pivot refresh they trigger) went
+    // stale until the next frame switch; listen to the leaves
     const auto valueChanged = [this](const UpdateReason reason) {
         updateRelativeTransform(reason);
     };
-    connect(mPosAnimator.get(), &Property::prp_currentFrameChanged,
+    connect(mPosAnimator->getXAnimator(), &Property::prp_currentFrameChanged,
+            this, valueChanged);
+    connect(mPosAnimator->getYAnimator(), &Property::prp_currentFrameChanged,
             this, valueChanged);
     connect(mRotAnimator.get(), &Property::prp_currentFrameChanged,
             this, valueChanged);
-    connect(mScaleAnimator.get(), &Property::prp_currentFrameChanged,
+    connect(mScaleAnimator->getXAnimator(), &Property::prp_currentFrameChanged,
+            this, valueChanged);
+    connect(mScaleAnimator->getYAnimator(), &Property::prp_currentFrameChanged,
             this, valueChanged);
 }
 
