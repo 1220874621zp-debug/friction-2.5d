@@ -61,8 +61,18 @@ public:
 
     void startTransform() override {
         mSavedPos = getRelativePos();
+        // MovablePoint::moveByAbs drags relative to mSavedRelPos; the
+        // base save is what keeps the box from jumping to the origin
+        MovablePoint::startTransform();
         mXAnim->prp_startTransform();
         mYAnim->prp_startTransform();
+    }
+
+    // AE-style: motion path points are editable with the regular
+    // transform tool, not only in node-edit mode
+    bool isVisible(const CanvasMode mode) const override {
+        return mode == CanvasMode::boxTransform ||
+               mode == CanvasMode::pointTransform;
     }
 
     void finishTransform() override {
@@ -127,6 +137,13 @@ public:
         const auto yk = yKey();
         if (!xk || !yk) { return {}; }
         const bool isIn = mKind == Kind::In;
+        const bool enabled = isIn ? xk->getC0Enabled() : xk->getC1Enabled();
+        if (!enabled) {
+            // ungrabbed handle: show on the linear extrapolation towards
+            // the neighbouring key (AE auto-bezier look) so it can be
+            // grabbed; purely visual - nothing is written until dragged
+            return extrapolatedPos();
+        }
         return {isIn ? xk->getC0Value() : xk->getC1Value(),
                 isIn ? yk->getC0Value() : yk->getC1Value()};
     }
@@ -136,10 +153,27 @@ public:
         const auto yk = yKey();
         if (!xk || !yk) { return; }
         const bool isIn = mKind == Kind::In;
-        if (!xk->getC0Enabled()) { xk->setC0Enabled(true); }
-        if (!xk->getC1Enabled()) { xk->setC1Enabled(true); }
-        if (!yk->getC0Enabled()) { yk->setC0Enabled(true); }
-        if (!yk->getC1Enabled()) { yk->setC1Enabled(true); }
+        // graph c0/c1 are (frame, value) points: when a handle is
+        // enabled the control point also needs a sane TIME - leaving
+        // it at the key frame degenerates the easing bezier and
+        // visibly shifts the animation
+        const auto enableWithDefaultFrame = [](GraphKey * const k,
+                                                const bool in) {
+            if (in ? k->getC0Enabled() : k->getC1Enabled()) { return; }
+            const int here = k->getRelFrame();
+            const auto other = in ? k->getNextKeyRelFrame()
+                                  : k->getPrevKeyRelFrame();
+            const auto fallback = in ? k->getPrevKeyRelFrame()
+                                     : k->getNextKeyRelFrame();
+            int span = (other == here ? fallback : other) - here;
+            if (span == 0) { span = 1; }
+            if (in) { k->setC0Frame(here - span/3.); }
+            else    { k->setC1Frame(here + span/3.); }
+            if (in) { k->setC0Enabled(true); }
+            else    { k->setC1Enabled(true); }
+        };
+        enableWithDefaultFrame(xk, isIn);
+        enableWithDefaultFrame(yk, isIn);
         if (isIn) {
             xk->setC0Value(relPos.x());
             yk->setC0Value(relPos.y());
@@ -150,11 +184,19 @@ public:
     }
 
     void startTransform() override {
+        // keep mSavedRelPos for the absolute drag base (see MotionKeyPoint)
+        MovablePoint::startTransform();
         const auto xk = xKey();
         const auto yk = yKey();
         if (!xk || !yk) { return; }
         xk->startCtrlPointsValueTransform();
         yk->startCtrlPointsValueTransform();
+    }
+
+    // AE-style: editable with the regular transform tool as well
+    bool isVisible(const CanvasMode mode) const override {
+        return mode == CanvasMode::boxTransform ||
+               mode == CanvasMode::pointTransform;
     }
 
     void finishTransform() override {
@@ -185,6 +227,33 @@ public:
                        false);
     }
 private:
+    // linear extrapolation one third of the way towards the neighbour
+    // key (mirroring the other side when this side has none); the
+    // control points stay collinear with the keys, so the easing
+    // curve and the actual animation remain unchanged
+    QPointF extrapolatedPos() const {
+        const auto xk = xKey();
+        const auto yk = yKey();
+        if (!xk || !yk) { return {}; }
+        const bool isIn = mKind == Kind::In;
+        const auto pick = [isIn](GraphKey * const k) {
+            auto n = isIn ? k->getPrevKey<GraphKey>()
+                          : k->getNextKey<GraphKey>();
+            if (!n) { n = isIn ? k->getNextKey<GraphKey>()
+                               : k->getPrevKey<GraphKey>(); }
+            return n;
+        };
+        const auto xN = pick(xk);
+        const auto yN = pick(yk);
+        const qreal t = 1./3.;
+        const qreal xHere = xk->getValueForGraph();
+        const qreal yHere = yk->getValueForGraph();
+        const qreal xThere = xN ? xN->getValueForGraph() : xHere;
+        const qreal yThere = yN ? yN->getValueForGraph() : yHere;
+        return {xHere + (xThere - xHere)*t,
+                yHere + (yThere - yHere)*t};
+    }
+
     QPointer<QrealAnimator> mXAnim;
     QPointer<QrealAnimator> mYAnim;
     const int mFrame;
