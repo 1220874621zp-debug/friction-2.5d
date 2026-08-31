@@ -797,14 +797,17 @@ void TimelineDockWidget::spaceToggle()
     // "reached but wrong branch" when users report dead Space keys
     qWarning() << "[SPACE] spaceToggle state=" << int(state)
                << "stepTimer=" << mStepPreviewTimer->isActive();
-    // Space toggles "edit <-> preview": running, rendering AND paused
-    // all exit back to the editor (a paused preview stays in preview
-    // mode with gizmos suppressed, so resuming from Space made it
-    // feel like Space could not leave the preview at all)
-    if (state == PreviewState::playing ||
-        state == PreviewState::rendering ||
-        state == PreviewState::paused) {
+    // AE-style play/pause toggle: pausing keeps the current frame and
+    // returns to editing; interrupting (stop) would jump the playhead
+    // back to the pre-play frame, which reads as "Space never leaves
+    // the preview". Rendering has no frame to pause on yet, so it
+    // still interrupts.
+    if (state == PreviewState::rendering) {
         interruptPreview();
+    } else if (state == PreviewState::playing) {
+        pausePreview();
+    } else if (state == PreviewState::paused) {
+        resumePreview();
     } else if (mStepPreviewTimer->isActive()) {
         pausePreview();
     } else {

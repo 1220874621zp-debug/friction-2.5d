@@ -273,6 +273,10 @@ void RenderHandler::stopPreview() {
 
 void RenderHandler::pausePreview() {
     if(mPreviewing) {
+        // a paused preview is editable: bring the transform gizmos
+        // back so pausing with Space returns to the editor without
+        // jumping the playhead back to the pre-play frame
+        if(mCurrentScene) mCurrentScene->setGizmosSuppressed(false);
         mAudioHandler.pauseAudio();
         mPreviewFPSTimer->stop();
         emit previewPaused();
