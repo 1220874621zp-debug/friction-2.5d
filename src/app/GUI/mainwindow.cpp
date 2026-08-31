@@ -2062,7 +2062,7 @@ void MainWindow::traceSelectedImage()
 
         const auto parentGroup = imgBox->getParentGroup();
         parentGroup->prp_pushUndoRedoName(tr("矢量描摹"));
-        parentGroup->insertContained(-1, result);
+        parentGroup->addContained(result);
 
         // place the traced group centered on the source layer
         const auto imgTransform = imgBox->getTotalTransform();

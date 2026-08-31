@@ -1311,9 +1311,13 @@ void ContainerBox::addContained(const qsptr<eBoxOrSound>& child) {
 
 void ContainerBox::insertContained(const int id, const qsptr<eBoxOrSound>& child)
 {
+    // clamp: an out-of-range id (e.g. -1 as "append") used to reach
+    // mContained.at(-1) in updateContainedIds, corrupting the heap
+    const int safeId = qBound(0, id, static_cast<int>(mContained.count()));
     if (child->getParentGroup() == this) {
         const int cId = mContained.indexOf(child);
-        moveContainedInList(child.get(), cId, (cId < id ? id - 1 : id));
+        moveContainedInList(child.get(), cId,
+                            (cId < safeId ? safeId - 1 : safeId));
         return;
     }
     child->removeFromParent_k();
@@ -1327,14 +1331,14 @@ void ContainerBox::insertContained(const int id, const qsptr<eBoxOrSound>& child
         child->prp_setName(newName);
     }
 
-    auto& connCtx = mContained.insertObj(id, child);
+    auto& connCtx = mContained.insertObj(safeId, child);
     child->setParentGroup(this);
 
-    updateContainedIds(id);
+    updateContainedIds(safeId);
 
     const bool isLink = this->isLink();
     if (!isLink) {
-        SWT_addChildAt(child.get(), containedIdToAbstractionId(id));
+        SWT_addChildAt(child.get(), containedIdToAbstractionId(safeId));
     }
 
     if (const auto box = enve_cast<BoundingBox*>(child)) {
@@ -1360,7 +1364,7 @@ void ContainerBox::insertContained(const int id, const qsptr<eBoxOrSound>& child
     const int thisShift = prp_getTotalFrameShift();
     child->prp_setInheritedFrameShift(thisShift, this);
     child->prp_afterWholeInfluenceRangeChanged();
-    emit insertedObject(id, child.get());
+    emit insertedObject(safeId, child.get());
 
     if (!isLink && !isBoxShadow) {
         prp_pushUndoRedoName(tr("Insert ") + child->prp_getName());
