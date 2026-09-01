@@ -31,6 +31,8 @@
 // portable exe so the faulting stack can be analyzed afterwards
 #define NOMINMAX
 #include <windows.h>
+#include <thread>
+#include <chrono>
 #include <dbghelp.h>
 #include <psapi.h>
 #include <cstring>
@@ -654,7 +656,19 @@ int main(int argc, char *argv[])
     splash.finish(&w);
 
     try {
-        return app.exec();
+        const int exitCode = app.exec();
+        // shutdown watchdog: user reports of the process staying
+        // resident (high memory) after the window closed point at a
+        // hanging destructor in the cleanup chain (worker threads, GL
+        // contexts). Give normal cleanup 3 seconds, then hard-exit so
+        // the process can never linger. The log line also tells us
+        // whether the hang is real ("收尾超时") for a targeted fix later.
+        std::thread([exitCode]() {
+            std::this_thread::sleep_for(std::chrono::seconds(3));
+            qWarning() << "EXIT: 收尾超时（析构链挂起），强制退出进程";
+            ::ExitProcess(exitCode);
+        }).detach();
+        return exitCode;
     } catch(const std::exception& e) {
         gPrintExceptionFatal(e);
         return -1;

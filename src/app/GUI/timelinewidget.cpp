@@ -694,6 +694,20 @@ void TimelineWidget::setViewedFrameRange(const FrameRange& range) {
     mKeysView->setFramesRange(range);
 }
 
+void TimelineWidget::setTimelineZoomSpan(const int span) {
+    if (!mFrameRangeScrollBar) return;
+    // anchor on the playhead when possible so the zoom grows around it
+    const auto viewed = mFrameRangeScrollBar->getViewedRange();
+    qreal anchor = 0.5*(viewed.fMin + viewed.fMax);
+    const auto scene = mSceneChooser->getCurrentScene();
+    if (scene) anchor = scene->anim_getCurrentAbsFrame();
+    mFrameRangeScrollBar->zoomToSpan(span, anchor);
+}
+
+int TimelineWidget::timelineZoomSpan() const {
+    return mFrameRangeScrollBar ? mFrameRangeScrollBar->getViewedRange().span() : 0;
+}
+
 void TimelineWidget::setCanvasFrameRange(const FrameRange& range) {
     mFrameRangeScrollBar->setDisplayedFrameRange(range);
     setViewedFrameRange(mFrameRangeScrollBar->getViewedRange());

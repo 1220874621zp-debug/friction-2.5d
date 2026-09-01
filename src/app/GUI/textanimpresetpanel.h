@@ -31,6 +31,7 @@
 class QGridLayout;
 class QScrollArea;
 class QSlider;
+class QSpinBox;
 class QLabel;
 class QTimer;
 class QPushButton;
@@ -122,6 +123,11 @@ class TextAnimPresetPanel : public QWidget {
 public:
     TextAnimPresetPanel(Document& doc, QWidget* const parent = nullptr);
 
+    // pause the thumbnail gallery animation while the main canvas
+    // preview plays: dozens of tiles repainting at 25 fps on the UI
+    // thread starve the playback timer and cause frame skips
+    void setGalleryPaused(const bool paused);
+
 protected:
     void showEvent(QShowEvent* const e) override;
     void hideEvent(QHideEvent* const e) override;
@@ -139,7 +145,6 @@ private:
     void fillGridFromKind(const int kind, FlowLayout* flow);
     void ensureTileFrames(TextAnimTile* const tile);
     void selectTile(TextAnimTile* const tile);
-    void renderBigPreview();
     void applyPreset(TextAnimTile* const tile, const int dir);
     TextBox* selectedTextBox() const;
     QList<TextBox*> selectedTextBoxes() const;
@@ -155,14 +160,13 @@ private:
 
     QScrollArea* mScroll = nullptr;
     QWidget* mScrollHost = nullptr;
-    TextAnimPreview* mPreview = nullptr;
     QLabel* mStatusLabel = nullptr;
     QSlider* mDurationSlider = nullptr;
+    QSpinBox* mDurationSpin = nullptr;
     QSlider* mTileSizeSlider = nullptr;
     int mTileSize = 150;
 
     QList<TextAnimTile*> mTiles;
-    TextAnimTile* mCurrent = nullptr;
     qreal mDurationScale = 1.0;
     QImage mMascot;
     bool mMascotTried = false;

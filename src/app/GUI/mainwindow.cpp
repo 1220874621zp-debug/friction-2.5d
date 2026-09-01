@@ -1605,6 +1605,20 @@ void MainWindow::setupLayout()
     mTextAnimDock = makeDock(tr("Text Animation Presets"),
                              QStringLiteral("dockTextAnimPresets"),
                              mTextAnimPanel);
+    // the thumbnail gallery freezes while the main preview plays so the
+    // playback timer gets the UI thread to itself (prevents skips)
+    connect(&mRenderHandler, &RenderHandler::previewBeingPlayed,
+            mTextAnimPanel, [this]() {
+        mTextAnimPanel->setGalleryPaused(true);
+    });
+    connect(&mRenderHandler, &RenderHandler::previewPaused,
+            mTextAnimPanel, [this]() {
+        mTextAnimPanel->setGalleryPaused(false);
+    });
+    connect(&mRenderHandler, &RenderHandler::previewFinished,
+            mTextAnimPanel, [this]() {
+        mTextAnimPanel->setGalleryPaused(false);
+    });
 
     // Moho-style switch panel: bound to a switch group, ruler slider
     // drives the children's visibility keyframes

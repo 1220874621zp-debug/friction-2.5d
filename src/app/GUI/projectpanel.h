@@ -38,7 +38,9 @@ class FileCacheHandler;
 // (compositions) and the imported file assets of the project.
 // Dragging a scene onto the active canvas creates an
 // InternalLinkCanvas (scene link), dragging a file asset out
-// imports/places it.
+// imports/places it. User folders group scenes and file assets
+// (context menu "move to folder"); the folder layout persists per
+// project file via settings (scenes matched by name, files by path).
 class ProjectPanel : public QWidget {
     Q_OBJECT
 public:
@@ -51,6 +53,13 @@ protected:
     void showEvent(QShowEvent* const e);
 
 private:
+    struct FolderInfo {
+        int id = 0;
+        QString name;
+        QList<Canvas*> scenes;
+        QList<FileCacheHandler*> files;
+    };
+
     void rebuild();
     void updateActiveMark();
     void switchToScene(Canvas* const scene);
@@ -65,9 +74,26 @@ private:
     bool fileItemExists(FileCacheHandler* const handler) const;
     void showContextMenu(const QPoint& pos);
 
+    // folder management
+    void handleTreeDrop(const QPoint& pos);
+    QTreeWidgetItem* folderItemAt(QTreeWidgetItem* const item) const;
+    FolderInfo* folderOfScene(Canvas* const scene);
+    FolderInfo* folderOfFile(FileCacheHandler* const handler);
+    FolderInfo* folderById(const int id);
+    QTreeWidgetItem* folderWidget(const int id) const;
+    FolderInfo* createFolder(const QString& name);
+    void addFolderWidget(const FolderInfo& info);
+    QTreeWidgetItem* parentItemForScene(Canvas* const scene) const;
+    QTreeWidgetItem* parentItemForFile(FileCacheHandler* const handler) const;
+    void writeFolderState() const;
+    void readFolderState();
+
     Document& mDocument;
     QTreeWidget* mTree = nullptr;
     QList<QMetaObject::Connection> mNameConns;
+    QList<FolderInfo> mFolders;
+    int mNextFolderId = 1;
+    QString mLoadedForPath;
 };
 
 #endif // PROJECTPANEL_H

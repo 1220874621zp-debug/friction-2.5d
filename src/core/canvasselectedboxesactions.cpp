@@ -40,9 +40,45 @@
 ContainerBox* Canvas::groupSelectedBoxes() {
     if(mSelectedBoxes.isEmpty()) return nullptr;
     const auto newGroup = enve::make_shared<ContainerBox>(eBoxType::group);
-    mCurrentContainer->addContained(newGroup);
-    for(int i = mSelectedBoxes.count() - 1; i >= 0; i--) {
-        const auto boxSP = mSelectedBoxes.at(i)->ref<BoundingBox>();
+    // keep the stack position: the group takes the slot of the topmost
+    // affected row instead of jumping to the top of the stack. For
+    // nested selections (e.g. layers inside PSD groups) the row that
+    // moves is the nearest ancestor living in the current container
+    const auto& contList = mCurrentContainer->getContained();
+    int topId = -1;
+    for(const auto box : mSelectedBoxes) {
+        eBoxOrSound* asc = box;
+        while(asc) {
+            const auto p = asc->getParentGroup();
+            if(p == mCurrentContainer) {
+                const int id = contList.indexOf(asc->ref<eBoxOrSound>());
+                if(id >= 0 && (topId < 0 || id < topId)) topId = id;
+                break;
+            }
+            asc = p;
+        }
+    }
+    qWarning() << "建组：槽位" << topId << "选中" << mSelectedBoxes.count()
+               << "容器子项" << contList.count();
+    if(topId >= 0) mCurrentContainer->insertContained(topId, newGroup);
+    else mCurrentContainer->addContained(newGroup);
+    // preserve the relative z-order of the selection inside the group:
+    // move the bottom-most first, each addContained inserts at the top
+    QList<QPair<int, BoundingBox*>> bySlot;
+    for(const auto box : mSelectedBoxes) {
+        const auto parent = box->getParentGroup();
+        const int slot = parent ?
+                    parent->getContained().indexOf(
+                        box->ref<eBoxOrSound>()) : 0;
+        bySlot.append({slot, box});
+    }
+    std::sort(bySlot.begin(), bySlot.end(),
+              [](const QPair<int, BoundingBox*>& a,
+                 const QPair<int, BoundingBox*>& b) {
+        return a.first > b.first;
+    });
+    for(const auto& slotBox : bySlot) {
+        const auto boxSP = slotBox.second->ref<BoundingBox>();
         boxSP->removeFromParent_k();
         newGroup->addContained(boxSP);
     }

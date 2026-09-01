@@ -77,6 +77,10 @@ public:
         return mCurrentScene;
     }
 
+    // timeline zoom (viewed frame span), anchored on the playhead
+    void setTimelineZoomSpan(const int span);
+    int timelineZoomSpan() const;
+
     void setCurrentScene(Canvas* const scene);
     void setBoxesListWidth(const int width);
     void setGraphEnabled(const bool enabled);

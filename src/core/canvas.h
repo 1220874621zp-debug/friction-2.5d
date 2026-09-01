@@ -221,6 +221,20 @@ public:
     qreal getResolution() const;
     void setSafeFramesVisible(const bool visible);
     bool safeFramesVisible() const { return mShowSafeFrames; }
+    // PS-style ruler guides (canvas coordinates; y for horizontal
+    // lines, x for vertical ones)
+    const QList<qreal>& hGuides() const { return mHGuides; }
+    const QList<qreal>& vGuides() const { return mVGuides; }
+    int addHGuide(const qreal y) { mHGuides << y; return mHGuides.count()-1; }
+    int addVGuide(const qreal x) { mVGuides << x; return mVGuides.count()-1; }
+    void setHGuide(const int id, const qreal y)
+    { if (id >= 0 && id < mHGuides.count()) mHGuides[id] = y; }
+    void setVGuide(const int id, const qreal x)
+    { if (id >= 0 && id < mVGuides.count()) mVGuides[id] = x; }
+    void removeHGuide(const int id)
+    { if (id >= 0 && id < mHGuides.count()) mHGuides.removeAt(id); }
+    void removeVGuide(const int id)
+    { if (id >= 0 && id < mVGuides.count()) mVGuides.removeAt(id); }
     void setTransparencyGrid(const bool grid);
     bool transparencyGrid() const { return mTransparencyGrid; }
     void setWorldToScreen(const QTransform& transform,
@@ -484,6 +498,10 @@ public:
     void setClipToCanvas(const bool bT)
     {
         mClipToCanvasSize = bT;
+        // the clip only affects the transient canvas paint - without a
+        // repaint request the change sits dormant until something else
+        // (e.g. playback) refreshes the viewport
+        emit requestUpdate();
     }
     void setRasterEffectsVisible(const bool bT)
     {
@@ -1070,6 +1088,9 @@ protected:
     // view-only toggles (edit canvas, never part of renders/exports):
     // AE-style action/title safe guides + transparency checkerboard
     bool mShowSafeFrames = false;
+    // PS-style ruler guides
+    QList<qreal> mHGuides;
+    QList<qreal> mVGuides;
     bool mTransparencyGrid = false;
 
     qptr<BoundingBox> mCurrentBox;

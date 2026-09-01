@@ -33,6 +33,7 @@
 #include <QPushButton>
 #include <QMimeData>
 #include <QComboBox>
+#include <QPointer>
 #include "skia/skiaincludes.h"
 #include "smartPointers/ememory.h"
 #include "framerange.h"
@@ -190,6 +191,12 @@ protected:
     void updateValueSlidersForQPointFAnimator();
 private:
     ContainerBox *getPromoteTargetGroup();
+
+    // AE-style Shift range selection: select every layer row between
+    // the anchor (last plain-clicked row) and the clicked row
+    void selectRowRange(BoxSingleWidget* const rowA,
+                        BoxSingleWidget* const rowB);
+    static QPointer<BoxSingleWidget> sLastClickedRow;
 
     void clearSelected() { setSelected(false); }
     void switchContentVisibleAction();

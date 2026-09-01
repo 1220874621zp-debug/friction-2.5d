@@ -26,7 +26,10 @@
 #include "projectpanel.h"
 
 #include <QVBoxLayout>
+#include <functional>
 #include <QTreeWidget>
+#include <QRubberBand>
+#include <QTreeWidgetItemIterator>
 #include <QHeaderView>
 #include <QMenu>
 #include <QMimeData>
@@ -34,6 +37,9 @@
 #include <QUrl>
 #include <QFileInfo>
 #include <QDesktopServices>
+#include <QSettings>
+#include <QInputDialog>
+#include <QLineEdit>
 
 #include "Private/document.h"
 #include "canvas.h"
@@ -50,6 +56,8 @@ namespace {
 const int kScenePtrRole = Qt::UserRole + 1;
 // the item data role carrying the raw FileCacheHandler pointer
 const int kFilePtrRole = Qt::UserRole + 2;
+// the item data role carrying the folder id (folder rows only)
+const int kFolderIdRole = Qt::UserRole + 3;
 
 QString fileIconName(const QString& path)
 {
@@ -78,6 +86,57 @@ class SceneTreeWidget : public QTreeWidget {
 public:
     explicit SceneTreeWidget(QWidget* const parent = nullptr) :
         QTreeWidget(parent) {}
+
+    // internal drop handling (drag rows onto folder rows); wired to
+    // ProjectPanel::handleTreeDrop
+    std::function<void(const QPoint&)> dropHandler;
+
+    // live drop-target highlight: the folder row under the cursor
+    // shows a translucent background while an internal drag hovers it
+    QTreeWidgetItem* mDropHover = nullptr;
+    QBrush mDropHoverBrush0;
+    QBrush mDropHoverBrush1;
+
+    QTreeWidgetItem* folderUnder(const QPoint& pos) const {
+        auto item = itemAt(pos);
+        if (!item) { return nullptr; }
+        if (item->data(0, kFolderIdRole).isValid()) { return item; }
+        if (item->parent() &&
+            item->parent()->data(0, kFolderIdRole).isValid()) {
+            return item->parent();
+        }
+        return nullptr;
+    }
+    void setDropHover(QTreeWidgetItem* const item) {
+        if (mDropHover == item) { return; }
+        if (mDropHover) {
+            mDropHover->setBackground(0, mDropHoverBrush0);
+            mDropHover->setBackground(1, mDropHoverBrush1);
+        }
+        mDropHover = item;
+        if (item) {
+            mDropHoverBrush0 = item->background(0);
+            mDropHoverBrush1 = item->background(1);
+            const QColor hl(70, 135, 220, 95);
+            item->setBackground(0, hl);
+            item->setBackground(1, hl);
+        }
+    }
+
+    // QTreeWidget has no rubber-band selection of its own: pressing
+    // the empty area below/between rows starts one
+    QRubberBand* mRubber = nullptr;
+    QPoint mRubberOrigin;
+    bool mRubberActive = false;
+
+    void updateRubberSelection() {
+        const QRect rubber = mRubber->geometry().adjusted(-3, -3, 3, 3);
+        QTreeWidgetItemIterator it(this);
+        while (*it) {
+            (*it)->setSelected(rubber.intersects(visualItemRect(*it)));
+            ++it;
+        }
+    }
 
 protected:
     // custom drag payload: scenes drag as their raw pointer in our
@@ -108,6 +167,66 @@ protected:
         }
         drag.exec(Qt::CopyAction);
     }
+
+    // accept only internal drags (folder drops); external payloads
+    // keep the default (ignored by this panel)
+    void dragEnterEvent(QDragEnterEvent* e) override {
+        if (e->source() == this) { e->acceptProposedAction(); }
+        else { QTreeWidget::dragEnterEvent(e); }
+    }
+    void dragMoveEvent(QDragMoveEvent* e) override {
+        if (e->source() == this) {
+            e->acceptProposedAction();
+            setDropHover(folderUnder(e->pos()));
+            return;
+        }
+        QTreeWidget::dragMoveEvent(e);
+    }
+    void dragLeaveEvent(QDragLeaveEvent* e) override {
+        setDropHover(nullptr);
+        QTreeWidget::dragLeaveEvent(e);
+    }
+    void dropEvent(QDropEvent* e) override {
+        setDropHover(nullptr);
+        if (e->source() == this) {
+            e->acceptProposedAction();
+            if (dropHandler) { dropHandler(e->pos()); }
+            return;
+        }
+        QTreeWidget::dropEvent(e);
+    }
+
+    void mousePressEvent(QMouseEvent* e) override {
+        if (e->button() == Qt::LeftButton && !itemAt(e->pos())) {
+            mRubberActive = true;
+            mRubberOrigin = e->pos();
+            if (!mRubber) {
+                mRubber = new QRubberBand(QRubberBand::Rectangle, viewport());
+            }
+            mRubber->setGeometry(QRect(mRubberOrigin, QSize()));
+            mRubber->show();
+            return;
+        }
+        QTreeWidget::mousePressEvent(e);
+    }
+    void mouseMoveEvent(QMouseEvent* e) override {
+        if (mRubberActive) {
+            mRubber->setGeometry(
+                        QRect(mRubberOrigin, e->pos()).normalized());
+            updateRubberSelection();
+            return;
+        }
+        QTreeWidget::mouseMoveEvent(e);
+    }
+    void mouseReleaseEvent(QMouseEvent* e) override {
+        if (mRubberActive && e->button() == Qt::LeftButton) {
+            mRubberActive = false;
+            mRubber->hide();
+            updateRubberSelection();
+            return;
+        }
+        QTreeWidget::mouseReleaseEvent(e);
+    }
 };
 }
 
@@ -132,17 +251,19 @@ ProjectPanel::ProjectPanel(Document& doc, QWidget* const parent) :
         mTree->viewport()->setAutoFillBackground(true);
     }
     mTree->setColumnCount(2);
-    mTree->setHeaderLabels({tr("Scene"), tr("Info")});
+    mTree->setHeaderLabels({tr("场景"), tr("信息")});
     mTree->header()->setSectionResizeMode(0, QHeaderView::Interactive);
     mTree->header()->setSectionResizeMode(1, QHeaderView::Stretch);
     mTree->header()->resizeSection(0, 130);
     mTree->setRootIsDecorated(false);
     mTree->setUniformRowHeights(true);
     mTree->setAllColumnsShowFocus(true);
-    mTree->setSelectionMode(QAbstractItemView::SingleSelection);
+    mTree->setSelectionMode(QAbstractItemView::ExtendedSelection);
     mTree->setDragEnabled(true);
-    mTree->setDragDropMode(QAbstractItemView::DragOnly);
+    mTree->setDragDropMode(QAbstractItemView::DragDrop);
     mTree->setDefaultDropAction(Qt::CopyAction);
+    static_cast<SceneTreeWidget*>(mTree)->dropHandler =
+            [this](const QPoint& pos) { handleTreeDrop(pos); };
     mTree->setContextMenuPolicy(Qt::CustomContextMenu);
     mTree->setFrameShape(QFrame::NoFrame);
 
@@ -161,6 +282,17 @@ ProjectPanel::ProjectPanel(Document& doc, QWidget* const parent) :
                         QUrl::fromLocalFile(handler->path()));
         }
     });
+    // folders expand/collapse on a single click (frequent organizing
+    // should not need a double click); the default double-click
+    // expansion is off so the two never fight
+    mTree->setExpandsOnDoubleClick(false);
+    connect(mTree, &QTreeWidget::itemClicked,
+            this, [this](QTreeWidgetItem* item, int) {
+        if (item && item->data(0, kFolderIdRole).isValid()) {
+            item->setExpanded(!item->isExpanded());
+        }
+    });
+
     connect(mTree, &QTreeWidget::customContextMenuRequested,
             this, [this](const QPoint& pos) {
         // the signal delivers viewport coordinates already
@@ -235,7 +367,7 @@ FileCacheHandler* ProjectPanel::fileAt(QTreeWidgetItem* const item) const
 QString ProjectPanel::fileInfo(const FileCacheHandler* const handler) const
 {
     const QFileInfo info(handler->path());
-    if (!info.exists()) { return tr("Missing"); }
+    if (!info.exists()) { return tr("文件丢失"); }
     return QStringLiteral("%1 | %2")
             .arg(info.suffix().toUpper())
             .arg(humanSize(info.size()));
@@ -244,7 +376,18 @@ QString ProjectPanel::fileInfo(const FileCacheHandler* const handler) const
 void ProjectPanel::addFileItem(FileCacheHandler* const handler)
 {
     if (!handler || fileItemExists(handler)) { return; }
-    const auto item = new QTreeWidgetItem(mTree);
+    QTreeWidgetItem* item = nullptr;
+    if (const auto parent = parentItemForFile(handler)) {
+        item = new QTreeWidgetItem(parent);
+    } else {
+        // keep loose files above the folder rows
+        int at = mTree->topLevelItemCount();
+        for (int i = 0; i < mTree->topLevelItemCount(); i++) {
+            if (folderItemAt(mTree->topLevelItem(i))) { at = i; break; }
+        }
+        item = new QTreeWidgetItem;
+        mTree->insertTopLevelItem(at, item);
+    }
     const QString path = handler->path();
     const QFileInfo info(path);
     item->setText(0, info.fileName());
@@ -260,24 +403,26 @@ void ProjectPanel::addFileItem(FileCacheHandler* const handler)
 
 void ProjectPanel::removeFileItem(FileCacheHandler* const handler)
 {
-    for (int i = 0; i < mTree->topLevelItemCount(); i++) {
-        const auto item = mTree->topLevelItem(i);
+    QTreeWidgetItemIterator it(mTree);
+    while (*it) {
         if (reinterpret_cast<FileCacheHandler*>(
-                    item->data(0, kFilePtrRole).toULongLong()) == handler) {
-            delete item;
+                    (*it)->data(0, kFilePtrRole).toULongLong()) == handler) {
+            delete *it;
             return;
         }
+        ++it;
     }
 }
 
 bool ProjectPanel::fileItemExists(FileCacheHandler* const handler) const
 {
-    for (int i = 0; i < mTree->topLevelItemCount(); i++) {
-        const auto item = mTree->topLevelItem(i);
+    QTreeWidgetItemIterator it(mTree);
+    while (*it) {
         if (reinterpret_cast<FileCacheHandler*>(
-                    item->data(0, kFilePtrRole).toULongLong()) == handler) {
+                    (*it)->data(0, kFilePtrRole).toULongLong()) == handler) {
             return true;
         }
+        ++it;
     }
     return false;
 }
@@ -298,12 +443,26 @@ void ProjectPanel::rebuild()
     for (const auto& conn : mNameConns) { disconnect(conn); }
     mNameConns.clear();
 
+    readFolderState();
+
     mTree->clear();
+    // folder rows first so member items can find their parents; loose
+    // rows insert before them, keeping folders visually last
+    for (const auto& folder : mFolders) {
+        addFolderWidget(folder);
+    }
+    int looseAt = mFolders.count();
     const auto icon = QIcon::fromTheme("sequence");
     for (const auto& scenePtr : mDocument.fScenes) {
         const auto scene = scenePtr.get();
         if (!scene) { continue; }
-        const auto item = new QTreeWidgetItem(mTree);
+        const auto parent = parentItemForScene(scene);
+        QTreeWidgetItem* item = nullptr;
+        if (parent) { item = new QTreeWidgetItem(parent); }
+        else {
+            item = new QTreeWidgetItem;
+            mTree->insertTopLevelItem(looseAt++, item);
+        }
         item->setText(0, scene->prp_getName());
         item->setIcon(0, icon);
         item->setText(1, sceneInfo(scene));
@@ -317,12 +476,13 @@ void ProjectPanel::rebuild()
         // signal would disconnect/reconnect its own sender
         mNameConns << connect(scene, &Canvas::prp_nameChanged,
                 this, [this, scene](const QString&) {
-            for (int i = 0; i < mTree->topLevelItemCount(); i++) {
-                const auto item = mTree->topLevelItem(i);
-                if (sceneAt(item) != scene) { continue; }
-                item->setText(0, scene->prp_getName());
-                item->setToolTip(0, scene->prp_getName());
-                break;
+            QTreeWidgetItemIterator it(mTree);
+            while (*it) {
+                if (sceneAt(*it) == scene) {
+                    (*it)->setText(0, scene->prp_getName());
+                    (*it)->setToolTip(0, scene->prp_getName());
+                }
+                ++it;
             }
         });
     }
@@ -338,11 +498,12 @@ void ProjectPanel::rebuild()
 void ProjectPanel::updateActiveMark()
 {
     const auto active = activeScene();
-    for (int i = 0; i < mTree->topLevelItemCount(); i++) {
-        const auto item = mTree->topLevelItem(i);
-        auto font = item->font(0);
-        font.setBold(sceneAt(item) == active && active);
-        item->setFont(0, font);
+    QTreeWidgetItemIterator it(mTree);
+    while (*it) {
+        auto font = (*it)->font(0);
+        font.setBold(sceneAt(*it) == active && active);
+        (*it)->setFont(0, font);
+        ++it;
     }
 }
 
@@ -371,30 +532,132 @@ void ProjectPanel::showContextMenu(const QPoint& pos)
 {
     const auto item = mTree->itemAt(pos);
     const auto scene = sceneAt(item);
-    const auto handler = scene ? nullptr : fileAt(item);
+    const auto handler = (!scene && item && !folderItemAt(item)) ?
+                fileAt(item) : nullptr;
+    const auto folderItem = folderItemAt(item);
+    const FolderInfo* memberFolder = scene ? folderOfScene(scene) :
+            handler ? folderOfFile(handler) : nullptr;
+
+    // multi-select aware: the move actions apply to every selected
+    // scene/file (or to the single right-clicked row when alone)
+    QList<Canvas*> selScenes;
+    QList<FileCacheHandler*> selFiles;
+    if (scene || handler) {
+        for (const auto sel : mTree->selectedItems()) {
+            const auto s = sceneAt(sel);
+            if (s) { selScenes << s; continue; }
+            const auto h = fileAt(sel);
+            if (h) { selFiles << h; }
+        }
+        if (selScenes.isEmpty() && selFiles.isEmpty()) {
+            if (scene) { selScenes << scene; }
+            if (handler) { selFiles << handler; }
+        }
+    }
 
     QMenu menu(this);
     menu.addAction(QIcon::fromTheme("file_new"),
-                   tr("New Scene"),
+                   tr("新建场景"),
                    this, [this]() {
         SceneSettingsDialog::sNewSceneDialog(mDocument, this);
     });
+    menu.addAction(QIcon::fromTheme("file_folder"),
+                   tr("新建文件夹"),
+                   this, [this]() {
+        bool ok = false;
+        const QString name = QInputDialog::getText(
+                    this, tr("新建文件夹"), tr("名称："),
+                    QLineEdit::Normal, tr("文件夹"), &ok);
+        if (ok && !name.simplified().isEmpty()) {
+            createFolder(name.simplified());
+            rebuild();
+            writeFolderState();
+        }
+    });
+
+    if (folderItem) {
+        menu.addSeparator();
+        menu.addAction(tr("重命名文件夹"),
+                       this, [this, folderItem]() {
+            const int id = folderItem->data(0, kFolderIdRole).toInt();
+            bool ok = false;
+            const QString name = QInputDialog::getText(
+                        this, tr("重命名文件夹"), tr("名称："),
+                        QLineEdit::Normal, folderItem->text(0), &ok);
+            if (!ok || name.simplified().isEmpty()) { return; }
+            if (auto* info = folderById(id)) {
+                info->name = name.simplified();
+                writeFolderState();
+                rebuild();
+            }
+        });
+        menu.addAction(tr("删除文件夹"),
+                       this, [this, folderItem]() {
+            const int id = folderItem->data(0, kFolderIdRole).toInt();
+            for (int i = 0; i < mFolders.count(); i++) {
+                if (mFolders.at(i).id == id) {
+                    mFolders.removeAt(i);
+                    break;
+                }
+            }
+            writeFolderState();
+            rebuild();
+        });
+    } else if (scene || handler) {
+        menu.addSeparator();
+        auto moveMenu = menu.addMenu(tr("移动到文件夹"));
+        for (const auto& folder : mFolders) {
+            const int folderId = folder.id;
+            moveMenu->addAction(folder.name, this,
+                    [this, folderId, selScenes, selFiles]() {
+                FolderInfo* info = folderById(folderId);
+                if (!info) { return; }
+                for (const auto s : selScenes) {
+                    // remove from any other folder first
+                    for (auto& f : mFolders) { f.scenes.removeAll(s); }
+                    info->scenes << s;
+                }
+                for (const auto h : selFiles) {
+                    for (auto& f : mFolders) { f.files.removeAll(h); }
+                    info->files << h;
+                }
+                writeFolderState();
+                rebuild();
+            });
+        }
+        if (memberFolder) {
+            const int memberId = memberFolder->id;
+            moveMenu->addAction(tr("（移出文件夹）"), this,
+                    [this, memberId, selScenes, selFiles]() {
+                if (auto* info = folderById(memberId)) {
+                    for (const auto s : selScenes) { info->scenes.removeAll(s); }
+                    for (const auto h : selFiles) { info->files.removeAll(h); }
+                    writeFolderState();
+                    rebuild();
+                }
+            });
+        }
+        if (mFolders.isEmpty()) {
+            moveMenu->setEnabled(false);
+            moveMenu->setToolTip(tr("先在空白处右键新建文件夹"));
+        }
+    }
 
     if (scene) {
         const auto active = activeScene();
         menu.addSeparator();
         menu.addAction(QIcon::fromTheme("sequence"),
-                       tr("Open Scene"),
+                       tr("打开场景"),
                        this, [this, scene]() {
             switchToScene(scene);
         })->setEnabled(scene != active);
         menu.addAction(QIcon::fromTheme("linked"),
-                       tr("Link to Active Canvas"),
+                       tr("链接到当前画布"),
                        this, [this, scene]() {
             linkToActiveScene(scene);
         })->setEnabled(scene != active);
         menu.addAction(QIcon::fromTheme("sequence"),
-                       tr("Scene Properties..."),
+                       tr("场景属性..."),
                        this, [scene]() {
             const auto& dialogs = DialogsInterface::instance();
             dialogs.showSceneSettingsDialog(scene);
@@ -403,12 +666,12 @@ void ProjectPanel::showContextMenu(const QPoint& pos)
         const QString path = handler->path();
         menu.addSeparator();
         menu.addAction(QIcon::fromTheme(fileIconName(path)),
-                       tr("Open"),
+                       tr("打开"),
                        this, [path]() {
             QDesktopServices::openUrl(QUrl::fromLocalFile(path));
         });
         menu.addAction(QIcon::fromTheme("file_folder"),
-                       tr("Reveal in Folder"),
+                       tr("在文件夹中显示"),
                        this, [path]() {
             QDesktopServices::openUrl(
                         QUrl::fromLocalFile(
@@ -417,4 +680,191 @@ void ProjectPanel::showContextMenu(const QPoint& pos)
     }
 
     menu.exec(mTree->viewport()->mapToGlobal(pos));
+}
+
+// internal drag onto a folder row: move every selected scene/file
+// into that folder (drop on a folder child targets its parent folder)
+void ProjectPanel::handleTreeDrop(const QPoint& pos)
+{
+    const auto targetItem = mTree->itemAt(pos);
+    if (!targetItem) { return; }
+    QTreeWidgetItem* folderItem = folderItemAt(targetItem);
+    if (!folderItem && targetItem->parent()) {
+        folderItem = folderItemAt(targetItem->parent());
+    }
+    if (!folderItem) { return; }
+    FolderInfo* info = folderById(
+                folderItem->data(0, kFolderIdRole).toInt());
+    if (!info) { return; }
+    bool moved = false;
+    for (const auto item : mTree->selectedItems()) {
+        const auto scene = sceneAt(item);
+        const auto handler = scene ? nullptr : fileAt(item);
+        if (scene) {
+            for (auto& f : mFolders) { f.scenes.removeAll(scene); }
+            info->scenes << scene;
+            moved = true;
+        } else if (handler) {
+            for (auto& f : mFolders) { f.files.removeAll(handler); }
+            info->files << handler;
+            moved = true;
+        }
+    }
+    if (moved) {
+        writeFolderState();
+        rebuild();
+    }
+}
+
+// ---- folder management ----
+
+QTreeWidgetItem* ProjectPanel::folderItemAt(QTreeWidgetItem* const item) const
+{
+    if (!item) { return nullptr; }
+    return item->data(0, kFolderIdRole).isValid() ? item : nullptr;
+}
+
+ProjectPanel::FolderInfo* ProjectPanel::folderById(const int id)
+{
+    for (auto& folder : mFolders) {
+        if (folder.id == id) { return &folder; }
+    }
+    return nullptr;
+}
+
+ProjectPanel::FolderInfo* ProjectPanel::folderOfScene(Canvas* const scene)
+{
+    for (auto& folder : mFolders) {
+        if (folder.scenes.contains(scene)) { return &folder; }
+    }
+    return nullptr;
+}
+
+ProjectPanel::FolderInfo* ProjectPanel::folderOfFile(FileCacheHandler* const handler)
+{
+    for (auto& folder : mFolders) {
+        if (folder.files.contains(handler)) { return &folder; }
+    }
+    return nullptr;
+}
+
+QTreeWidgetItem* ProjectPanel::folderWidget(const int id) const
+{
+    QTreeWidgetItemIterator it(mTree);
+    while (*it) {
+        if ((*it)->data(0, kFolderIdRole).toInt() == id &&
+            (*it)->data(0, kFolderIdRole).isValid()) { return *it; }
+        ++it;
+    }
+    return nullptr;
+}
+
+ProjectPanel::FolderInfo* ProjectPanel::createFolder(const QString& name)
+{
+    FolderInfo info;
+    info.id = mNextFolderId++;
+    info.name = name;
+    mFolders << info;
+    return folderById(info.id);
+}
+
+void ProjectPanel::addFolderWidget(const FolderInfo& info)
+{
+    const auto item = new QTreeWidgetItem(mTree);
+    item->setText(0, info.name);
+    item->setIcon(0, QIcon::fromTheme("file_folder"));
+    item->setText(1, tr("%1 项").arg(info.scenes.count() + info.files.count()));
+    item->setData(0, kFolderIdRole, info.id);
+    item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable |
+                   Qt::ItemIsDropEnabled);
+}
+
+QTreeWidgetItem* ProjectPanel::parentItemForScene(Canvas* const scene) const
+{
+    for (const auto& folder : mFolders) {
+        if (folder.scenes.contains(scene)) {
+            return folderWidget(folder.id);
+        }
+    }
+    return nullptr;
+}
+
+QTreeWidgetItem* ProjectPanel::parentItemForFile(FileCacheHandler* const handler) const
+{
+    for (const auto& folder : mFolders) {
+        if (folder.files.contains(handler)) {
+            return folderWidget(folder.id);
+        }
+    }
+    return nullptr;
+}
+
+void ProjectPanel::writeFolderState() const
+{
+    // folder layout persists per project file (scenes by name, files
+    // by path); untitled projects stay session-only
+    if (mDocument.fEvFile.isEmpty()) { return; }
+    QStringList lines;
+    for (const auto& folder : mFolders) {
+        QStringList sceneNames;
+        for (const auto scene : folder.scenes) {
+            if (scene) { sceneNames << scene->prp_getName(); }
+        }
+        QStringList filePaths;
+        for (const auto handler : folder.files) {
+            if (handler) { filePaths << handler->path(); }
+        }
+        lines << QStringLiteral("%1|%2|%3")
+                .arg(folder.name,
+                     sceneNames.join(QLatin1Char('\x1')),
+                     filePaths.join(QLatin1Char('\x1')));
+    }
+    QSettings settings;
+    settings.beginGroup("projectPanelFolders");
+    settings.setValue(mDocument.fEvFile, lines.join(QLatin1Char('\n')));
+    settings.endGroup();
+}
+
+void ProjectPanel::readFolderState()
+{
+    if (mDocument.fEvFile.isEmpty()) { return; }
+    if (mLoadedForPath == mDocument.fEvFile) { return; }
+    mLoadedForPath = mDocument.fEvFile;
+    mFolders.clear();
+    mNextFolderId = 1;
+
+    QSettings settings;
+    settings.beginGroup("projectPanelFolders");
+    const QString all = settings.value(
+                mDocument.fEvFile).toString();
+    settings.endGroup();
+    const auto lines = all.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+    for (const auto& line : lines) {
+        const auto parts = line.split(QLatin1Char('|'));
+        if (parts.count() != 3) { continue; }
+        FolderInfo info;
+        info.id = mNextFolderId++;
+        info.name = parts.at(0);
+        for (const auto& name : parts.at(1).split(QLatin1Char('\x1'),
+                                                  Qt::SkipEmptyParts)) {
+            for (const auto& scenePtr : mDocument.fScenes) {
+                if (scenePtr && scenePtr->prp_getName() == name) {
+                    info.scenes << scenePtr.get();
+                    break;
+                }
+            }
+        }
+        if (FilesHandler::sInstance) {
+            for (const auto& path : parts.at(2).split(QLatin1Char('\x1'),
+                                                      Qt::SkipEmptyParts)) {
+                for (const auto& fh : FilesHandler::sInstance->fileHandlers()) {
+                    if (fh && fh->path() == path) {
+                        info.files << fh.get();
+                        break;
+                    }
+                }
+            }
+        }
+        mFolders << info;
+    }
 }

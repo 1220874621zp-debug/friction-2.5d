@@ -34,6 +34,7 @@
 #include <QScrollArea>
 #include <QApplication>
 #include <QScrollBar>
+#include <QSlider>
 #include <QComboBox>
 #include <QMenuBar>
 #include <QLineEdit>
@@ -159,6 +160,8 @@ private:
     QAction *mLoopButton;
     QAction *mSnapshotButton = nullptr;
     QAction *mSafeFramesButton = nullptr;
+    QAction *mClipCanvasButton = nullptr;
+    QAction *mRulersButton = nullptr;
     QAction *mTransparencyGridButton = nullptr;
     QAction *mFreezePoseButton = nullptr;
     QAction *mLoopPoseFwdButton = nullptr;
@@ -177,6 +180,7 @@ private:
     QAction *mSplitClipAct;
     QAction *mCurrentFrameSpinAct;
     FrameSpinBox *mCurrentFrameSpin;
+    QSlider *mZoomSlider = nullptr;
 
     QAction *mRenderProgressAct;
     QProgressBar *mRenderProgress;

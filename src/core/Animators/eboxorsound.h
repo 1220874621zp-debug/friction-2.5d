@@ -207,6 +207,9 @@ private:
 
     bool mSelected = false;
     bool mVisible = true;
+    // session-only: the box was selected when its eye was toggled off
+    // (restored on re-show; never serialized)
+    bool mSelectedBeforeHide = false;
     // keyframable visibility channel ("可见" property row): an extra
     // gate AND-ed with the row eye (mVisible) - base value true keeps
     // the legacy behavior until the user keys it

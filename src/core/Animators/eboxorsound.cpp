@@ -574,6 +574,23 @@ void eBoxOrSound::setVisible(const bool visible)
     }
     mVisible = visible;
 
+    // keep the selection across an eye toggle: hiding a box kicks it
+    // out of the canvas selection (Canvas::addBoxToSelection's
+    // visibilityChanged hook); remember that it was selected and
+    // re-select it when it becomes visible again
+    if (enve_cast<BoundingBox*>(this)) {
+        if (!visible && mSelected) {
+            mSelectedBeforeHide = true;
+        } else if (visible && mSelectedBeforeHide) {
+            mSelectedBeforeHide = false;
+            const auto scene = getParentScene();
+            const auto bb = static_cast<BoundingBox*>(this);
+            if (scene && !bb->isSelected()) {
+                scene->addBoxToSelection(bb);
+            }
+        }
+    }
+
     if (hasDurationRectangle() && enve_cast<BoundingBox*>(this)) {
         const auto updateRange = prp_absInfluenceRange().adjusted(-1, 1);
         prp_afterChangedAbsRange(updateRange, false);

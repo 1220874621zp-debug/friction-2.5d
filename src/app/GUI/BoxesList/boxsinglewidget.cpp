@@ -328,6 +328,7 @@ bool BoxSingleWidget::sStaticPixmapsLoaded = false;
 #include <QMenu>
 #include <QInputDialog>
 #include <QPainter>
+#include "Sound/soundcomposition.h"
 
 eComboBox* createCombo(QWidget* const parent)
 {
@@ -2127,12 +2128,58 @@ void BoxSingleWidget::mouseReleaseEvent(QMouseEvent *event)
     if (pointToLen(event->pos() - mDragStartPos) > eSizesUI::widget/2) { return; }
 
     const bool shiftPressed = event->modifiers() & Qt::ShiftModifier;
+    const bool ctrlPressed = event->modifiers() & Qt::ControlModifier;
     if (enve_cast<BoundingBox*>(target) || enve_cast<eIndependentSound*>(target)) {
         const auto boxTarget = static_cast<eBoxOrSound*>(target);
-        boxTarget->selectionChangeTriggered(shiftPressed);
+        if (shiftPressed && !sLastClickedRow.isNull() &&
+                sLastClickedRow.data() != this &&
+                sLastClickedRow->mParent == mParent) {
+            // AE-style range select: every layer row between the
+            // anchor (last plain-clicked row) and this one
+            selectRowRange(sLastClickedRow.data(), this);
+        } else if (ctrlPressed) {
+            boxTarget->selectionChangeTriggered(true);
+        } else {
+            boxTarget->selectionChangeTriggered(false);
+            sLastClickedRow = this;
+        }
         Document::sInstance->actionFinished();
     } else if (const auto pTarget = enve_cast<Property*>(target)) {
         pTarget->prp_selectionChangeTriggered(shiftPressed);
+    }
+}
+
+QPointer<BoxSingleWidget> BoxSingleWidget::sLastClickedRow;
+
+void BoxSingleWidget::selectRowRange(BoxSingleWidget* const rowA,
+                                     BoxSingleWidget* const rowB)
+{
+    const auto scene = mParent ? mParent->currentScene() : nullptr;
+    if (!scene) { return; }
+    // all visible layer rows in visual (top-to-bottom) order
+    auto rows = mParent->findChildren<BoxSingleWidget*>();
+    std::sort(rows.begin(), rows.end(),
+              [](const BoxSingleWidget* const r1,
+                 const BoxSingleWidget* const r2) {
+        return r1->mapToGlobal(QPoint(0, 0)).y() <
+               r2->mapToGlobal(QPoint(0, 0)).y();
+    });
+    const int iA = rows.indexOf(rowA);
+    const int iB = rows.indexOf(rowB);
+    if (iA < 0 || iB < 0) { return; }
+    scene->clearBoxesSelection();
+    if (const auto comp = scene->getSoundComposition()) {
+        for (const auto& sound : comp->getSounds()) {
+            static_cast<eBoxOrSound*>(sound.data())->setSelected(false);
+        }
+    }
+    for (int i = qMin(iA, iB); i <= qMax(iA, iB); i++) {
+        const auto t = rows.at(i)->mTarget->getTarget();
+        if (const auto bb = enve_cast<BoundingBox*>(t)) {
+            if (!bb->isSelected()) { scene->addBoxToSelection(bb); }
+        } else if (const auto snd = enve_cast<eIndependentSound*>(t)) {
+            snd->setSelected(true);
+        }
     }
 }
 

@@ -1740,6 +1740,12 @@ void Canvas::writeSettings(eWriteStream& dst) const
     dst << mRange;
 
     writeMarkers(dst);
+
+    // ruler guides (unconditional write, version-gated read)
+    dst << int(mHGuides.count());
+    for (const qreal y : mHGuides) { dst << y; }
+    dst << int(mVGuides.count());
+    for (const qreal x : mVGuides) { dst << x; }
 }
 
 void Canvas::readSettings(eReadStream& src)
@@ -1754,6 +1760,19 @@ void Canvas::readSettings(eReadStream& src)
     src >> range;
     if (src.evFileVersion() >= EvFormat::markers) {
         readMarkers(src);
+    }
+    if (src.evFileVersion() >= EvFormat::canvasGuides) {
+        int count = 0;
+        src >> count;
+        mHGuides.clear();
+        for (int i = 0; i < count; i++) {
+            qreal y; src >> y; mHGuides << y;
+        }
+        src >> count;
+        mVGuides.clear();
+        for (int i = 0; i < count; i++) {
+            qreal x; src >> x; mVGuides << x;
+        }
     }
     setFrameRange(range, false);
     anim_setAbsFrame(currFrame);

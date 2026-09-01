@@ -248,6 +248,7 @@ private:
         mMoveDFrame = 0;
         mMovingKeys = false;
         mScalingKeys = false;
+        mAltScalingKeys = false;
         mMovingRect = false;
         mSelecting = false;
         mIsMouseGrabbing = false;
@@ -278,6 +279,11 @@ private:
     QPoint mLastPressPos;
     bool mMovingKeys = false;
     bool mScalingKeys = false;
+    // AE-style Alt + drag on a selected key: retime the whole
+    // selection proportionally, anchored at the earliest selected key
+    bool mAltScalingKeys = false;
+    int mAltScaleAnchorAbs = 0;
+    int mAltScaleGrabAbs = 0;
     bool mMovingRect = false;
     bool mMoveAllSelected = false;
     bool mPressedCtrlPoint = false;

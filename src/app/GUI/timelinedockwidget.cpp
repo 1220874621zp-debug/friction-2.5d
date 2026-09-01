@@ -32,6 +32,7 @@
 #include <QInputDialog>
 #include <QDir>
 #include <QFileInfo>
+#include <cmath>
 #include <QRegularExpression>
 #include <QStandardPaths>
 #include <QTime>
@@ -272,6 +273,54 @@ TimelineDockWidget::TimelineDockWidget(Document& document,
                 this, [this](const bool checked) {
             const auto scene = *mDocument.fActiveScene;
             if(scene) scene->setSafeFramesVisible(checked);
+        });
+
+        // mask everything outside the canvas - the same toggle as the
+        // view menu "Clip to Scene" (shortcut C), surfaced as a button
+        // next to the safe-frames toggle (user-supplied SVG icon)
+        {
+            QSvgRenderer renderer(
+                        QStringLiteral(":/icons/clip_canvas.svg"));
+            QPixmap cm(64, 64);
+            cm.fill(Qt::transparent);
+            if (renderer.isValid()) {
+                QPainter cp(&cm);
+                renderer.render(&cp, QRectF(4, 4, 56, 56));
+                cp.end();
+            }
+            mClipCanvasButton = new QAction(cm, tr("遮蔽画布外"), this);
+        }
+        mClipCanvasButton->setCheckable(true);
+        mClipCanvasButton->setToolTip(tr(
+                "遮蔽掉画布之外的内容（同视图菜单 Clip to Scene，快捷键 C）"));
+        connect(mClipCanvasButton, &QAction::triggered,
+                this, [this](const bool checked) {
+            const auto scene = *mDocument.fActiveScene;
+            if(scene) scene->setClipToCanvas(checked);
+        });
+
+        // canvas rulers toggle (viewport overlay strips), user SVG icon
+        QPixmap rl(64, 64);
+        rl.fill(Qt::transparent);
+        {
+            QSvgRenderer rr(QStringLiteral(":/icons/canvas_rulers.svg"));
+            if (rr.isValid()) {
+                QPainter rp(&rl);
+                rr.render(&rp, QRectF(6, 6, 52, 52));
+                rp.end();
+            }
+        }
+        mRulersButton = new QAction(rl, tr("画布标尺"), this);
+        mRulersButton->setCheckable(true);
+        mRulersButton->setChecked(AppSupport::getSettings(
+                    QStringLiteral("view"), QStringLiteral("rulers"),
+                    true).toBool());
+        mRulersButton->setToolTip(tr("显示画布标尺（像素坐标，跟随缩放平移）"));
+        connect(mRulersButton, &QAction::triggered,
+                this, [this](const bool checked) {
+            CanvasWindow::setRulersVisible(checked);
+            const auto scene = *mDocument.fActiveScene;
+            if (scene) { emit scene->requestUpdate(); }
         });
 
         QPixmap tg(64, 64);
@@ -629,6 +678,30 @@ TimelineDockWidget::TimelineDockWidget(Document& document,
     // start layout
     mToolBar->addWidget(mFrameStartSpin);
 
+    // timeline zoom slider: logarithmic map over the viewed frame span
+    // (right = zoom in), acting on the current scene's timeline
+    mZoomSlider = new QSlider(Qt::Horizontal, this);
+    mZoomSlider->setRange(0, 100);
+    mZoomSlider->setValue(50);
+    mZoomSlider->setFixedWidth(110);
+    mZoomSlider->setMaximumHeight(18);
+    mZoomSlider->setToolTip(tr("时间轴缩放（右=放大，等价 Ctrl+滚轮）"));
+    connect(mZoomSlider, &QSlider::valueChanged, this, [this](const int v) {
+        const auto scene = *mDocument.fActiveScene;
+        if (!scene) return;
+        const int maxSpan = qMax(20, scene->getFrameRange().span());
+        const int minSpan = 10;
+        const qreal t = 1. - v/100.;
+        const int span = qBound(minSpan,
+                                qRound(minSpan*std::pow(1.*maxSpan/minSpan, t)),
+                                maxSpan);
+        const auto tw = mTimelineLayout->currentWidget() ?
+                    mTimelineLayout->currentWidget()->findChild<TimelineWidget*>() :
+                    nullptr;
+        if (tw) tw->setTimelineZoomSpan(span);
+    });
+    mToolBar->addWidget(mZoomSlider);
+
     addSpacer();
 
     mToolBar->addAction(mFrameRewindAct);
@@ -651,11 +724,16 @@ TimelineDockWidget::TimelineDockWidget(Document& document,
     mToolBar->addAction(mLoopButton);
     mToolBar->addAction(mSnapshotButton);
     mToolBar->addAction(mSafeFramesButton);
+    mToolBar->addSeparator();
+    mToolBar->addAction(mClipCanvasButton);
+    mToolBar->addAction(mRulersButton);
     mToolBar->addAction(mTransparencyGridButton);
     mToolBar->addAction(mFreezePoseButton);
+    mToolBar->addSeparator();
     mToolBar->addAction(mLoopPoseFwdButton);
     mToolBar->addAction(mLoopPosePingPongButton);
     mToolBar->addAction(mLoopPoseSkipButton);
+    mToolBar->addSeparator();
     mToolBar->addAction(mMatchCanvasWidthButton);
     mToolBar->addAction(mMatchCanvasHeightButton);
 
@@ -866,13 +944,32 @@ void TimelineDockWidget::spaceToggle()
     } else if (mStepPreviewTimer->isActive()) {
         pausePreview();
     } else {
-        // diagnostic: distinguishes "playPreview failed because no scene
-        // is wired" from other silent failures on a dead Space key
-        const bool started = playPreview();
+        // AE-style start: when the range ahead is not fully cached,
+        // warm the cache first (visible progress, auto-plays when
+        // done); with everything cached play straight from memory
+        bool started = false;
+        if (eSettings::instance().fPreviewCache) {
+            const auto scene = *mDocument.fActiveScene;
+            bool warm = false;
+            if (scene) {
+                const int cur = scene->anim_getCurrentAbsFrame();
+                const int max = scene->getFrameRange().fMax;
+                warm = scene->getSceneFramesHandler()
+                            .firstEmptyFrameAtOrAfter(cur) > max;
+            }
+            if (warm) {
+                started = RenderHandler::sInstance->playPreview();
+                if (!started) { renderPreview(); }
+            } else {
+                renderPreview();
+                started = true;
+            }
+        } else {
+            started = playPreview();
+        }
         qWarning() << "[SPACE] start playPreview=" << started
                    << "activeScene="
                    << (*mDocument.fActiveScene ? "yes" : "null");
-        if (!started) { renderPreview(); }
     }
 }
 
@@ -1141,6 +1238,12 @@ void TimelineDockWidget::interruptPreview()
 void TimelineDockWidget::updateSettingsForCurrentCanvas(Canvas* const canvas)
 {
     if (!canvas) { return; }
+
+    // keep the clip-to-canvas toggle in sync with the scene state (the
+    // view-menu entry and the C shortcut can change it elsewhere)
+    mClipCanvasButton->blockSignals(true);
+    mClipCanvasButton->setChecked(canvas->clipToCanvas());
+    mClipCanvasButton->blockSignals(false);
 
     const auto range = canvas->getFrameRange();
     updateFrameRange(range);

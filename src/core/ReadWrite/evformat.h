@@ -72,6 +72,9 @@ namespace EvFormat {
         // Moho-style switch group marker (ContainerBox child property);
         // older files lack the block and must skip it (positional)
         switchLayers = 42,
+        // PS-style ruler guides (Canvas settings tail: h/v lists);
+        // older files lack the block and must skip it (positional)
+        canvasGuides = 43,
 
         nextVersion
     };

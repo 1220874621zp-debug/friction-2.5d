@@ -370,11 +370,31 @@ void KeysView::mousePressEvent(QMouseEvent *e) {
                     mMovingRect = true;
                 }
             } else {
+                // AE-style Alt + press-drag on an already selected key
+                // starts a proportional time stretch of the selection
+                // (anchored at the earliest selected key) instead of a
+                // plain move
+                const bool altScale = !shiftPressed &&
+                        (e->modifiers() & Qt::AltModifier) &&
+                        mLastPressedKey->isSelected();
                 if(!shiftPressed && !mLastPressedKey->isSelected()) {
                     clearKeySelection();
                 }
                 if(shiftPressed && mLastPressedKey->isSelected()) {
                     removeKeyFromSelection(mLastPressedKey);
+                } else if(altScale) {
+                    clearHoveredKey();
+                    int anchor = FrameRange::EMAX;
+                    for(const auto& anim : mSelectedKeysAnimators) {
+                        const int lowest = anim->
+                                anim_getLowestAbsFrameForSelectedKey();
+                        if(lowest < anchor) anchor = lowest;
+                    }
+                    mAltScaleAnchorAbs = anchor;
+                    mAltScaleGrabAbs = mLastPressedKey->getAbsFrame();
+                    mAltScalingKeys = true;
+                    mMovingKeys = true;
+                    mValueInput.setupMove();
                 } else {
                     clearHoveredKey();
                     addKeyToSelection(mLastPressedKey);
@@ -851,7 +871,21 @@ void KeysView::handleMouseMove(const QPoint &pos,
                     }
                 }
             }
-            if(mScalingKeys) {
+            if(mAltScalingKeys) {
+                // the grabbed key follows the mouse; every other
+                // selected key keeps its proportional distance to the
+                // anchor (the earliest selected key stays put)
+                const qreal apparent = mAltScaleGrabAbs +
+                        (posU.x() - mLastPressPos.x())/mPixelsPerFrame;
+                const qreal denom = mAltScaleGrabAbs - mAltScaleAnchorAbs;
+                qreal keysScale = qFuzzyIsNull(denom) ? 1. :
+                            (apparent - mAltScaleAnchorAbs)/denom;
+                keysScale = qBound(0.01, keysScale, 1000.);
+                for(const auto& anim : mSelectedKeysAnimators) {
+                    anim->anim_scaleSelectedKeysFrame(
+                                mAltScaleAnchorAbs, keysScale);
+                }
+            } else if(mScalingKeys) {
                 qreal keysScale;
                 if(mValueInput.inputEnabled()) {
                     keysScale = mValueInput.getValue();
@@ -991,6 +1025,17 @@ void KeysView::mouseReleaseEvent(QMouseEvent *e) {
                 }
                 if(!shiftPressed) clearKeySelection();
                 selectKeysInSelectionRect();
+                // a plain click (not a drag) on the empty track area
+                // also drops the layer multi-selection, like clicking
+                // empty space in the boxes list
+                if(!shiftPressed &&
+                        mSelectionRect.width() < 2 &&
+                        mSelectionRect.height() < 2) {
+                    if(mCurrentScene) {
+                        mCurrentScene->clearBoxesSelection();
+                        Document::sInstance->actionFinished();
+                    }
+                }
             } else if(mMovingKeys) {
                 if(mFirstMove && mLastPressedKey) {
                     if(!shiftPressed) {

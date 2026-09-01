@@ -132,6 +132,20 @@ private:
     // under the drop point; returns true when the event was consumed
     bool handleEffectDrop(QDropEvent *event);
 
+    // canvas rulers (viewport overlay strips): view-level toggle shared
+    // by every canvas window, persisted in settings ("view"/"rulers")
+    static bool sRulersVisible;
+    static bool rulersVisibleLazy();
+    static constexpr qreal rulerStripLogical() { return 18.; }
+    void drawRulersOverlay(SkCanvas * const canvas);
+
+    // PS-style guide dragging: pull a line out of a ruler, drop it
+    // back onto the ruler to remove it
+    bool mDragGuide = false;
+    bool mDragGuideH = false;   // horizontal line (top ruler)
+    int mDragGuideId = -1;      // existing guide being moved
+    qreal mDragGuidePos = 0;    // canvas coordinate
+
     void setCanvasMode(const CanvasMode mode);
     void updatePaintModeCursor();
 
@@ -179,6 +193,9 @@ signals:
 
 public:
     void setCurrentCanvas(const int id);
+
+    // rulers toggle for the timeline toolbar button
+    static void setRulersVisible(const bool visible);
 
     QPointF mapToCanvasCoord(const QPointF& windowCoord);
     void translateView(const QPointF &trans);

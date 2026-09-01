@@ -43,6 +43,7 @@
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSlider>
+#include <QSpinBox>
 #include <QSvgRenderer>
 #include "widgets/flowlayout.h"
 #include <QTimer>
@@ -436,11 +437,6 @@ TextAnimPresetPanel::TextAnimPresetPanel(Document& doc,
     mTextSection.header->setText(
                 QString::fromUtf8("▾ 文字动画"));
 
-    // big preview
-    mPreview = new TextAnimPreview(this);
-    mPreview->setMinimumHeight(150);
-    rootLayout->addWidget(mPreview);
-
     mStatusLabel = new QLabel(this);
     {
         QFont f = mStatusLabel->font();
@@ -451,8 +447,8 @@ TextAnimPresetPanel::TextAnimPresetPanel(Document& doc,
     mStatusLabel->setText(QString::fromUtf8("选择文字或图层后点入点/出点应用。"));
     rootLayout->addWidget(mStatusLabel);
 
-    // both sliders side by side at the very bottom, no labels
-    // (tooltips carry their meaning)
+    // both sliders side by side at the very bottom; the duration one
+    // ends in an editable value box so the scale can be typed directly
     const auto slidersRow = new QHBoxLayout();
     slidersRow->setSpacing(6);
     mDurationSlider = new QSlider(Qt::Horizontal, this);
@@ -462,6 +458,13 @@ TextAnimPresetPanel::TextAnimPresetPanel(Document& doc,
     mDurationSlider->setMaximumHeight(18);
     mDurationSlider->setToolTip(QString::fromUtf8("动画时长缩放（%1%）"));
     slidersRow->addWidget(mDurationSlider, 1);
+    mDurationSpin = new QSpinBox(this);
+    mDurationSpin->setRange(50, 300);
+    mDurationSpin->setSuffix(QStringLiteral("%"));
+    mDurationSpin->setValue(100);
+    mDurationSpin->setFixedWidth(56);
+    mDurationSpin->setToolTip(QString::fromUtf8("动画时长缩放百分比，可直接输入"));
+    slidersRow->addWidget(mDurationSpin);
     mTileSizeSlider = new QSlider(Qt::Horizontal, this);
     mTileSizeSlider->setRange(90, 220);
     mTileSizeSlider->setSingleStep(10);
@@ -487,16 +490,22 @@ TextAnimPresetPanel::TextAnimPresetPanel(Document& doc,
 
     connect(mDurationSlider, &QSlider::valueChanged, this, [this](const int v) {
         mDurationScale = v/100.;
+        mDurationSpin->blockSignals(true);
+        mDurationSpin->setValue(v);
+        mDurationSpin->blockSignals(false);
     });
-    connect(mDurationSlider, &QSlider::sliderReleased, this, [this]() {
-        if (mCurrent) { renderBigPreview(); }
+    connect(mDurationSpin, static_cast<void(QSpinBox::*)(int)>(&QSpinBox::valueChanged),
+            this, [this](const int v) {
+        mDurationScale = v/100.;
+        mDurationSlider->blockSignals(true);
+        mDurationSlider->setValue(v);
+        mDurationSlider->blockSignals(false);
     });
 
     mPlayTimer = new QTimer(this);
     mPlayTimer->setInterval(40);
     connect(mPlayTimer, &QTimer::timeout, this, [this]() {
         for (const auto tile : mTiles) { tile->advance(); }
-        mPreview->advance();
     });
 
     // build the default-open section lazily on first show
@@ -575,53 +584,8 @@ void TextAnimPresetPanel::ensureTileFrames(TextAnimTile* const tile)
 void TextAnimPresetPanel::selectTile(TextAnimTile* const tile)
 {
     if (!tile) { return; }
-    mCurrent = tile;
     for (const auto t : mTiles) {
         t->setChecked(t == tile);
-    }
-    renderBigPreview();
-}
-
-void TextAnimPresetPanel::renderBigPreview()
-{
-    if (!mCurrent) { return; }
-    if (const auto preset = mCurrent->textPreset()) {
-        QString text = QStringLiteral("friction");
-        QString family = defaultCjkFamily();
-        SkFontStyle style;
-        qreal fontSize = 72;
-        const auto tb = selectedTextBox();
-        if (tb) {
-            text = tb->getCurrentValue();
-            family = tb->getFontFamily();
-            style = tb->getFontStyle();
-            fontSize = qBound<qreal>(24, tb->getFontSize(), 200);
-        }
-        const auto box = enve::make_shared<TextBox>();
-        configureSampleBox(box.get(), text, family, style, fontSize);
-        TextAnimPresets::apply(box.get(), *preset, 0, gPreviewFps,
-                               mDurationScale);
-        const auto frames = framesForPreset(*preset, mDurationScale);
-        const auto imgs = TextAnimPresets::renderPreviewSequence(
-                    box.get(), frames, QSize(480, 260));
-        if (imgs.isEmpty()) {
-            mPreview->setPlaceholder(QString::fromUtf8("（空文本）"));
-        } else {
-            mPreview->setFrames(imgs);
-        }
-    } else if (const auto preset = mCurrent->layerPreset()) {
-        const auto box = enve::make_shared<RectangleBox>();
-        configureSampleRect(box.get(), 130, 130);
-        LayerAnimPresets::apply(box.get(), *preset, 0, gPreviewFps,
-                                mDurationScale, 1280, 720);
-        const auto frames = framesForLayerPreset(*preset, mDurationScale);
-        const auto imgs = LayerAnimPresets::renderPreviewSequence(
-                    box.get(), frames, QSize(480, 260), mascotImage());
-        if (imgs.isEmpty()) {
-            mPreview->setPlaceholder(QString::fromUtf8("（无内容）"));
-        } else {
-            mPreview->setFrames(imgs);
-        }
     }
 }
 
@@ -634,11 +598,7 @@ void TextAnimPresetPanel::applyPreset(TextAnimTile* const tile,
         mStatusLabel->setText(QString::fromUtf8("没有活动场景。"));
         return;
     }
-    const int startFrame = scene->getCurrentFrame();
     const qreal fps = scene->getFps();
-    // "all" applies the entrance at the playhead and the exit after
-    // a short hold
-    const int holdF = qRound(0.5*fps);
 
     if (const auto preset = tile->layerPreset()) {
         const auto selected = scene->getSelectedBoxesList();
@@ -658,16 +618,23 @@ void TextAnimPresetPanel::applyPreset(TextAnimTile* const tile,
         }
         int applied = 0;
         for (const auto& box : selected) {
+            // anchor to the layer's own in/out points instead of the
+            // playhead; full-length layers fall back to the scene range
+            const auto durRect = box->getDurationRectangle();
+            const int inF = durRect ? durRect->getMinAbsFrame()
+                                    : scene->getMinFrame();
+            const int outEndF = durRect ? durRect->getMaxAbsFrame()
+                                        : scene->getMaxFrame();
             const int durF = qMax(2, qRound(preset->duration*
                                             mDurationScale*fps));
             if (dir == 0 || dir == 2) {
-                LayerAnimPresets::apply(box, *preset, startFrame,
+                LayerAnimPresets::apply(box, *preset, inF,
                                         fps, mDurationScale, cw, ch,
                                         false);
             }
             if (dir == 1 || dir == 2) {
-                const int outStart = dir == 2 ?
-                            startFrame + durF + holdF : startFrame;
+                // exit finishes exactly at the layer's end
+                const int outStart = outEndF - durF;
                 LayerAnimPresets::apply(box, *preset, outStart,
                                         fps, mDurationScale, cw, ch,
                                         true);
@@ -696,16 +663,21 @@ void TextAnimPresetPanel::applyPreset(TextAnimTile* const tile,
     }
     int applied = 0;
     for (const auto tb : targets) {
+        const auto durRect = tb->getDurationRectangle();
+        const int inF = durRect ? durRect->getMinAbsFrame()
+                                : scene->getMinFrame();
+        const int outEndF = durRect ? durRect->getMaxAbsFrame()
+                                    : scene->getMaxFrame();
         const int durF = qMax(2, qRound(preset->duration*
                                         mDurationScale*fps));
         bool ok = true;
         if (dir == 0 || dir == 2) {
-            ok = TextAnimPresets::apply(tb, *preset, startFrame,
+            ok = TextAnimPresets::apply(tb, *preset, inF,
                                         fps, mDurationScale, false);
         }
         if (ok && (dir == 1 || dir == 2)) {
-            const int outStart = dir == 2 ?
-                        startFrame + durF + holdF : startFrame;
+            // exit finishes exactly at the layer's end
+            const int outStart = outEndF - durF;
             ok = TextAnimPresets::apply(tb, *preset, outStart,
                                         fps, mDurationScale, true);
         }
@@ -804,4 +776,13 @@ void TextAnimPresetPanel::hideEvent(QHideEvent* const e)
 {
     QWidget::hideEvent(e);
     mPlayTimer->stop();
+}
+
+void TextAnimPresetPanel::setGalleryPaused(const bool paused)
+{
+    if (paused) {
+        mPlayTimer->stop();
+    } else if (isVisible()) {
+        mPlayTimer->start();
+    }
 }

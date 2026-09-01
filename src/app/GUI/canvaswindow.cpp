@@ -30,6 +30,7 @@
 #include <QApplication>
 #include <QStatusBar>
 #include <QTransform>
+#include <cmath>
 
 #include "mainwindow.h"
 #include "GUI/BoxesList/boxscroller.h"
@@ -44,6 +45,7 @@
 #include "memoryhandler.h"
 #include "simpletask.h"
 #include "eevent.h"
+#include "appsupport.h"
 #include "glhelpers.h"
 #include "themesupport.h"
 #include "projectpanel.h"
@@ -188,6 +190,8 @@ void CanvasWindow::renderSk(SkCanvas * const canvas)
         canvas->restore();
     }
 
+    drawRulersOverlay(canvas);
+
     if (KFT_hasFocus()) {
         SkPaint paint;
         paint.setColor(ThemeSupport::getThemeHighlightSkColor());
@@ -196,6 +200,184 @@ void CanvasWindow::renderSk(SkCanvas * const canvas)
         canvas->drawRect(SkRect::MakeWH(width() * pixelRatio,
                                         height() * pixelRatio),
                          paint);
+    }
+}
+
+bool CanvasWindow::sRulersVisible = true;
+static bool sRulersInit = false;
+
+bool CanvasWindow::rulersVisibleLazy() {
+    if (!sRulersInit) {
+        sRulersVisible = AppSupport::getSettings(
+                    QStringLiteral("view"), QStringLiteral("rulers"),
+                    true).toBool();
+        sRulersInit = true;
+    }
+    return sRulersVisible;
+}
+
+void CanvasWindow::setRulersVisible(const bool visible) {
+    if (sRulersInit && sRulersVisible == visible) return;
+    sRulersInit = true;
+    sRulersVisible = visible;
+    AppSupport::setSettings(QStringLiteral("view"),
+                            QStringLiteral("rulers"), visible);
+}
+
+// nice tick step (1/2/5 x 10^k) for the given minimum spacing
+static qreal rulerStep(const qreal minStep) {
+    const qreal mag = std::pow(10., std::floor(std::log10(minStep)));
+    const qreal m = minStep/mag;
+    if (m > 5.) return mag*10.;
+    if (m > 2.) return mag*5.;
+    if (m > 1.) return mag*2.;
+    return mag;
+}
+
+void CanvasWindow::drawRulersOverlay(SkCanvas * const canvas) {
+    if (!rulersVisibleLazy()) return;
+    const qreal pr = devicePixelRatioF();
+    const qreal scale = mViewTransform.m11();
+    if (qFuzzyIsNull(scale)) return;
+    const SkScalar strip = SkScalar(18*pr);
+    const SkScalar W = SkScalar(width()*pr);
+    const SkScalar H = SkScalar(height()*pr);
+
+    // canvas<->device px mapping: the view transform itself maps canvas
+    // units straight to DEVICE pixels (fitCanvasToSize builds it from
+    // width()*devicePixelRatio) - do NOT multiply by the pixel ratio
+    // again here
+    const qreal tx = mViewTransform.dx();
+    const qreal ty = mViewTransform.dy();
+    const auto devX = [scale, tx](const qreal c) {
+        return SkScalar(c*scale + tx);
+    };
+    const auto devY = [scale, ty](const qreal c) {
+        return SkScalar(c*scale + ty);
+    };
+    const auto canvasX = [scale, tx](const SkScalar d) {
+        return (d - tx)/scale;
+    };
+    const auto canvasY = [scale, ty](const SkScalar d) {
+        return (d - ty)/scale;
+    };
+
+    SkPaint bg;
+    bg.setColor(SkColorSetARGB(215, 28, 28, 31));
+    canvas->drawRect(SkRect::MakeXYWH(0, 0, W, strip), bg);
+    canvas->drawRect(SkRect::MakeXYWH(0, 0, strip, H), bg);
+    // subtle edge between the strips and the canvas
+    SkPaint edge;
+    edge.setColor(SkColorSetARGB(140, 90, 90, 96));
+    edge.setStrokeWidth(SkScalar(pr));
+    canvas->drawLine(strip, strip, W, strip, edge);
+    canvas->drawLine(strip, strip, strip, H, edge);
+
+    SkPaint tick;
+    tick.setColor(SkColorSetARGB(225, 200, 200, 206));
+    tick.setStrokeWidth(SkScalar(pr));
+    SkPaint label = tick;
+    SkFont font;
+    font.setSize(SkScalar(9*pr));
+    label.setAntiAlias(true);
+
+    // ---- horizontal ruler (canvas x) ----
+    const qreal step = rulerStep(100./scale);
+    const qreal minor = step/5.;
+    const int decimals = step < 1. ? 1 : 0;
+    const qreal xEnd = canvasX(W);
+    {
+        const int k0 = qCeil(canvasX(strip)/step);
+        const int k1 = qFloor(xEnd/step);
+        for (int k = k0; k <= k1; k++) {
+            const qreal cx = k*step;
+            const SkScalar dx = devX(cx);
+            canvas->drawLine(dx, strip, dx, strip - SkScalar(7*pr), tick);
+            const QString text = QString::number(cx, 'f', decimals);
+            canvas->drawString(text.toStdString().c_str(),
+                               dx + SkScalar(2*pr), SkScalar(12*pr),
+                               font, label);
+        }
+        const int m0 = qCeil(canvasX(strip)/minor);
+        const int m1 = qFloor(xEnd/minor);
+        for (int m = m0; m <= m1; m++) {
+            if (m % 5 == 0) continue; // major tick already drawn
+            const SkScalar dx = devX(m*minor);
+            canvas->drawLine(dx, strip, dx, strip - SkScalar(4*pr), tick);
+        }
+    }
+    // ---- vertical ruler (canvas y) ----
+    const qreal yEnd = canvasY(H);
+    {
+        const int k0 = qCeil(canvasY(strip)/step);
+        const int k1 = qFloor(yEnd/step);
+        for (int k = k0; k <= k1; k++) {
+            const qreal cy = k*step;
+            const SkScalar dy = devY(cy);
+            canvas->drawLine(strip, dy, strip - SkScalar(7*pr), dy, tick);
+            const QString text = QString::number(cy, 'f', decimals);
+            canvas->drawString(text.toStdString().c_str(),
+                               SkScalar(2*pr), dy - SkScalar(2*pr),
+                               font, label);
+        }
+        const int m0 = qCeil(canvasY(strip)/minor);
+        const int m1 = qFloor(yEnd/minor);
+        for (int m = m0; m <= m1; m++) {
+            if (m % 5 == 0) continue;
+            const SkScalar dy = devY(m*minor);
+            canvas->drawLine(strip, dy, strip - SkScalar(4*pr), dy, tick);
+        }
+    }
+
+    // ---- mouse position marks ----
+    const QPointF mouseC = mapToCanvasCoord(mPrevMousePos);
+    if (!qIsNaN(mouseC.x()) && !qIsNaN(mouseC.y())) {
+        SkPaint mark;
+        mark.setColor(ThemeSupport::getThemeHighlightSkColor());
+        mark.setStrokeWidth(SkScalar(1.2*pr));
+        const SkScalar mx = devX(mouseC.x());
+        const SkScalar my = devY(mouseC.y());
+        if (mx >= strip && mx <= W) {
+            canvas->drawLine(mx, 0, mx, strip, mark);
+        }
+        if (my >= strip && my <= H) {
+            canvas->drawLine(0, my, strip, my, mark);
+        }
+    }
+
+    // ---- PS-style guides (scene) ----
+    if (mCurrentCanvas) {
+        SkPaint guide;
+        guide.setColor(SkColorSetARGB(200, 80, 210, 140));
+        guide.setStrokeWidth(SkScalar(pr));
+        // a guide being dragged hides its original - the preview line
+        // follows the cursor alone until it is dropped
+        for (int i = 0; i < mCurrentCanvas->hGuides().count(); i++) {
+            if (mDragGuide && mDragGuideH && mDragGuideId == i) { continue; }
+            const SkScalar dy = devY(mCurrentCanvas->hGuides().at(i));
+            if (dy > strip && dy < H) {
+                canvas->drawLine(strip, dy, W, dy, guide);
+            }
+        }
+        for (int i = 0; i < mCurrentCanvas->vGuides().count(); i++) {
+            if (mDragGuide && !mDragGuideH && mDragGuideId == i) { continue; }
+            const SkScalar dx = devX(mCurrentCanvas->vGuides().at(i));
+            if (dx > strip && dx < W) {
+                canvas->drawLine(dx, strip, dx, H, guide);
+            }
+        }
+    }
+    if (mDragGuide) {
+        SkPaint preview;
+        preview.setColor(SkColorSetARGB(230, 80, 210, 140));
+        preview.setStrokeWidth(SkScalar(1.2*pr));
+        if (mDragGuideH) {
+            const SkScalar dy = devY(mDragGuidePos);
+            canvas->drawLine(strip, dy, W, dy, preview);
+        } else {
+            const SkScalar dx = devX(mDragGuidePos);
+            canvas->drawLine(dx, strip, dx, H, preview);
+        }
     }
 }
 
@@ -230,6 +412,41 @@ void CanvasWindow::mousePressEvent(QMouseEvent *event)
     KFT_setFocus();
     if (!mCurrentCanvas || mBlockInput) { return; }
     if (mMouseGrabber && button == Qt::LeftButton) { return; }
+    // PS-style guides: press inside a ruler strip pulls a new guide;
+    // press near an existing guide grabs it for moving/removal
+    if (button == Qt::LeftButton && rulersVisibleLazy()) {
+        const QPointF w = event->pos();
+        if (w.y() < rulerStripLogical()) {
+            mDragGuide = true; mDragGuideH = true; mDragGuideId = -1;
+            mDragGuidePos = mapToCanvasCoord(w).y();
+            update(); return;
+        }
+        if (w.x() < rulerStripLogical()) {
+            mDragGuide = true; mDragGuideH = false; mDragGuideId = -1;
+            mDragGuidePos = mapToCanvasCoord(w).x();
+            update(); return;
+        }
+        const auto c = mapToCanvasCoord(w);
+        const qreal tol = 6./qMax(0.01, mViewTransform.m11());
+        int id = 0;
+        for (const qreal y : mCurrentCanvas->hGuides()) {
+            if (qAbs(c.y() - y) < tol) {
+                mDragGuide = true; mDragGuideH = true;
+                mDragGuideId = id; mDragGuidePos = y;
+                update(); return;
+            }
+            id++;
+        }
+        id = 0;
+        for (const qreal x : mCurrentCanvas->vGuides()) {
+            if (qAbs(c.x() - x) < tol) {
+                mDragGuide = true; mDragGuideH = false;
+                mDragGuideId = id; mDragGuidePos = x;
+                update(); return;
+            }
+            id++;
+        }
+    }
     const auto pos = mapToCanvasCoord(event->pos());
     mCurrentCanvas->mousePressEvent(eMouseEvent(pos,
                                                 pos,
@@ -263,6 +480,32 @@ void CanvasWindow::mouseReleaseEvent(QMouseEvent *event)
         QApplication::restoreOverrideCursor();
         return;
     }
+    // PS-style guide drop: back onto the ruler = remove, into the
+    // canvas = create/keep
+    if (mDragGuide && button == Qt::LeftButton) {
+        const QPointF w = event->pos();
+        const bool backToRuler = mDragGuideH ?
+                    (w.y() < rulerStripLogical()) :
+                    (w.x() < rulerStripLogical());
+        if (mCurrentCanvas) {
+            if (mDragGuideId >= 0) {
+                if (backToRuler) {
+                    if (mDragGuideH) mCurrentCanvas->removeHGuide(mDragGuideId);
+                    else mCurrentCanvas->removeVGuide(mDragGuideId);
+                } else {
+                    if (mDragGuideH) mCurrentCanvas->setHGuide(mDragGuideId, mDragGuidePos);
+                    else mCurrentCanvas->setVGuide(mDragGuideId, mDragGuidePos);
+                }
+            } else if (!backToRuler) {
+                if (mDragGuideH) mCurrentCanvas->addHGuide(mDragGuidePos);
+                else mCurrentCanvas->addVGuide(mDragGuidePos);
+            }
+        }
+        mDragGuide = false;
+        mDragGuideId = -1;
+        update();
+        return;
+    }
     if (!mCurrentCanvas || mBlockInput) { return; }
     const auto pos = mapToCanvasCoord(event->pos());
     mCurrentCanvas->mouseReleaseEvent(eMouseEvent(pos,
@@ -290,6 +533,13 @@ void CanvasWindow::mouseMoveEvent(QMouseEvent *event)
 {
     if (!mCurrentCanvas || mBlockInput) { return; }
     auto pos = mapToCanvasCoord(event->pos());
+    // PS-style guide drag: the line follows the cursor
+    if (mDragGuide) {
+        mDragGuidePos = mDragGuideH ? pos.y() : pos.x();
+        mPrevMousePos = pos;
+        update();
+        return;
+    }
     bool leftAndAltPressed = (event->buttons() & Qt::LeftButton) &&
                              QGuiApplication::keyboardModifiers().testFlag(Qt::AltModifier);
     if (event->buttons() & Qt::MiddleButton ||
@@ -781,15 +1031,12 @@ bool CanvasWindow::handleSceneDrop(QDropEvent * const event)
         return true;
     }
 
-    // same link the canvas right-click "Link Scene" menu creates,
-    // placed with its pivot on the drop point
-    const QPointF pos = mapToCanvasCoord(event->posF());
+    // same link the canvas right-click "Link Scene" menu creates; the
+    // link keeps the scene's own position - the drag is only a shortcut
+    // for the linking action, it must not move the content
     const auto newLink = scene->createLink(false);
     mCurrentCanvas->getCurrentGroup()->addContained(newLink);
     newLink->centerPivotPosition();
-    newLink->startPosTransform();
-    newLink->moveByAbs(pos - newLink->getPivotAbsPos());
-    newLink->finishTransform();
     Document::sInstance->actionFinished();
     return true;
 }
