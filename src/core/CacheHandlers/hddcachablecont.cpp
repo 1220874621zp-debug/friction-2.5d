@@ -24,6 +24,7 @@
 // Fork of enve - Copyright (C) 2016-2020 Maurycy Liebner
 
 #include "hddcachablecont.h"
+#include "Tasks/etask.h"
 
 HddCachableCont::HddCachableCont() {}
 
@@ -50,6 +51,12 @@ eTask *HddCachableCont::scheduleDeleteTmpFile() {
 }
 
 eTask *HddCachableCont::scheduleSaveToTmpFile() {
+    // a canceled save task blocks all future saves (mTmpSaveTask is
+    // only reset on success/failure callbacks) and cancels any loader
+    // registered as its dependent - drop it and start over
+    if(mTmpSaveTask && mTmpSaveTask->getState() == eTaskState::canceled) {
+        mTmpSaveTask.reset();
+    }
     if(mTmpSaveTask || mTmpFile) return nullptr;
     mTmpSaveTask = createTmpFileDataSaver();
     mTmpSaveTask->queTask();
@@ -58,7 +65,17 @@ eTask *HddCachableCont::scheduleSaveToTmpFile() {
 
 eTask *HddCachableCont::scheduleLoadFromTmpFile() {
     if(storesDataInMemory()) return nullptr;
-    if(mTmpLoadTask) return mTmpLoadTask.get();
+    if(mTmpLoadTask) {
+        // a canceled loader never runs again and poisons every later
+        // dependent (eTaskBase::addDependent cancels dependents of a
+        // canceled task) - drop it so a fresh loader is created
+        // instead of the container staying evicted forever
+        if(mTmpLoadTask->getState() == eTaskState::canceled) {
+            mTmpLoadTask.reset();
+        } else {
+            return mTmpLoadTask.get();
+        }
+    }
     if(!mTmpSaveTask && !mTmpFile) return nullptr;
 
     mTmpLoadTask = createTmpFileDataLoader();

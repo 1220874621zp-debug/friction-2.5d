@@ -137,6 +137,13 @@ void RenderHandler::renderFromSettings(RenderInstanceSettings * const settings) 
 void RenderHandler::setPreviewFrame(const int &frame)
 {
     mCurrentPreviewFrame = frame;
+    // rebase the absolute-time clock: the playhead was repositioned
+    // externally (scrub while paused), so playback must continue from
+    // here - otherwise the next tick computes the target from the old
+    // base and the playhead jumps back to the pre-scrub position
+    mPreviewStartFrame = frame;
+    mPreviewAccumMs = 0;
+    if(mPreviewClock.isValid()) mPreviewClock.restart();
 }
 
 void RenderHandler::setLoop(const bool loop) {
@@ -387,6 +394,11 @@ void RenderHandler::playPreviewAfterAllTasksCompleted() {
 }
 
 bool RenderHandler::playPreview() {
+    // the warm-cache path (spaceToggle) calls playPreview directly,
+    // bypassing renderPreview - mCurrentScene may still point at the
+    // scene previewed BEFORE a scene switch, advancing that scene
+    // while the active scene's canvas and playhead never move
+    setCurrentScene(mDocument.fActiveScene);
     if(!mCurrentScene) return false;
     // direct start (no cache warm-up preceding): anchor the start
     // frame and the render frontier to where the user actually is -
