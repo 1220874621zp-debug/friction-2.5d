@@ -485,6 +485,23 @@ void ProjectPanel::rebuild()
                 ++it;
             }
         });
+        // keep the info column live: fps / dimensions edited in the
+        // scene settings must show up without a rebuild
+        const auto updateInfo = [this, scene]() {
+            QTreeWidgetItemIterator it(mTree);
+            while (*it) {
+                if (sceneAt(*it) == scene) {
+                    const QString info = sceneInfo(scene);
+                    (*it)->setText(1, info);
+                    (*it)->setToolTip(1, info);
+                }
+                ++it;
+            }
+        };
+        mNameConns << connect(scene, &Canvas::fpsChanged,
+                               this, [updateInfo](qreal) { updateInfo(); });
+        mNameConns << connect(scene, &Canvas::dimensionsChanged,
+                               this, [updateInfo](int, int) { updateInfo(); });
     }
     // imported file assets below the scenes (AE-style)
     if (FilesHandler::sInstance) {
