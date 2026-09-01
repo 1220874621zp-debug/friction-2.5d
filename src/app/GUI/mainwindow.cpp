@@ -104,7 +104,7 @@
 
 #include "dialogs/adjustscenedialog.h"
 #include "dialogs/commandpalette.h"
-#include "dialogs/vectortracedialog.h"
+#include "Dialogs/vectortracedialog.h"
 #include "wizards/installpresets.h"
 #include "Boxes/videobox.h"
 #include "Boxes/imagebox.h"
