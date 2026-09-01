@@ -66,6 +66,12 @@ public:
     bool isFlipBook() const;
     iValueRange getContainedMinMax() const;
 
+    // render semantics of the link follow the target: a link of a
+    // LAYER container must isolate (own surface) instead of
+    // flattening into the parent like a plain group - otherwise
+    // masks (kDstIn) inside the linked layer erase the whole parent
+    bool rendersAsTargetLayer() const;
+
     void setLinkTarget(ContainerBox * const linkTarget);
 protected:
     const qsptr<BoxTargetProperty> mBoxTarget =

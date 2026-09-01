@@ -89,6 +89,11 @@ bool InternalLinkGroupBox::isFlipBook() const {
     else return false;
 }
 
+bool InternalLinkGroupBox::rendersAsTargetLayer() const {
+    const auto linkTarget = getLinkTarget();
+    return linkTarget && linkTarget->isLayer();
+}
+
 iValueRange InternalLinkGroupBox::getContainedMinMax() const {
     const auto linkTarget = getLinkTarget();
     if(linkTarget) return linkTarget->getContainedMinMax();

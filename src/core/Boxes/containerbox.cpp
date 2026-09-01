@@ -1096,11 +1096,26 @@ void ContainerBox::drawContained(SkCanvas * const canvas,
     handleDelayed(delayed, INT_MAX, nullptr, nullptr);
 }
 
+// an internal link of a LAYER container must keep the target's
+// isolation semantics: layers render onto their own surface, plain
+// groups flatten into the parent. Link copies are created as plain
+// groups, so without this a linked mask-pen wrap layer (a layer
+// holding a kDstIn mask) flattens into the link canvas and the mask
+// erases everything outside it on the whole linked scene
+static bool linkRendersAsLayer(BoundingBox * const box) {
+    const auto linkBox = enve_cast<InternalLinkGroupBox*>(box);
+    return linkBox && linkBox->rendersAsTargetLayer();
+}
+
 void ContainerBox::drawPixmapSk(SkCanvas * const canvas,
                                 const SkFilterQuality filter, int& drawId,
                                 QList<BlendEffect::Delayed> &delayed) const {
-    if(isGroup()) return drawContained(canvas, filter, drawId, delayed);
-    if(mIsDescendantCurrentGroup) {
+    if(isGroup() && !linkRendersAsLayer(
+                const_cast<ContainerBox*>(this))) {
+        return drawContained(canvas, filter, drawId, delayed);
+    }
+    if(mIsDescendantCurrentGroup || linkRendersAsLayer(
+                const_cast<ContainerBox*>(this))) {
         SkPaint paint;
         const int intAlpha = qRound(mTransformAnimator->getOpacity()*2.55);
         paint.setAlpha(static_cast<U8CPU>(intAlpha));
@@ -1198,7 +1213,7 @@ void processChildData(BoundingBox * const child,
                       const bool soloActive) {
     if(!child->isFrameFVisibleAndInDurationRect(childRelFrame)) return;
     if(soloActive && !child->soloAffectsDraw()) return;
-    if(child->isGroup()) {
+    if(child->isGroup() && !linkRendersAsLayer(child)) {
         const auto childGroup = static_cast<ContainerBox*>(child);
         const auto childRelM = child->getRelativeTransformAtFrame(childRelFrame);
         const auto childM = childRelM*thisM;
