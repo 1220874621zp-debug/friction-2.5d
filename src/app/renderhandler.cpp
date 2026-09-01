@@ -50,6 +50,10 @@ RenderHandler::RenderHandler(Document &document,
             this, &RenderHandler::outOfMemory);
 
     mPreviewFPSTimer = new QTimer(this);
+    mPipelineTimer = new QTimer(this);
+    mPipelineTimer->setInterval(4);
+    connect(mPipelineTimer, &QTimer::timeout,
+            this, &RenderHandler::pipelineTick);
     mPreviewFPSTimer->setTimerType(Qt::PreciseTimer);
     connect(mPreviewFPSTimer, &QTimer::timeout,
             this, &RenderHandler::nextPreviewFrame);
@@ -191,12 +195,6 @@ void RenderHandler::setPreviewState(const PreviewState state)
 void RenderHandler::renderPreview() {
     setCurrentScene(mDocument.fActiveScene);
     if(!mCurrentScene) return;
-    const auto nextFrameFunc = [this]() {
-        nextPreviewRenderFrame();
-    };
-    TaskScheduler::sSetTaskUnderflowFunc(nextFrameFunc);
-    TaskScheduler::sSetAllTasksFinishedFunc(nextFrameFunc);
-
     mSavedCurrentFrame = mCurrentScene->getCurrentFrame();
 
     const auto fIn = mCurrentScene->getFrameIn();
@@ -216,8 +214,44 @@ void RenderHandler::renderPreview() {
 
     emit previewBeingRendered();
 
-    if(TaskScheduler::sAllQuedCpuTasksFinished()) {
-        nextPreviewRenderFrame();
+    // feed the first frames immediately; the timer keeps the pool fed
+    // while previous frames are still rendering
+    mInFlightFrames.clear();
+    mPipelineTimer->start();
+    pipelineTick();
+}
+
+void RenderHandler::pipelineTick() {
+    if(!mRenderingPreview || !mCurrentScene) return;
+    const auto& cacheHandler = mCurrentScene->getSceneFramesHandler();
+    // retire frames whose scene-frame container has landed in the cache
+    while(!mInFlightFrames.isEmpty() &&
+          cacheHandler.atFrame(mInFlightFrames.first()) != nullptr) {
+        mInFlightFrames.removeFirst();
+    }
+    // feed up to the in-flight bound (2): the next frame assembles
+    // while the previous one's tasks are still on the pool
+    while(mInFlightFrames.count() < 2) {
+        const int nextFrame = cacheHandler.firstEmptyFrameAtOrAfter(
+                    mCurrentRenderFrame + 1);
+        if(nextFrame > mMaxRenderFrame) break;
+        const FrameRange newSoundRange = {mCurrentRenderFrame, nextFrame};
+        mCurrentSoundComposition->scheduleFrameRange(newSoundRange);
+        mCurrentSoundComposition->setMaxFrameUseRange(nextFrame);
+        mCurrentScene->setMaxFrameUseRange(nextFrame);
+        mCurrentRenderFrame = nextFrame;
+        mCurrRenderRange.fMax = nextFrame;
+        mInFlightFrames << nextFrame;
+        setFrameAction(nextFrame);
+    }
+    // finished once nothing is in flight and no empty frame remains
+    if(mInFlightFrames.isEmpty()) {
+        const int nextFrame = cacheHandler.firstEmptyFrameAtOrAfter(
+                    mCurrentRenderFrame + 1);
+        if(nextFrame > mMaxRenderFrame) {
+            mPipelineTimer->stop();
+            playPreviewAfterAllTasksCompleted();
+        }
     }
 }
 
@@ -236,6 +270,10 @@ void RenderHandler::outOfMemory() {
 
 void RenderHandler::setRenderingPreview(const bool rendering) {
     mRenderingPreview = rendering;
+    if(!rendering) {
+        mPipelineTimer->stop();
+        mInFlightFrames.clear();
+    }
     if(mCurrentScene) mCurrentScene->setRenderingPreview(rendering);
     TaskScheduler::instance()->setAlwaysQue(rendering);
     // keep caches in memory while the preview is being rendered:

@@ -90,6 +90,13 @@ private:
     void nextPreviewFrame();
     void nextCurrentRenderFrame();
 
+    // multi-frame-in-flight cache warm-up (short-term MFR): a timer
+    // feeds the next frame while the previous one is still rendering,
+    // instead of waiting for every task of a frame to finish - keeps
+    // the thread pool fed through per-frame assembly gaps and
+    // straggler tails; bounded to keep peak memory in check
+    void pipelineTick();
+
     void setPreviewState(const PreviewState state);
     void setRenderingPreview(const bool rendering);
     void setPreviewing(const bool previewing);
@@ -110,6 +117,8 @@ private:
 
     Canvas* mCurrentScene = nullptr;
     QTimer *mPreviewFPSTimer = nullptr;
+    QTimer *mPipelineTimer = nullptr;
+    QList<int> mInFlightFrames;
     QTimer *mBacklogTimer = nullptr;
     RenderInstanceSettings *mCurrentRenderSettings = nullptr;
 
