@@ -20,9 +20,6 @@
 #
 
 # vtracer (bitmap tracing) is loaded at runtime with QLibrary, so only the
-# FFI header is needed at build time; vtracer.dll ships next to the exe.
-if(WIN32)
-    set(VTRACER_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/sdk/include)
-else()
-    set(VTRACER_INCLUDE_DIRS "")
-endif()
+# FFI header is needed at build time; the vtracer shared library ships
+# next to the executable (on Windows from the out-of-repo sdk/).
+set(VTRACER_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/src/vtracer-ffi/include)

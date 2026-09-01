@@ -13,7 +13,7 @@ cp target/release/vtracer.dll <部署目录>/          # 与 friction.exe 同目
 ```
 
 - 产物：`vtracer.dll`（约 300 KB，QLibrary 动态加载，缺失不影响程序启动）
-- 头文件：`sdk/include/vtracer/vtracer_ffi.h`（C ABI 说明，随仓库外 sdk 分发）
+- 头文件：`include/vtracer/vtracer_ffi.h`（C ABI 说明，随本仓库分发）
 - C++ 侧接入：`src/core/vtracerprovider.h/.cpp`（QLibrary 解析 + Skia 像素转换）
 
 ## 自适应路径上限
