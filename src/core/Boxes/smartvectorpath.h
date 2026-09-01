@@ -52,8 +52,11 @@ public:
     // once every sub-path is closed); evaluated live at render time
     void setMaskMode(const bool mask) { mMaskMode = mask; }
     bool getMaskMode() const { return mMaskMode; }
-    bool allSubPathsClosed() const;
-    SkBlendMode getPaintBlendMode() const override;
+    // relFrame-parameterized: render-time callers must pass the frame
+    // being rendered - reading the global current frame breaks inside
+    // scene links (the linked scene's boxes keep a stale current frame)
+    bool allSubPathsClosed(const qreal relFrame) const;
+    SkBlendMode getPaintBlendMode(const qreal relFrame) const override;
 
     void setupRenderData(const qreal relFrame, const QMatrix& parentM,
                          BoxRenderData * const data,

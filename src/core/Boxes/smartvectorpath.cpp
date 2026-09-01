@@ -56,16 +56,18 @@ bool SmartVectorPath::differenceInEditPathBetweenFrames(
     return mPathAnimator->prp_differencesBetweenRelFrames(frame1, frame2);
 }
 
-SkBlendMode SmartVectorPath::getPaintBlendMode() const {
+SkBlendMode SmartVectorPath::getPaintBlendMode(const qreal relFrame) const {
     // while any sub-path is open the mask shape draws normally
-    // (SrcOver) instead of clipping the layers below with DstIn
-    if(mMaskMode && !allSubPathsClosed()) {
+    // (SrcOver) instead of clipping the layers below with DstIn;
+    // evaluate at the frame being rendered, never the global current
+    // frame (stale inside scene links)
+    if(mMaskMode && !allSubPathsClosed(relFrame)) {
         return SkBlendMode::kSrcOver;
     }
-    return PathBox::getPaintBlendMode();
+    return PathBox::getPaintBlendMode(relFrame);
 }
 
-bool SmartVectorPath::allSubPathsClosed() const {
+bool SmartVectorPath::allSubPathsClosed(const qreal relFrame) const {
     const int n = mPathAnimator->ca_getNumberOfChildren();
     if(n == 0) return false;
     for(int i = 0; i < n; i++) {
@@ -73,7 +75,7 @@ bool SmartVectorPath::allSubPathsClosed() const {
                     mPathAnimator->getChild(i));
         if(!asAnim) continue;
         SmartPath sp;
-        asAnim->deepCopyValue(asAnim->anim_getCurrentRelFrame(), sp);
+        asAnim->deepCopyValue(relFrame, sp);
         if(!sp.isClosed()) return false;
     }
     return true;
@@ -87,7 +89,7 @@ void SmartVectorPath::setupRenderData(const qreal relFrame,
     // mask pen: an open shape must not show its fill - Skia would fill
     // the implicitly closed outline and paint it over the canvas while
     // the user is still drawing
-    if(mMaskMode && !allSubPathsClosed()) {
+    if(mMaskMode && !allSubPathsClosed(relFrame)) {
         static_cast<PathBoxRenderData*>(data)->fFillPath.reset();
     }
 }

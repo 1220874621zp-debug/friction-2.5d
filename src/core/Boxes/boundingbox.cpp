@@ -580,7 +580,8 @@ void BoundingBox::setPreserveAlpha(const bool preserve) {
     emit preserveAlphaChanged(preserve);
 }
 
-SkBlendMode BoundingBox::getPaintBlendMode() const {
+SkBlendMode BoundingBox::getPaintBlendMode(const qreal relFrame) const {
+    Q_UNUSED(relFrame)
     if(mPreserveAlpha) return SkBlendMode::kSrcATop;
     return mBlendMode;
 }
@@ -1355,7 +1356,7 @@ void BoundingBox::setupWithoutRasterEffects(const qreal relFrame,
     data->fResolutionScale.scale(data->fResolution, data->fResolution);
     data->fOpacity = getOpacity(relFrame);
     data->fBaseMargin = QMargins() + 2;
-    data->fBlendMode = getPaintBlendMode();
+    data->fBlendMode = getPaintBlendMode(relFrame);
 
     {
         const auto parent = getParentGroup();

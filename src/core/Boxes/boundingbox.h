@@ -272,7 +272,7 @@ public:
     void setPreserveAlpha(const bool preserve);
     void switchPreserveAlpha() { setPreserveAlpha(!mPreserveAlpha); }
     bool getPreserveAlpha() const { return mPreserveAlpha; }
-    virtual SkBlendMode getPaintBlendMode() const;
+    virtual SkBlendMode getPaintBlendMode(const qreal relFrame) const;
 
     virtual qreal getOpacity(const qreal relFrame) const;
 

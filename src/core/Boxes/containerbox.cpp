@@ -1104,7 +1104,9 @@ void ContainerBox::drawPixmapSk(SkCanvas * const canvas,
         SkPaint paint;
         const int intAlpha = qRound(mTransformAnimator->getOpacity()*2.55);
         paint.setAlpha(static_cast<U8CPU>(intAlpha));
-        paint.setBlendMode(getPaintBlendMode());
+        // transient current-frame canvas paint: the current frame is
+        // the semantically right frame here
+        paint.setBlendMode(getPaintBlendMode(anim_getCurrentRelFrame()));
         canvas->saveLayer(nullptr, &paint);
         drawContained(canvas, filter);
         canvas->restore();
