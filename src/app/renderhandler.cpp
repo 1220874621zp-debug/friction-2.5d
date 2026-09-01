@@ -287,6 +287,12 @@ void RenderHandler::pausePreview() {
         if(mCurrentScene) mCurrentScene->setGizmosSuppressed(false);
         mAudioHandler.pauseAudio();
         mPreviewFPSTimer->stop();
+        // freeze the playback clock: QElapsedTimer cannot be paused,
+        // so bank the elapsed time and restart the clock on resume
+        if(mPreviewClock.isValid()) {
+            mPreviewAccumMs += mPreviewClock.elapsed();
+            mPreviewClock.invalidate();
+        }
         emit previewPaused();
         setPreviewState(PreviewState::paused);
     }
@@ -295,6 +301,7 @@ void RenderHandler::pausePreview() {
 void RenderHandler::resumePreview() {
     if(mPreviewing) {
         mAudioHandler.resumeAudio();
+        mPreviewClock.start();
         mPreviewFPSTimer->start();
         emit previewBeingPlayed();
         setPreviewState(PreviewState::playing);
@@ -339,7 +346,13 @@ bool RenderHandler::playPreview() {
 
     startAudio();
 
-    const int mSecInterval = qRound(1000/mCurrentScene->getFps());
+    // absolute-time base: nextPreviewFrame() maps elapsed wall time
+    // to a target frame, so tick with a floor-truncated interval
+    // (slightly fast) - early ticks are no-ops, late ticks skip frames
+    mPreviewStartFrame = mCurrentPreviewFrame;
+    mPreviewAccumMs = 0;
+    mPreviewClock.start();
+    const int mSecInterval = qMax(1, int(1000/mCurrentScene->getFps()));
     mPreviewFPSTimer->setInterval(mSecInterval);
     mPreviewFPSTimer->start();
     emit previewBeingPlayed();
@@ -361,22 +374,47 @@ void RenderHandler::nextPreviewRenderFrame() {
 
 void RenderHandler::nextPreviewFrame() {
     if(!mCurrentScene) return;
-    mCurrentPreviewFrame++;
-    if(mCurrentPreviewFrame > mMaxPreviewFrame) {
+    const qreal fps = mCurrentScene->getFps();
+    if(fps <= 0) return;
+    // map elapsed wall time to the target frame; ticks that arrive
+    // before the next frame is due are no-ops, ticks that arrive late
+    // skip intermediate frames so playback never falls behind audio
+    qint64 elapsed = mPreviewAccumMs;
+    if(mPreviewClock.isValid()) elapsed += mPreviewClock.elapsed();
+    int target = mPreviewStartFrame + int(elapsed*fps/1000);
+    if(target <= mCurrentPreviewFrame) return;
+    if(target > mMaxPreviewFrame) {
         if(mLoop) {
-            mCurrentPreviewFrame = mMinPreviewFrame - 1;
-            nextPreviewFrame();
+            const int span = mMaxPreviewFrame - mMinPreviewFrame + 1;
+            if(span > 0) {
+                target = mMinPreviewFrame + (target - mMinPreviewFrame)%span;
+            } else {
+                target = mMinPreviewFrame;
+            }
+            mPreviewStartFrame = target;
+            mPreviewAccumMs = 0;
+            mPreviewClock.restart();
             stopAudio();
             startAudio();
-        } else stopPreview();
-    } else {
-        // anim_setAbsFrame updates the canvas's internal frame counter
-        // (drives the playhead drawing) AND displays the cached frame
-        // when available - setSceneFrame only displayed, leaving the
-        // playhead frozen at the pre-playback position
-        mCurrentScene->anim_setAbsFrame(mCurrentPreviewFrame);
-        if(!mLoop) mCurrentScene->setMinFrameUseRange(mCurrentPreviewFrame);
+        } else {
+            // show the final frame, then stop
+            if(mCurrentPreviewFrame < mMaxPreviewFrame) {
+                mCurrentPreviewFrame = mMaxPreviewFrame;
+                mCurrentScene->anim_setAbsFrame(mCurrentPreviewFrame);
+                mCurrentScene->setMinFrameUseRange(mCurrentPreviewFrame);
+                emit mCurrentScene->requestUpdate();
+            }
+            stopPreview();
+            return;
+        }
     }
+    mCurrentPreviewFrame = target;
+    // anim_setAbsFrame updates the canvas's internal frame counter
+    // (drives the playhead drawing) AND displays the cached frame
+    // when available - setSceneFrame only displayed, leaving the
+    // playhead frozen at the pre-playback position
+    mCurrentScene->anim_setAbsFrame(mCurrentPreviewFrame);
+    if(!mLoop) mCurrentScene->setMinFrameUseRange(mCurrentPreviewFrame);
     emit mCurrentScene->requestUpdate();
 }
 

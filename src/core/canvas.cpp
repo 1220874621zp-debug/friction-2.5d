@@ -28,6 +28,7 @@
 #include <QPainter>
 #include <QMouseEvent>
 #include <QLineF>
+#include <QSet>
 #include <QtMath>
 #include <cmath>
 #include <limits>
@@ -290,18 +291,21 @@ void drawTransparencyMesh(SkCanvas* const canvas,
                           const SkRect &drawRect)
 {
     SkPaint paint;
-    SkBitmap bitmap;
-    bitmap.setInfo(SkImageInfo::MakeA8(2, 2), 2);
-    uint8_t pixels[4] = { 0, 255, 255, 0 };
-    bitmap.setPixels(pixels);
+    // the 2x2 checker pattern is static - build the bitmap and base
+    // shader once; only the zoom-dependent local matrix changes per call
+    static uint8_t pixels[4] = { 0, 255, 255, 0 };
+    static const sk_sp<SkShader> baseShader = [] {
+        SkBitmap bitmap;
+        bitmap.setInfo(SkImageInfo::MakeA8(2, 2), 2);
+        bitmap.setPixels(pixels);
+        return bitmap.makeShader(SkTileMode::kRepeat, SkTileMode::kRepeat);
+    }();
 
     SkMatrix matr;
     const float scale = canvas->getTotalMatrix().getMinScale();
     const float dim = eSizesUI::widget*0.5f / (scale > 1.f ? 1.f : scale);
     matr.setScale(dim, dim);
-    const auto shader = bitmap.makeShader(SkTileMode::kRepeat,
-                                          SkTileMode::kRepeat, &matr);
-    paint.setShader(shader);
+    paint.setShader(baseShader->makeWithLocalMatrix(matr));
     paint.setColor(SkColorSetARGB(255, 100, 100, 100));
     canvas->drawRect(drawRect, paint);
 }
@@ -1160,8 +1164,6 @@ void Canvas::updatePivot()
         mRotPivot->setAbsolutePos(getSelectedBoxesAbsPivotPos());
         mDocument.fPivotPosForGizmosValid = false;
     }
-    // diagnostic: only log actual moves
-    qWarning() << "[PIVOT] update to" << mRotPivot->getAbsolutePos();
 }
 
 void Canvas::setCanvasMode(const CanvasMode mode)
@@ -2106,8 +2108,14 @@ void Canvas::sceneCameraChanged(const FrameRange& range) {
         if(!mSceneFramesHandler.atFrame(anim_getCurrentRelFrame())) {
             mSceneFrameOutdated = true;
         }
+        // link canvases (InternalLinkCanvas) can introduce cycles into
+        // the box hierarchy - guard the recursion with a visited set
+        // or a cyclic link means unbounded recursion (stack overflow)
+        QSet<ContainerBox*> visited;
         std::function<void(ContainerBox*)> walk =
                 [&](ContainerBox* const cont) {
+            if(!cont || visited.contains(cont)) return;
+            visited.insert(cont);
             for(const auto& c : cont->getContained()) {
                 const auto box = enve_cast<BoundingBox*>(c.data());
                 if(const auto group = enve_cast<ContainerBox*>(c.data())) {
@@ -2126,15 +2134,24 @@ void Canvas::sceneCameraChanged(const FrameRange& range) {
 
 // depth-first search for the first bone layer anywhere in the scene
 // hierarchy (bone layers may be nested inside groups - e.g. a PSD
-// import root converted into one)
-static BoneLayer* findBoneLayerDeep(ContainerBox* const cont) {
+// import root converted into one); the visited set guards against
+// cycles introduced by link canvases (stack overflow otherwise)
+static BoneLayer* findBoneLayerDeep(ContainerBox* const cont,
+                                    QSet<ContainerBox*>& visited) {
+    if(!cont || visited.contains(cont)) return nullptr;
+    visited.insert(cont);
     for(const auto& c : cont->getContained()) {
         if(const auto bl = enve_cast<BoneLayer*>(c.data())) return bl;
         if(const auto group = enve_cast<ContainerBox*>(c.data())) {
-            if(const auto bl = findBoneLayerDeep(group)) return bl;
+            if(const auto bl = findBoneLayerDeep(group, visited)) return bl;
         }
     }
     return nullptr;
+}
+
+static BoneLayer* findBoneLayerDeep(ContainerBox* const cont) {
+    QSet<ContainerBox*> visited;
+    return findBoneLayerDeep(cont, visited);
 }
 
 Bone* Canvas::startBoneChain(const QPointF& absPos) {

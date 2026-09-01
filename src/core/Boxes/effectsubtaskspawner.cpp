@@ -32,8 +32,14 @@
 #include "Private/Tasks/taskexecutor.h"
 
 #include <atomic>
+#include <memory>
 
-class EffectSubTaskSpawner_priv {
+// lifetime is managed by shared_ptr: every spawned subtask lambda holds
+// a strong reference, so the spawner stays alive until all subtasks
+// finish or are dropped from the queue on cancel - no manual delete,
+// no dangling this in queued/canceled tasks
+class EffectSubTaskSpawner_priv :
+        public std::enable_shared_from_this<EffectSubTaskSpawner_priv> {
 public:
     EffectSubTaskSpawner_priv(const stdsptr<RasterEffectCaller>& effect,
                               const stdsptr<BoxRenderData>& data) :
@@ -75,17 +81,18 @@ void EffectSubTaskSpawner_priv::splitSpawn(CpuRenderData& data,
     if(nSplits == 0) return;
     if(nSplits == 1) {
         data.fTexTile = rect;
-        const auto decRemaining = [this]() { decRemaining_k(); };
+        const auto self = shared_from_this();
+        const auto decRemaining = [self]() { self->decRemaining_k(); };
         const auto subTask = enve::make_shared<eCustomCpuTask>(nullptr,
-            [this, data]() {
+            [self, data]() {
                 SkBitmap dstBitmap;
-                if(mUseDst) {
-                    mDstBitmap.extractSubset(&dstBitmap, data.fTexTile);
+                if(self->mUseDst) {
+                    self->mDstBitmap.extractSubset(&dstBitmap, data.fTexTile);
                 } else {
-                    mSrcBitmap.extractSubset(&dstBitmap, data.fTexTile);
+                    self->mSrcBitmap.extractSubset(&dstBitmap, data.fTexTile);
                 }
-                CpuRenderTools tools{mSrcBitmap, dstBitmap};
-                mEffectCaller->processCpu(tools, data);
+                CpuRenderTools tools{self->mSrcBitmap, dstBitmap};
+                self->mEffectCaller->processCpu(tools, data);
             }, decRemaining, decRemaining);
         CpuTaskExecutor::sAddTask(subTask);
         return;
@@ -151,12 +158,13 @@ void EffectSubTaskSpawner_priv::decRemaining_k() {
             mData->finishedProcessing();
         }
     }
-    delete this;
+    // no delete: the last subtask lambda releasing its shared_ptr
+    // destroys this spawner
 }
 
 
 void EffectSubTaskSpawner::sSpawn(const stdsptr<RasterEffectCaller> &effect,
                                   const stdsptr<BoxRenderData> &data) {
-    const auto spawner = new EffectSubTaskSpawner_priv(effect, data);
+    const auto spawner = std::make_shared<EffectSubTaskSpawner_priv>(effect, data);
     spawner->initialize();
 }

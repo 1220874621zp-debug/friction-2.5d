@@ -30,6 +30,7 @@
 #include "smartPointers/ememory.h"
 #include "CacheHandlers/usepointer.h"
 #include "CacheHandlers/cachecontainer.h"
+#include <QElapsedTimer>
 
 class Canvas;
 class RenderInstanceSettings;
@@ -115,6 +116,15 @@ private:
     int mCurrentPreviewFrame;
     int mMaxPreviewFrame;
     int mMinPreviewFrame;
+
+    // absolute-time playback clock: the integer-millisecond QTimer
+    // cannot express fractional frame intervals (e.g. 41.67ms @24fps)
+    // and plain per-tick increments never recover time lost to slow
+    // frames - drive the playhead from elapsed wall time instead and
+    // skip intermediate frames to catch up
+    QElapsedTimer mPreviewClock;
+    qint64 mPreviewAccumMs = 0;
+    int mPreviewStartFrame = 0;
 
     PreviewState mPreviewState = PreviewState::stopped;
     //! @brief true if preview is currently playing
