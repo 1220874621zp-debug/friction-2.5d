@@ -55,6 +55,7 @@ public:
     stdsptr<BoxRenderData> createRenderData() override;
 
     SkBlendMode getBlendMode() const override;
+    SkBlendMode getPaintBlendMode(const qreal relFrame) const override;
 
     QMatrix getRelativeTransformAtFrame(const qreal relFrame) const override;
     QMatrix getInheritedTransformAtFrame(const qreal relFrame) const override;
@@ -123,6 +124,20 @@ SkBlendMode ILBB::getBlendMode() const {
         return linkTarget->getBlendMode();
     }
     return BoxT::getBlendMode();
+}
+
+template <typename BoxT>
+SkBlendMode ILBB::getPaintBlendMode(const qreal relFrame) const {
+    const auto linkTarget = getLinkTarget();
+    if(mInnerLink && linkTarget) {
+        // inner links must mirror the target's paint blend: setupRenderData
+        // on the link re-runs BoundingBox::setupRenderData which overwrites
+        // fBlendMode with getPaintBlendMode() - without this forward a DstIn
+        // mask inside a linked scene falls back to the link's own default
+        // SrcOver and the mask shape paints over the layer it should clip
+        return linkTarget->getPaintBlendMode(relFrame);
+    }
+    return BoxT::getPaintBlendMode(relFrame);
 }
 
 template <typename BoxT>
