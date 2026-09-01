@@ -57,45 +57,71 @@ void Canvas::handleAddSmartPointMousePress(const eMouseEvent &e) {
     if(nodePointUnderMouse == mLastEndPoint &&
             nodePointUnderMouse) return;
     if(!mLastEndPoint && !nodePointUnderMouse) {
-        const auto newPath = enve::make_shared<SmartVectorPath>();
-        newPath->planCenterPivotPosition();
-        // mask pen: wrap the layer under the first point into its own
-        // group and add a DstIn mask right above it, so the mask clips
-        // ONLY that layer (Friction masks affect their container); the
-        // attached Blur effect is the mask feather (animate its radius)
+        // mask pen: resolve the target BEFORE creating anything. An
+        // unresolved target must never fall through to a raw DstIn path
+        // in the current container - once closed it would erase every
+        // layer below it on the whole canvas
+        BoundingBox* maskTarget = nullptr;
         if(mDocument.fMaskPenActive) {
-            const auto maskTarget = getBoxAtFromAllDescendents(e.fPos);
-            if(maskTarget) {
-                const auto parentGroup = maskTarget->getParentGroup();
-                if(parentGroup) {
-                    const auto& contained = parentGroup->getContained();
-                    const int tId = contained.indexOf(
-                                maskTarget->ref<eBoxOrSound>());
-                    if(tId >= 0) {
-                        const auto group = enve::make_shared<ContainerBox>(
-                                    eBoxType::group);
-                        group->prp_setName(maskTarget->prp_getName());
-                        parentGroup->insertContained(tId, group);
-                        group->addContained(maskTarget->ref<eBoxOrSound>());
-
-                        newPath->setBlendModeSk(SkBlendMode::kDstIn);
-                        newPath->setMaskMode(true);
-                        newPath->prp_setName(
-                                    QStringLiteral("Mask: %1")
-                                    .arg(maskTarget->prp_getName()));
-                        newPath->getFillSettings()->setPaintType(
-                                    PaintType::FLATPAINT);
-                        newPath->getStrokeSettings()->setPaintType(
-                                    PaintType::NOPAINT);
-                        const auto blur = enve::make_shared<BlurEffect>();
-                        blur->setRadius(0); // feather, hard edge by default
-                        newPath->addRasterEffect(blur);
-                        group->addContained(newPath);
+            maskTarget = getBoxAtFromAllDescendents(e.fPos);
+            if(!maskTarget) {
+                const auto selList = getSelectedBoxesList();
+                if(selList.count() == 1) {
+                    // AE semantics: with a single selected layer the mask
+                    // targets it no matter where the drawing starts
+                    // (drawing commonly starts outside the layer bounds)
+                    const auto selPath = enve_cast<SmartVectorPath*>(
+                                selList.first());
+                    if(!selPath || !selPath->getMaskMode()) {
+                        maskTarget = selList.first();
                     }
                 }
             }
+            if(!maskTarget) {
+                qWarning() << "蒙版钢笔：起笔点未命中图层，且没有单一选中图层，请在要裁剪的图层上起笔（或先选中它）";
+                return;
+            }
         }
-        if(!newPath->getParentGroup()) {
+        const auto newPath = enve::make_shared<SmartVectorPath>();
+        newPath->planCenterPivotPosition();
+        // mask pen: wrap the target layer into its own layer box and add
+        // a DstIn mask right above it, so the mask clips ONLY that layer
+        // (Friction masks affect their container); the attached Blur
+        // effect is the mask feather (animate its radius)
+        if(mDocument.fMaskPenActive) {
+            const auto parentGroup = maskTarget->getParentGroup();
+            if(!parentGroup) {
+                qWarning() << "蒙版钢笔：目标图层不在任何容器内，已取消绘制";
+                return;
+            }
+            const auto& contained = parentGroup->getContained();
+            const int tId = contained.indexOf(
+                        maskTarget->ref<eBoxOrSound>());
+            if(tId < 0) {
+                qWarning() << "蒙版钢笔：目标图层不在任何容器内，已取消绘制";
+                return;
+            }
+            const auto group = enve::make_shared<ContainerBox>(
+                        eBoxType::layer);
+            group->setRevealRowsOnce();
+            group->prp_setName(maskTarget->prp_getName());
+            parentGroup->insertContained(tId, group);
+            group->addContained(maskTarget->ref<eBoxOrSound>());
+
+            newPath->setBlendModeSk(SkBlendMode::kDstIn);
+            newPath->setMaskMode(true);
+            newPath->prp_setName(
+                        QStringLiteral("Mask: %1")
+                        .arg(maskTarget->prp_getName()));
+            newPath->getFillSettings()->setPaintType(
+                        PaintType::FLATPAINT);
+            newPath->getStrokeSettings()->setPaintType(
+                        PaintType::NOPAINT);
+            const auto blur = enve::make_shared<BlurEffect>();
+            blur->setRadius(0); // feather, hard edge by default
+            newPath->addRasterEffect(blur);
+            group->addContained(newPath);
+        } else if(!newPath->getParentGroup()) {
             mCurrentContainer->addContained(newPath);
         }
         clearBoxesSelection();

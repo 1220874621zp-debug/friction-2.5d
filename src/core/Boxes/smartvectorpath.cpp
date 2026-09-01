@@ -57,22 +57,39 @@ bool SmartVectorPath::differenceInEditPathBetweenFrames(
 }
 
 SkBlendMode SmartVectorPath::getPaintBlendMode() const {
-    if(mMaskMode) {
-        // while any sub-path is open the mask shape draws normally
-        // (SrcOver) instead of clipping the layers below with DstIn
-        const int n = mPathAnimator->ca_getNumberOfChildren();
-        bool allClosed = n > 0;
-        for(int i = 0; i < n; i++) {
-            const auto asAnim = enve_cast<SmartPathAnimator*>(
-                        mPathAnimator->getChild(i));
-            if(!asAnim) continue;
-            SmartPath sp;
-            asAnim->deepCopyValue(asAnim->anim_getCurrentRelFrame(), sp);
-            if(!sp.isClosed()) { allClosed = false; break; }
-        }
-        if(!allClosed) return SkBlendMode::kSrcOver;
+    // while any sub-path is open the mask shape draws normally
+    // (SrcOver) instead of clipping the layers below with DstIn
+    if(mMaskMode && !allSubPathsClosed()) {
+        return SkBlendMode::kSrcOver;
     }
     return PathBox::getPaintBlendMode();
+}
+
+bool SmartVectorPath::allSubPathsClosed() const {
+    const int n = mPathAnimator->ca_getNumberOfChildren();
+    if(n == 0) return false;
+    for(int i = 0; i < n; i++) {
+        const auto asAnim = enve_cast<SmartPathAnimator*>(
+                    mPathAnimator->getChild(i));
+        if(!asAnim) continue;
+        SmartPath sp;
+        asAnim->deepCopyValue(asAnim->anim_getCurrentRelFrame(), sp);
+        if(!sp.isClosed()) return false;
+    }
+    return true;
+}
+
+void SmartVectorPath::setupRenderData(const qreal relFrame,
+                                      const QMatrix& parentM,
+                                      BoxRenderData * const data,
+                                      Canvas* const scene) {
+    PathBox::setupRenderData(relFrame, parentM, data, scene);
+    // mask pen: an open shape must not show its fill - Skia would fill
+    // the implicitly closed outline and paint it over the canvas while
+    // the user is still drawing
+    if(mMaskMode && !allSubPathsClosed()) {
+        static_cast<PathBoxRenderData*>(data)->fFillPath.reset();
+    }
 }
 
 void SmartVectorPath::saveSVG(SvgExporter& exp, DomEleTask* const task) const {

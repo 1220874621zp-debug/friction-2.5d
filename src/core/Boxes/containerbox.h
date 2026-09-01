@@ -46,6 +46,11 @@ public:
     bool isGroup() const final { return !mIsLayer; }
     bool isLayer() const final { return mIsLayer; }
 
+    // mask pen: the freshly wrapped layer box should show its child rows
+    // ([target, Mask: target]) right away - timeline rows are collapsed
+    // by default and users could not find the mask
+    void setRevealRowsOnce() { mRevealRowsOnce = true; }
+
     HardwareSupport hardwareSupport() const {
         if(isLayer()) return HardwareSupport::gpuPreffered;
         return BoundingBox::hardwareSupport();
@@ -319,6 +324,7 @@ private:
     QMargins mForcedMargin;
     
     bool mIsLayer = false;
+    bool mRevealRowsOnce = false;
     bool mIsCurrentGroup = false;
     bool mIsDescendantCurrentGroup = false;
     QList<BoundingBox*> mBoxesWithBlendEffects;

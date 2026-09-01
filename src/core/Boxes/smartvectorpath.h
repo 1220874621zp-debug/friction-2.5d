@@ -52,7 +52,12 @@ public:
     // once every sub-path is closed); evaluated live at render time
     void setMaskMode(const bool mask) { mMaskMode = mask; }
     bool getMaskMode() const { return mMaskMode; }
+    bool allSubPathsClosed() const;
     SkBlendMode getPaintBlendMode() const override;
+
+    void setupRenderData(const qreal relFrame, const QMatrix& parentM,
+                         BoxRenderData * const data,
+                         Canvas* const scene) override;
 
     bool differenceInEditPathBetweenFrames(const int frame1,
                                            const int frame2) const;

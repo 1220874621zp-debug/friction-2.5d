@@ -1685,6 +1685,10 @@ void ContainerBox::SWT_setupAbstraction(SWT_Abstraction* abstraction,
         auto abs = cont->SWT_abstractionForWidget(updateFuncs, visiblePartWidgetId);
         abstraction->addChildAbstraction(abs->ref<SWT_Abstraction>());
     }
+    if(mRevealRowsOnce) {
+        mRevealRowsOnce = false;
+        abstraction->setContentVisible(true);
+    }
 }
 
 bool ContainerBox::SWT_shouldBeVisible(const SWT_RulesCollection &rules,
