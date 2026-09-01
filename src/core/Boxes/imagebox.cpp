@@ -152,6 +152,22 @@ void ImageBox::setupRenderData(const qreal relFrame, const QMatrix& parentM,
     const auto imgData = static_cast<ImageBoxRenderData*>(data);
     if (mFileHandler->hasImage()) {
         imgData->setContainer(mFileHandler->getImageContainer());
+        if (!imgData->hasLoadedImage()) {
+            // the container was evicted to tmp between renders: wait
+            // for its reload (same dependency pattern as the no-image
+            // branch) - compositing anyway baked imageless frames
+            // into the cache that showed up as layer color shifts
+            // and flicker until a restart
+            const auto cont = mFileHandler->getImageContainer();
+            const auto tmpLoader = cont ?
+                        cont->scheduleLoadFromTmpFile() : nullptr;
+            if (tmpLoader) {
+                tmpLoader->addDependent(imgData);
+            } else {
+                const auto loader = mFileHandler->scheduleLoad();
+                if (loader) { loader->addDependent(imgData); }
+            }
+        }
     } else {
         const auto loader = mFileHandler->scheduleLoad();
         if (loader) { loader->addDependent(imgData); }

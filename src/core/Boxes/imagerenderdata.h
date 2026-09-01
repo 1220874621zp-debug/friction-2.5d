@@ -37,6 +37,11 @@ struct CORE_EXPORT ImageRenderData : public BoxRenderData {
     void setupRenderData() final;
 
     sk_sp<SkImage> fImage;
+
+    // true when the image data is ready; a null image here means the
+    // container was evicted to tmp (or dropped) and the caller must
+    // wait for its loader instead of compositing an imageless frame
+    bool hasLoadedImage() const { return fImage != nullptr; }
 private:
     void setupDirectDraw();
 
