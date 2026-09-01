@@ -362,6 +362,18 @@ void RenderHandler::playPreviewAfterAllTasksCompleted() {
 
 bool RenderHandler::playPreview() {
     if(!mCurrentScene) return false;
+    // direct start (no cache warm-up preceding): anchor the start
+    // frame and the render frontier to where the user actually is -
+    // mSavedCurrentFrame / mCurrentRenderFrame would otherwise keep
+    // stale values from an earlier warm-up, starting playback from
+    // that old position and capping it at the old frontier
+    if(!mRenderingPreview) {
+        mSavedCurrentFrame = mCurrentScene->getCurrentFrame();
+        const auto fOutDirect = mCurrentScene->getFrameOut();
+        mMaxRenderFrame = fOutDirect.enabled ?
+                    fOutDirect.frame : mCurrentScene->getMaxFrame();
+        mCurrentRenderFrame = mMaxRenderFrame;
+    }
     //setFrameAction(mSavedCurrentFrame);
     TaskScheduler::sClearAllFinishedFuncs();
     const auto fIn = mCurrentScene->getFrameIn();
