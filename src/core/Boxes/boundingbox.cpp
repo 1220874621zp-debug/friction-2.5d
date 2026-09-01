@@ -731,6 +731,13 @@ void BoundingBox::planUpdate(const UpdateReason reason) {
             canvas->invalidateSceneFramesCache();
         }
 #endif
+        // cheap edit generation for the scene-frame cache freshness
+        // check: a pure counter on every platform, invalidation
+        // happens lazily at preview entry (never reactively, which
+        // feedback-looped with rendering)
+        if(const auto canvas = enve_cast<Canvas*>(this)) {
+            canvas->bumpContentGen();
+        }
     }
 
     mDrawRenderContainer.setExpired(true);

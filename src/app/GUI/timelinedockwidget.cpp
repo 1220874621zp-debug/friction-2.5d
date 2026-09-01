@@ -955,7 +955,8 @@ void TimelineDockWidget::spaceToggle()
                 const int cur = scene->anim_getCurrentAbsFrame();
                 const int max = scene->getFrameRange().fMax;
                 warm = scene->getSceneFramesHandler()
-                            .firstEmptyFrameAtOrAfter(cur) > max;
+                            .firstEmptyFrameAtOrAfter(cur) > max &&
+                       scene->sceneFramesCacheIsFresh();
             }
             if (warm) {
                 started = RenderHandler::sInstance->playPreview();

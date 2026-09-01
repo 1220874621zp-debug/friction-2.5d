@@ -119,6 +119,9 @@ private:
     QTimer *mPreviewFPSTimer = nullptr;
     QTimer *mPipelineTimer = nullptr;
     QList<int> mInFlightFrames;
+    // ticks since each in-flight frame was (re)fed; the watchdog in
+    // pipelineTick re-feeds frames whose completion was discarded
+    QList<int> mInFlightFedAgo;
     QTimer *mBacklogTimer = nullptr;
     RenderInstanceSettings *mCurrentRenderSettings = nullptr;
 

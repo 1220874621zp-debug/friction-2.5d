@@ -491,19 +491,14 @@ void FrameScrollBar::setDisplayedFrameRange(const FrameRange& range) {
     mFrameRange = range;
 
     const int dFrame = mFrameRange.fMax - mFrameRange.fMin + (mRange ? 0 : 1);
-    int divInc = 3;
-    mDrawFrameInc = 5000;
-    while(mDrawFrameInc && dFrame/mDrawFrameInc < 3) {
-        if(divInc == 3) {
-            divInc = 0;
-            mDrawFrameInc *= 4;
-            mDrawFrameInc /= 10;
-        } else {
-            mDrawFrameInc /= 2;
-        }
-        divInc++;
+    // label ladder includes 25 (25-frame labels are the working norm;
+    // keep stepping coarser only once ~12 labels no longer fit)
+    static const int ladder[] = {5000, 2000, 1000, 500, 250,
+                                 100, 50, 25, 10, 5, 2, 1};
+    mDrawFrameInc = 1;
+    for (const int inc : ladder) {
+        if (dFrame/inc >= 12) { mDrawFrameInc = inc; break; }
     }
-    mDrawFrameInc = qMax(1, mDrawFrameInc);
     mMaxSpan = range.span() - 1;
     setViewedFrameRange({mFirstViewedFrame, mFirstViewedFrame + mViewedFramesSpan});
 }

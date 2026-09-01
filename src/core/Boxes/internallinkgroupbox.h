@@ -72,6 +72,10 @@ public:
     // masks (kDstIn) inside the linked layer erase the whole parent
     bool rendersAsTargetLayer() const;
 
+    // read access for cache-staleness walks (edit generations of the
+    // scenes hosting the linked content)
+    ContainerBox* linkTargetBox() const { return getLinkTarget(); }
+
     void setLinkTarget(ContainerBox * const linkTarget);
 protected:
     const qsptr<BoxTargetProperty> mBoxTarget =

@@ -210,6 +210,17 @@ void RenderHandler::renderPreview() {
     mCurrentScene->setMinFrameUseRange(mCurrentRenderFrame);
     mCurrentSoundComposition->setMinFrameUseRange(mCurrentRenderFrame);
 
+    // restart-equivalent staleness check: cached frames may embed
+    // content from this scene or linked scenes edited after they were
+    // cached - drop them once here instead of serving pre-edit pixels
+    // (lazy, entry-time only; reactive invalidation feedback-loops
+    // with rendering and stalls the warm-up)
+    const qint64 effGen = mCurrentScene->effectiveContentGen();
+    if(mCurrentScene->cacheGen() != effGen) {
+        mCurrentScene->invalidateSceneFramesCache();
+        mCurrentScene->setCacheGen(effGen);
+    }
+
     setPreviewState(PreviewState::rendering);
 
     emit previewBeingRendered();
@@ -217,6 +228,7 @@ void RenderHandler::renderPreview() {
     // feed the first frames immediately; the timer keeps the pool fed
     // while previous frames are still rendering
     mInFlightFrames.clear();
+    mInFlightFedAgo.clear();
     mPipelineTimer->start();
     pipelineTick();
 }
@@ -228,6 +240,18 @@ void RenderHandler::pipelineTick() {
     while(!mInFlightFrames.isEmpty() &&
           cacheHandler.atFrame(mInFlightFrames.first()) != nullptr) {
         mInFlightFrames.removeFirst();
+        mInFlightFedAgo.removeFirst();
+    }
+    // watchdog: an edit mid-warm-up bumps the state and the
+    // completion check discards in-flight frames - they would never
+    // land and retirement would stall forever. Re-feed the oldest
+    // (queTasks is idempotent, the frame re-renders fresh).
+    if(!mInFlightFrames.isEmpty() && ++mInFlightFedAgo.first() > 250) {
+        const int stuck = mInFlightFrames.takeFirst();
+        mInFlightFedAgo.removeFirst();
+        setFrameAction(stuck);
+        mInFlightFrames.prepend(stuck);
+        mInFlightFedAgo.prepend(0);
     }
     // feed up to the in-flight bound (2): the next frame assembles
     // while the previous one's tasks are still on the pool
@@ -242,6 +266,7 @@ void RenderHandler::pipelineTick() {
         mCurrentRenderFrame = nextFrame;
         mCurrRenderRange.fMax = nextFrame;
         mInFlightFrames << nextFrame;
+        mInFlightFedAgo << 0;
         setFrameAction(nextFrame);
     }
     // finished once nothing is in flight and no empty frame remains
@@ -273,6 +298,7 @@ void RenderHandler::setRenderingPreview(const bool rendering) {
     if(!rendering) {
         mPipelineTimer->stop();
         mInFlightFrames.clear();
+        mInFlightFedAgo.clear();
     }
     if(mCurrentScene) mCurrentScene->setRenderingPreview(rendering);
     TaskScheduler::instance()->setAlwaysQue(rendering);

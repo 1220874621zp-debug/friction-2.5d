@@ -236,6 +236,18 @@ public:
     void removeVGuide(const int id)
     { if (id >= 0 && id < mVGuides.count()) mVGuides.removeAt(id); }
     void setTransparencyGrid(const bool grid);
+    // restart-equivalent staleness check for the scene-frame cache:
+    // contentGen bumps on every content edit; cacheGen records the
+    // generation the cached frames were produced for (own + linked
+    // scenes). Mismatch at preview entry = drop the cache once
+    // instead of serving pre-edit pixels.
+    qint64 contentGen() const { return mContentGen; }
+    void bumpContentGen() { ++mContentGen; }
+    qint64 cacheGen() const { return mCacheGen; }
+    void setCacheGen(const qint64 gen) { mCacheGen = gen; }
+    qint64 effectiveContentGen();
+    bool sceneFramesCacheIsFresh()
+    { return mCacheGen == effectiveContentGen(); }
     bool transparencyGrid() const { return mTransparencyGrid; }
     void setWorldToScreen(const QTransform& transform,
                           qreal devicePixelRatio);
@@ -1091,6 +1103,8 @@ protected:
     // PS-style ruler guides
     QList<qreal> mHGuides;
     QList<qreal> mVGuides;
+    qint64 mContentGen = 0;
+    qint64 mCacheGen = 0;
     bool mTransparencyGrid = false;
 
     qptr<BoundingBox> mCurrentBox;

@@ -84,6 +84,14 @@ public:
                         const qreal &frame);
     void zoomViewedRange(const int &span,
                          const qreal &frame);
+    // zoom + notify + repaint in one call (for the timeline zoom slider;
+    // wheel paths do the notify themselves)
+    void zoomToSpan(const int &span, const qreal &anchorFrame) {
+        if (!mRange) return;
+        zoomViewedRange(span, anchorFrame);
+        emitTriggeredChange();
+        update();
+    }
 
 #ifdef Q_OS_MAC
     void callNativeGestures(QNativeGestureEvent *e,

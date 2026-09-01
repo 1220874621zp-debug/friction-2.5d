@@ -146,7 +146,8 @@ void CanvasToolBar::setupDimensions()
 void CanvasToolBar::setupResolution()
 {
     mComboResolution = new EditableComboBox(this);
-    mComboResolution->setMinimumWidth(75);
+    mComboResolution->setMinimumWidth(96);
+    mComboResolution->lineEdit()->setMinimumWidth(72);
     mComboResolution->setFocusPolicy(Qt::ClickFocus);
     mComboResolution->addItem("500 %");
     mComboResolution->addItem("400 %");

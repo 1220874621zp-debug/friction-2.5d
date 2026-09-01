@@ -20,6 +20,7 @@
 */
 
 #include "canvas.h"
+#include "Boxes/internallinkgroupbox.h"
 #include "Boxes/bone.h"
 #include "Boxes/bonelayer.h"
 #include "Boxes/adjustmentlayer.h"
@@ -182,6 +183,33 @@ void Canvas::invalidateSceneFramesCache()
     mLoadingSceneFrame.reset();
     mSceneFrameOutdated = true;
     mSceneFramesHandler.clear();
+}
+
+// collect the edit generation of this scene plus every scene whose
+// content is embedded through (nested) scene/group links
+static void walkLinkGen(ContainerBox* const cont, qint64& gen,
+                        QSet<Canvas*>& visited) {
+    for(const auto& box : cont->getContainedBoxes()) {
+        if(const auto group = enve_cast<ContainerBox*>(box)) {
+            walkLinkGen(group, gen, visited);
+        }
+        const auto link = enve_cast<InternalLinkGroupBox*>(box);
+        if(!link) continue;
+        const auto target = link->linkTargetBox();
+        if(!target) continue;
+        const auto targetScene = target->getParentScene();
+        if(!targetScene || visited.contains(targetScene)) continue;
+        visited.insert(targetScene);
+        gen += targetScene->contentGen();
+        walkLinkGen(targetScene, gen, visited);
+    }
+}
+
+qint64 Canvas::effectiveContentGen() {
+    qint64 gen = mContentGen;
+    QSet<Canvas*> visited;
+    walkLinkGen(this, gen, visited);
+    return gen;
 }
 
 void Canvas::setCurrentGroupParentAsCurrentGroup()
