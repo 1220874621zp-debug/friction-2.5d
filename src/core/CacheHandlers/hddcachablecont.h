@@ -53,6 +53,9 @@ protected:
     void afterDataLoadedFromTmpFile();
     void afterDataReplaced();
     void setDataInMemory(const bool dataInMemory);
+    // for subclasses rejecting a null/empty tmp delivery: drop the
+    // finished loader so the next scheduleLoadFromTmpFile starts fresh
+    void resetTmpLoadTask() { mTmpLoadTask.reset(); }
 
     qsptr<QTemporaryFile> mTmpFile;
 private:

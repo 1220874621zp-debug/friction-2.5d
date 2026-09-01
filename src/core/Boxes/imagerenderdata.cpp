@@ -78,6 +78,15 @@ void ImageContainerRenderData::setContainer(ImageCacheContainer *container) {
     if(!container) return;
     mSrcContainer = container;
     fImage = container->requestImageCopy();
+    if(!fImage && container->hasImage()) {
+        // the master image exists but the copy failed (allocation
+        // pressure / non-raster backing) - without this log the layer
+        // just vanishes downstream with a generic IMGDRAW and the
+        // real cause (copy failure) stays invisible
+        qWarning() << "IMGCOPY: requestImageCopy returned null although"
+                      " the container holds an image"
+                   << "inMem=" << container->storesDataInMemory();
+    }
 }
 
 void ImageContainerRenderData::afterProcessing() {

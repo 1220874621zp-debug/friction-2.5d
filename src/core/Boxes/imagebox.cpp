@@ -163,9 +163,31 @@ void ImageBox::setupRenderData(const qreal relFrame, const QMatrix& parentM,
                         cont->scheduleLoadFromTmpFile() : nullptr;
             if (tmpLoader) {
                 tmpLoader->addDependent(imgData);
+                // a finished/canceled waiter does NOT hold the render
+                // task (addDependent no-ops on finished, cancels on
+                // canceled) - log it, the frame would render imageless
+                const auto st = tmpLoader->getState();
+                if(st == eTaskState::finished || st == eTaskState::canceled) {
+                    qWarning() << "IMGWAIT-DEAD:" << prp_getName()
+                               << "tmpLoader state=" << int(st)
+                               << "contInMem=" << cont->storesDataInMemory();
+                }
             } else {
                 const auto loader = mFileHandler->scheduleLoad();
-                if (loader) { loader->addDependent(imgData); }
+                if (loader) {
+                    loader->addDependent(imgData);
+                    const auto st = loader->getState();
+                    if(st == eTaskState::finished || st == eTaskState::canceled) {
+                        qWarning() << "IMGWAIT-DEAD:" << prp_getName()
+                                   << "srcLoader state=" << int(st);
+                    }
+                } else {
+                    qWarning() << "IMGWAIT-NONE:" << prp_getName()
+                               << "no loader, frame renders imageless"
+                               << "contInMem="
+                               << (cont ? cont->storesDataInMemory() : false)
+                               << "contTmp=" << (cont && cont->getTmpFile());
+                }
             }
         }
     } else {

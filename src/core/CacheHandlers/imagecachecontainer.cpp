@@ -49,6 +49,21 @@ int ImageCacheContainer::getByteCount() {
 }
 
 void ImageCacheContainer::setDataLoadedFromTmpFile(const sk_sp<SkImage> &img) {
+    if(!img) {
+        // the tmp load delivered nothing (missing/corrupt/empty tmp
+        // file): marking the container in-memory with a null image
+        // would silently disable every future reload attempt
+        // (storesDataInMemory()==true short-circuits
+        // scheduleLoadFromTmpFile). Reset to the unloaded state and
+        // drop the bad tmp file so the next scheduleLoad falls back
+        // to the source file.
+        qWarning() << "TMPLOAD-EMPTY: tmp reload delivered no image,"
+                      " resetting container for source reload";
+        resetTmpLoadTask();
+        setDataInMemory(false);
+        if(mTmpFile) scheduleDeleteTmpFile();
+        return;
+    }
     replaceImage(img);
     afterDataLoadedFromTmpFile();
 }
