@@ -53,14 +53,21 @@ public:
     // can rescan the scripts folder without the Scripts menu
     void setReloadCallback(const std::function<void()> &callback);
 
+    // initial folder for the Open Script dialog (provided by
+    // ScriptManager, which resolves it via AppSupport)
+    void setScriptsPath(const QString &path) { mScriptsPath = path; }
+
 private:
     void runInput();
+    void openScript();
 
     QPlainTextEdit *mOutput = nullptr;
     QLineEdit *mInput = nullptr;
     QPushButton *mClearButton = nullptr;
     QPushButton *mReloadButton = nullptr;
+    QPushButton *mOpenButton = nullptr;
     std::function<void()> mReloadCallback;
+    QString mScriptsPath;
     Friction::Core::JsHost *mHost = nullptr;
     QStringList mHistory;
     int mHistoryIndex = -1;

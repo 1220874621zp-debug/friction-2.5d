@@ -33,6 +33,9 @@
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QDateTime>
+#include <QFileDialog>
+#include <QFile>
+#include <QFileInfo>
 
 // input line with Up/Down history navigation
 class ScriptConsoleInput : public QLineEdit
@@ -112,11 +115,24 @@ ScriptConsoleDock::ScriptConsoleDock(QWidget * const parent)
             this, &ScriptConsoleDock::runInput);
 
     const auto bottomBar = new QHBoxLayout();
+    mOpenButton = new QPushButton(tr("Open Script"), content);
+    mOpenButton->setFocusPolicy(Qt::NoFocus);
+    mOpenButton->setToolTip(tr("Pick a .js file and run it in the console"));
+    connect(mOpenButton, &QPushButton::clicked,
+            this, &ScriptConsoleDock::openScript);
+    mReloadButton = new QPushButton(tr("Reload Scripts"), content);
+    mReloadButton->setFocusPolicy(Qt::NoFocus);
+    mReloadButton->setToolTip(tr("Rescan the scripts folder and reload all plugins"));
+    connect(mReloadButton, &QPushButton::clicked, this, [this]() {
+        if (mReloadCallback) { mReloadCallback(); }
+    });
     mClearButton = new QPushButton(tr("Clear"), content);
     mClearButton->setFocusPolicy(Qt::NoFocus);
     connect(mClearButton, &QPushButton::clicked,
             mOutput, &QPlainTextEdit::clear);
     bottomBar->addStretch();
+    bottomBar->addWidget(mOpenButton);
+    bottomBar->addWidget(mReloadButton);
     bottomBar->addWidget(mClearButton);
 
     layout->addWidget(mOutput, 1);
@@ -136,6 +152,29 @@ ScriptConsoleDock::ScriptConsoleDock(QWidget * const parent)
 void ScriptConsoleDock::setReloadCallback(const std::function<void()> &callback)
 {
     mReloadCallback = callback;
+}
+
+void ScriptConsoleDock::openScript()
+{
+    const QString path = QFileDialog::getOpenFileName(
+                this, tr("Open Script"),
+                mScriptsPath,
+                tr("JavaScript files (*.js)"));
+    if (path.isEmpty()) { return; }
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        appendError(tr("Cannot open %1").arg(path));
+        return;
+    }
+    const QString source = QString::fromUtf8(file.readAll());
+    file.close();
+    appendOutput(QStringLiteral("> ") + QFileInfo(path).fileName());
+    const QString result = mHost->evaluate(source);
+    if (result.startsWith(QStringLiteral("Uncaught"))) {
+        appendError(result);
+    } else if (!result.isEmpty()) {
+        appendOutput(result);
+    }
 }
 
 void ScriptConsoleDock::appendOutput(const QString &text)

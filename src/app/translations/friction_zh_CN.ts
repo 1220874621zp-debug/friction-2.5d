@@ -7721,6 +7721,26 @@ Select the layers you want to import:</source>
         <source>Rescan the scripts folder and reload all plugins</source>
         <translation>重新扫描脚本文件夹并加载全部插件</translation>
     </message>
+    <message>
+        <location filename="../GUI/scriptconsole.cpp" line="118"/>
+        <source>Open Script</source>
+        <translation>打开脚本</translation>
+    </message>
+    <message>
+        <location filename="../GUI/scriptconsole.cpp" line="120"/>
+        <source>Pick a .js file and run it in the console</source>
+        <translation>选择 .js 脚本文件并在控制台中执行</translation>
+    </message>
+    <message>
+        <location filename="../GUI/scriptconsole.cpp" line="162"/>
+        <source>JavaScript files (*.js)</source>
+        <translation>JavaScript 文件 (*.js)</translation>
+    </message>
+    <message>
+        <location filename="../GUI/scriptconsole.cpp" line="166"/>
+        <source>Cannot open %1</source>
+        <translation>无法打开 %1</translation>
+    </message>
 </context>
 <context>
     <name>ScriptManager</name>
