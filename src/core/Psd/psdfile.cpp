@@ -668,7 +668,9 @@ QByteArray PsdFile::extractLayerRGBA(const LayerRecord &layer,
                                          layer.maskRect.width(),
                                          layer.maskRect.height(), error);
             }
-        } else if (info.id >= -1 && info.id <= 2) {
+        } else if (info.id >= -1 && info.id <= 3) {
+            // id 3 is the K channel in CMYK files (extra alpha in RGB
+            // files; assembleRGBA simply ignores it there)
             planes.insert(info.id,
                           channelPlane(buffer, info, w, h, error));
         }

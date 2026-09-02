@@ -267,6 +267,15 @@ void KraImageBox::syncAllFromSource()
         }
         if (!state.pixelsChanged) { continue; }
 
+        // same position compensation as updateFromSource: shift the
+        // whole transform (base value + every keyframe) so animation
+        // data survives a layer move in the source document
+        const auto trans = box->getBoxTransformAnimator();
+        const QPointF oldPos = trans->getPosAnimator()->getBaseValue();
+        const qreal dx = state.posX - oldPos.x();
+        const qreal dy = state.posY - oldPos.y();
+        if (dx != 0 || dy != 0) { trans->translate(dx, dy); }
+
         const QString cachePath = kraCachePng(mSourceKra,
                                               box->frameFile(),
                                               state.image);
