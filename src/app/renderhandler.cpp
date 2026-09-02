@@ -403,6 +403,14 @@ void RenderHandler::playPreviewAfterAllTasksCompleted() {
     if(mRenderingPreview) {
         TaskScheduler::sSetTaskUnderflowFunc(nullptr);
         Document::sInstance->actionFinished();
+        // the whole [mMinRenderFrame, mMaxRenderFrame] range is cached
+        // at this point; when every frame was already cached the
+        // pipeline never fed anything and the render cursor stayed at
+        // mMinRenderFrame - playPreview caps the range at
+        // qMin(mMaxRenderFrame, mCurrentRenderFrame), so a stale cursor
+        // silently truncates or empties the playable range (Space
+        // looks dead). Push the cursor to the real frontier.
+        mCurrentRenderFrame = mMaxRenderFrame;
         if(TaskScheduler::sAllTasksFinished()) {
             if(!playPreview()) interruptPreviewRendering();
         } else {
