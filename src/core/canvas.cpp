@@ -1855,7 +1855,6 @@ void Canvas::addUndoRedo(const QString& name,
 
 void Canvas::pushUndoRedoName(const QString& name) const
 {
-    qDebug() << "pushUndoRedoName" << name;
     mUndoRedoStack->pushName(name);
 }
 

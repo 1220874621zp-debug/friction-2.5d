@@ -185,7 +185,7 @@ public:
     bool graphValidateVisible(GraphAnimator * const animator);
     void graphUpdateVisible();
     bool graphIsSelected(GraphAnimator * const anim);
-    void graphEasingAction(const QString &easing);
+    bool graphEasingAction(const QString &easing);
     void graphEasingApply(QrealAnimator *anim,
                           const FrameRange &range,
                           const QString &easing);

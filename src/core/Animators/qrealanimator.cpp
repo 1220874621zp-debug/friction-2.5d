@@ -379,7 +379,6 @@ void QrealAnimator::applyExpression(const FrameRange& relRange,
                                     const bool action,
                                     const bool easing)
 {
-    qDebug() << "applyExpression" << prp_getName() << relRange.fMin << relRange.fMax << accuracy << action << easing;
     if (!hasValidExpression()) {}
     else if (!relRange.isValid()) {}
     else if (isZero4Dec(accuracy) || accuracy < 0) {}
