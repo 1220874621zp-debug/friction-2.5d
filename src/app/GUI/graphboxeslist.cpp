@@ -163,6 +163,15 @@ bool KeysView::graphEasingApplyExpression(QrealAnimator *anim,
         if (expr && !expr->isValid()) { expr = nullptr; }
         anim->setExpression(expr);
         anim->applyExpression(range, 10, true, true);
+        // baking removes the previously selected keys and the new
+        // baked keys start unselected; re-select keys in the range
+        // so another easing preset can be applied right away
+        int frame = range.fMin - 1;
+        while (const auto key = anim->anim_getNextKey<Key>(frame)) {
+            frame = key->getRelFrame();
+            if (frame > range.fMax) { break; }
+            anim->anim_addKeyToSelected(key);
+        }
         Document::sInstance->actionFinished();
     } catch (const std::exception& e) { return false; }
 
