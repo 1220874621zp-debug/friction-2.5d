@@ -26,6 +26,7 @@
 #include "Boxes/adjustmentlayer.h"
 #include "Boxes/solidlayer.h"
 #include "Boxes/cameralayer.h"
+#include "RasterEffects/rastereffectcollection.h"
 #include <QPainter>
 #include <QMouseEvent>
 #include <QLineF>
@@ -1356,7 +1357,36 @@ void Canvas::deleteAction()
 
 void Canvas::copyAction()
 {
-    if (mSelectedBoxes.isEmpty()) { return; }
+    if (mSelectedBoxes.isEmpty()) {
+        // AE-style: with only a property row selected (e.g. a single
+        // effect picked in the timeline/inspector) Edit > Copy used to
+        // be a silent no-op (grey menu) - copy the effects collection
+        // owning the selected property instead, so the next Paste onto
+        // a selected layer carries the effects over
+        const auto props = getSelectedPropsList();
+        if (!props.isEmpty()) {
+            const auto prop = props.last();
+            const auto collection = prop->getFirstAncestor(
+                        [](Property * const p) {
+                return enve_cast<RasterEffectCollection*>(p) != nullptr;
+            });
+            if (collection) {
+                const auto container =
+                        enve::make_shared<PropertyClipboard>(collection);
+                Document::sInstance->replaceClipboard(container);
+                qWarning() << "[PASTE] copy: effects collection"
+                           << collection->prp_getName()
+                           << "of" << prop->prp_getName();
+                return;
+            }
+            qWarning() << "[PASTE] copy: selected property"
+                       << prop->prp_getName()
+                       << "does not belong to an effects collection";
+        } else {
+            qWarning() << "[PASTE] copy: nothing selected";
+        }
+        return;
+    }
     const auto container = enve::make_shared<BoxesClipboard>(mSelectedBoxes.getList());
     Document::sInstance->replaceClipboard(container);
 }
@@ -1364,7 +1394,33 @@ void Canvas::copyAction()
 void Canvas::pasteAction()
 {
     const auto container = Document::sInstance->getBoxesClipboard();
-    if (!container) { return; }
+    if (!container) {
+        // AE-style: no layers in the clipboard - a copied effects
+        // collection pastes onto the selected layers (appended); this
+        // used to silently return with no feedback at all
+        const auto property = Document::sInstance->getPropertyClipboard();
+        if (property) {
+            int pastedCount = 0;
+            for (const auto& box : mSelectedBoxes.getList()) {
+                const auto effects = box->rasterEffectsCollection();
+                if (effects && property->compatibleTarget(effects)) {
+                    property->paste(effects);
+                    pastedCount++;
+                }
+            }
+            if (pastedCount > 0) {
+                qWarning() << "[PASTE] effects pasted onto"
+                           << pastedCount << "layer(s)";
+                return;
+            }
+            qWarning() << "[PASTE] paste: clipboard holds a property but"
+                          " no layer is selected (or it does not fit)";
+        } else {
+            qWarning() << "[PASTE] paste: clipboard is empty or holds"
+                          " keys/paths - nothing to paste as layer/effects";
+        }
+        return;
+    }
     clearBoxesSelection();
     container->pasteTo(mCurrentContainer);
 }
