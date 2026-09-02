@@ -98,7 +98,8 @@ int main(int argc, char *argv[])
             RasterEffectType::BLACK_WHITE_FLASH,
             RasterEffectType::LIQUID_GLASS,
             RasterEffectType::PIXEL_ART,
-            RasterEffectType::CHROMA_KEY
+            RasterEffectType::CHROMA_KEY,
+            RasterEffectType::LAYER_STYLES
         };
 
         for (const auto t : types) {
@@ -176,6 +177,32 @@ int main(int argc, char *argv[])
 
             caller->processCpu(tools, data);
         }
+    });
+
+    // Test 2b: Layer Styles effect needs at least one style enabled
+    // before a caller exists (default state is all-off = null caller)
+    runTest("Test 2b: Layer Styles CPU render", [&]() {
+        const auto eff = createRasterEffectForNonCustomType(
+                RasterEffectType::LAYER_STYLES);
+        if (!eff) { throw std::runtime_error("Factory returned null"); }
+        const auto styles = enve_cast<LayerStylesEffect*>(eff.get());
+        if (!styles) { throw std::runtime_error("Not a LayerStylesEffect"); }
+        styles->shadowEnabled()->setCurrentBoolValue(true);
+        styles->glowEnabled()->setCurrentBoolValue(true);
+        styles->strokeEnabled()->setCurrentBoolValue(true);
+        const auto caller = styles->getEffectCaller(0.0, 1.0, 1.0, nullptr);
+        if (!caller) { throw std::runtime_error("Layer styles caller is null"); }
+
+        SkBitmap srcBtmp;
+        srcBtmp.allocN32Pixels(64, 64);
+        srcBtmp.eraseARGB(255, 128, 64, 200);
+        SkBitmap dstBtmp;
+        dstBtmp.allocN32Pixels(64, 64);
+        dstBtmp.eraseARGB(0, 0, 0, 0);
+        CpuRenderTools tools{srcBtmp, dstBtmp};
+        CpuRenderData data;
+        data.fTexTile = SkIRect::MakeXYWH(0, 0, 64, 64);
+        caller->processCpu(tools, data);
     });
 
     // Test 3: Menu registry coverage

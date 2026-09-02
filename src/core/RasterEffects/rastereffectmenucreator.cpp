@@ -118,6 +118,8 @@ void RasterEffectMenuCreator::forEveryEffectCore(const EffectAdder &add)
         []() { return enve::make_shared<StripeEffect>(); });
     add(QObject::tr("Noise Fade"), QObject::tr("Transitions"),
         []() { return enve::make_shared<NoiseFadeEffect>(); });
+    add(QObject::tr("图层样式"), "",
+        []() { return enve::make_shared<LayerStylesEffect>(); });
 }
 
 void RasterEffectMenuCreator::forEveryEffectCustom(const EffectAdder &add)

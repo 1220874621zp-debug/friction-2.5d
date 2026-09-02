@@ -99,6 +99,269 @@ QString readUnicodeString(QDataStream &s, qint64 blockEnd)
     return result;
 }
 
+// ---- AMT descriptor reader (lfxp layer effects) ----
+// Minimal read-only walker for Photoshop's layer-styles block: it
+// covers every value type Photoshop is known to write there so the
+// stream can be walked past uninteresting keys; anything exotic
+// aborts the whole block and styles fall back to their defaults.
+
+namespace {
+
+struct DescError {};
+
+struct DescValue {
+    QByteArray tag;      // OSType, e.g. "doub", "enum"
+    bool boolV = false;
+    double doubleV = 0;
+    QString textV;
+    QByteArray enumV;
+    QHash<QByteArray, DescValue> objV; // Objc/GlbO: key -> value
+};
+
+class DescReader {
+public:
+    DescReader(QDataStream &s, const qint64 end) : mS(s), mEnd(end) {}
+
+    DescValue readDescriptorBody() {
+        DescValue v;
+        v.tag = QByteArrayLiteral("Objc");
+        // unicode name: int32 char count, 0 = no name
+        qint32 nameChars = 0;
+        mS >> nameChars;
+        if (nameChars > 0) {
+            const qint64 maxChars = qMax<qint64>(0, (mEnd - mS.device()->pos()) / 2);
+            const qint32 lim = qint32(qMin<qint64>(nameChars, maxChars));
+            for (qint32 i = 0; i < lim; i++) { quint16 ch = 0; mS >> ch; }
+        }
+        readId(); // class ID, unused
+        qint32 count = 0;
+        mS >> count;
+        check();
+        if (count < 0 || count > 8192) { throw DescError(); }
+        for (qint32 i = 0; i < count; i++) {
+            const QByteArray key = readId();
+            v.objV.insert(key, readValue());
+        }
+        return v;
+    }
+private:
+    QDataStream &mS;
+    const qint64 mEnd;
+
+    void check() {
+        if (mS.status() != QDataStream::Ok || mS.device()->pos() > mEnd) {
+            throw DescError();
+        }
+    }
+
+    QByteArray readFourCCRaw() {
+        char buf[4];
+        if (mS.readRawData(buf, 4) != 4) { throw DescError(); }
+        return QByteArray(buf, 4);
+    }
+
+    QByteArray readId() {
+        qint32 len = 0;
+        mS >> len;
+        check();
+        if (len == 0) { len = 4; }
+        else if (len < 0 || len > 8192) { throw DescError(); }
+        QByteArray bytes(len, Qt::Uninitialized);
+        if (mS.readRawData(bytes.data(), len) != len) { throw DescError(); }
+        return bytes;
+    }
+
+    QString readUnicode() {
+        qint32 chars = 0;
+        mS >> chars;
+        check();
+        QString out;
+        if (chars <= 0) { return out; }
+        if (chars > (1 << 20)) { throw DescError(); }
+        out.reserve(chars);
+        for (qint32 i = 0; i < chars; i++) {
+            quint16 ch = 0;
+            mS >> ch;
+            if (ch) { out.append(QChar(ch)); }
+        }
+        return out;
+    }
+
+    void skipBytes(const qint64 n) {
+        qint64 skip = n;
+        while (skip > 0 && mS.status() == QDataStream::Ok) {
+            const int chunk = int(qMin<qint64>(skip, 1 << 24));
+            if (mS.skipRawData(chunk) < 0) { break; }
+            skip -= chunk;
+        }
+        check();
+    }
+
+    void readReference() {
+        qint32 count = 0;
+        mS >> count;
+        check();
+        if (count < 0 || count > 4096) { throw DescError(); }
+        for (qint32 i = 0; i < count; i++) {
+            const QByteArray form = readFourCCRaw();
+            readId(); // class ID
+            if (form == "prop") { readId(); }
+            else if (form == "Enmr") { readId(); readId(); }
+            else if (form == "rele" || form == "Idnt" || form == "indx") {
+                qint32 dummy = 0;
+                mS >> dummy;
+            } else if (form == "name") { readUnicode(); }
+            // "Clss" carries nothing beyond the class ID
+            check();
+        }
+    }
+
+    DescValue readValue() {
+        const QByteArray tag = readFourCCRaw();
+        DescValue v;
+        v.tag = tag;
+        if (tag == "obj") {
+            readReference();
+        } else if (tag == "Objc" || tag == "GlbO") {
+            return readDescriptorBody();
+        } else if (tag == "VlLs") {
+            qint32 count = 0;
+            mS >> count;
+            check();
+            if (count < 0) { count = 0; }
+            if (count > 65536) { throw DescError(); }
+            for (qint32 i = 0; i < count; i++) { readValue(); }
+        } else if (tag == "doub") {
+            double d = 0;
+            mS >> d;
+            v.doubleV = d;
+        } else if (tag == "UntF") {
+            readFourCCRaw(); // unit, e.g. "#Prc"
+            double d = 0;
+            mS >> d;
+            v.doubleV = d;
+        } else if (tag == "TEXT") {
+            v.textV = readUnicode();
+        } else if (tag == "enum") {
+            readId(); // enum type
+            v.enumV = readId();
+        } else if (tag == "long") {
+            qint32 i = 0;
+            mS >> i;
+            v.doubleV = i;
+        } else if (tag == "bool") {
+            quint8 b = 0;
+            mS >> b;
+            v.boolV = b;
+        } else if (tag == "type" || tag == "GlbC") {
+            readId();
+        } else if (tag == "tdta") {
+            qint32 len = 0;
+            mS >> len;
+            check();
+            if (len < 0) { throw DescError(); }
+            skipBytes((qint64(len) + 3) & ~qint64(3));
+        } else {
+            throw DescError();
+        }
+        check();
+        return v;
+    }
+};
+
+const DescValue* objChild(const DescValue &obj, const QByteArray &key)
+{
+    const auto it = obj.objV.constFind(key);
+    if (it == obj.objV.constEnd()) { return nullptr; }
+    return &it.value();
+}
+
+bool styleEnabled(const DescValue &obj)
+{
+    const auto e = objChild(obj, QByteArrayLiteral("enab"));
+    return e ? e->boolV : true;
+}
+
+double styleNum(const DescValue &obj, const QByteArray &key, const double def)
+{
+    const auto v = objChild(obj, key);
+    return v ? v->doubleV : def;
+}
+
+bool styleColor(const DescValue &obj, const QByteArray &key,
+                quint8 &r, quint8 &g, quint8 &b)
+{
+    const auto c = objChild(obj, key);
+    if (!c) { return false; }
+    const auto rd = objChild(*c, QByteArrayLiteral("Rd  "));
+    const auto gr = objChild(*c, QByteArrayLiteral("Grn "));
+    const auto bl = objChild(*c, QByteArrayLiteral("Bl  "));
+    if (!rd || !gr || !bl) { return false; }
+    r = quint8(qBound(0., rd->doubleV * 255.0, 255.0));
+    g = quint8(qBound(0., gr->doubleV * 255.0, 255.0));
+    b = quint8(qBound(0., bl->doubleV * 255.0, 255.0));
+    return true;
+}
+
+void applyLfxpStyles(const DescValue &root, psd::LayerStyles &st)
+{
+    const auto shadow = objChild(root, QByteArrayLiteral("dropShadow"));
+    if (shadow && styleEnabled(*shadow)) {
+        st.hasAny = true;
+        st.shadowEnabled = true;
+        st.shadowOpacity = styleNum(*shadow, QByteArrayLiteral("Opct"), st.shadowOpacity);
+        st.shadowAngle = styleNum(*shadow, QByteArrayLiteral("lagl"), st.shadowAngle);
+        st.shadowDistance = styleNum(*shadow, QByteArrayLiteral("Dstn"), st.shadowDistance);
+        st.shadowSpread = styleNum(*shadow, QByteArrayLiteral("Ckmt"), st.shadowSpread);
+        st.shadowSize = styleNum(*shadow, QByteArrayLiteral("blur"), st.shadowSize);
+        styleColor(*shadow, QByteArrayLiteral("Clr "),
+                   st.shadowR, st.shadowG, st.shadowB);
+    }
+    const auto glow = objChild(root, QByteArrayLiteral("outerGlow"));
+    if (glow && styleEnabled(*glow)) {
+        st.hasAny = true;
+        st.glowEnabled = true;
+        st.glowOpacity = styleNum(*glow, QByteArrayLiteral("Opct"), st.glowOpacity);
+        st.glowSpread = styleNum(*glow, QByteArrayLiteral("Ckmt"), st.glowSpread);
+        st.glowSize = styleNum(*glow, QByteArrayLiteral("blur"), st.glowSize);
+        styleColor(*glow, QByteArrayLiteral("Clr "),
+                   st.glowR, st.glowG, st.glowB);
+    }
+    const auto stroke = objChild(root, QByteArrayLiteral("frameFX"));
+    if (stroke && styleEnabled(*stroke)) {
+        st.hasAny = true;
+        st.strokeEnabled = true;
+        st.strokeOpacity = styleNum(*stroke, QByteArrayLiteral("Opct"), st.strokeOpacity);
+        st.strokeSize = styleNum(*stroke, QByteArrayLiteral("Sz  "), st.strokeSize);
+        const auto styl = objChild(*stroke, QByteArrayLiteral("Styl"));
+        if (styl) {
+            if (styl->enumV == QByteArrayLiteral("FStF")) { st.strokePos = 1; }
+            else if (styl->enumV == QByteArrayLiteral("InsF")) { st.strokePos = 2; }
+            else { st.strokePos = 0; } // "OutF"
+        }
+        styleColor(*stroke, QByteArrayLiteral("Clr "),
+                   st.strokeR, st.strokeG, st.strokeB);
+    }
+}
+
+} // namespace
+
+void readLfxpStyles(QDataStream &s, const qint64 blockEnd, psd::LayerRecord &rec)
+{
+    try {
+        // version (0 or 2), descriptor version (16), then descriptor
+        qint32 version = 0;
+        qint32 descVersion = 0;
+        s >> version >> descVersion;
+        DescReader reader(s, blockEnd);
+        const DescValue root = reader.readDescriptorBody();
+        applyLfxpStyles(root, rec.styles);
+    } catch (...) {
+        // malformed or unexpected descriptor: keep defaults, the
+        // caller skips the rest of the block regardless
+    }
+}
+
 // PackBits decompression straight into the destination buffer.
 // Returns the number of bytes written (< dstSize on truncation).
 int uncompressRLETo(const char *srcPtr, const int srcSize,
@@ -458,6 +721,10 @@ bool PsdFile::readLayerRecords(QDataStream &s, qint64 layerInfoEnd,
                 quint32 id = 0;
                 s >> id;
                 rec.layerId = qint32(id);
+            } else if (key == QLatin1String("lfxp")) {
+                // Photoshop layer styles (descriptor-based); shadow,
+                // outer glow and stroke are consumed, the rest walks past
+                readLfxpStyles(s, blockEnd, rec);
             } else if (key == QLatin1String("lsct")
                        || key == QLatin1String("lsdk")) {
                 quint32 dividerType = 0;

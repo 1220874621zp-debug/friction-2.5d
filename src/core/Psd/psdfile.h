@@ -58,6 +58,32 @@ namespace psd {
         qint64 dataOffset = 0;// absolute file offset of channel data
     };
 
+    // Photoshop layer styles ('lfxp') actually consumed by the
+    // importer; anything missing keeps the Photoshop defaults
+    struct LayerStyles {
+        bool hasAny = false;
+
+        bool shadowEnabled = false;
+        double shadowAngle = 120.0;    // light angle, degrees CCW
+        double shadowDistance = 5.0;   // px
+        double shadowSpread = 0.0;     // %
+        double shadowSize = 5.0;       // px (blur extent)
+        double shadowOpacity = 75.0;   // %
+        quint8 shadowR = 0, shadowG = 0, shadowB = 0;
+
+        bool glowEnabled = false;
+        double glowSpread = 0.0;       // %
+        double glowSize = 10.0;        // px
+        double glowOpacity = 75.0;     // %
+        quint8 glowR = 255, glowG = 255, glowB = 190;
+
+        bool strokeEnabled = false;
+        int strokePos = 0;             // 0 outside, 1 center, 2 inside
+        double strokeSize = 3.0;       // px
+        double strokeOpacity = 100.0;  // %
+        quint8 strokeR = 255, strokeG = 0, strokeB = 0;
+    };
+
     struct LayerRecord {
         QRect rect;
         QVector<ChannelInfo> channels;
@@ -72,6 +98,8 @@ namespace psd {
         // Photoshop native layer id ('lyid' additional layer info).
         // Stable across rename / reorder / regroup; 0 when absent.
         qint32 layerId = 0;
+        // Photoshop layer styles ('lfxp'), shadow/glow/stroke only
+        LayerStyles styles;
     };
 
     class PsdFile {

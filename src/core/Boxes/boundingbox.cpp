@@ -1640,6 +1640,55 @@ void BoundingBox::prp_setupTreeViewMenu(PropertyMenu * const menu)
             })->setEnabled(canPasteEffects);
         }
 
+        // 图层样式 (Photoshop-style): one combined effect carries
+        // shadow/glow/stroke in the fixed PS order; entries create
+        // it on demand and toggle the matching sub-style
+        {
+            const auto findStyles = [this]() -> LayerStylesEffect* {
+                const int n = mRasterEffectsAnimators->ca_getNumberOfChildren();
+                for (int i = 0; i < n; i++) {
+                    const auto child = mRasterEffectsAnimators->getChild(i);
+                    if (const auto eff = enve_cast<LayerStylesEffect*>(child)) {
+                        return eff;
+                    }
+                }
+                return nullptr;
+            };
+            const auto stylesMenu = menu->addMenu(QIcon::fromTheme("effect"),
+                                                  tr("图层样式"));
+            const auto addStyleEntry = [this, findStyles, stylesMenu](
+                    const QString& name, const bool on,
+                    const std::function<void(LayerStylesEffect*, const bool)>& apply) {
+                stylesMenu->addCheckableAction(name, on,
+                    [this, findStyles, apply](const bool checked) {
+                    auto eff = findStyles();
+                    if (!eff) {
+                        if (!checked) return;
+                        const auto newEff = enve::make_shared<LayerStylesEffect>();
+                        addRasterEffect(newEff);
+                        eff = newEff.get();
+                    }
+                    apply(eff, checked);
+                    // the collection's cache may not see a pure bool
+                    // toggle as an influence-range change
+                    eff->prp_afterWholeInfluenceRangeChanged();
+                });
+            };
+            const auto curEff = findStyles();
+            addStyleEntry(tr("投影"),
+                          curEff && curEff->shadowEnabled()->getBoolValue(),
+                          [](LayerStylesEffect* const e, const bool on) {
+                e->shadowEnabled()->setCurrentBoolValue(on); });
+            addStyleEntry(tr("外发光"),
+                          curEff && curEff->glowEnabled()->getBoolValue(),
+                          [](LayerStylesEffect* const e, const bool on) {
+                e->glowEnabled()->setCurrentBoolValue(on); });
+            addStyleEntry(tr("描边"),
+                          curEff && curEff->strokeEnabled()->getBoolValue(),
+                          [](LayerStylesEffect* const e, const bool on) {
+                e->strokeEnabled()->setCurrentBoolValue(on); });
+        }
+
         // remove every expression (e.g. loop expressions baked onto
         // effect parameters) from this layer's property tree; each
         // removal goes through the undoable set-expression path
