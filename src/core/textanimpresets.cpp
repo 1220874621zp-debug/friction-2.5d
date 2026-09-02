@@ -190,11 +190,12 @@ bool apply(TextBox* const box,
     if (preset.id == "number-roll") {
         // bake text keys counting 0 -> N, preserving any prefix and
         // suffix around the number (e.g. "progress: 42%")
-        QRegExp re("(\\D*)(-?\\d+)(\\D*)");
-        if (re.indexIn(box->getCurrentValue()) < 0) { return false; }
-        const QString prefix = re.cap(1);
-        const QString suffix = re.cap(3);
-        const int target = re.cap(2).toInt();
+        const QRegularExpression re(QStringLiteral("(\\D*)(-?\\d+)(\\D*)"));
+        const auto match = re.match(box->getCurrentValue());
+        if (!match.hasMatch()) { return false; }
+        const QString prefix = match.captured(1);
+        const QString suffix = match.captured(3);
+        const int target = match.captured(2).toInt();
         const auto textAnim = box->getStringAnimator();
         if (!textAnim) { return false; }
         const int durF = qMax(2, qRound(preset.duration*durationScale*fps));
