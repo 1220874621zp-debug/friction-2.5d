@@ -319,6 +319,10 @@ void ScriptManager::rebuildMenu()
         return;
     }
     for (auto it = mCommands.constBegin(); it != mCommands.constEnd(); ++it) {
+        // scripts with a panel expose their actions on the panel
+        // itself; listing their commands here too showed the same
+        // feature twice in the menu
+        if (it.value()->panelDesc().valid) { continue; }
         const QString label = it.key();
         mScriptsMenu->addAction(label, this, [this, label]() {
             runCommand(label);

@@ -101,8 +101,9 @@ ScriptConsoleDock::ScriptConsoleDock(QWidget * const parent)
 {
     setObjectName(QStringLiteral("dockScriptConsole"));
     setWindowTitle(tr("Script Console"));
-    // not closable: the console has no menu entry to bring it back
-    setFeatures(QDockWidget::DockWidgetMovable |
+    // closable again: the Scripts menu carries the toggle
+    setFeatures(QDockWidget::DockWidgetClosable |
+                QDockWidget::DockWidgetMovable |
                 QDockWidget::DockWidgetFloatable);
 
     const auto content = new QWidget(this);
