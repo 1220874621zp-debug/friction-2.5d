@@ -960,7 +960,14 @@ void TimelineDockWidget::spaceToggle()
             }
             if (warm) {
                 started = RenderHandler::sInstance->playPreview();
-                if (!started) { renderPreview(); }
+                if (!started) {
+                    // playPreview only refuses on an empty in/out range;
+                    // warming the cache would fail the same way, so tell
+                    // the user instead of silently rendering nothing
+                    mMainWindow->statusBar()->showMessage(
+                            tr("Cannot play: the preview range is empty - "
+                               "check the In/Out points"), 5000);
+                }
             } else {
                 renderPreview();
                 started = true;
