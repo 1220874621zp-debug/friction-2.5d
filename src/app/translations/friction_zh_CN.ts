@@ -7741,6 +7741,11 @@ Select the layers you want to import:</source>
         <source>Cannot open %1</source>
         <translation>无法打开 %1</translation>
     </message>
+    <message>
+        <location filename="../GUI/scriptconsole.cpp" line="123"/>
+        <source>Enter JS, Enter runs, Shift+Enter inserts a line break (Ctrl+Up/Down: history)</source>
+        <translation>输入 JS，回车执行，Shift+回车换行（Ctrl+↑/↓ 浏览历史）</translation>
+    </message>
 </context>
 <context>
     <name>ScriptManager</name>

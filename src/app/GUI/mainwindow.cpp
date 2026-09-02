@@ -1413,9 +1413,8 @@ void MainWindow::rebuildWorkspaceMenu()
     if (mSwitchPanelDock) {
         panelsMenu->addAction(mSwitchPanelDock->toggleViewAction());
     }
-    if (mScriptManager && mScriptManager->console()) {
-        panelsMenu->addAction(mScriptManager->console()->toggleViewAction());
-    }
+    // the script console dock is non-closable and intentionally not
+    // listed here (it would be a dead toggle)
 
     // external AI roto bridge (Mocha-style: launch + file hand-off)
     mWorkspaceMenu->addSeparator();

@@ -27,7 +27,6 @@
 #include <QDockWidget>
 
 class QPlainTextEdit;
-class QLineEdit;
 class QPushButton;
 
 namespace Friction
@@ -62,7 +61,7 @@ private:
     void openScript();
 
     QPlainTextEdit *mOutput = nullptr;
-    QLineEdit *mInput = nullptr;
+    QPlainTextEdit *mInput = nullptr;
     QPushButton *mClearButton = nullptr;
     QPushButton *mReloadButton = nullptr;
     QPushButton *mOpenButton = nullptr;

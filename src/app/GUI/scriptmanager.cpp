@@ -55,18 +55,8 @@ ScriptManager::ScriptManager(MainWindow * const parent)
 
     mScriptsMenu = new QMenu(tr("Scripts"), parent);
 
-    const auto consoleAct = mScriptsMenu->addAction(
-                QIcon::fromTheme("cmd"),
-                tr("Script Console"),
-                this, [this]() {
-        if (!mConsole) { return; }
-        if (mConsole->isHidden()) {
-            mConsole->show();
-            mConsole->raise();
-        } else {
-            mConsole->hide();
-        }
-    });
+    // note: no "Script Console" toggle here - the console dock is
+    // always visible (non-closable) so a menu entry is redundant
 
     mScriptsMenu->addAction(QIcon::fromTheme("view_refresh"),
                             tr("Reload Scripts"),
@@ -83,8 +73,6 @@ ScriptManager::ScriptManager(MainWindow * const parent)
 
     loadScripts();
     rebuildMenu();
-
-    Q_UNUSED(consoleAct)
 }
 
 void ScriptManager::reload()
