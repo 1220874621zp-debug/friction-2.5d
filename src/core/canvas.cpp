@@ -1538,8 +1538,12 @@ void Canvas::invertSelectionAction()
 
 void Canvas::anim_setAbsFrame(const int frame)
 {
-    if (frame == anim_getCurrentAbsFrame()) { return; }
-    ContainerBox::anim_setAbsFrame(frame);
+    // the timeline starts at frame 0: the playhead never sits on a
+    // negative frame, no matter which path tries to put it there
+    // (ruler scrub, keys view, frame spinbox, keyboard, scripts, render)
+    const int clamped = qMax(0, frame);
+    if (clamped == anim_getCurrentAbsFrame()) { return; }
+    ContainerBox::anim_setAbsFrame(clamped);
     const int newRelFrame = anim_getCurrentRelFrame();
 
     const auto cont = safeSceneFrame(mSceneFramesHandler, newRelFrame);
@@ -1555,10 +1559,10 @@ void Canvas::anim_setAbsFrame(const int frame)
         planUpdate(UpdateReason::frameChange);
     }
 
-    mUndoRedoStack->setFrame(frame);
+    mUndoRedoStack->setFrame(clamped);
 
     //if (mCurrentMode == CanvasMode::paint) { mPaintTarget.setupOnionSkin(); }
-    emit currentFrameChanged(frame);
+    emit currentFrameChanged(clamped);
 
     schedulePivotUpdate();
 }
