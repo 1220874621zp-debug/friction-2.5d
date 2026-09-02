@@ -50,6 +50,7 @@ ScriptManager::ScriptManager(MainWindow * const parent)
     , mMainWindow(parent)
 {
     mConsole = new ScriptConsoleDock(parent);
+    mConsole->setReloadCallback([this]() { reload(); });
 
     mScriptsMenu = new QMenu(tr("Scripts"), parent);
 

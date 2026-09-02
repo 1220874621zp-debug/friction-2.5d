@@ -7711,6 +7711,16 @@ Select the layers you want to import:</source>
         <source>Friction JS console ready. Try:</source>
         <translation>Friction JS 控制台已就绪，试试：</translation>
     </message>
+    <message>
+        <location filename="../GUI/scriptconsole.cpp" line="115"/>
+        <source>Reload Scripts</source>
+        <translation>重新加载脚本</translation>
+    </message>
+    <message>
+        <location filename="../GUI/scriptconsole.cpp" line="117"/>
+        <source>Rescan the scripts folder and reload all plugins</source>
+        <translation>重新扫描脚本文件夹并加载全部插件</translation>
+    </message>
 </context>
 <context>
     <name>ScriptManager</name>

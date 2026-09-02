@@ -133,6 +133,11 @@ ScriptConsoleDock::ScriptConsoleDock(QWidget * const parent)
                  + QStringLiteral("\n  layer = scene.layer(1)"));
 }
 
+void ScriptConsoleDock::setReloadCallback(const std::function<void()> &callback)
+{
+    mReloadCallback = callback;
+}
+
 void ScriptConsoleDock::appendOutput(const QString &text)
 {
     const auto stamp = QDateTime::currentDateTime().toString(

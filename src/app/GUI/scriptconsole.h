@@ -49,12 +49,18 @@ public:
     void appendOutput(const QString &text);
     void appendError(const QString &text);
 
+    // wired by ScriptManager to its reload() slot, so the console
+    // can rescan the scripts folder without the Scripts menu
+    void setReloadCallback(const std::function<void()> &callback);
+
 private:
     void runInput();
 
     QPlainTextEdit *mOutput = nullptr;
     QLineEdit *mInput = nullptr;
     QPushButton *mClearButton = nullptr;
+    QPushButton *mReloadButton = nullptr;
+    std::function<void()> mReloadCallback;
     Friction::Core::JsHost *mHost = nullptr;
     QStringList mHistory;
     int mHistoryIndex = -1;
