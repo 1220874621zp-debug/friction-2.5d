@@ -391,6 +391,21 @@ void Canvas::renderSk(SkCanvas* const canvas,
             canvas->scale(reversedRes, reversedRes);
             mSceneFrame->drawImage(canvas, filter);
             canvas->restore();
+        } else {
+            // no cached frame to show yet (cache just dropped by an
+            // edit, or warm-up right after invalidation): paint the
+            // canvas background - returning without drawing anything
+            // left the GL FBO contents undefined, shown as a black
+            // widget until the first frame landed
+            canvas->clear(SK_ColorBLACK);
+            if (bgColor.alpha() != 255) {
+                drawTransparencyMesh(canvas, canvasRect);
+            } else {
+                SkPaint bgPaint;
+                bgPaint.setStyle(SkPaint::kFill_Style);
+                bgPaint.setColor(toSkColor(bgColor));
+                canvas->drawRect(canvasRect, bgPaint);
+            }
         }
         return;
     }
@@ -1001,7 +1016,14 @@ static stdsptr<SceneFrameContainer> safeSceneFrame(
 
 void Canvas::setSceneFrame(const int relFrame) {
     const auto cont = safeSceneFrame(mSceneFramesHandler, relFrame);
-    if(cont && !cont->storesDataInMemory()) {
+    if(!cont) {
+        // no container for this frame (e.g. the cache was dropped by an
+        // edit right before playback): keep the current frame on
+        // screen instead of assigning null, which made the preview
+        // branch draw nothing and the canvas go black
+        return;
+    }
+    if(!cont->storesDataInMemory()) {
         // The frame's pixels were swapped out to a tmp file. Keep the
         // current frame on screen and reload asynchronously instead of
         // assigning a container with a null image, which used to draw

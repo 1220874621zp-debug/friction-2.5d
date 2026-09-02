@@ -289,16 +289,20 @@ void QrealAnimator::setExpressionAction(const qsptr<Expression> &expression)
     setExpression(expression);
 }
 
-void QrealAnimator::setExpressionEasingAction(const qsptr<Expression> &expression)
+void QrealAnimator::setExpressionEasingAction(
+        const qsptr<Expression> &expression,
+        const FrameRange &relNotifyRange)
 {
     {
         prp_pushUndoRedoName(tr("Change Easing"));
         UndoRedo ur;
-        ur.fUndo = [this]() { setExpression(nullptr); };
-        ur.fRedo = [this, expression]() { setExpression(expression); };
+        ur.fUndo = [this, relNotifyRange]() {
+            setExpression(nullptr, relNotifyRange); };
+        ur.fRedo = [this, expression, relNotifyRange]() {
+            setExpression(expression, relNotifyRange); };
         prp_addUndoRedo(ur);
     }
-    setExpression(expression);
+    setExpression(expression, relNotifyRange);
 }
 
 void QrealAnimator::applyExpressionSub(const FrameRange& relRange,
@@ -406,12 +410,26 @@ void QrealAnimator::applyExpression(const FrameRange& relRange,
         }
     }
 
-    if (easing) { setExpressionEasingAction(nullptr); }
+    if (easing) {
+        // the bake replaced the keys inside relRange; the boundary keys
+        // share tangent handles with the neighbouring keys, so their
+        // segments may have changed too - notify (and invalidate the
+        // scene cache) only for that range instead of the animator's
+        // whole influence range, which used to drop every cached frame
+        // of the scene after applying an easing preset
+        FrameRange notifyRange = relRange;
+        const auto prevK = anim_getPrevKey<Key>(relRange.fMin);
+        if (prevK) { notifyRange.fMin = prevK->getRelFrame(); }
+        const auto nextK = anim_getNextKey<Key>(relRange.fMax);
+        if (nextK) { notifyRange.fMax = nextK->getRelFrame(); }
+        setExpressionEasingAction(nullptr, notifyRange);
+    }
     else if (action) { setExpressionAction(nullptr); }
     else { setExpression(nullptr); }
 }
 
-void QrealAnimator::setExpression(const qsptr<Expression>& expression) {
+void QrealAnimator::setExpression(const qsptr<Expression>& expression,
+                                  const FrameRange& relNotifyRange) {
     auto& conn = mExpression.assign(expression);
     if(expression) {
         // loop expressions read this animator's keys to remap frames
@@ -428,7 +446,12 @@ void QrealAnimator::setExpression(const qsptr<Expression>& expression) {
         });
     }
     updateCurrentEffectiveValue();
-    prp_afterWholeInfluenceRangeChanged();
+    if(relNotifyRange.fMin == FrameRange::EMIN &&
+       relNotifyRange.fMax == FrameRange::EMAX) {
+        prp_afterWholeInfluenceRangeChanged();
+    } else {
+        prp_afterChangedRelRange(relNotifyRange);
+    }
     emit expressionChanged();
 }
 

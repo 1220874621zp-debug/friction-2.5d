@@ -175,7 +175,12 @@ bool KeysView::graphEasingApplyExpression(QrealAnimator *anim,
                                         std::move(engine),
                                         std::move(eEvaluate));
         if (expr && !expr->isValid()) { expr = nullptr; }
-        anim->setExpression(expr);
+        // attach/detach of the temporary sampling expression must not
+        // notify the animator's whole influence range - that dropped
+        // every cached scene frame and forced a full-range re-render
+        // (blank canvas + skipped frames) on the next Space; limiting
+        // the notification to dirtyRange keeps the rest of the cache
+        anim->setExpression(expr, dirtyRange);
         anim->applyExpression(range, 10, true, true);
         // baking removes the previously selected keys and the new
         // baked keys start unselected; re-select keys in the range

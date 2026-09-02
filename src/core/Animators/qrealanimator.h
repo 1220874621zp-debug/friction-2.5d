@@ -166,9 +166,17 @@ public:
     QString getExpressionDefinitionsString() const;
     QString getExpressionScriptString() const;
 
-    void setExpression(const qsptr<Expression>& expression);
+    // relNotifyRange limits the change notification (and thus scene
+    // cache invalidation) to the given relative range instead of the
+    // animator's whole influence range - used by the easing bake where
+    // the expression is a temporary sampling device attached and
+    // detached synchronously around the bake
+    void setExpression(const qsptr<Expression>& expression,
+                       const FrameRange& relNotifyRange = FrameRange::EMINMAX);
     void setExpressionAction(const qsptr<Expression>& expression);
-    void setExpressionEasingAction(const qsptr<Expression>& expression);
+    void setExpressionEasingAction(
+            const qsptr<Expression>& expression,
+            const FrameRange& relNotifyRange = FrameRange::EMINMAX);
     void applyExpression(const FrameRange& relRange,
                          const qreal accuracy,
                          const bool action,
