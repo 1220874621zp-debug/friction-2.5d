@@ -116,6 +116,15 @@ void FrameScrollBar::paintEvent(QPaintEvent *) {
     const int minMod = minFrame%mDrawFrameInc;
     qreal xL = (-minMod + (mRange ? 0. : 0.5))*pixPerFrame + x0;
     int currentFrame = minFrame - minMod;
+    if (currentFrame < 0) {
+        // the timeline starts at frame 0: advance the first label to 0
+        // instead of drawing negative frame numbers (minFrame carries a
+        // left overdraw margin, and older sessions can restore viewed
+        // ranges that dip below zero)
+        const int advance = -currentFrame;
+        currentFrame += advance;
+        xL += advance*pixPerFrame;
+    }
     const qreal threeFourthsHeight = height()*0.75;
     const qreal maxX = width() + eSizesUI::widget;
 
@@ -186,9 +195,9 @@ void FrameScrollBar::paintEvent(QPaintEvent *) {
             p.drawText(rect, Qt::AlignCenter, drawValue);
         }
 
-        // draw minor
+        // draw minor (never below frame 0: no negative ruler marks)
         p.setPen(QPen(Qt::darkGray, 2));
-        for (int i = mMinFrame; i <= mMaxFrame; i += iInc) {
+        for (int i = qMax(0, mMinFrame); i <= mMaxFrame; i += iInc) {
             const qreal xTT = xT + (i - mFrameRange.fMin + 1)*pixPerFrame;
             p.drawLine(QPointF(xTT, threeFourthsHeight + 6), QPointF(xTT, height()));
         }

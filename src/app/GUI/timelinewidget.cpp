@@ -454,7 +454,10 @@ void TimelineWidget::setCurrentScene(Canvas * const scene) {
         mFrameScrollBar->setFirstViewedFrame(scene->getCurrentFrame());
         mFrameRangeScrollBar->setFirstViewedFrame(scene->getCurrentFrame());
         const int padding = 2;
-        const FrameRange newRange = {range.fMin - padding, range.fMax + padding};
+        // pad the left edge only down to frame 0: padding below zero
+        // puts negative ruler labels next to a scene that starts at 0
+        const FrameRange newRange = {qMax(0, range.fMin - padding),
+                                     range.fMax + padding};
         setViewedFrameRange(newRange);
 
         connect(scene, &Canvas::currentFrameChanged,
