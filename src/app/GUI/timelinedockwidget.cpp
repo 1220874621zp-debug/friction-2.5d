@@ -276,27 +276,18 @@ TimelineDockWidget::TimelineDockWidget(Document& document,
         });
 
         // AE-style top view auxiliary window (X/Z plane with the
-        // scene camera) - canvas plane line + camera cone seen from
-        // above, next to the safe-frames toggle
+        // scene camera) - user-supplied SVG icon, next to the
+        // safe-frames toggle
         {
             QPixmap tpv(64, 64);
             tpv.fill(Qt::transparent);
-            QPainter tp(&tpv);
-            tp.setRenderHint(QPainter::Antialiasing);
-            QPen cone(QColor(255, 158, 44, 200));
-            cone.setWidthF(4.5);
-            tp.setPen(cone);
-            tp.drawLine(32, 18, 13, 48);
-            tp.drawLine(32, 18, 51, 48);
-            QPen plane(QColor(235, 235, 242, 230));
-            plane.setWidthF(5.);
-            plane.setCapStyle(Qt::RoundCap);
-            tp.setPen(plane);
-            tp.drawLine(8, 48, 56, 48);
-            tp.setPen(Qt::NoPen);
-            tp.setBrush(QColor(255, 158, 44));
-            tp.drawEllipse(QRectF(26, 10, 12, 12));
-            tp.end();
+            QSvgRenderer renderer(QStringLiteral(":/icons/top_view.svg"));
+            if (renderer.isValid()) {
+                QPainter tp(&tpv);
+                tp.setRenderHint(QPainter::Antialiasing);
+                renderer.render(&tp, QRectF(4, 4, 56, 56));
+                tp.end();
+            }
             mTopViewButton = new QAction(tpv, tr("顶视图"), this);
         }
         mTopViewButton->setToolTip(tr(
