@@ -276,11 +276,11 @@ int main(int argc, char *argv[])
                 || SkColorGetB(*shadowPx2) > SkColorGetR(*shadowPx2) + 10) {
             throw std::runtime_error("no choked black shadow above");
         }
-        // glow: green tint around the square (mild spread; the linear
-        // choke remap erases low-alpha tails so extreme spread values
-        // are covered by the shadow assertion above). Parameters are
-        // snapshotted into the caller, so recreate it after setGlow.
-        styles->setGlow(true, 20.0, 20.0, 60.0, QColor(0, 255, 24));
+        // glow: the user's real PSD parameters (spread 42, size 54,
+        // opacity 23%) must stay visible - spread is ignored for glow
+        // and the rim is lifted x2, otherwise 0.23*0.5*choke leaves
+        // a handful of alpha units invisible to the eye
+        styles->setGlow(true, 42.0, 54.0, 23.0, QColor(0, 255, 24));
         const auto caller3 = styles->getEffectCaller(0.0, 1.0, 1.0, nullptr);
         if (!caller3) { throw std::runtime_error("caller3 is null"); }
         dstBtmp.eraseARGB(0, 0, 0, 0);
@@ -294,10 +294,18 @@ int main(int argc, char *argv[])
             data.fTexTile = tile;
             caller3->processCpu(tools, data);
         }
-        const auto glowPx = static_cast<const uint32_t*>(dstBtmp.getAddr(10, 32));
-        if (SkColorGetA(*glowPx) < 5
+        // (11,32) is 5px left of the square edge: ~48/255 green
+        const auto glowPx = static_cast<const uint32_t*>(dstBtmp.getAddr(11, 32));
+        if (SkColorGetA(*glowPx) < 30
                 || SkColorGetG(*glowPx) < SkColorGetR(*glowPx)) {
-            throw std::runtime_error("no green glow around");
+            std::cout << " [glow debug:";
+            for (int x = 8; x <= 20; x += 2) {
+                const auto px = static_cast<const uint32_t*>(dstBtmp.getAddr(x, 32));
+                std::cout << " x" << x << "=" << SkColorGetA(*px)
+                          << "/g" << SkColorGetG(*px);
+            }
+            std::cout << "] ";
+            throw std::runtime_error("no visible green glow around");
         }
     });
 

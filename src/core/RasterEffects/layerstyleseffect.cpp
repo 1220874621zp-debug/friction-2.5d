@@ -62,14 +62,19 @@ struct LayerStylesData {
 
 // Choke/spread tightens the blurred alpha: a' = clamp(a/(1-k) - k/(1-k)),
 // linear in alpha. Expressed as one color matrix together with the
-// tint: rgb := color, a := opacity * clamp(s*a - k*s). Done in a
-// SECOND pass over a blurred snapshot - the nested filter chain
+// tint: rgb := color, a := opacity * gain * clamp(s*a - k*s). Done in
+// a SECOND pass over a blurred snapshot - the nested filter chain
 // SkImageFilters::ColorFilter(choke, SkImageFilters::Blur(...))
 // renders nothing in this skia build (verified by bisect).
+// gain lifts the rim (outer glow): PS glows are near-solid at the
+// edge fading outward, while a bare gaussian rim sits at 0.5 alpha
+// (and this skia's box-blur approximation lands ~0.6 of the ideal
+// curve); x3 matches PS visibility for typical PSD values.
 static void paintShape(SkCanvas * const canvas, const SkImage * const src,
                        const qreal dx, const qreal dy,
                        const QColor& color, const qreal opacity,
-                       const qreal sigma, const qreal spread01)
+                       const qreal sigma, const qreal spread01,
+                       const qreal gain = 1.0)
 {
     // 1. blur the silhouette onto a private surface (single filter
     //    per draw, the pattern proven by the stroke path)
@@ -91,7 +96,7 @@ static void paintShape(SkCanvas * const canvas, const SkImage * const src,
     if (!blurred) return;
 
     // 2. tint + choke as one color matrix (values in 0..1 space)
-    const qreal alphaF = qBound(0.0, color.alphaF() * opacity, 1.0);
+    const qreal alphaF = qBound(0.0, color.alphaF() * opacity * gain, 1.0);
     const qreal k = qBound(0.0, spread01, 0.98);
     const qreal s = k > 0.001 ? 1.0 / (1.0 - k) : 1.0;
     const float m[20] = {
@@ -171,11 +176,13 @@ static void composeStyles(SkCanvas * const canvas, const SkImage * const src,
     }
     if (d.mGlow) {
         const qreal sigma = d.mGlowSize / 3.0;
-        // PS glow "spread" reads far more gradual than the linear
-        // alpha remap; halve it or typical PSD values (40+) would
-        // reduce the glow to a 1px rim
+        // PS glow "spread" reads as a subtle tightness there, but the
+        // linear alpha remap erases the long gaussian tail entirely
+        // (a 42% value nukes everything past half the radius) - v1
+        // ignores it and lifts the rim instead (gain 2) so typical
+        // PSD opacity values (20-30%) stay visible
         paintShape(canvas, src, sx, sy, d.mGlowColor,
-                   d.mGlowOpacity, sigma, d.mGlowSpread * 0.5);
+                   d.mGlowOpacity, sigma, 0.0, 3.0);
     }
     canvas->drawImage(src, sx, sy);
     if (d.mStroke) {
