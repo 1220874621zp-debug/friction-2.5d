@@ -344,9 +344,15 @@ bool styleColor(const DescValue &obj, const QByteArray &key,
     const auto gr = objChild(*c, QByteArrayLiteral("Grn "));
     const auto bl = objChild(*c, QByteArrayLiteral("Bl  "));
     if (!rd || !gr || !bl) { return false; }
-    r = quint8(qBound(0., rd->doubleV * 255.0, 255.0));
-    g = quint8(qBound(0., gr->doubleV * 255.0, 255.0));
-    b = quint8(qBound(0., bl->doubleV * 255.0, 255.0));
+    // PS6-era lfx2 stores color channels in 0..255, the CS2+ lfxp
+    // in 0..1: scale per component (> 1 means already 8-bit).
+    // User-verified against a real file: shadow #3d1b05 reads 61/27/4.5
+    const auto to8 = [](const double v) {
+        return quint8(qBound(0.0, v > 1.0 ? v : v * 255.0, 255.0));
+    };
+    r = to8(rd->doubleV);
+    g = to8(gr->doubleV);
+    b = to8(bl->doubleV);
     return true;
 }
 

@@ -268,13 +268,13 @@ int main(int argc, char *argv[])
             data.fTexTile = tile;
             caller2->processCpu(tools, data);
         }
-        // angle 90 -> shadow straight below (+10): spans y[26,58];
-        // sample below the square itself (y=52); shadow is black:
-        // tint must dominate, not the layer's purple
-        const auto shadowPx2 = static_cast<const uint32_t*>(dstBtmp.getAddr(20, 52));
+        // angle 90 with the PS dial mapping -> shadow straight UP
+        // (-10): spans y[6,38]; sample above the square (y=12);
+        // shadow is black: tint must dominate, not the layer's purple
+        const auto shadowPx2 = static_cast<const uint32_t*>(dstBtmp.getAddr(20, 12));
         if (SkColorGetA(*shadowPx2) < 20
                 || SkColorGetB(*shadowPx2) > SkColorGetR(*shadowPx2) + 10) {
-            throw std::runtime_error("no choked black shadow below");
+            throw std::runtime_error("no choked black shadow above");
         }
         // glow: green tint around the square (mild spread; the linear
         // choke remap erases low-alpha tails so extreme spread values

@@ -159,9 +159,12 @@ static void composeStyles(SkCanvas * const canvas, const SkImage * const src,
     const SkScalar sx = static_cast<SkScalar>(ox);
     const SkScalar sy = static_cast<SkScalar>(oy);
     if (d.mShadow) {
+        // PS angle: 0 = light from the right, shadow falls LEFT and
+        // the dial is mirrored vs. screen y-down; user-calibrated
+        // against Photoshop: offY is negated
         const qreal rad = qDegreesToRadians(d.mShadowAngle);
         const qreal dx = -qCos(rad) * d.mShadowDist;
-        const qreal dy =  qSin(rad) * d.mShadowDist;
+        const qreal dy = -qSin(rad) * d.mShadowDist;
         const qreal sigma = d.mShadowSize / 3.0;
         paintShape(canvas, src, sx + dx, sy + dy, d.mShadowColor,
                    d.mShadowOpacity, sigma, d.mShadowSpread);
