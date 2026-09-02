@@ -75,6 +75,10 @@ namespace EvFormat {
         // PS-style ruler guides (Canvas settings tail: h/v lists);
         // older files lack the block and must skip it (positional)
         canvasGuides = 43,
+        // AE-style mask flag on SmartVectorPath (appended byte in
+        // writeBoundingBox, after the base box block); older files
+        // lack the byte and must skip it (positional)
+        maskPathMode = 44,
 
         nextVersion
     };

@@ -150,6 +150,8 @@ void Document::setCanvasMode(const CanvasMode mode)
     fCanvasMode = mode;
     // leaving the path tool also ends mask pen drawing
     if (mode != CanvasMode::pathCreate) { fMaskPenActive = false; }
+    // leaving the rectangle tool ends rect mask drawing
+    if (mode != CanvasMode::rectCreate) { fMaskRectActive = false; }
     emit canvasModeSet(mode);
     actionFinished();
 }

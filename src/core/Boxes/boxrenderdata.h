@@ -134,6 +134,12 @@ public:
     const SkFilterQuality fFilterQuality;
     bool fAntiAlias = false;
     bool fUseRenderTransform = false;
+    // AE-style mask child (SmartVectorPath in mask mode): the parent
+    // container composites consecutive mask children into one matte
+    // (Add = union, Subtract = erase) instead of applying each blend
+    // directly - sequential DstIn/DstOut alone cannot express the
+    // union of two Add masks
+    bool fIsMask = false;
 
     bool fParentIsTarget = true;
     qptr<BoundingBox> fParentBox;

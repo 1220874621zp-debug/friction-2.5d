@@ -75,6 +75,7 @@ void BoxRenderData::copyFrom(BoxRenderData *src) {
     fAntiAlias = src->fAntiAlias;
     fUseRenderTransform = src->fUseRenderTransform;
     fBlendMode = src->fBlendMode;
+    fIsMask = src->fIsMask;
     fGlobalRect = src->fGlobalRect;
     fOpacity = src->fOpacity;
     fResolution = src->fResolution;

@@ -84,6 +84,9 @@ public:
     // mask pen: while active the path tool draws DstIn mask shapes
     // inserted right above the layer under the first drawn point
     bool fMaskPenActive = false;
+    // rect mask tool: while active the rectangle tool drags AE-style
+    // rect masks onto the layer under the press point
+    bool fMaskRectActive = false;
 
     bool fGizmoPositionVisibility = AppSupport::getSettings("gizmos",
                                                             "Position",

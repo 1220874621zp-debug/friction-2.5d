@@ -257,6 +257,11 @@ public:
     virtual SkBlendMode getBlendMode() const
     { return mBlendMode; }
 
+    // AE-style mask child: SmartVectorPath in mask mode overrides to
+    // true; the parent container accumulates such children into one
+    // matte (Add = union / Subtract = erase) at composite time
+    virtual bool isMaskBox() const { return false; }
+
     // AE-style solo: true when this box participates in drawing
     // while any sibling in the same container is soloed
     // (ContainerBox overrides to include soloed descendants)

@@ -1,0 +1,8 @@
+<svg viewBox="0 0 64 64" version="1.1" xmlns="http://www.w3.org/2000/svg">
+  <!-- rect mask tool: rectangle outline with dashed clip hint -->
+  <rect x="8" y="14" width="48" height="36" rx="3"
+        fill="none" stroke="#ffffff" stroke-width="5"/>
+  <rect x="17" y="23" width="30" height="18" rx="2"
+        fill="none" stroke="#ffffff" stroke-width="3"
+        stroke-dasharray="5 4" opacity="0.65"/>
+</svg>

@@ -71,6 +71,14 @@ protected:
     void drawSk(SkCanvas * const canvas);
     void transformRenderCanvas(SkCanvas& canvas) const final;
     void updateRelBoundingRect();
+private:
+    // AE-style mask compositing: consecutive mask children are
+    // accumulated into a matte surface and applied once (DstIn);
+    // Add masks union (SrcOver), Subtract masks erase (DstOut),
+    // applied topmost-mask-first (AE stacking order)
+    static bool isMaskDraw(const ChildRenderData &child);
+    void drawChild(SkCanvas * const canvas, const int index);
+    void drawMaskRun(SkCanvas * const canvas, const int from, const int to);
 };
 
 #endif // CONTAINERBOXRENDERDATA_H

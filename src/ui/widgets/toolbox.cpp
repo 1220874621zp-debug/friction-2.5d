@@ -472,8 +472,34 @@ void ToolBox::setupMainActions()
         });
     }
 
+    // rect mask tool: drag a rectangular AE-style mask onto the layer
+    // under the press point (multiple masks combine Add/Subtract)
+    {
+        mMaskRect = new QAction(
+                    svgToolIcon(QStringLiteral(":/icons/rect_mask.svg"),
+                                ThemeSupport::getIconSize(64).width()),
+                    // 矩形蒙版（拖拽绘制矩形蒙版，裁剪所在图层）
+                    tr("\u77e9\u5f62\u8499\u7248\uff08\u62d6\u62fd\u7ed8"
+                       "\u5236\u77e9\u5f62\u8499\u7248\uff0c\u88c1\u526a"
+                       "\u6240\u5728\u56fe\u5c42\uff09"),
+                    mMain);
+        mMaskRect->setCheckable(true);
+        connect(mMaskRect, &QAction::toggled,
+                this, [this](const bool checked) {
+            mDocument.fMaskRectActive = checked;
+            if (checked) { mActions.setRectangleMode(); }
+        });
+        connect(&mDocument, &Document::canvasModeSet,
+                this, [this](const CanvasMode mode) {
+            if (mode != CanvasMode::rectCreate && mMaskRect->isChecked()) {
+                mMaskRect->setChecked(false);
+            }
+        });
+    }
+
     mMain->addActions(mGroupMain->actions());
     if (mMaskPen) { mMain->addAction(mMaskPen); }
+    if (mMaskRect) { mMain->addAction(mMaskRect); }
 }
 
 void ToolBox::setupNodesAction(const QIcon &icon,

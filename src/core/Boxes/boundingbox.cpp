@@ -1377,6 +1377,7 @@ void BoundingBox::setupWithoutRasterEffects(const qreal relFrame,
     data->fOpacity = getOpacity(relFrame);
     data->fBaseMargin = QMargins() + 2;
     data->fBlendMode = getPaintBlendMode(relFrame);
+    data->fIsMask = isMaskBox();
 
     {
         const auto parent = getParentGroup();

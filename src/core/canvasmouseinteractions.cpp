@@ -658,16 +658,21 @@ void Canvas::handleLeftButtonMousePress(const eMouseEvent& e)
         clearBoxesSelection();
         addBoxToSelection(newPath.get());
     } else if (mCurrentMode == CanvasMode::rectCreate) {
-        const auto newPath = enve::make_shared<RectangleBox>();
-        newPath->planCenterPivotPosition();
-        mCurrentContainer->addContained(newPath);
-        const QPointF snappedPos = snapEventPos(e, false);
-        newPath->setAbsolutePos(snappedPos);
-        clearBoxesSelection();
-        addBoxToSelection(newPath.get());
-        mCurrentRectangle = newPath.get();
-        mCreationPressPos = snappedPos;
-        mHasCreationPressPos = true;
+        if (mDocument.fMaskRectActive) {
+            // AE-style rect mask: drag a rectangle onto a layer
+            if (!startMaskRectDrag(e)) { return; }
+        } else {
+            const auto newPath = enve::make_shared<RectangleBox>();
+            newPath->planCenterPivotPosition();
+            mCurrentContainer->addContained(newPath);
+            const QPointF snappedPos = snapEventPos(e, false);
+            newPath->setAbsolutePos(snappedPos);
+            clearBoxesSelection();
+            addBoxToSelection(newPath.get());
+            mCurrentRectangle = newPath.get();
+            mCreationPressPos = snappedPos;
+            mHasCreationPressPos = true;
+        }
     } else if (mCurrentMode == CanvasMode::textCreate) {
         if (enve_cast<TextBox*>(mHoveredBox)) {
             setCurrentBox(mHoveredBox);
@@ -959,6 +964,100 @@ void Canvas::applyPixelColor(const QColor &color,
     }
 }
 
+bool Canvas::startMaskRectDrag(const eMouseEvent &e)
+{
+    const auto host = resolveMaskHost(e);
+    if (!host) { return false; }
+    const auto maskPath = createMaskPath(host);
+    host->setRevealRowsOnce();
+    host->addContained(maskPath->ref<eBoxOrSound>());
+    clearBoxesSelection();
+    addBoxToSelection(maskPath.get());
+
+    const QPointF snappedPos = snapEventPos(e, false);
+    mMaskRectAnchor = snappedPos;
+    mCreationPressPos = snappedPos;
+    mHasCreationPressPos = true;
+    const auto relPos = maskPath->mapAbsPosToRel(snappedPos);
+    maskPath->getBoxTransformAnimator()->setPosition(relPos.x(), relPos.y());
+    mCurrentMaskRectPath = maskPath.get();
+
+    // closed 4-corner rectangle (TL-TR-BR-BL), corner nodes so the
+    // rect stays editable with the point/pen tools like any path
+    mCurrentMaskRectNodes.clear();
+    const auto handler = maskPath->getPathAnimator();
+    auto node = handler->createNewSubPathAtRelPos({0, 0});
+    mCurrentMaskRectNodes << node;
+    for (int i = 0; i < 3; i++) {
+        node = node->actionAddPointAbsPos(snappedPos);
+        mCurrentMaskRectNodes << node;
+    }
+    if (mCurrentMaskRectNodes.count() == 4) {
+        mCurrentMaskRectNodes.last()->actionConnectToNormalPoint(
+                    mCurrentMaskRectNodes.first().data());
+    }
+    return true;
+}
+
+void Canvas::updateMaskRectDrag(const eMouseEvent &e)
+{
+    if (mCurrentMaskRectNodes.count() != 4) { return; }
+    const QPointF anchor = mHasCreationPressPos ? mCreationPressPos
+                                                : mMaskRectAnchor;
+    const QPointF current = snapEventPos(e, false);
+    qreal dx = current.x() - anchor.x();
+    qreal dy = current.y() - anchor.y();
+    if (e.shiftMod()) { // square, like the rectangle tool
+        const qreal len = qMax(qAbs(dx), qAbs(dy));
+        dx = dx < 0 ? -len : len;
+        dy = dy < 0 ? -len : len;
+    }
+    const QPointF tl(qMin(anchor.x(), anchor.x() + dx),
+                     qMin(anchor.y(), anchor.y() + dy));
+    const QPointF br(qMax(anchor.x(), anchor.x() + dx),
+                     qMax(anchor.y(), anchor.y() + dy));
+    if (mStartTransform) {
+        for (const auto& node : mCurrentMaskRectNodes) {
+            if (node) { node->startTransform(); }
+        }
+    }
+    const QPointF corners[4] = {
+        tl, QPointF(br.x(), tl.y()), br, QPointF(tl.x(), br.y()) };
+    for (int i = 0; i < 4; i++) {
+        const auto& node = mCurrentMaskRectNodes.at(i);
+        if (node) { node->setAbsolutePos(corners[i]); }
+    }
+}
+
+void Canvas::finishMaskRectDrag(const eMouseEvent &e)
+{
+    Q_UNUSED(e)
+    if (mCurrentMaskRectNodes.isEmpty()) { return; }
+    if (!mStartTransform) {
+        for (const auto& node : mCurrentMaskRectNodes) {
+            if (node) { node->finishTransform(); }
+        }
+    }
+    // a click without a drag leaves a zero-area mask - under AE
+    // semantics that hides the whole layer, so drop it instead
+    bool degenerate = true;
+    if (mCurrentMaskRectNodes.count() == 4 &&
+            mCurrentMaskRectNodes.at(0) && mCurrentMaskRectNodes.at(2)) {
+        const QPointF p0 = mCurrentMaskRectNodes.at(0)->getAbsolutePos();
+        const QPointF p2 = mCurrentMaskRectNodes.at(2)->getAbsolutePos();
+        degenerate = qAbs(p2.x() - p0.x()) < 1. ||
+                     qAbs(p2.y() - p0.y()) < 1.;
+    }
+    if (degenerate && mCurrentMaskRectPath) {
+        mCurrentMaskRectPath->removeFromParent_k();
+        clearBoxesSelection();
+    }
+    mCurrentMaskRectNodes.clear();
+    mCurrentMaskRectPath.clear();
+    mHasCreationPressPos = false;
+    Document::sInstance->actionFinished();
+}
+
 void Canvas::handleLeftMouseRelease(const eMouseEvent &e)
 {
     if (e.fMouseGrabbing) { e.fReleaseMouse(); }
@@ -1001,6 +1100,9 @@ void Canvas::handleLeftMouseRelease(const eMouseEvent &e)
             handleMovePointMouseRelease(e);
             clearPointsSelection();
         }
+    } else if (mCurrentMode == CanvasMode::rectCreate &&
+               !mCurrentMaskRectNodes.isEmpty()) {
+        finishMaskRectDrag(e);
     } else if (mCurrentMode == CanvasMode::pathCreate) {
         handleAddSmartPointMouseRelease(e);
     } else if (mCurrentMode == CanvasMode::drawPath) {

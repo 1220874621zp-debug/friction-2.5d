@@ -98,6 +98,7 @@ namespace Friction
 
             QAction *mLocalPivot;
             QAction *mMaskPen;
+            QAction *mMaskRect;
 
             QToolButton *mColorPickerButton;
             QLabel *mColorPickerLabel;

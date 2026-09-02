@@ -1118,6 +1118,11 @@ protected:
     qptr<BoundingBox> mCurrentBox;
     qptr<Circle> mCurrentCircle;
     qptr<RectangleBox> mCurrentRectangle;
+    // rect mask drag: the 4 live corner nodes (TL/TR/BR/BL) of the
+    // mask path being dragged; empty when no rect-mask drag is active
+    QList<stdptr<SmartNodePoint>> mCurrentMaskRectNodes;
+    qptr<SmartVectorPath> mCurrentMaskRectPath;
+    QPointF mMaskRectAnchor;
     qptr<TextBox> mCurrentTextBox;
     qptr<ContainerBox> mCurrentContainer;
 
@@ -1195,6 +1200,19 @@ protected:
     void handleAddSmartPointMousePress(const eMouseEvent &e);
     void handleAddSmartPointMouseMove(const eMouseEvent &e);
     void handleAddSmartPointMouseRelease(const eMouseEvent &e);
+
+    // AE-style masks (pen + rect tool): resolve the layer group the new
+    // mask belongs to (wraps the hit layer on first use, joins the
+    // existing mask group afterwards); nullptr + warning when the
+    // press resolves to no layer
+    ContainerBox *resolveMaskHost(const eMouseEvent &e);
+    // common mask-path factory (DstIn Add mode, flat fill, no stroke,
+    // 0-radius blur as the feather slot)
+    qsptr<SmartVectorPath> createMaskPath(BoundingBox * const nameSource);
+    // rect mask tool drag state
+    bool startMaskRectDrag(const eMouseEvent &e);
+    void updateMaskRectDrag(const eMouseEvent &e);
+    void finishMaskRectDrag(const eMouseEvent &e);
 
     void updateTransformation(const eKeyEvent &e);
     QPointF getMoveByValueForEvent(const eMouseEvent &e);
