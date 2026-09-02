@@ -155,6 +155,20 @@ bool KeysView::graphEasingApplyExpression(QrealAnimator *anim,
                                  Expression::sQrealAnimatorTester);
     } catch(const std::exception& e) { return false; }
 
+    // snapshot before the bake: if the scene cache is still fresh, the
+    // bake is the only unaccounted edit and only its frames need to be
+    // re-rendered - the neighbouring keys share tangent handles with
+    // the boundary keys, so their segments may change too
+    const auto scene = anim->getParentScene();
+    const bool cacheWasFresh = scene && scene->sceneFramesCacheIsFresh();
+    FrameRange dirtyRange = range;
+    if (const auto prevK = anim->anim_getPrevKey<Key>(range.fMin)) {
+        dirtyRange.fMin = prevK->getRelFrame();
+    }
+    if (const auto nextK = anim->anim_getNextKey<Key>(range.fMax)) {
+        dirtyRange.fMax = nextK->getRelFrame();
+    }
+
     try {
         auto expr = Expression::sCreate(preset.definitions,
                                         script, std::move(bindings),
@@ -171,6 +185,15 @@ bool KeysView::graphEasingApplyExpression(QrealAnimator *anim,
             frame = key->getRelFrame();
             if (frame > range.fMax) { break; }
             anim->anim_addKeyToSelected(key);
+        }
+        if (cacheWasFresh) {
+            // drop only the touched frames; absorbing the content gen
+            // bump here keeps the rest of the scene cache valid, so the
+            // next Space previews from memory instead of re-rendering
+            // the whole range (visible scrubbing + a blank flash)
+            const auto absDirty = anim->prp_relRangeToAbsRange(dirtyRange);
+            scene->getSceneFramesHandler().remove(absDirty);
+            scene->setCacheGen(scene->effectiveContentGen());
         }
         Document::sInstance->actionFinished();
     } catch (const std::exception& e) { return false; }
