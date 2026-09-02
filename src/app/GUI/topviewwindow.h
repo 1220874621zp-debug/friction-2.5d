@@ -52,8 +52,9 @@ private:
         qreal fZoom = 1.;
         qreal fRotX = 0.;
         qreal fRotY = 0.;
+        qreal fRotZ = 0.;
     };
-    enum class DragType { none, pan, layer, camera };
+    enum class DragType { none, pan, layer, camera, cameraRot };
 
     void collectFootprints(QList<Footprint>& out) const;
     QList<Footprint> collectFootprints() const;
@@ -64,6 +65,10 @@ private:
     QPointF mapToDevice(const QPointF& topWorld) const;
     int hitLayer(const QPointF& device) const;
     bool hitCamera(const QPointF& device) const;
+    // ring handle around the camera body: drag to rotate rotZ (the
+    // in-plane roll angle)
+    bool hitCameraRing(const QPointF& device) const;
+    qreal ringAngleAt(const QPointF& device) const;
     void startLayerDrag(const Footprint& fp);
     void finishDrags();
     SkFont hudFont(const qreal size) const;
@@ -84,6 +89,8 @@ private:
     QPointF mLocalXAxis{1., 0.};  // world direction of the box local +x
     qreal mDragStartPanX = 0.;
     qreal mDragStartPanY = 0.;
+    qreal mDragStartRotZ = 0.;
+    qreal mPressRingAngle = 0.;  // device-space handle angle, degrees
     int mHoverIndex = -1;
 
     // cached for hit-testing while a frame is on screen

@@ -78,9 +78,12 @@ void TopViewWindow::fitToContent()
     const qreal sw = width() * pr;
     const qreal sh = height() * pr;
     const qreal s = qMin(sw / w, sh / h) * 0.88;
-    mViewTransform = QMatrix(s, 0., 0., s,
+    // the screen-down axis is NEGATIVE z (viewer/camera side at the
+    // bottom, depth at the top), like looking at the scene from
+    // behind the camera: layers above, camera below, view up
+    mViewTransform = QMatrix(s, 0., 0., -s,
                              -x0 * s + (sw - w * s) * 0.5,
-                             -z0 * s + (sh - h * s) * 0.5);
+                             z1 * s + (sh - h * s) * 0.5);
     update();
 }
 
@@ -108,6 +111,7 @@ TopViewWindow::CamPose TopViewWindow::cameraPose() const
     const qreal zoom = val(cam->zoomAnimator());
     const qreal rotX = val(cam->rotXAnimator());
     const qreal rotY = val(cam->rotYAnimator());
+    const qreal rotZ = val(cam->rotZAnimator());
     const qreal focal = val(cam->focalAnimator());
     const qreal safeZoom = qMax(0.01, zoom);
     const qreal rx = qDegreesToRadians(rotX);
@@ -132,6 +136,7 @@ TopViewWindow::CamPose TopViewWindow::cameraPose() const
     pose.fZoom = zoom;
     pose.fRotX = rotX;
     pose.fRotY = rotY;
+    pose.fRotZ = rotZ;
     pose.fValid = true;
     return pose;
 }
@@ -252,8 +257,28 @@ bool TopViewWindow::hitCamera(const QPointF& device) const
     const qreal pr = devicePixelRatioF();
     const QPointF c = mapToDevice(mPose.fPos);
     const QPointF d = device - c;
-    const qreal r = 16. * pr;
+    const qreal r = 10. * pr;
     return d.x() * d.x() + d.y() * d.y() <= r * r;
+}
+
+bool TopViewWindow::hitCameraRing(const QPointF& device) const
+{
+    if (!mPose.fValid) { return false; }
+    const qreal pr = devicePixelRatioF();
+    const QPointF c = mapToDevice(mPose.fPos);
+    const double a = qDegreesToRadians(mPose.fRotZ);
+    const QPointF handle(c.x() + std::cos(a) * 14. * pr,
+                         c.y() + std::sin(a) * 14. * pr);
+    const QPointF d = device - handle;
+    const qreal r = 10. * pr;
+    return d.x() * d.x() + d.y() * d.y() <= r * r;
+}
+
+qreal TopViewWindow::ringAngleAt(const QPointF& device) const
+{
+    const QPointF c = mapToDevice(mPose.fPos);
+    return qRadiansToDegrees(std::atan2(device.y() - c.y(),
+                                        device.x() - c.x()));
 }
 
 void TopViewWindow::startLayerDrag(const Footprint& fp)
@@ -295,6 +320,9 @@ void TopViewWindow::finishDrags()
             cam->panXAnimator()->prp_finishTransform();
             cam->panYAnimator()->prp_finishTransform();
         }
+    } else if (mDragType == DragType::cameraRot) {
+        const auto cam = mScene ? mScene->getCameraLayer() : nullptr;
+        if (cam) { cam->rotZAnimator()->prp_finishTransform(); }
     }
     mDragType = DragType::none;
     mDragBox.clear();
@@ -349,8 +377,10 @@ void TopViewWindow::renderSk(SkCanvas* const canvas)
     { return SkScalar(x * T.m11() + T.dx()); };
     const auto devY = [&T](const qreal z)
     { return SkScalar(z * T.m22() + T.dy()); };
-    const qreal visZ0 = (0. - T.dy()) / T.m22();
-    const qreal visZ1 = (qreal(H) - T.dy()) / T.m22();
+    const qreal visZa = (0. - T.dy()) / T.m22();
+    const qreal visZb = (qreal(H) - T.dy()) / T.m22();
+    const qreal visZMin = qMin(visZa, visZb);
+    const qreal visZMax = qMax(visZa, visZb);
 
     const qreal cw = mScene->getCanvasWidth();
     const qreal ch = mScene->getCanvasHeight();
@@ -362,8 +392,8 @@ void TopViewWindow::renderSk(SkCanvas* const canvas)
     SkPaint grid;
     grid.setColor(SkColorSetARGB(80, 90, 90, 100));
     grid.setStrokeWidth(SkScalar(pr));
-    const int k0 = qFloor(visZ0 / ch) - 1;
-    const int k1 = qCeil(visZ1 / ch) + 1;
+    const int k0 = qFloor(visZMin / ch) - 1;
+    const int k1 = qCeil(visZMax / ch) + 1;
     for (int k = k0; k <= k1; k++) {
         if (k == 0) { continue; }
         const SkScalar y = devY(k * ch);
@@ -394,6 +424,12 @@ void TopViewWindow::renderSk(SkCanvas* const canvas)
         canvas->drawString(s.c_str(),
                            devX(cw * 0.5) - SkScalar(tw * 0.5f),
                            devY(0) + SkScalar(14 * pr), labelFont, labelP);
+        // orientation hint: depth is up, the viewer/camera side is
+        // down - the camera sits below the canvas line looking up
+        const auto orient = QString::fromUtf8("↑ 深处 (z+)　·　↓ 观众侧 / 摄像机 (z−)")
+                .toStdString();
+        canvas->drawString(orient.c_str(), SkScalar(8 * pr),
+                           devY(0) - SkScalar(8 * pr), labelFont, labelP);
     }
 
     // ---- layer footprints ----
@@ -419,13 +455,14 @@ void TopViewWindow::renderSk(SkCanvas* const canvas)
         p.setStrokeCap(SkPaint::kRound_Cap);
         const SkScalar y = devY(fp.fZ);
         canvas->drawLine(devX(fp.fXMin), y, devX(fp.fXMax), y, p);
-        // end whiskers towards the viewer side
+        // end whiskers towards the viewer side (screen-down after the
+        // z flip: the camera side is at the bottom)
         SkPaint w = p;
         w.setStrokeWidth(SkScalar(1.2 * pr));
         canvas->drawLine(devX(fp.fXMin), y,
-                         devX(fp.fXMin), y - SkScalar(6 * pr), w);
+                         devX(fp.fXMin), y + SkScalar(6 * pr), w);
         canvas->drawLine(devX(fp.fXMax), y,
-                         devX(fp.fXMax), y - SkScalar(6 * pr), w);
+                         devX(fp.fXMax), y + SkScalar(6 * pr), w);
         if (fp.fBox) {
             SkPaint tp;
             tp.setColor(hot || sel ?
@@ -457,7 +494,10 @@ void TopViewWindow::renderSk(SkCanvas* const canvas)
         SkPaint cone;
         cone.setColor(SkColorSetARGB(160, 176, 106, 30));
         cone.setStrokeWidth(SkScalar(1.2 * pr));
-        const double base = std::atan2(mPose.fDir.y(), mPose.fDir.x());
+        // world -> device direction (m22 is negative: depth is up)
+        const QPointF dirDev(T.m11() * mPose.fDir.x(),
+                             T.m22() * mPose.fDir.y());
+        const double base = std::atan2(dirDev.y(), dirDev.x());
         const double a = mPose.fHalfFov;
         const int sides[2] = { -1, 1 };
         for (const int side : sides) {
@@ -477,23 +517,40 @@ void TopViewWindow::renderSk(SkCanvas* const canvas)
         stub.setStrokeWidth(SkScalar(2.4 * pr));
         stub.setStrokeCap(SkPaint::kRound_Cap);
         stub.setColor(SkColorSetARGB(255, 255, 158, 44));
-        const QPointF stubEnd = cDev + QPointF(mPose.fDir.x(),
-                                               mPose.fDir.y()) * 13. * pr;
+        const QPointF stubEnd = cDev + dirDev * 13. * pr;
         canvas->drawLine(cDev.x(), cDev.y(), stubEnd.x(), stubEnd.y(),
                          stub);
+        // roll ring: drag the bright handle to rotate rotZ (the
+        // in-plane xy angle)
+        const SkScalar ringR = SkScalar(14 * pr);
+        SkPaint ring;
+        ring.setAntiAlias(true);
+        ring.setStyle(SkPaint::kStroke_Style);
+        ring.setStrokeWidth(SkScalar(1.3 * pr));
+        ring.setColor(SkColorSetARGB(140, 255, 158, 44));
+        canvas->drawCircle(cDev.x(), cDev.y(), ringR, ring);
+        const double ringA = qDegreesToRadians(mPose.fRotZ);
+        const QPointF handle(cDev.x() + std::cos(ringA) * ringR,
+                             cDev.y() + std::sin(ringA) * ringR);
+        SkPaint hd;
+        hd.setAntiAlias(true);
+        hd.setColor(SkColorSetARGB(255, 255, 195, 100));
+        canvas->drawCircle(handle.x(), handle.y(),
+                           SkScalar(3.5 * pr), hd);
         const auto camLab = QString::fromUtf8(
-                    "%1 · pan(%2, %3) 缩放 %4 · 倾斜(%5°, %6°)")
+                    "%1 · pan(%2, %3) 缩放 %4 · 倾斜(%5°, %6°) 旋转 %7°")
                 .arg(cam->prp_getName())
                 .arg(mPose.fPanX, 0, 'f', 0)
                 .arg(mPose.fPanY, 0, 'f', 0)
                 .arg(mPose.fZoom, 0, 'f', 2)
                 .arg(mPose.fRotX, 0, 'f', 0)
-                .arg(mPose.fRotY, 0, 'f', 0);
+                .arg(mPose.fRotY, 0, 'f', 0)
+                .arg(mPose.fRotZ, 0, 'f', 0);
         SkPaint cp;
         cp.setColor(SkColorSetARGB(220, 255, 200, 140));
         canvas->drawString(camLab.toStdString().c_str(),
-                           cDev.x() + SkScalar(10 * pr),
-                           cDev.y() - SkScalar(8 * pr), nameFont, cp);
+                           cDev.x() + SkScalar(20 * pr),
+                           cDev.y() + SkScalar(4 * pr), nameFont, cp);
     } else {
         const auto hint = QString::fromUtf8(
                     "无摄像机 — 摄像机工具（C 键）首次使用会自动创建").toStdString();
@@ -524,6 +581,9 @@ void TopViewWindow::renderSk(SkCanvas* const canvas)
             dragLab = QString::fromUtf8("pan(%1, %2)")
                     .arg(cam->panXAnimator()->getCurrentBaseValue(), 0, 'f', 1)
                     .arg(cam->panYAnimator()->getCurrentBaseValue(), 0, 'f', 1);
+        } else if (mDragType == DragType::cameraRot && cam) {
+            dragLab = QString::fromUtf8("旋转 %1°")
+                    .arg(cam->rotZAnimator()->getCurrentBaseValue(), 0, 'f', 1);
         }
         if (!dragLab.isEmpty()) {
             const auto s = dragLab.toStdString();
@@ -543,6 +603,17 @@ void TopViewWindow::mousePressEvent(QMouseEvent* e)
     mLastDevicePos = dev;
     if (e->button() == Qt::LeftButton &&
         !(e->modifiers() & Qt::AltModifier)) {
+        if (hitCameraRing(dev)) {
+            const auto cam = mScene ? mScene->getCameraLayer() : nullptr;
+            if (cam) {
+                mDragType = DragType::cameraRot;
+                mPressRingAngle = ringAngleAt(dev);
+                mDragStartRotZ = cam->rotZAnimator()->getCurrentBaseValue();
+                cam->rotZAnimator()->prp_startTransform();
+                setCursor(Qt::ClosedHandCursor);
+                return;
+            }
+        }
         if (hitCamera(dev)) {
             const auto cam = mScene ? mScene->getCameraLayer() : nullptr;
             if (cam) {
@@ -618,14 +689,26 @@ void TopViewWindow::mouseMoveEvent(QMouseEvent* e)
         update();
         return;
     }
+    if (mDragType == DragType::cameraRot) {
+        const auto cam = mScene ? mScene->getCameraLayer() : nullptr;
+        if (!cam) { mDragType = DragType::none; return; }
+        qreal d = ringAngleAt(dev) - mPressRingAngle;
+        while (d > 180.) { d -= 360.; }
+        while (d < -180.) { d += 360.; }
+        cam->rotZAnimator()->setCurrentBaseValue(mDragStartRotZ + d);
+        update();
+        return;
+    }
     // idle: hover feedback
     const int idx = hitLayer(dev);
+    const bool ringHover = hitCameraRing(dev);
     const bool camHover = hitCamera(dev);
     if (idx != mHoverIndex) {
         mHoverIndex = idx;
         update();
     }
-    setCursor(camHover || idx >= 0 ? Qt::PointingHandCursor
+    setCursor(ringHover ? Qt::CrossCursor :
+              camHover || idx >= 0 ? Qt::PointingHandCursor
                                    : Qt::ArrowCursor);
 }
 
