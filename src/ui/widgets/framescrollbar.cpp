@@ -622,13 +622,17 @@ void FrameScrollBar::zoomViewedRange(const int &span,
     const qreal newSpan = mViewedFramesSpan;
 
     if (oldSpan == 0) {
-        mFirstViewedFrame = static_cast<int>(qRound(frame - newSpan / 2.0));
+        setFirstViewedFrame(static_cast<int>(qRound(frame - newSpan / 2.0)));
         return;
     }
 
     qreal hoverRatio = (frame - oldStartFrame) / oldSpan;
     qreal newStartFrame = frame - (hoverRatio * newSpan);
-    mFirstViewedFrame = static_cast<int>(qRound(newStartFrame));
+    // route through setFirstViewedFrame instead of assigning directly:
+    // the direct write bypassed the clamp and let the window wander off
+    // the displayed range (e.g. zooming out around a playhead near the
+    // range start pushed it below frame 0)
+    setFirstViewedFrame(static_cast<int>(qRound(newStartFrame)));
 }
 
 #ifdef Q_OS_MAC

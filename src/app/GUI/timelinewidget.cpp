@@ -703,9 +703,18 @@ void TimelineWidget::setSearchText(const QString &text) {
 }
 
 void TimelineWidget::setViewedFrameRange(const FrameRange& range) {
-    mFrameRangeScrollBar->setViewedFrameRange(range);
-    mFrameScrollBar->setDisplayedFrameRange(range);
-    mKeysView->setFramesRange(range);
+    // the timeline starts at frame 0: never let the viewed window cross
+    // into negative frames. Every navigation path funnels through here
+    // (zoom slider, wheel, overview drags, session restore), and zooming
+    // out around a playhead near 0 otherwise pushes the start negative
+    FrameRange view = range;
+    if (view.fMin < 0) {
+        view.fMax = qMax(0, view.fMax - view.fMin);
+        view.fMin = 0;
+    }
+    mFrameRangeScrollBar->setViewedFrameRange(view);
+    mFrameScrollBar->setDisplayedFrameRange(view);
+    mKeysView->setFramesRange(view);
 }
 
 void TimelineWidget::setTimelineZoomSpan(const int span) {
