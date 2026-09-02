@@ -319,11 +319,14 @@ int main(int argc, char *argv[])
             throw std::runtime_error(("load failed: " + err).toStdString());
         }
         int styled = 0;
+        int effects = 0;
         for (const auto& rec : psd.layers()) {
-            if (rec.styles.hasAny) { styled++; }
+            if (!rec.stylesList.isEmpty()) { styled++; }
+            effects += rec.stylesList.size();
         }
         std::cout << " layers=" << psd.layers().size()
-                  << " styled=" << styled << " ";
+                  << " styled=" << styled
+                  << " effects=" << effects << " ";
         if (styled < 1) {
             throw std::runtime_error("expected at least one styled layer");
         }

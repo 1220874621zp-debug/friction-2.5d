@@ -119,6 +119,7 @@ struct DescValue {
     QString textV;
     QByteArray enumV;
     QHash<QByteArray, DescValue> objV; // Objc/GlbO: key -> value
+    QVector<DescValue> listV;          // VlLs items ('*Multi' lists)
 };
 
 class DescReader {
@@ -276,7 +277,9 @@ private:
                 qWarning() << "PSD lfx2: bad list count" << count;
                 throw DescError("listcount");
             }
-            for (qint32 i = 0; i < count; i++) { readValue(); }
+            for (qint32 i = 0; i < count; i++) {
+                v.listV.append(readValue());
+            }
         } else if (tag == "doub") {
             v.doubleV = readDouble();
         } else if (tag == "UntF") {
@@ -356,60 +359,105 @@ bool styleColor(const DescValue &obj, const QByteArray &key,
     return true;
 }
 
-void applyLfxpStyles(const DescValue &root, psd::LayerStyles &st)
+void fillShadow(psd::LayerStyles &st, const DescValue &obj)
+{
+    st.hasAny = true;
+    st.shadowEnabled = true;
+    st.shadowOpacity = styleNum(obj, QByteArrayLiteral("Opct"), st.shadowOpacity);
+    st.shadowAngle = styleNum(obj, QByteArrayLiteral("lagl"), st.shadowAngle);
+    st.shadowDistance = styleNum(obj, QByteArrayLiteral("Dstn"), st.shadowDistance);
+    // lfxp stores choke as #Prc percent; some lfx2 writers emit #Pxl
+    // - clamp either way, percent semantics
+    st.shadowSpread = qBound(0.0, styleNum(obj, QByteArrayLiteral("Ckmt"),
+                                            st.shadowSpread), 100.0);
+    st.shadowSize = styleNum(obj, QByteArrayLiteral("blur"), st.shadowSize);
+    styleColor(obj, QByteArrayLiteral("Clr "),
+               st.shadowR, st.shadowG, st.shadowB);
+}
+
+void fillGlow(psd::LayerStyles &st, const DescValue &obj)
+{
+    st.hasAny = true;
+    st.glowEnabled = true;
+    st.glowOpacity = styleNum(obj, QByteArrayLiteral("Opct"), st.glowOpacity);
+    st.glowSpread = qBound(0.0, styleNum(obj, QByteArrayLiteral("Ckmt"),
+                                          st.glowSpread), 100.0);
+    st.glowSize = styleNum(obj, QByteArrayLiteral("blur"), st.glowSize);
+    styleColor(obj, QByteArrayLiteral("Clr "),
+               st.glowR, st.glowG, st.glowB);
+}
+
+void fillStroke(psd::LayerStyles &st, const DescValue &obj)
+{
+    st.hasAny = true;
+    st.strokeEnabled = true;
+    st.strokeOpacity = styleNum(obj, QByteArrayLiteral("Opct"), st.strokeOpacity);
+    st.strokeSize = styleNum(obj, QByteArrayLiteral("Sz  "), st.strokeSize);
+    const auto styl = objChild(obj, QByteArrayLiteral("Styl"));
+    if (styl) {
+        if (styl->enumV == QByteArrayLiteral("FStF")) { st.strokePos = 1; }
+        else if (styl->enumV == QByteArrayLiteral("InsF")) { st.strokePos = 2; }
+        else { st.strokePos = 0; } // "OutF"
+    }
+    styleColor(obj, QByteArrayLiteral("Clr "),
+               st.strokeR, st.strokeG, st.strokeB);
+}
+
+void applyLfxpStyles(const DescValue &root, psd::LayerRecord &rec)
 {
     // 'lfxp' (CS2+) and 'lfx2' (PS 6) use different effect key
-    // spellings for the same objects
-    const DescValue *shadow = objChild(root, QByteArrayLiteral("dropShadow"));
-    if (!shadow) { shadow = objChild(root, QByteArrayLiteral("DrSh")); }
-    if (shadow && styleEnabled(*shadow)) {
-        st.hasAny = true;
-        st.shadowEnabled = true;
-        st.shadowOpacity = styleNum(*shadow, QByteArrayLiteral("Opct"), st.shadowOpacity);
-        st.shadowAngle = styleNum(*shadow, QByteArrayLiteral("lagl"), st.shadowAngle);
-        st.shadowDistance = styleNum(*shadow, QByteArrayLiteral("Dstn"), st.shadowDistance);
-        // lfxp stores choke as #Prc percent; some lfx2 writers emit #Pxl
-        // - clamp either way, percent semantics
-        st.shadowSpread = qBound(0.0, styleNum(*shadow, QByteArrayLiteral("Ckmt"),
-                                                st.shadowSpread), 100.0);
-        st.shadowSize = styleNum(*shadow, QByteArrayLiteral("blur"), st.shadowSize);
-        styleColor(*shadow, QByteArrayLiteral("Clr "),
-                   st.shadowR, st.shadowG, st.shadowB);
-    }
-    const DescValue *glow = objChild(root, QByteArrayLiteral("outerGlow"));
-    if (!glow) { glow = objChild(root, QByteArrayLiteral("OrGl")); }
-    if (glow && styleEnabled(*glow)) {
-        st.hasAny = true;
-        st.glowEnabled = true;
-        st.glowOpacity = styleNum(*glow, QByteArrayLiteral("Opct"), st.glowOpacity);
-        st.glowSpread = qBound(0.0, styleNum(*glow, QByteArrayLiteral("Ckmt"),
-                                              st.glowSpread), 100.0);
-        st.glowSize = styleNum(*glow, QByteArrayLiteral("blur"), st.glowSize);
-        styleColor(*glow, QByteArrayLiteral("Clr "),
-                   st.glowR, st.glowG, st.glowB);
-    }
-    const DescValue *stroke = objChild(root, QByteArrayLiteral("frameFX"));
-    if (!stroke) { stroke = objChild(root, QByteArrayLiteral("FrFX")); }
-    if (stroke && styleEnabled(*stroke)) {
-        st.hasAny = true;
-        st.strokeEnabled = true;
-        st.strokeOpacity = styleNum(*stroke, QByteArrayLiteral("Opct"), st.strokeOpacity);
-        st.strokeSize = styleNum(*stroke, QByteArrayLiteral("Sz  "), st.strokeSize);
-        const auto styl = objChild(*stroke, QByteArrayLiteral("Styl"));
-        if (styl) {
-            if (styl->enumV == QByteArrayLiteral("FStF")) { st.strokePos = 1; }
-            else if (styl->enumV == QByteArrayLiteral("InsF")) { st.strokePos = 2; }
-            else { st.strokePos = 0; } // "OutF"
+    // spellings; PS 2015+ stores additional instances of a type in
+    // '<effect>Multi' lists (dropShadowMulti etc), with the single
+    // legacy key holding the first instance
+    QVector<const DescValue*> shadows, glows, strokes;
+    const auto collect = [&root](const QByteArray& singleA,
+                                 const QByteArray& singleB,
+                                 const QByteArray& multi,
+                                 QVector<const DescValue*>& out) {
+        const DescValue* single = objChild(root, singleA);
+        if (!single) { single = objChild(root, singleB); }
+        if (single && styleEnabled(*single)) { out.append(single); }
+        const auto m = objChild(root, multi);
+        if (m) {
+            for (const auto& e : m->listV) {
+                if (e.tag == QByteArrayLiteral("Objc") && styleEnabled(e)) {
+                    out.append(&e);
+                }
+            }
         }
-        styleColor(*stroke, QByteArrayLiteral("Clr "),
-                   st.strokeR, st.strokeG, st.strokeB);
+    };
+    collect(QByteArrayLiteral("dropShadow"), QByteArrayLiteral("DrSh"),
+            QByteArrayLiteral("dropShadowMulti"), shadows);
+    collect(QByteArrayLiteral("outerGlow"), QByteArrayLiteral("OrGl"),
+            QByteArrayLiteral("outerGlowMulti"), glows);
+    collect(QByteArrayLiteral("frameFX"), QByteArrayLiteral("FrFX"),
+            QByteArrayLiteral("frameFXMulti"), strokes);
+    if (shadows.isEmpty() && glows.isEmpty() && strokes.isEmpty()) { return; }
+
+    // first instance of each type merges into one effect; every
+    // additional instance becomes its own entry (stacked effects)
+    psd::LayerStyles main;
+    if (!shadows.isEmpty()) { fillShadow(main, *shadows.first()); }
+    if (!glows.isEmpty()) { fillGlow(main, *glows.first()); }
+    if (!strokes.isEmpty()) { fillStroke(main, *strokes.first()); }
+    for (int i = 1; i < shadows.size(); i++) {
+        rec.stylesList.append(psd::LayerStyles());
+        fillShadow(rec.stylesList.last(), *shadows.at(i));
     }
-    if (st.hasAny) {
-        qWarning() << "PSD layer styles: shadow" << st.shadowEnabled
-                   << "glow" << st.glowEnabled << "stroke" << st.strokeEnabled
-                   << "dist" << st.shadowDistance << "angle" << st.shadowAngle
-                   << "size" << st.shadowSize << "strokeSize" << st.strokeSize;
+    for (int i = 1; i < glows.size(); i++) {
+        rec.stylesList.append(psd::LayerStyles());
+        fillGlow(rec.stylesList.last(), *glows.at(i));
     }
+    for (int i = 1; i < strokes.size(); i++) {
+        rec.stylesList.append(psd::LayerStyles());
+        fillStroke(rec.stylesList.last(), *strokes.at(i));
+    }
+    rec.stylesList.prepend(main);
+
+    qWarning() << "PSD layer styles:" << rec.stylesList.size()
+               << "effect(s): shadow x" << shadows.size()
+               << "glow x" << glows.size()
+               << "stroke x" << strokes.size();
 }
 
 } // namespace
@@ -423,7 +471,7 @@ void readLfxpStyles(QDataStream &s, const qint64 blockEnd, psd::LayerRecord &rec
         s >> version >> descVersion;
         DescReader reader(s, blockEnd);
         const DescValue root = reader.readDescriptorBody();
-        applyLfxpStyles(root, rec.styles);
+        applyLfxpStyles(root, rec);
     } catch (...) {
         // malformed or unexpected descriptor: keep defaults, the
         // caller skips the rest of the block regardless

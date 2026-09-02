@@ -100,8 +100,12 @@ namespace psd {
         // Photoshop native layer id ('lyid' additional layer info).
         // Stable across rename / reorder / regroup; 0 when absent.
         qint32 layerId = 0;
-        // Photoshop layer styles ('lfxp'), shadow/glow/stroke only
-        LayerStyles styles;
+        // Photoshop layer styles ('lfxp'/'lfx2'), one entry per
+        // effect instance: the first shadow/glow/stroke merge into a
+        // single entry, every additional instance (PS 2015+ allows
+        // multiple per type, stored in '*Multi' lists) becomes its
+        // own entry rendered as a stacked effect
+        QVector<LayerStyles> stylesList;
     };
 
     // CORE_EXPORT for the effects unit-test exe (module-internal

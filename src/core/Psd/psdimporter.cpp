@@ -125,7 +125,7 @@ QString resolvePackagePath(const QFileInfo &psdInfo)
 // lambdas do not provide - function pointers map cleanly)
 struct PsdDecodedLayer {
     Fpsd::LayerMeta lm;
-    psd::LayerStyles styles;
+    QVector<psd::LayerStyles> stylesList;
     QByteArray png;
     bool ok = false;
 };
@@ -153,7 +153,7 @@ PsdDecodedLayer decodeLayerTask(const PsdDecodeCtx &ctx)
     out.lm.opacity = rec.opacity;
     out.lm.visible = rec.visible;
     out.lm.blendKey = rec.blendKey;
-    out.styles = rec.styles;
+    out.stylesList = rec.stylesList;
     const QByteArray rgba = ctx.psd->extractLayerRGBA(rec);
     if (!rgba.isEmpty()) {
         out.png = Fpsd::rgbaToPng(rgba, out.lm.w, out.lm.h);
@@ -467,7 +467,9 @@ qsptr<BoundingBox> loadPSDFile(
 
         const auto imgBox = PsdSync::createLayerBox(packagePath,
                                                     cachePath, out.lm);
-        PsdSync::applyLayerStyles(imgBox.get(), out.styles);
+        for (const auto& st : out.stylesList) {
+            PsdSync::applyLayerStyles(imgBox.get(), st);
+        }
         imagesCreated++;
         root->addContained(imgBox);
         // apply the name AFTER addContained: insertContained() runs the
