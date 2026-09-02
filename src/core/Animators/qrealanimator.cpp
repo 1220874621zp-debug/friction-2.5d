@@ -761,7 +761,15 @@ FrameRange QrealAnimator::prp_getIdenticalRelRange(const int relFrame) const {
     const auto base = Animator::prp_getIdenticalRelRange(relFrame);
     if(mExpression) {
         const int absFrame = prp_relFrameToAbsFrame(relFrame);
-        return base * mExpression->identicalRelRange(absFrame);
+        // the expression reports its identical range in ABSOLUTE
+        // frames - convert it back to this animator's relative space
+        // before intersecting; hosts with a frame shift (grouped
+        // layers, duration boxes, links) otherwise registered scene
+        // frame containers shifted off the frames they rendered, the
+        // in-flight frames never retired and the preview warm-up
+        // never finished
+        const auto absRange = mExpression->identicalRelRange(absFrame);
+        return base * prp_absRangeToRelRange(absRange);
     }
     else return base;
 }

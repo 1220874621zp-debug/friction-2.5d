@@ -30,6 +30,7 @@
 #include "PathEffects/patheffectcollection.h"
 #include "Animators/SmartPath/smartpathcollection.h"
 #include "Properties/boxtargetproperty.h"
+#include "Private/document.h"
 
 Clipboard::Clipboard(const ClipboardType type) : mType(type) {}
 
@@ -165,6 +166,12 @@ bool PropertyClipboard::paste(Property * const target) {
         target->prp_readProperty(readStream);
     };
     read(reader);
+    // prp_readProperty schedules expression creation via contexted
+    // SimpleTasks - flush them now so pasted expressions attach at
+    // paste time instead of detonating mid preview warm-up on the
+    // next actionFinished (full-influence-range cache drop + state
+    // bump discarding every in-flight frame)
+    if(Document::sInstance) Document::sInstance->actionFinished();
     return true;
 }
 

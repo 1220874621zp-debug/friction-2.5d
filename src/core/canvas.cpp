@@ -1076,7 +1076,21 @@ void Canvas::renderDataFinished(BoxRenderData *renderData) {
     const int relFrame = qRound(renderData->fRelFrame);
     mLastStateId = renderData->fBoxStateId;
 
-    const auto range = prp_getIdenticalRelRange(relFrame);
+    auto range = prp_getIdenticalRelRange(relFrame);
+    if(!range.inRange(relFrame)) {
+        // identical-range computation produced a range that does not
+        // even cover the frame it was computed for (invalid/shifted
+        // intersection) - clamp to the rendered frame so the container
+        // always covers it; otherwise the preview pipeline's in-flight
+        // retirement check never matches this frame and the warm-up
+        // stalls forever. Cache granularity degrades, correctness does
+        // not: the frame's pixels are the pixels it rendered.
+        qWarning() << "renderDataFinished: identical range"
+                   << range.fMin << range.fMax
+                   << "does not cover rel frame" << relFrame
+                   << "- clamping to single frame";
+        range = {relFrame, relFrame};
+    }
     const auto cont = enve::make_shared<SceneFrameContainer>(
                 this, renderData, range,
                 currentState ? &mSceneFramesHandler : nullptr);
