@@ -17,6 +17,25 @@
 // plane is a horizontal line at z = 0, the viewer side is above it
 // (negative z) and everything behind the canvas is below it.
 
+namespace {
+// Blender-inspired viewport palette (flat dark grey, muted axes,
+// grey objects, orange selection)
+constexpr SkColor kTopBg        = SkColorSetARGB(255, 57, 57, 57);
+constexpr SkColor kGridMinor    = SkColorSetARGB(255, 66, 66, 66);
+constexpr SkColor kGridMajor    = SkColorSetARGB(255, 78, 78, 78);
+constexpr SkColor kAxisX        = SkColorSetARGB(255, 138, 74, 74);
+constexpr SkColor kAxisZ        = SkColorSetARGB(255, 93, 138, 80);
+constexpr SkColor kDepthLine    = SkColorSetARGB(60, 255, 255, 255);
+constexpr SkColor kObjectFill   = SkColorSetARGB(255, 95, 95, 95);
+constexpr SkColor kObjectEdge   = SkColorSetARGB(255, 151, 151, 151);
+constexpr SkColor kSelectOrange = SkColorSetARGB(255, 245, 160, 58);
+constexpr SkColor kCamWire      = SkColorSetARGB(255, 185, 185, 185);
+constexpr SkColor kCamFill      = kTopBg;
+constexpr SkColor kTextMain     = SkColorSetARGB(255, 205, 205, 205);
+constexpr SkColor kTextDim      = SkColorSetARGB(165, 150, 150, 155);
+constexpr SkColor kTextHint     = SkColorSetARGB(120, 140, 140, 148);
+}
+
 TopViewWindow::TopViewWindow(Document& document,
                              QWidget* const parent)
     : GLWindow(parent)
@@ -350,14 +369,14 @@ void TopViewWindow::renderSk(SkCanvas* const canvas)
     const SkScalar H = SkScalar(height() * pr);
 
     SkPaint bg;
-    bg.setColor(SkColorSetARGB(255, 24, 24, 28));
+    bg.setColor(kTopBg);
     canvas->drawRect(SkRect::MakeWH(W, H), bg);
 
     if (!mScene) {
         const auto font = hudFont(12);
         const auto txt = QString::fromUtf8("无活动场景").toStdString();
         SkPaint tp;
-        tp.setColor(SkColorSetARGB(200, 150, 150, 158));
+        tp.setColor(kTextDim);
         const auto tw = font.measureText(txt.c_str(), txt.size(),
                                          SkTextEncoding::kUTF8);
         canvas->drawString(txt.c_str(), (W - SkScalar(tw)) * 0.5f,
@@ -382,41 +401,81 @@ void TopViewWindow::renderSk(SkCanvas* const canvas)
     const qreal visZb = (qreal(H) - T.dy()) / T.m22();
     const qreal visZMin = qMin(visZa, visZb);
     const qreal visZMax = qMax(visZa, visZb);
+    const qreal visXa = (0. - T.dx()) / T.m11();
+    const qreal visXb = (qreal(W) - T.dx()) / T.m11();
+    const qreal visXMin = qMin(visXa, visXb);
+    const qreal visXMax = qMax(visXa, visXb);
 
     const qreal cw = mScene->getCanvasWidth();
     const qreal ch = mScene->getCanvasHeight();
 
-    // ---- depth grid (one canvas height per line) ----
+    // ---- Blender-style grid: adaptive two-level square grid with
+    // muted axis lines (x = 0 red, depth z = 0 green) ----
     const auto labelFont = hudFont(9);
     SkPaint labelP;
-    labelP.setColor(SkColorSetARGB(150, 110, 110, 120));
-    SkPaint grid;
-    grid.setColor(SkColorSetARGB(80, 90, 90, 100));
-    grid.setStrokeWidth(SkScalar(pr));
-    const int k0 = qFloor(visZMin / ch) - 1;
-    const int k1 = qCeil(visZMax / ch) + 1;
-    for (int k = k0; k <= k1; k++) {
-        if (k == 0) { continue; }
-        const SkScalar y = devY(k * ch);
-        canvas->drawLine(0, y, W, y, grid);
-        const auto lab = QString::fromUtf8("z=%1%2")
-                .arg(k > 0 ? QStringLiteral("+") : QString())
-                .arg(qRound(k * ch));
-        canvas->drawString(lab.toStdString().c_str(),
-                           SkScalar(6 * pr), y - SkScalar(3 * pr),
-                           labelFont, labelP);
+    labelP.setColor(kTextDim);
+    qreal step = 26. / qMax(1e-9, qAbs(T.m11()));
+    const qreal p10 = std::pow(10., std::floor(std::log10(step)));
+    step = step / p10 < 1.5 ? p10 :
+           step / p10 < 3.5 ? 2. * p10 : 5. * p10;
+    const qreal majorStep = step * 5.;
+    SkPaint minor;
+    minor.setColor(kGridMinor);
+    minor.setStrokeWidth(SkScalar(pr));
+    SkPaint major;
+    major.setColor(kGridMajor);
+    major.setStrokeWidth(SkScalar(pr));
+    {
+        const int i0 = qFloor(visXMin / step);
+        const int i1 = qCeil(visXMax / step);
+        for (int i = i0; i <= i1; i++) {
+            const SkScalar x = devX(i * step);
+            canvas->drawLine(x, 0, x, H,
+                             (i % 5 + 5) % 5 == 0 ? major : minor);
+        }
+        const int j0 = qFloor(visZMin / step);
+        const int j1 = qCeil(visZMax / step);
+        for (int j = j0; j <= j1; j++) {
+            const SkScalar y = devY(j * step);
+            canvas->drawLine(0, y, W, y,
+                             (j % 5 + 5) % 5 == 0 ? major : minor);
+        }
+    }
+    // depth reference labels (one canvas height apart), the grid
+    // itself stays Blender-clean without labels
+    {
+        SkPaint dl;
+        dl.setColor(kDepthLine);
+        dl.setStrokeWidth(SkScalar(pr));
+        const int k0 = qFloor(visZMin / ch) - 1;
+        const int k1 = qCeil(visZMax / ch) + 1;
+        for (int k = k0; k <= k1; k++) {
+            if (k == 0) { continue; }
+            const SkScalar y = devY(k * ch);
+            canvas->drawLine(0, y, W, y, dl);
+            const auto lab = QString::fromUtf8("z=%1%2")
+                    .arg(k > 0 ? QStringLiteral("+") : QString())
+                    .arg(qRound(k * ch));
+            canvas->drawString(lab.toStdString().c_str(),
+                               SkScalar(6 * pr), y - SkScalar(3 * pr),
+                               labelFont, labelP);
+        }
+    }
+    // axis lines through the world origin (x = 0) and the canvas
+    // plane (z = 0), plus the far canvas edge
+    {
+        SkPaint axX;
+        axX.setColor(kAxisX);
+        axX.setStrokeWidth(SkScalar(1.5 * pr));
+        canvas->drawLine(devX(0), 0, devX(0), H, axX);
+        canvas->drawLine(devX(cw), 0, devX(cw), H, axX);
+        SkPaint axZ;
+        axZ.setColor(kAxisZ);
+        axZ.setStrokeWidth(SkScalar(1.5 * pr));
+        canvas->drawLine(0, devY(0), W, devY(0), axZ);
     }
 
-    // ---- canvas plane line (z = 0) ----
-    SkPaint pline;
-    pline.setColor(SkColorSetARGB(235, 225, 225, 232));
-    pline.setStrokeWidth(SkScalar(1.5 * pr));
-    pline.setStrokeCap(SkPaint::kRound_Cap);
-    canvas->drawLine(devX(0), devY(0), devX(cw), devY(0), pline);
-    canvas->drawLine(devX(0), devY(0) - SkScalar(5 * pr),
-                     devX(0), devY(0) + SkScalar(5 * pr), pline);
-    canvas->drawLine(devX(cw), devY(0) - SkScalar(5 * pr),
-                     devX(cw), devY(0) + SkScalar(5 * pr), pline);
+    // ---- canvas plane caption + orientation hint ----
     {
         const auto cLab = QString::fromUtf8("画布 %1×%2").arg(cw).arg(ch);
         const auto s = cLab.toStdString();
@@ -433,13 +492,16 @@ void TopViewWindow::renderSk(SkCanvas* const canvas)
                            devY(0) - SkScalar(8 * pr), labelFont, labelP);
     }
 
-    // ---- layer footprints ----
+    // ---- layer footprints (Blender-style: grey solid bars, orange
+    // selection) ----
     const auto nameFont = hudFont(9.5);
+    const qreal barTh = qMax(6. * pr,
+                             qreal(ch * 0.03 * qAbs(T.m22())));
     for (int i = 0; i < mFootprints.count(); i++) {
         const auto& fp = mFootprints.at(i);
         if (!fp.fIs3D) {
             SkPaint g;
-            g.setColor(SkColorSetARGB(160, 96, 96, 104));
+            g.setColor(SkColorSetARGB(140, 120, 120, 124));
             g.setStrokeWidth(SkScalar(1.2 * pr));
             canvas->drawLine(devX(fp.fXMin), devY(fp.fZ),
                              devX(fp.fXMax), devY(fp.fZ), g);
@@ -448,107 +510,123 @@ void TopViewWindow::renderSk(SkCanvas* const canvas)
         const bool hot = (i == mHoverIndex) ||
                          (mDragBox && mDragBox == fp.fBox.data());
         const bool sel = fp.fBox && fp.fBox->isSelected();
-        SkPaint p;
-        p.setColor(sel ? SkColorSetARGB(255, 255, 255, 255) :
-                   hot ? SkColorSetARGB(255, 130, 240, 220) :
-                         SkColorSetARGB(230, 78, 201, 176));
-        p.setStrokeWidth(SkScalar((hot || sel ? 2.6 : 2.) * pr));
-        p.setStrokeCap(SkPaint::kRound_Cap);
         const SkScalar y = devY(fp.fZ);
-        canvas->drawLine(devX(fp.fXMin), y, devX(fp.fXMax), y, p);
-        // end whiskers towards the viewer side (screen-down after the
-        // z flip: the camera side is at the bottom)
-        SkPaint w = p;
-        w.setStrokeWidth(SkScalar(1.2 * pr));
-        canvas->drawLine(devX(fp.fXMin), y,
-                         devX(fp.fXMin), y + SkScalar(6 * pr), w);
-        canvas->drawLine(devX(fp.fXMax), y,
-                         devX(fp.fXMax), y + SkScalar(6 * pr), w);
+        const SkRect bar = SkRect::MakeLTRB(
+                    devX(fp.fXMin), y - SkScalar(barTh * 0.5),
+                    devX(fp.fXMax), y + SkScalar(barTh * 0.5));
+        SkPaint fill;
+        fill.setAntiAlias(true);
+        fill.setStyle(SkPaint::kFill_Style);
+        fill.setColor(sel || hot ? SkColorSetARGB(255, 110, 106, 100)
+                                 : kObjectFill);
+        canvas->drawRect(bar, fill);
+        SkPaint edge;
+        edge.setAntiAlias(true);
+        edge.setStyle(SkPaint::kStroke_Style);
+        edge.setStrokeWidth(SkScalar((sel || hot ? 2.2 : 1.3) * pr));
+        edge.setColor(sel || hot ? kSelectOrange : kObjectEdge);
+        canvas->drawRect(bar, edge);
         if (fp.fBox) {
             SkPaint tp;
-            tp.setColor(hot || sel ?
-                        SkColorSetARGB(235, 220, 250, 244) :
-                        SkColorSetARGB(190, 120, 200, 185));
+            tp.setColor(sel || hot ?
+                        SkColorSetARGB(255, 240, 235, 228) : kTextMain);
             const auto name = fp.fBox->prp_getName().toStdString();
             const auto zLab = QString::fromUtf8("z=%1")
                     .arg(fp.fZ, 0, 'f', 1).toStdString();
             canvas->drawString(name.c_str(),
                                devX((fp.fXMin + fp.fXMax) * 0.5),
-                               y - SkScalar(10 * pr), nameFont, tp);
+                               y - SkScalar(barTh * 0.5) - SkScalar(4 * pr),
+                               nameFont, tp);
             if (hot) {
                 canvas->drawString(zLab.c_str(),
                                    devX((fp.fXMin + fp.fXMax) * 0.5),
-                                   y + SkScalar(14 * pr),
+                                   y + SkScalar(barTh * 0.5) + SkScalar(12 * pr),
                                    labelFont, tp);
             }
         }
     }
 
-    // ---- scene camera ----
+    // ---- scene camera (Blender-style grey wireframe: round body +
+    // frustum edges + image-plane bar; turns orange while hovered) ----
     const auto cam = mScene->getCameraLayer();
     if (mPose.fValid && cam) {
+        const bool camHot = (mDragType == DragType::camera ||
+                             mDragType == DragType::cameraRot ||
+                             hitCamera(mLastDevicePos) ||
+                             hitCameraRing(mLastDevicePos));
+        const SkColor wireCol = camHot ? kSelectOrange : kCamWire;
         const QPointF cDev = mapToDevice(mPose.fPos);
         const QPointF centerDev = mapToDevice(QPointF(cw * 0.5, 0.));
         QPointF cd = centerDev - cDev;
         const qreal cdLen = std::sqrt(cd.x() * cd.x() + cd.y() * cd.y());
-        const qreal L = qBound(40., cdLen * 0.92, 100000.);
-        SkPaint cone;
-        cone.setColor(SkColorSetARGB(160, 176, 106, 30));
-        cone.setStrokeWidth(SkScalar(1.2 * pr));
+        const qreal L = qBound(46., cdLen * 0.94, 100000.);
         // world -> device direction (m22 is negative: depth is up)
         const QPointF dirDev(T.m11() * mPose.fDir.x(),
                              T.m22() * mPose.fDir.y());
         const double base = std::atan2(dirDev.y(), dirDev.x());
         const double a = mPose.fHalfFov;
+        SkPaint wp;
+        wp.setAntiAlias(true);
+        wp.setStyle(SkPaint::kStroke_Style);
+        wp.setStrokeWidth(SkScalar(1.4 * pr));
+        wp.setColor(wireCol);
+        // frustum edges to the image-plane ends
+        QPointF ends[2];
         const int sides[2] = { -1, 1 };
-        for (const int side : sides) {
-            const double ang = base + side * a;
-            const QPointF end = cDev + QPointF(std::cos(ang),
-                                               std::sin(ang)) * L;
-            canvas->drawLine(cDev.x(), cDev.y(), end.x(), end.y(), cone);
+        for (int si = 0; si < 2; si++) {
+            const double ang = base + sides[si] * a;
+            ends[si] = cDev + QPointF(std::cos(ang),
+                                      std::sin(ang)) * L;
+            canvas->drawLine(cDev.x(), cDev.y(),
+                             ends[si].x(), ends[si].y(), wp);
         }
-        // body: dot + view direction stub
+        // image plane bar connecting the frustum ends (sensor)
+        canvas->drawLine(ends[0].x(), ends[0].y(),
+                         ends[1].x(), ends[1].y(), wp);
+        // round body (back-filled so the grid does not show through)
         SkPaint body;
         body.setAntiAlias(true);
         body.setStyle(SkPaint::kFill_Style);
-        body.setColor(SkColorSetARGB(255, 255, 158, 44));
-        canvas->drawCircle(cDev.x(), cDev.y(), SkScalar(5 * pr), body);
-        SkPaint stub;
-        stub.setStyle(SkPaint::kStroke_Style);
-        stub.setStrokeWidth(SkScalar(2.4 * pr));
-        stub.setStrokeCap(SkPaint::kRound_Cap);
-        stub.setColor(SkColorSetARGB(255, 255, 158, 44));
-        const QPointF stubEnd = cDev + dirDev * 13. * pr;
-        canvas->drawLine(cDev.x(), cDev.y(), stubEnd.x(), stubEnd.y(),
-                         stub);
-        // roll ring: drag the bright handle to rotate rotZ (the
+        body.setColor(kCamFill);
+        canvas->drawCircle(cDev.x(), cDev.y(), SkScalar(7 * pr), body);
+        body.setStyle(SkPaint::kStroke_Style);
+        body.setStrokeWidth(SkScalar(1.4 * pr));
+        body.setColor(wireCol);
+        canvas->drawCircle(cDev.x(), cDev.y(), SkScalar(7 * pr), body);
+        SkPaint dot;
+        dot.setAntiAlias(true);
+        dot.setStyle(SkPaint::kFill_Style);
+        dot.setColor(wireCol);
+        canvas->drawCircle(cDev.x(), cDev.y(), SkScalar(1.8 * pr), dot);
+        // roll ring: drag the orange handle to rotate rotZ (the
         // in-plane xy angle)
         const SkScalar ringR = SkScalar(14 * pr);
         SkPaint ring;
         ring.setAntiAlias(true);
         ring.setStyle(SkPaint::kStroke_Style);
-        ring.setStrokeWidth(SkScalar(1.3 * pr));
-        ring.setColor(SkColorSetARGB(140, 255, 158, 44));
+        ring.setStrokeWidth(SkScalar(1.2 * pr));
+        ring.setColor(SkColorSetARGB(110, 185, 185, 185));
         canvas->drawCircle(cDev.x(), cDev.y(), ringR, ring);
         const double ringA = qDegreesToRadians(mPose.fRotZ);
         const QPointF handle(cDev.x() + std::cos(ringA) * ringR,
                              cDev.y() + std::sin(ringA) * ringR);
         SkPaint hd;
         hd.setAntiAlias(true);
-        hd.setColor(SkColorSetARGB(255, 255, 195, 100));
+        hd.setStyle(SkPaint::kFill_Style);
+        hd.setColor(kSelectOrange);
         canvas->drawCircle(handle.x(), handle.y(),
                            SkScalar(3.5 * pr), hd);
         const auto camLab = QString::fromUtf8(
-                    "%1 · pan(%2, %3) 缩放 %4 · 倾斜(%5°, %6°) 旋转 %7°")
+                    "%1 · 位移x %2 缩放 %3 · 倾斜(%4°, %5°) 旋转 %6°")
                 .arg(cam->prp_getName())
                 .arg(mPose.fPanX, 0, 'f', 0)
-                .arg(mPose.fPanY, 0, 'f', 0)
                 .arg(mPose.fZoom, 0, 'f', 2)
                 .arg(mPose.fRotX, 0, 'f', 0)
                 .arg(mPose.fRotY, 0, 'f', 0)
                 .arg(mPose.fRotZ, 0, 'f', 0);
         SkPaint cp;
-        cp.setColor(SkColorSetARGB(220, 255, 200, 140));
+        cp.setColor(camHot ?
+                    SkColorSetARGB(235, 245, 200, 150) : kTextDim);
         canvas->drawString(camLab.toStdString().c_str(),
                            cDev.x() + SkScalar(20 * pr),
                            cDev.y() + SkScalar(4 * pr), nameFont, cp);
@@ -556,7 +634,7 @@ void TopViewWindow::renderSk(SkCanvas* const canvas)
         const auto hint = QString::fromUtf8(
                     "无摄像机 — 摄像机工具（C 键）首次使用会自动创建").toStdString();
         SkPaint hp;
-        hp.setColor(SkColorSetARGB(150, 130, 130, 140));
+        hp.setColor(kTextHint);
         canvas->drawString(hint.c_str(), SkScalar(8 * pr),
                            devY(0) - SkScalar(8 * pr), labelFont, hp);
     }
@@ -568,12 +646,12 @@ void TopViewWindow::renderSk(SkCanvas* const canvas)
                     "拖摄像机 = 平移/推拉 · 拖环手柄 = 旋转 · 拖线段 = 图层 x/z")
                 .toStdString();
         SkPaint tipP;
-        tipP.setColor(SkColorSetARGB(110, 150, 150, 160));
+        tipP.setColor(kTextHint);
         canvas->drawString(tip.c_str(), SkScalar(8 * pr),
                            H - SkScalar(22 * pr), labelFont, tipP);
         const auto hudFontV = hudFont(10);
         SkPaint hp;
-        hp.setColor(SkColorSetARGB(210, 190, 190, 200));
+        hp.setColor(kTextMain);
         const auto hud = QString::fromUtf8("顶视图 (X/Z) · %1 · 帧 %2")
                 .arg(mScene->prp_getName())
                 .arg(mScene->getCurrentFrame())
@@ -599,7 +677,7 @@ void TopViewWindow::renderSk(SkCanvas* const canvas)
             const auto tw = hudFontV.measureText(s.c_str(), s.size(),
                                                  SkTextEncoding::kUTF8);
             SkPaint dp;
-            dp.setColor(SkColorSetARGB(230, 130, 240, 220));
+            dp.setColor(kSelectOrange);
             canvas->drawString(s.c_str(), W - SkScalar(tw) - SkScalar(8 * pr),
                                H - SkScalar(8 * pr), hudFontV, dp);
         }
