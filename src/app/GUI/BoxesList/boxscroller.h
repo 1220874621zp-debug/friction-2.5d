@@ -84,6 +84,8 @@ protected:
     void mousePressEvent(QMouseEvent *e);
     void mouseMoveEvent(QMouseEvent *e);
     void mouseReleaseEvent(QMouseEvent *e);
+    // Escape cancels a pending/active rubber band
+    void keyPressEvent(QKeyEvent *e);
     bool eventFilter(QObject *obj, QEvent *event);
 private:
     enum class DropType {

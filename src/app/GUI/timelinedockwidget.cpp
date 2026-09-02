@@ -603,24 +603,24 @@ TimelineDockWidget::TimelineDockWidget(Document& document,
             &FrameSpinBox::wheelValueChanged,
             this, &TimelineDockWidget::gotoFrame);
 
-    const auto mPrevKeyframeAct = new QAction(QIcon::fromTheme("prev_keyframe"),
-                                              QString(),
-                                              this);
-    mPrevKeyframeAct->setToolTip(tr("Previous Keyframe"));
-    mPrevKeyframeAct->setData(mPrevKeyframeAct->toolTip());
-    connect(mPrevKeyframeAct, &QAction::triggered,
+    const auto prevKeyframeAct = new QAction(QIcon::fromTheme("prev_keyframe"),
+                                             QString(),
+                                             this);
+    prevKeyframeAct->setToolTip(tr("Previous Keyframe"));
+    prevKeyframeAct->setData(prevKeyframeAct->toolTip());
+    connect(prevKeyframeAct, &QAction::triggered,
             this, [this]() {
         if (setPrevKeyframe()) {
             mDocument.actionFinished();
         }
     });
 
-    const auto mNextKeyframeAct = new QAction(QIcon::fromTheme("next_keyframe"),
-                                              QString(),
-                                              this);
-    mNextKeyframeAct->setToolTip(tr("Next Keyframe"));
-    mNextKeyframeAct->setData(mNextKeyframeAct->toolTip());
-    connect(mNextKeyframeAct, &QAction::triggered,
+    const auto nextKeyframeAct = new QAction(QIcon::fromTheme("next_keyframe"),
+                                             QString(),
+                                             this);
+    nextKeyframeAct->setToolTip(tr("Next Keyframe"));
+    nextKeyframeAct->setData(nextKeyframeAct->toolTip());
+    connect(nextKeyframeAct, &QAction::triggered,
             this, [this]() {
         if (setNextKeyframe()) {
             mDocument.actionFinished();
@@ -705,8 +705,8 @@ TimelineDockWidget::TimelineDockWidget(Document& document,
     addSpacer();
 
     mToolBar->addAction(mFrameRewindAct);
-    mToolBar->addAction(mPrevKeyframeAct);
-    mToolBar->addAction(mNextKeyframeAct);
+    mToolBar->addAction(prevKeyframeAct);
+    mToolBar->addAction(nextKeyframeAct);
     mToolBar->addAction(mFrameFastForwardAct);
 
     mToolBar->addSeparator();
@@ -745,8 +745,8 @@ TimelineDockWidget::TimelineDockWidget(Document& document,
     mRenderProgressAct->setVisible(false);
 
     mMainWindow->cmdAddAction(mFrameRewindAct);
-    mMainWindow->cmdAddAction(mPrevKeyframeAct);
-    mMainWindow->cmdAddAction(mNextKeyframeAct);
+    mMainWindow->cmdAddAction(prevKeyframeAct);
+    mMainWindow->cmdAddAction(nextKeyframeAct);
     mMainWindow->cmdAddAction(mFrameFastForwardAct);
     mMainWindow->cmdAddAction(mSetInPointAct);
     mMainWindow->cmdAddAction(mSetOutPointAct);
@@ -1271,7 +1271,8 @@ void TimelineDockWidget::updateSettingsForCurrentCanvas(Canvas* const canvas)
         mFrameStartSpin->updateFps(fps);
         mFrameEndSpin->updateFps(fps);
         if (mStepPreviewTimer->isActive()) {
-            mStepPreviewTimer->setInterval(1000 / fps);
+            mStepPreviewTimer->setInterval(
+                        qMax(1, qRound(1000. / qMax(0.001, fps))));
         }
     });
     connect(canvas, &Canvas::displayTimeCodeChanged,
@@ -1314,7 +1315,12 @@ void TimelineDockWidget::setIn()
     if (!scene) { return; }
     const auto frame = scene->getCurrentFrame();
     if (scene->getFrameOut().enabled) {
-        if (frame >= scene->getFrameOut().frame) { return; }
+        if (frame >= scene->getFrameOut().frame) {
+            // a refused edit must be visible, not silent (I shortcut)
+            mMainWindow->statusBar()->showMessage(
+                    tr("In point must be before the Out point"), 4000);
+            return;
+        }
     }
     bool apply = frame == 0 ? true : (scene->getFrameIn().frame != frame);
     scene->setFrameIn(apply, frame);
@@ -1326,7 +1332,11 @@ void TimelineDockWidget::setOut()
     if (!scene) { return; }
     const auto frame = scene->getCurrentFrame();
     if (scene->getFrameIn().enabled) {
-        if (frame <= scene->getFrameIn().frame) { return; }
+        if (frame <= scene->getFrameIn().frame) {
+            mMainWindow->statusBar()->showMessage(
+                    tr("Out point must be after the In point"), 4000);
+            return;
+        }
     }
     bool apply = (scene->getFrameOut().frame != frame);
     scene->setFrameOut(apply, frame);

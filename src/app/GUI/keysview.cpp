@@ -89,6 +89,12 @@ void KeysView::dragMoveEvent(QDragMoveEvent *event) {
 
 void KeysView::setCurrentScene(Canvas * const scene)
 {
+    // drop every pointer into the old scene's objects: hovered and
+    // last-pressed keys/movables are raw pointers owned by the scene
+    // and would dangle as soon as it (or a layer) is deleted
+    clearHovered();
+    mLastPressedKey = nullptr;
+    mLastPressedMovable = nullptr;
     if (mCurrentScene) {
         disconnect(mCurrentScene.data(), &Canvas::objectSelectionChanged,
                    this, &KeysView::graphUpdateVisible);
@@ -481,6 +487,7 @@ bool KeysView::KFT_keyPressEvent(QKeyEvent *event)
         if(event->isAutoRepeat()) return false;
         const auto container = Document::sInstance->getKeysClipboard();
         if(!container) return false;
+        if(!mCurrentScene) return false; // pasting needs a live scene
         clearKeySelection();
         container->paste(mCurrentScene->getCurrentFrame(), true,
                          [this](Key* key) { addKeyToSelection(key); });
@@ -528,6 +535,7 @@ bool KeysView::KFT_keyPressEvent(QKeyEvent *event)
             grabMouseAndTrack();
         } else if(event->modifiers() & Qt::CTRL &&
                   event->key() == Qt::Key_D) {
+            if(!mCurrentScene) return false; // pasting needs a live scene
             auto container = getSelectedKeysClipboardContainer();
             clearKeySelection();
             container->paste(mCurrentScene->getCurrentFrame(), true,
@@ -893,7 +901,9 @@ void KeysView::handleMouseMove(const QPoint &pos,
                     keysScale = 1 + (posU.x() - mLastPressPos.x())/150.;
                     mValueInput.setDisplayedValue(keysScale);
                 }
-                const int absFrame = mCurrentScene->getCurrentFrame();
+                // the scene may have been closed mid-gesture
+                const int absFrame = mCurrentScene ?
+                            mCurrentScene->getCurrentFrame() : 0;
                 if(mGraphViewed) {
                     for(const auto& anim : mGraphAnimators) {
                         anim->anim_scaleSelectedKeysFrame(absFrame, keysScale);
@@ -1051,7 +1061,7 @@ void KeysView::mouseReleaseEvent(QMouseEvent *e) {
                     if(mLastPressedMovable) {
                         mLastPressedMovable->selectionChangeTriggered(shiftPressed);
                     }
-                } else {
+                } else if(mLastPressedMovable && mCurrentScene) {
                     const auto childProp = mLastPressedMovable->getParentProperty();
                     if(mMoveAllSelected) {
                         if(mLastPressedMovable->isDurationRect()) {
@@ -1070,7 +1080,7 @@ void KeysView::mouseReleaseEvent(QMouseEvent *e) {
             }
         } else if(e->button() == Qt::RightButton) {
             if(mMovingRect) {
-                if(!mFirstMove) {
+                if(!mFirstMove && mLastPressedMovable && mCurrentScene) {
                     const auto childProp = mLastPressedMovable->getParentProperty();
                     if(mMoveAllSelected) {
                         if(mLastPressedMovable->isDurationRect()) {

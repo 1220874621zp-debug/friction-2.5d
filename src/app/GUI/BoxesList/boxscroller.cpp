@@ -295,6 +295,17 @@ void BoxScroller::rubberReset() {
     mRubberStarted = false;
 }
 
+void BoxScroller::keyPressEvent(QKeyEvent *e) {
+    if(e->key() == Qt::Key_Escape &&
+       (mRubberPotential || mRubberStarted)) {
+        rubberReset();
+        update();
+        e->accept();
+        return;
+    }
+    ScrollWidgetVisiblePart::keyPressEvent(e);
+}
+
 
 
 
@@ -920,7 +931,11 @@ void BoxScroller::dropEvent(QDropEvent *event) {
         plDragEnded();
 
 
-        quintptr srcPtr = 0;
+        // the drag carries the source layer's documentId (never a raw
+        // pointer: the layer may be deleted mid-drag, and dereferencing
+        // it would be a use-after-free); unresolved ids safely yield
+        // nullptr
+        qint32 srcDocId = -1;
 
 
         QDataStream ds(event->mimeData()->data(
@@ -929,10 +944,10 @@ void BoxScroller::dropEvent(QDropEvent *event) {
                            BoxSingleWidget::parentLinkMimeType()));
 
 
-        ds >> srcPtr;
+        ds >> srcDocId;
 
 
-        auto source = reinterpret_cast<BoundingBox*>(srcPtr);
+        auto source = BoundingBox::sGetBoxByDocumentId(srcDocId);
 
 
         const auto& wids = widgets();

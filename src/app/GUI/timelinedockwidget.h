@@ -44,6 +44,7 @@
 #include <QToolButton>
 #include <QProgressBar>
 #include <QTimer>
+#include <QPointer>
 
 #include "smartPointers/ememory.h"
 #include "framerange.h"
@@ -191,6 +192,12 @@ private:
     //AnimationDockWidget *mAnimationDockWidget;
 
     QPair<bool,int> mPausedPreviewState;
+
+    // the scene this dock's per-scene connections are attached to;
+    // switching scenes must disconnect it, otherwise a stale scene's
+    // frame/range changes still drive the dock (and revisiting a
+    // scene would stack duplicate connections)
+    QPointer<Canvas> mConnectedCanvas;
 };
 
 #endif // BOXESLISTANIMATIONDOCKWIDGET_H

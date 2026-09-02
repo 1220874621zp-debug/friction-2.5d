@@ -26,7 +26,7 @@
 #include <QToolButton>
 #include <QSvgRenderer>
 #include <QStackedLayout>
-#include <QDesktopWidget>
+#include <QScreen>
 #include <QStatusBar>
 
 #include "timelinewidget.h"
@@ -373,8 +373,11 @@ TimelineWidget::TimelineWidget(Document &document,
     mFrameScrollBar->setSizePolicy(QSizePolicy::Minimum,
                                    QSizePolicy::Preferred);
 
-    const qreal dpi = QApplication::desktop()->logicalDpiX() / 96.0;
-    mFrameScrollBar->setFixedHeight(40 * dpi);
+    // QApplication::desktop() is deprecated; the primary screen gives
+    // the same logical DPI
+    const auto screen = QApplication::primaryScreen();
+    const qreal dpi = (screen ? screen->logicalDotsPerInchX() : 96.) / 96.0;
+    mFrameScrollBar->setFixedHeight(qRound(40 * dpi));
 
 //    connect(MemoryHandler::sGetInstance(), &MemoryHandler::memoryFreed,
 //            frameScrollBar,
@@ -384,6 +387,14 @@ TimelineWidget::TimelineWidget(Document &document,
         const auto scene = mSceneChooser->getCurrentScene();
         if(scene) scene->anim_setAbsFrame(range.fMin);
         Document::sInstance->actionFinished();
+    });
+    // refused-edit hints from the ruler (e.g. in/out crossing) go to
+    // the status bar instead of failing silently
+    connect(mFrameScrollBar, &FrameScrollBar::statusMessage,
+            this, [](const QString &message) {
+        if (MainWindow::sGetInstance()->statusBar()) {
+            MainWindow::sGetInstance()->statusBar()->showMessage(message, 5000);
+        }
     });
     mMainLayout->addWidget(mFrameScrollBar, 0, 1);
 

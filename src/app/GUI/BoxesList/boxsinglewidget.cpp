@@ -1032,9 +1032,11 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
         if(!scene || !box) return;
         BoundingBox* picked = nullptr;
         if(index > 0) {
-            const quintptr raw =
-                mParentLinkCombo->itemData(index).value<quintptr>();
-            picked = reinterpret_cast<BoundingBox*>(raw);
+            // entries carry the documentId; resolving here (instead of
+            // trusting a cached raw pointer) stays safe when the layer
+            // was deleted since the popup was built
+            picked = BoundingBox::sGetBoxByDocumentId(
+                        mParentLinkCombo->itemData(index).toInt());
         }
         if(picked == box) return;
         if(!picked && !boxHasParentLink(box)) return;
@@ -1066,9 +1068,10 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
         if(!scene || !box) return;
         BoundingBox* picked = nullptr;
         if(index > 0) {
-            const quintptr raw =
-                mTrkMatLayerCombo->itemData(index).value<quintptr>();
-            picked = reinterpret_cast<BoundingBox*>(raw);
+            // documentId resolution, same safety rationale as the
+            // parent-link combo above
+            picked = BoundingBox::sGetBoxByDocumentId(
+                        mTrkMatLayerCombo->itemData(index).toInt());
         }
         if(picked == box) return;
         box->trackMatteTarget()->setTargetAction(picked);
@@ -1097,8 +1100,8 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
         if(mBgLayerBuilding || !mBgTargetProp) return;
         BoundingBox* picked = nullptr;
         if(index > 0) {
-            picked = reinterpret_cast<BoundingBox*>(
-                        mBgLayerCombo->itemData(index).value<quintptr>());
+            picked = BoundingBox::sGetBoxByDocumentId(
+                        mBgLayerCombo->itemData(index).toInt());
         }
         mBgTargetProp->setTargetAction(picked);
         Document::sInstance->actionFinished();
@@ -1832,55 +1835,60 @@ void BoxSingleWidget::clearStaticPixmaps()
 {
     if (!sStaticPixmapsLoaded) { return; }
 
-    delete VISIBLE_ICON;
-    delete INVISIBLE_ICON;
-    delete BOX_CHILDREN_VISIBLE_ICON;
-    delete BOX_CHILDREN_HIDDEN_ICON;
-    delete ANIMATOR_CHILDREN_VISIBLE_ICON;
-    delete ANIMATOR_CHILDREN_HIDDEN_ICON;
-    delete LOCKED_ICON;
-    delete UNLOCKED_ICON;
-    delete MUTED_ICON;
-    delete UNMUTED_ICON;
-    delete ANIMATOR_RECORDING_ICON;
-    delete ANIMATOR_NOT_RECORDING_ICON;
-    delete ANIMATOR_DESCENDANT_RECORDING_ICON;
-    delete PROMOTE_TO_LAYER_ICON;
-    delete C_ICON;
-    delete G_ICON;
-    delete CG_ICON;
-    delete GRAPH_PROPERTY_ICON;
-    delete ICON_3D_ON;
-    delete ICON_3D_OFF;
-    delete ICON_RESET;
-    delete ICON_SOLO_ON;
-    delete ICON_SOLO_OFF;
-    delete ICON_SHY_ON;
-    delete ICON_SHY_OFF;
-    delete ICON_FX_ON;
-    delete ICON_FX_OFF;
-    delete ICON_T_ON;
-    delete ICON_T_OFF;
-    delete ICON_LINKNODE_ON;
-    delete ICON_LINKNODE_OFF;
-    delete ICON_SCALE_LINK_ON;
-    delete ICON_SCALE_LINK_OFF;
+    // every deleted pointer is nulled and the loaded flag reset:
+    // otherwise a later loadStaticPixmaps() would early-return and
+    // leave every icon pointer dangling
+    delete VISIBLE_ICON; VISIBLE_ICON = nullptr;
+    delete INVISIBLE_ICON; INVISIBLE_ICON = nullptr;
+    delete BOX_CHILDREN_VISIBLE_ICON; BOX_CHILDREN_VISIBLE_ICON = nullptr;
+    delete BOX_CHILDREN_HIDDEN_ICON; BOX_CHILDREN_HIDDEN_ICON = nullptr;
+    delete ANIMATOR_CHILDREN_VISIBLE_ICON; ANIMATOR_CHILDREN_VISIBLE_ICON = nullptr;
+    delete ANIMATOR_CHILDREN_HIDDEN_ICON; ANIMATOR_CHILDREN_HIDDEN_ICON = nullptr;
+    delete LOCKED_ICON; LOCKED_ICON = nullptr;
+    delete UNLOCKED_ICON; UNLOCKED_ICON = nullptr;
+    delete MUTED_ICON; MUTED_ICON = nullptr;
+    delete UNMUTED_ICON; UNMUTED_ICON = nullptr;
+    delete ANIMATOR_RECORDING_ICON; ANIMATOR_RECORDING_ICON = nullptr;
+    delete ANIMATOR_NOT_RECORDING_ICON; ANIMATOR_NOT_RECORDING_ICON = nullptr;
+    delete ANIMATOR_DESCENDANT_RECORDING_ICON; ANIMATOR_DESCENDANT_RECORDING_ICON = nullptr;
+    delete PROMOTE_TO_LAYER_ICON; PROMOTE_TO_LAYER_ICON = nullptr;
+    delete C_ICON; C_ICON = nullptr;
+    delete G_ICON; G_ICON = nullptr;
+    delete CG_ICON; CG_ICON = nullptr;
+    delete GRAPH_PROPERTY_ICON; GRAPH_PROPERTY_ICON = nullptr;
+    delete ICON_3D_ON; ICON_3D_ON = nullptr;
+    delete ICON_3D_OFF; ICON_3D_OFF = nullptr;
+    delete ICON_RESET; ICON_RESET = nullptr;
+    delete ICON_SOLO_ON; ICON_SOLO_ON = nullptr;
+    delete ICON_SOLO_OFF; ICON_SOLO_OFF = nullptr;
+    delete ICON_SHY_ON; ICON_SHY_ON = nullptr;
+    delete ICON_SHY_OFF; ICON_SHY_OFF = nullptr;
+    delete ICON_FX_ON; ICON_FX_ON = nullptr;
+    delete ICON_FX_OFF; ICON_FX_OFF = nullptr;
+    delete ICON_T_ON; ICON_T_ON = nullptr;
+    delete ICON_T_OFF; ICON_T_OFF = nullptr;
+    delete ICON_LINKNODE_ON; ICON_LINKNODE_ON = nullptr;
+    delete ICON_LINKNODE_OFF; ICON_LINKNODE_OFF = nullptr;
+    delete ICON_SCALE_LINK_ON; ICON_SCALE_LINK_ON = nullptr;
+    delete ICON_SCALE_LINK_OFF; ICON_SCALE_LINK_OFF = nullptr;
 
-    delete BOX_PATH;
-    delete BOX_CIRCLE;
-    delete BOX_RECT;
-    delete BOX_TEXT;
-    delete BOX_NULL;
-    delete BOX_BONE;
-    delete BOX_BONELAYER;
-    delete BOX_SOLID;
-    delete BOX_CAMERA;
-    delete BOX_IMAGE;
-    delete BOX_VIDEO;
-    delete BOX_SOUND;
-    delete BOX_GROUP;
-    delete BOX_LINK;
-    delete BOX_SEQ;
+    delete BOX_PATH; BOX_PATH = nullptr;
+    delete BOX_CIRCLE; BOX_CIRCLE = nullptr;
+    delete BOX_RECT; BOX_RECT = nullptr;
+    delete BOX_TEXT; BOX_TEXT = nullptr;
+    delete BOX_NULL; BOX_NULL = nullptr;
+    delete BOX_BONE; BOX_BONE = nullptr;
+    delete BOX_BONELAYER; BOX_BONELAYER = nullptr;
+    delete BOX_SOLID; BOX_SOLID = nullptr;
+    delete BOX_CAMERA; BOX_CAMERA = nullptr;
+    delete BOX_IMAGE; BOX_IMAGE = nullptr;
+    delete BOX_VIDEO; BOX_VIDEO = nullptr;
+    delete BOX_SOUND; BOX_SOUND = nullptr;
+    delete BOX_GROUP; BOX_GROUP = nullptr;
+    delete BOX_LINK; BOX_LINK = nullptr;
+    delete BOX_SEQ; BOX_SEQ = nullptr;
+
+    sStaticPixmapsLoaded = false;
 }
 
 void BoxSingleWidget::mousePressEvent(QMouseEvent *event) {
@@ -2117,7 +2125,13 @@ void BoxSingleWidget::mouseMoveEvent(QMouseEvent *event) {
         const auto prop = static_cast<Property*>(mTarget->getTarget());
         const QString name = translatePropertyName(prop->prp_getName());
         const int nameWidth = QApplication::fontMetrics().horizontalAdvance(name);
-        QPixmap pixmap(mFillWidget->x() + nameWidth + eSizesUI::widget, height());
+        // device-pixel size + dpr tag, otherwise the drag preview is
+        // rendered blurry on high-DPI screens
+        const qreal dpr = devicePixelRatioF();
+        QPixmap pixmap(QSize(mFillWidget->x() + nameWidth + eSizesUI::widget,
+                             height()) * dpr);
+        pixmap.setDevicePixelRatio(dpr);
+        pixmap.fill(Qt::transparent);
         render(&pixmap);
         drag->setPixmap(pixmap);
     }
@@ -2196,7 +2210,11 @@ void BoxSingleWidget::selectRowRange(BoxSingleWidget* const rowA,
         }
     }
     for (int i = qMin(iA, iB); i <= qMax(iA, iB); i++) {
-        const auto t = rows.at(i)->mTarget->getTarget();
+        const auto row = rows.at(i);
+        // findChildren also returns recycled (hidden, target-less)
+        // rows - dereferencing their mTarget would crash
+        if (row->isHidden() || !row->mTarget) { continue; }
+        const auto t = row->mTarget->getTarget();
         if (const auto bb = enve_cast<BoundingBox*>(t)) {
             if (!bb->isSelected()) { scene->addBoxToSelection(bb); }
         } else if (const auto snd = enve_cast<eIndependentSound*>(t)) {
@@ -2455,7 +2473,7 @@ void BoxSingleWidget::rebuildParentLinkCandidates() {
                 if(b->hasInParentLinkChain(box)) continue;
                 mParentLinkCombo->addItem(
                             b->prp_getName(),
-                            QVariant::fromValue(reinterpret_cast<quintptr>(b)));
+                            QVariant::fromValue(b->getDocumentId()));
                 if(b == cur) match = mParentLinkCombo->count() - 1;
                 if(const auto g = enve_cast<ContainerBox*>(b)) walk(g);
             }
@@ -2488,7 +2506,7 @@ void BoxSingleWidget::rebuildBgLayerCandidates() {
                    (owner && owner->isAncestor(b))) continue;
                 mBgLayerCombo->addItem(
                             b->prp_getName(),
-                            QVariant::fromValue(reinterpret_cast<quintptr>(b)));
+                            QVariant::fromValue(b->getDocumentId()));
                 if(b == cur) match = mBgLayerCombo->count() - 1;
                 if(const auto g = enve_cast<ContainerBox*>(b)) walk(g);
             }
@@ -2539,32 +2557,32 @@ void BoxSingleWidget::refreshParentLinkCombo() {
     const auto combo = mParentLinkCombo;
     const auto box = currentLinkedBox();
     QString txt = tr("No Parent");
-    quintptr curRaw = 0;
+    int curId = -1; // -1 = no parent (never a valid documentId)
     if(box && mTarget) {
         if(const auto pe = findParentEffect(box)) {
             if(const auto par = enve_cast<BoundingBox*>(
                        pe->parentTargetProperty()->getTarget())) {
                 txt = par->prp_getName();
-                curRaw = reinterpret_cast<quintptr>(par);
+                curId = par->getDocumentId();
             }
         }
     }
-    // find an entry carrying the current parent pointer
+    // find an entry carrying the current parent id
     int idx = -1;
     for(int i = 0; i < combo->count(); i++) {
-        if(combo->itemData(i).value<quintptr>() == curRaw &&
-           curRaw != 0) { idx = i; break; }
+        if(curId >= 0 &&
+           combo->itemData(i).toInt() == curId) { idx = i; break; }
     }
     if(idx < 0 && !combo->itemText(0).isEmpty() &&
        combo->itemData(0).isNull()) {
         // reuse slot 0 when it is the placeholder
         combo->setItemText(0, txt);
-        combo->setItemData(0, QVariant::fromValue(curRaw));
+        combo->setItemData(0, curId >= 0 ? QVariant(curId) : QVariant());
         idx = 0;
     } else if(idx >= 0) {
         combo->setItemText(idx, txt);
     } else {
-        combo->insertItem(0, txt, QVariant::fromValue(curRaw));
+        combo->insertItem(0, txt, curId >= 0 ? QVariant(curId) : QVariant());
         idx = 0;
     }
     const QSignalBlocker blocker(combo);
@@ -2626,7 +2644,9 @@ void BoxSingleWidget::startParentLinkDrag() {
     auto mime = new QMimeData();
     QByteArray raw;
     QDataStream ds(&raw, QIODevice::WriteOnly);
-    ds << quintptr(box);
+    // carry the documentId, not the raw pointer: the layer may be
+    // deleted while the drag is still alive (undo, scripts)
+    ds << qint32(box->getDocumentId());
     mime->setData(parentLinkMimeType(), raw);
     drag->setMimeData(mime);
     QPixmap pm(24, 24);
