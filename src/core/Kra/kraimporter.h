@@ -32,6 +32,8 @@
 #include "smartPointers/selfref.h"
 #include "core_global.h"
 
+#include <QImage>
+
 class ContainerBox;
 class BoundingBox;
 class Canvas;
@@ -59,6 +61,30 @@ class Canvas;
 // DurationRectangle for the exposure window. Vector/filter/generator/
 // clone/file layers and masks have no friction equivalent and are
 // reported through the skipped list.
+// State of one bound paint layer inside a kra document, used by
+// KraImageBox for incremental updates from the source file.
+struct CORE_EXPORT KraLayerState {
+    bool found = false;      // layer (uuid + frame file) still exists
+    quint32 crc = 0;         // zip crc of the pixel entry (change detector)
+    bool pixelsChanged = false;
+    QImage image;            // decoded pixels (only when pixelsChanged)
+    int posX = 0;            // canvas-space position (origin + offset)
+    int posY = 0;
+    QString name;
+    int opacity = 255;
+    bool visible = true;
+    QString blendMode;       // krita compositeop id
+};
+
+// Cache directory of a kra file (same location the importer uses).
+QString CORE_EXPORT kraCacheDirForFile(const QString& filePath);
+
+// Write a PNG of 'image' into the kra cache dir, hash-named.
+// Returns the cache file path, empty on failure.
+QString CORE_EXPORT kraCachePng(const QString& filePath,
+                                const QString& frameFile,
+                                const QImage& image);
+
 class CORE_EXPORT ImportKRA {
 public:
     using ProgressReporter = std::function<void(int, int)>;
@@ -74,6 +100,15 @@ public:
                                            const ProgressReporter& report
                                                = ProgressReporter(),
                                            QStringList* skippedOut = nullptr);
+
+    // Locate the paint layer with the given uuid (and, for animated
+    // layers, the given frame file) and report its current state.
+    // Pixels are decoded only when the zip entry crc differs from
+    // knownCrc, so unchanged layers cost a directory scan only.
+    static KraLayerState checkLayerUpdate(const QString& filePath,
+                                          const QString& uuid,
+                                          const QString& frameFile,
+                                          const quint32 knownCrc);
 };
 
 #endif // KRAIMPORTER_H

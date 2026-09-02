@@ -60,12 +60,15 @@ namespace ImportPSD {
                                           const Fpsd::LayerMeta &lm);
 
         // Update the pixels of one bound layer from a freshly loaded
-        // psd. Modifies meta + entries in place (caller persists them).
+        // psd. Modifies meta in place; changed layer PNGs go into
+        // 'updates' (caller persists via Fpsd::updatePackage).
+        // Change detection hashes the raw (compressed) channel bytes
+        // before any decoding, so unchanged layers cost a hash only.
         // Returns -1 layer gone / error, 0 unchanged, 1 updated.
         CORE_EXPORT
-        int updateLayerPixels(psd::PsdFile &psd,
+        int updateLayerPixels(const psd::PsdFile &psd,
                               Fpsd::Meta &meta,
-                              QMap<QString, QByteArray> &entries,
+                              QMap<QString, QByteArray> &updates,
                               PsdImageBox *box);
     }
 }

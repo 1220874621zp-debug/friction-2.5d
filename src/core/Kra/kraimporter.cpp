@@ -31,6 +31,7 @@
 #include <QFileInfo>
 #include <QImage>
 #include <QSaveFile>
+#include <QSysInfo>
 #include <QtEndian>
 
 #include <algorithm>
@@ -38,7 +39,18 @@
 #include <cstring>
 #include <vector>
 
+// zlib for the raw-deflate zip entries. Qt5Core bundles zlib and
+// exports its symbols on Windows (sdk/include/QtZlib); other
+// platforms link the system zlib.
+#ifdef Q_OS_WIN
+#include <QtZlib/zlib.h>
+#else
+#include <zlib.h>
+#endif
+
 #include "appsupport.h"
+#include "kraimagebox.h"
+#include "svgimporter.h"
 #include "Boxes/imagebox.h"
 #include "Boxes/containerbox.h"
 #include "canvas.h"
@@ -50,197 +62,37 @@
 namespace {
 
 // ---------------------------------------------------------------------------
-// Minimal raw-DEFLATE inflater (puff-style, RFC 1951).
+// Raw-DEFLATE inflater via zlib.
 //
-// Needed because Qt's qUncompress only accepts zlib-wrapped streams (it
-// verifies the adler32 trailer) while ZIP entries store raw deflate.
-// The implementation was validated byte-for-byte against zlib on real
-// .kra entries (xml, icc profiles and an 8 MB merged image).
+// Qt's qUncompress only accepts zlib-wrapped streams (it verifies the
+// adler32 trailer) while ZIP entries store raw deflate - hence
+// inflateInit2 with a negative window size.
 // ---------------------------------------------------------------------------
-
-struct InflateBitIn {
-    const uchar* d;
-    const qint64 len;
-    qint64 pos = 0;
-    unsigned bitbuf = 0;
-    int bitcnt = 0;
-
-    unsigned bits(const int need) {
-        unsigned val = bitbuf;
-        while (bitcnt < need) {
-            if (pos >= len) RuntimeThrow("kra: unexpected end of deflate stream");
-            val |= unsigned(d[pos]) << bitcnt;
-            pos++;
-            bitcnt += 8;
-        }
-        bitbuf = val >> need;
-        bitcnt -= need;
-        return val & ((1u << need) - 1u);
-    }
-};
-
-struct InflateHuff {
-    int count[16] = {0};
-    std::vector<int> symbol;
-
-    InflateHuff(const std::vector<int>& lengths) {
-        symbol.assign(lengths.size(), 0);
-        for (const int l : lengths) {
-            if (l < 0 || l > 15) RuntimeThrow("kra: bad huffman code length");
-            count[l]++;
-        }
-        if (count[0] == int(lengths.size())) return; // no codes at all
-        // reject over-subscribed code sets
-        long left = 1;
-        for (int b = 1; b < 16; b++) {
-            left <<= 1;
-            left -= count[b];
-            if (left < 0) RuntimeThrow("kra: over-subscribed huffman code");
-        }
-        int offs[16] = {0};
-        for (int b = 1; b < 15; b++) offs[b + 1] = offs[b] + count[b];
-        for (int sym = 0; sym < int(lengths.size()); sym++) {
-            const int l = lengths[sym];
-            if (l != 0) {
-                symbol[offs[l]] = sym;
-                offs[l]++;
-            }
-        }
-    }
-
-    int decode(InflateBitIn& bi) const {
-        int code = 0, first = 0, index = 0;
-        for (int length = 1; length < 16; length++) {
-            code |= int(bi.bits(1));
-            const int cnt = count[length];
-            if (code - first < cnt) return symbol[index + (code - first)];
-            index += cnt;
-            first += cnt;
-            first <<= 1;
-            code <<= 1;
-        }
-        RuntimeThrow("kra: invalid huffman code");
-        return -1;
-    }
-};
-
-const int kInfLens[29] = {3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19,
-                          23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115,
-                          131, 163, 195, 227, 258};
-const int kInfLext[29] = {0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2,
-                          3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0};
-const int kInfDists[30] = {1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97,
-                           129, 193, 257, 385, 513, 769, 1025, 1537, 2049,
-                           3073, 4097, 6145, 8193, 12289, 16385, 24577};
-const int kInfDext[30] = {0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6,
-                          7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13};
-const int kInfCOrder[19] = {16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3,
-                            13, 2, 14, 1, 15};
-
-void inflateCodes(InflateBitIn& bi,
-                  const InflateHuff& lencode,
-                  const InflateHuff& distcode,
-                  uchar* out,
-                  qint64& outLen,
-                  const qint64 outCap)
-{
-    while (true) {
-        const int sym = lencode.decode(bi);
-        if (sym < 256) {
-            if (outLen >= outCap) RuntimeThrow("kra: inflate output overflow");
-            out[outLen++] = uchar(sym);
-        } else if (sym == 256) {
-            return;
-        } else {
-            const int li = sym - 257;
-            if (li >= 29) RuntimeThrow("kra: bad length symbol");
-            const int length = kInfLens[li] + int(bi.bits(kInfLext[li]));
-            const int dsym = distcode.decode(bi);
-            if (dsym >= 30) RuntimeThrow("kra: bad distance symbol");
-            const int dist = kInfDists[dsym] + int(bi.bits(kInfDext[dsym]));
-            if (dist > int(outLen)) RuntimeThrow("kra: distance too far back");
-            if (outLen + length > outCap) RuntimeThrow("kra: inflate output overflow");
-            int from = int(outLen) - dist;
-            for (int k = 0; k < length; k++) out[outLen++] = out[from++];
-        }
-    }
-}
 
 void inflateRaw(const uchar* data, const qint64 size,
                 uchar* out, const qint64 expectedSize)
 {
-    InflateBitIn bi{data, size};
-    qint64 outLen = 0;
-    bool last = false;
-    while (!last) {
-        last = bi.bits(1) != 0;
-        const int type = int(bi.bits(2));
-        if (type == 0) {
-            // stored block: drop remaining bits, LEN/NLEN, raw copy
-            bi.bitbuf = 0;
-            bi.bitcnt = 0;
-            if (bi.pos + 4 > bi.len) RuntimeThrow("kra: truncated stored block");
-            const int ln = bi.d[bi.pos] | (bi.d[bi.pos + 1] << 8);
-            const int nln = bi.d[bi.pos + 2] | (bi.d[bi.pos + 3] << 8);
-            if (ln != (~nln & 0xFFFF)) RuntimeThrow("kra: stored block length mismatch");
-            bi.pos += 4;
-            if (bi.pos + ln > bi.len || outLen + ln > expectedSize) {
-                RuntimeThrow("kra: truncated stored block");
-            }
-            memcpy(out + outLen, bi.d + bi.pos, size_t(ln));
-            outLen += ln;
-            bi.pos += ln;
-        } else if (type == 1) {
-            std::vector<int> lengths(288);
-            int i = 0;
-            for (; i < 144; i++) lengths[i] = 8;
-            for (; i < 256; i++) lengths[i] = 9;
-            for (; i < 280; i++) lengths[i] = 7;
-            for (; i < 288; i++) lengths[i] = 8;
-            const InflateHuff lencode(lengths);
-            const InflateHuff distcode(std::vector<int>(30, 5));
-            inflateCodes(bi, lencode, distcode, out, outLen, expectedSize);
-        } else if (type == 2) {
-            const int nlen = int(bi.bits(5)) + 257;
-            const int ndist = int(bi.bits(5)) + 1;
-            const int ncode = int(bi.bits(4)) + 4;
-            if (nlen > 286 || ndist > 30) RuntimeThrow("kra: too many code lengths");
-            std::vector<int> clLengths(19, 0);
-            for (int j = 0; j < ncode; j++) clLengths[kInfCOrder[j]] = int(bi.bits(3));
-            const InflateHuff clcode(clLengths);
-            std::vector<int> lengths(nlen + ndist, 0);
-            int i = 0;
-            while (i < nlen + ndist) {
-                const int sym = clcode.decode(bi);
-                if (sym < 16) {
-                    lengths[i++] = sym;
-                } else {
-                    int prev = 0;
-                    int rep;
-                    if (sym == 16) {
-                        if (i == 0) RuntimeThrow("kra: repeat with no previous length");
-                        prev = lengths[i - 1];
-                        rep = 3 + int(bi.bits(2));
-                    } else if (sym == 17) {
-                        rep = 3 + int(bi.bits(3));
-                    } else {
-                        rep = 11 + int(bi.bits(7));
-                    }
-                    if (i + rep > nlen + ndist) RuntimeThrow("kra: too many lengths");
-                    for (int j = 0; j < rep; j++) lengths[i++] = prev;
-                }
-            }
-            if (lengths[256] == 0) RuntimeThrow("kra: missing end-of-block code");
-            const InflateHuff lencode(std::vector<int>(lengths.begin(),
-                                                       lengths.begin() + nlen));
-            const InflateHuff distcode(std::vector<int>(lengths.begin() + nlen,
-                                                        lengths.end()));
-            inflateCodes(bi, lencode, distcode, out, outLen, expectedSize);
-        } else {
-            RuntimeThrow("kra: invalid deflate block type");
-        }
+    if (size < 0 || expectedSize < 0
+            || quint64(size) > std::numeric_limits<uInt>::max()
+            || quint64(expectedSize) > std::numeric_limits<uInt>::max()) {
+        RuntimeThrow("kra: deflate stream too large");
     }
-    if (outLen != expectedSize) RuntimeThrow("kra: inflated size mismatch");
+    z_stream strm;
+    memset(&strm, 0, sizeof(strm));
+    strm.next_in = const_cast<Bytef*>(reinterpret_cast<const Bytef*>(data));
+    strm.avail_in = uInt(size);
+    strm.next_out = reinterpret_cast<Bytef*>(out);
+    strm.avail_out = uInt(expectedSize);
+    // negative window size: raw deflate, no zlib header/trailer
+    if (inflateInit2(&strm, -15) != Z_OK) {
+        RuntimeThrow("kra: inflate init failed");
+    }
+    const int ret = inflate(&strm, Z_FINISH);
+    const quint64 produced = strm.total_out;
+    inflateEnd(&strm);
+    if (ret != Z_STREAM_END || produced != quint64(expectedSize)) {
+        RuntimeThrow("kra: inflated size mismatch");
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -250,6 +102,7 @@ void inflateRaw(const uchar* data, const qint64 size,
 struct KraZipEntry {
     QString name;
     quint16 method = 0;
+    quint32 crc = 0;
     quint32 csize = 0;
     quint32 usize = 0;
     qint64 dataStart = 0;
@@ -258,17 +111,28 @@ struct KraZipEntry {
 class KraZip {
 public:
     bool load(const QString& filePath) {
-        QFile file(filePath);
-        if (!file.open(QIODevice::ReadOnly)) return false;
-        mRaw = file.readAll();
-        if (mRaw.size() < 22) return false;
+        mFile.setFileName(filePath);
+        if (!mFile.open(QIODevice::ReadOnly)) return false;
+        // memory-map the archive instead of copying it into a
+        // QByteArray - large kra files no longer occupy RAM twice
+        mMap = mFile.map(0, mFile.size());
+        if (mMap) {
+            mData = reinterpret_cast<const char*>(mMap);
+            mSize = mFile.size();
+        } else {
+            // mapping failed (exotic filesystem): read it all
+            mRaw = mFile.readAll();
+            mData = mRaw.constData();
+            mSize = mRaw.size();
+        }
+        if (mSize < 22) return false;
 
         // locate the end-of-central-directory record (scan backwards)
         qint64 eocd = -1;
-        const qint64 minPos = qMax<qint64>(0, mRaw.size() - 65558);
-        for (qint64 i = mRaw.size() - 22; i >= minPos; i--) {
-            if (quint8(mRaw.at(int(i))) == 0x50 && quint8(mRaw.at(int(i) + 1)) == 0x4b &&
-                quint8(mRaw.at(int(i) + 2)) == 0x05 && quint8(mRaw.at(int(i) + 3)) == 0x06) {
+        const qint64 minPos = qMax<qint64>(0, mSize - 65558);
+        for (qint64 i = mSize - 22; i >= minPos; i--) {
+            if (quint8(mData[i]) == 0x50 && quint8(mData[i + 1]) == 0x4b &&
+                quint8(mData[i + 2]) == 0x05 && quint8(mData[i + 3]) == 0x06) {
                 eocd = i;
                 break;
             }
@@ -277,49 +141,49 @@ public:
 
         quint32 cdSize = 0, cdStart = 0;
         for (int b = 0; b < 4; b++) {
-            cdSize |= quint32(quint8(mRaw.at(int(eocd) + 12 + b))) << (8 * b);
-            cdStart |= quint32(quint8(mRaw.at(int(eocd) + 16 + b))) << (8 * b);
+            cdSize |= quint32(quint8(mData[eocd + 12 + b])) << (8 * b);
+            cdStart |= quint32(quint8(mData[eocd + 16 + b])) << (8 * b);
         }
         qint64 pos = qint64(cdStart);
         if (pos < 0 || pos + qint64(cdSize) > eocd) return false;
 
         while (pos + 46 <= eocd) {
-            if (!(quint8(mRaw.at(int(pos))) == 0x50 &&
-                  quint8(mRaw.at(int(pos) + 1)) == 0x4b &&
-                  quint8(mRaw.at(int(pos) + 2)) == 0x01 &&
-                  quint8(mRaw.at(int(pos) + 3)) == 0x02)) {
+            if (!(quint8(mData[pos]) == 0x50 &&
+                  quint8(mData[pos + 1]) == 0x4b &&
+                  quint8(mData[pos + 2]) == 0x01 &&
+                  quint8(mData[pos + 3]) == 0x02)) {
                 break;
             }
-            const quint16 nameLen = quint8(mRaw.at(int(pos) + 28)) |
-                    (quint8(mRaw.at(int(pos) + 29)) << 8);
-            const quint16 extraLen = quint8(mRaw.at(int(pos) + 30)) |
-                    (quint8(mRaw.at(int(pos) + 31)) << 8);
-            const quint16 commentLen = quint8(mRaw.at(int(pos) + 32)) |
-                    (quint8(mRaw.at(int(pos) + 33)) << 8);
+            const quint16 nameLen = quint8(mData[pos + 28]) |
+                    (quint8(mData[pos + 29]) << 8);
+            const quint16 extraLen = quint8(mData[pos + 30]) |
+                    (quint8(mData[pos + 31]) << 8);
+            const quint16 commentLen = quint8(mData[pos + 32]) |
+                    (quint8(mData[pos + 33]) << 8);
             KraZipEntry e;
-            e.method = quint8(mRaw.at(int(pos) + 10)) |
-                    (quint8(mRaw.at(int(pos) + 11)) << 8);
+            e.method = quint8(mData[pos + 10]) |
+                    (quint8(mData[pos + 11]) << 8);
             for (int b = 0; b < 4; b++) {
-                e.csize |= quint32(quint8(mRaw.at(int(pos) + 20 + b))) << (8 * b);
-                e.usize |= quint32(quint8(mRaw.at(int(pos) + 24 + b))) << (8 * b);
+                e.csize |= quint32(quint8(mData[pos + 20 + b])) << (8 * b);
+                e.usize |= quint32(quint8(mData[pos + 24 + b])) << (8 * b);
                 const quint32 localOff =
-                        quint32(quint8(mRaw.at(int(pos) + 42 + b))) << (8 * b);
+                        quint32(quint8(mData[pos + 42 + b])) << (8 * b);
                 e.dataStart |= localOff;
             }
-            e.name = QString::fromUtf8(mRaw.constData() + pos + 46, int(nameLen));
+            e.name = QString::fromUtf8(mData + pos + 46, int(nameLen));
             if (e.csize == 0xFFFFFFFFu || e.usize == 0xFFFFFFFFu) {
                 RuntimeThrow("kra: ZIP64 archives are not supported");
             }
             // local header holds the real data offset (its extra field
             // length may differ from the central directory one)
             const qint64 lh = e.dataStart;
-            if (lh + 30 > mRaw.size()) return false;
-            const quint16 lNameLen = quint8(mRaw.at(int(lh) + 26)) |
-                    (quint8(mRaw.at(int(lh) + 27)) << 8);
-            const quint16 lExtraLen = quint8(mRaw.at(int(lh) + 28)) |
-                    (quint8(mRaw.at(int(lh) + 29)) << 8);
+            if (lh + 30 > mSize) return false;
+            const quint16 lNameLen = quint8(mData[lh + 26]) |
+                    (quint8(mData[lh + 27]) << 8);
+            const quint16 lExtraLen = quint8(mData[lh + 28]) |
+                    (quint8(mData[lh + 29]) << 8);
             e.dataStart = lh + 30 + lNameLen + lExtraLen;
-            if (e.dataStart + qint64(e.csize) > mRaw.size()) return false;
+            if (e.dataStart + qint64(e.csize) > mSize) return false;
             mEntries << e;
             pos += 46 + nameLen + extraLen + commentLen;
         }
@@ -334,14 +198,21 @@ public:
         return false;
     }
 
+    const KraZipEntry* find(const QString& name) const {
+        for (const auto& e : mEntries) {
+            if (e.name == name) return &e;
+        }
+        return nullptr;
+    }
+
     QByteArray read(const QString& name) const {
         for (const auto& e : mEntries) {
             if (e.name != name) continue;
             if (e.method == 0) {
-                return QByteArray(mRaw.constData() + e.dataStart, int(e.csize));
+                return QByteArray(mData + e.dataStart, int(e.csize));
             } else if (e.method == 8) {
                 QByteArray out(int(e.usize), Qt::Uninitialized);
-                inflateRaw(reinterpret_cast<const uchar*>(mRaw.constData() + e.dataStart),
+                inflateRaw(reinterpret_cast<const uchar*>(mData + e.dataStart),
                            e.csize,
                            reinterpret_cast<uchar*>(out.data()),
                            qint64(e.usize));
@@ -369,7 +240,11 @@ public:
     }
 
 private:
-    QByteArray mRaw;
+    QFile mFile;         // keeps the mapping alive
+    QByteArray mRaw;     // fallback when mapping fails
+    const char* mData = nullptr;
+    qint64 mSize = 0;
+    uchar* mMap = nullptr;
     QList<KraZipEntry> mEntries;
 };
 
@@ -563,9 +438,18 @@ KraImageData decodeTiled(const QByteArray& raw, const QString& colorSpace)
         const int baseY = (h.row - minRow) * tileH;
         const int clipW = qMin(tileW, imgW - baseX);
         const int clipH = qMin(tileH, imgH - baseY);
+        // bgra8 tiles have exactly the memory layout of
+        // QImage::Format_ARGB32 on little-endian - copy whole rows
+        // instead of converting pixel by pixel
+        const bool fastPath = (fmt == PxFormat::bgra8)
+                && (QSysInfo::ByteOrder == QSysInfo::LittleEndian);
         for (int r = 0; r < clipH; r++) {
             QRgb* dst = const_cast<QRgb*>(dstBase + (baseY + r) * dstStride + baseX);
             const uchar* src = tileData + r * tileW * pixelSize;
+            if (fastPath) {
+                memcpy(dst, src, size_t(clipW) * 4);
+                continue;
+            }
             for (int c = 0; c < clipW; c++) {
                 const uchar* px = src + c * pixelSize;
                 int r8, g8, b8, a8;
@@ -656,9 +540,19 @@ struct ImportState {
     int mTotalFrames = 0;
     int mDoneFrames = 0;
     QString mCacheDir;
+    QString mSourceKra; // normalized path, stored on the boxes for sync
+    Canvas* mScene = nullptr; // for the svg vector layer gradient creator
     QHash<QString, QString> mFrameToCache;
+    // parsed keyframes.xml per path: countPaintFrames (progress
+    // estimate) and buildPaintLayer share the parse result instead of
+    // inflating + parsing the same xml twice
+    QHash<QString, QVector<KraKeyFrame>> mKeyframeCache;
     QStringList* mSkipped = nullptr;
 };
+
+// parse the keyframes xml once per layer, then reuse
+const QVector<KraKeyFrame>& keyFramesFor(ImportState& st,
+                                         const QString& kfPath);
 
 QString cachePathForFrame(ImportState& st, const QString& frameFile,
                           const QImage& image)
@@ -670,7 +564,9 @@ QString cachePathForFrame(ImportState& st, const QString& frameFile,
     }
     QBuffer pngBuf;
     pngBuf.open(QIODevice::WriteOnly);
-    if (!image.save(&pngBuf, "PNG")) {
+    // quality 85 -> zlib level 1: PNG is lossless, this only trades
+    // file size for encode speed (the cache is an intermediate)
+    if (!image.save(&pngBuf, "PNG", 85)) {
         RuntimeThrow("kra: png encode failed");
     }
     // hash-named files: re-imports of edited documents never fight a
@@ -760,6 +656,16 @@ QVector<KraKeyFrame> parseKeyFrames(const QByteArray& xml)
     return result;
 }
 
+const QVector<KraKeyFrame>& keyFramesFor(ImportState& st,
+                                         const QString& kfPath)
+{
+    const auto it = st.mKeyframeCache.constFind(kfPath);
+    if (it != st.mKeyframeCache.constEnd()) { return it.value(); }
+    const QVector<KraKeyFrame> keys = parseKeyFrames(
+                st.mZip->read(st.mLayersPrefix + kfPath));
+    return *st.mKeyframeCache.insert(kfPath, keys);
+}
+
 qsptr<BoundingBox> buildPaintLayer(const QDomElement& elem,
                                    ContainerBox* const parent,
                                    ImportState& st)
@@ -770,10 +676,12 @@ qsptr<BoundingBox> buildPaintLayer(const QDomElement& elem,
     const QString cs = elem.attribute(QStringLiteral("colorspacename"),
                                       st.mImageColorSpace);
     const QString keyframesAttr = elem.attribute(QStringLiteral("keyframes"));
+    const QString layerUuid = elem.attribute(QStringLiteral("uuid"));
 
     QVector<KraKeyFrame> keys;
     if (!keyframesAttr.isEmpty()) {
-        keys = parseKeyFrames(st.mZip->read(st.mLayersPrefix + keyframesAttr));
+        keys = keyFramesFor(st, keyframesAttr); // shared with the
+        // progress estimator - parsed once per layer, not twice
     }
 
     // warn about masks (they are not imported; rendering may differ)
@@ -783,8 +691,20 @@ qsptr<BoundingBox> buildPaintLayer(const QDomElement& elem,
                     QObject::tr("masks are not imported"));
     }
 
+    // create a kra-bound box so the layer can be re-synced from the
+    // source document later; crc of the pixel entry is the change
+    // detector for those updates
+    const auto makeBox = [&st, &layerUuid](const QString& cachePath,
+                                           const QString& pixelFile) {
+        quint32 crc = 0;
+        const auto entry = st.mZip->find(st.mLayersPrefix + pixelFile);
+        if (entry) { crc = entry->crc; }
+        return enve::make_shared<KraImageBox>(cachePath, st.mSourceKra,
+                                              layerUuid, pixelFile, crc);
+    };
+
     struct FrameBox {
-        qsptr<ImageBox> mBox;
+        qsptr<KraImageBox> mBox;
         int mTime = 0;
         int mOriginX = 0, mOriginY = 0, mOffX = 0, mOffY = 0;
     };
@@ -804,9 +724,8 @@ qsptr<BoundingBox> buildPaintLayer(const QDomElement& elem,
             if (st.mReport) st.mReport(st.mDoneFrames, st.mTotalFrames);
             const QString cachePath = cachePathForFrame(st, fileName,
                                                         decoded.mImage);
-            auto box = enve::make_shared<ImageBox>(cachePath);
             FrameBox fb;
-            fb.mBox = box;
+            fb.mBox = makeBox(cachePath, fileName);
             fb.mOriginX = decoded.mOriginX;
             fb.mOriginY = decoded.mOriginY;
             fb.mOffX = elem.attribute(QStringLiteral("x"), "0").toInt();
@@ -825,9 +744,8 @@ qsptr<BoundingBox> buildPaintLayer(const QDomElement& elem,
                 if (st.mReport) st.mReport(st.mDoneFrames, st.mTotalFrames);
                 const QString cachePath = cachePathForFrame(st, k.mFrameFile,
                                                             decoded.mImage);
-                auto box = enve::make_shared<ImageBox>(cachePath);
                 FrameBox fb;
-                fb.mBox = box;
+                fb.mBox = makeBox(cachePath, k.mFrameFile);
                 fb.mTime = k.mTime;
                 fb.mOriginX = decoded.mOriginX;
                 fb.mOriginY = decoded.mOriginY;
@@ -935,11 +853,12 @@ qsptr<BoundingBox> buildNode(const QDomElement& elem,
     return nullptr;
 }
 
-int countPaintFrames(const QDomElement& layersElem, const KraZip& zip,
-                     const QString& prefix)
+int countPaintFrames(const QDomElement& layersElem, ImportState& st)
 {
     // best-effort progress estimate: keyframes of animated paint layers
-    // plus one for each static one (bad xml simply stops counting)
+    // plus one for each static one (bad xml simply stops counting);
+    // the parse result is cached so buildPaintLayer reuses it instead
+    // of inflating + parsing the same xml a second time
     int total = 0;
     QDomElement child = layersElem.firstChildElement(QStringLiteral("layer"));
     while (!child.isNull()) {
@@ -949,7 +868,7 @@ int countPaintFrames(const QDomElement& layersElem, const KraZip& zip,
             const QString kf = child.attribute(QStringLiteral("keyframes"));
             if (!kf.isEmpty()) {
                 try {
-                    total += parseKeyFrames(zip.read(prefix + kf)).count();
+                    total += keyFramesFor(st, kf).count();
                 } catch(...) { total++; }
             } else {
                 total++;
@@ -957,7 +876,7 @@ int countPaintFrames(const QDomElement& layersElem, const KraZip& zip,
         } else if (nodeType == QLatin1String("grouplayer")) {
             const QDomElement sub = child.firstChildElement(
                         QStringLiteral("layers"));
-            if (!sub.isNull()) total += countPaintFrames(sub, zip, prefix);
+            if (!sub.isNull()) total += countPaintFrames(sub, st);
         }
         child = child.nextSiblingElement(QStringLiteral("layer"));
     }
@@ -1002,7 +921,85 @@ AnimInfo readAnimInfo(const KraZip& zip, const QDomElement& imageElem,
     return result;
 }
 
+// recursive search for the paint layer element with the given uuid
+QDomElement findLayerByUuid(const QDomElement& layersElem,
+                            const QString& uuid)
+{
+    QDomElement child = layersElem.firstChildElement(QStringLiteral("layer"));
+    while (!child.isNull()) {
+        if (child.attribute(QStringLiteral("uuid")) == uuid) {
+            return child;
+        }
+        const QDomElement sub = child.firstChildElement(
+                    QStringLiteral("layers"));
+        if (!sub.isNull()) {
+            const QDomElement found = findLayerByUuid(sub, uuid);
+            if (!found.isNull()) { return found; }
+        }
+        child = child.nextSiblingElement(QStringLiteral("layer"));
+    }
+    return QDomElement();
+}
+
 } // namespace
+
+QString kraCacheDirForFile(const QString& filePath)
+{
+    const QString clean = QDir::cleanPath(filePath);
+    const QString hash = QString::fromLatin1(QCryptographicHash::hash(
+                clean.toUtf8(), QCryptographicHash::Md5).toHex().left(12));
+    // configurable root (preferences); empty setting = cache default
+    QString kraRoot = AppSupport::getSettings(
+                QStringLiteral("settings"),
+                QStringLiteral("KraCachePath")).toString();
+    kraRoot = kraRoot.isEmpty() ?
+                AppSupport::getAppCachePath() +
+                    QStringLiteral("/KRACache") :
+                QDir::cleanPath(kraRoot);
+    return kraRoot + QLatin1Char('/') + hash;
+}
+
+QString kraCachePng(const QString& filePath, const QString& frameFile,
+                    const QImage& image)
+{
+    const QString cacheDirPath = kraCacheDirForFile(filePath);
+    if (!QDir().mkpath(cacheDirPath)) {
+        RuntimeThrow("kra: cannot create cache dir " +
+                     cacheDirPath.toStdString());
+    }
+    QBuffer pngBuf;
+    pngBuf.open(QIODevice::WriteOnly);
+    // quality 85 -> zlib level 1: PNG is lossless, this only trades
+    // file size for encode speed (the cache is an intermediate)
+    if (!image.save(&pngBuf, "PNG", 85)) {
+        RuntimeThrow("kra: png encode failed");
+    }
+    // hash-named files: re-imports of edited documents never fight a
+    // Windows file lock held by a previous loader task
+    const QString hash = QString::fromLatin1(QCryptographicHash::hash(
+                pngBuf.data(), QCryptographicHash::Md5).toHex().left(8));
+    QString safeBase = frameFile;
+    safeBase.replace(QLatin1Char('/'), QLatin1Char('_'));
+    const QString path = cacheDirPath + QLatin1Char('/') + safeBase +
+            QLatin1Char('_') + hash + QLatin1String(".png");
+    QSaveFile file(path);
+    if (!file.open(QIODevice::WriteOnly)) {
+        RuntimeThrow("kra: cannot write cache file " + path.toStdString());
+    }
+    if (file.write(pngBuf.data()) != pngBuf.size() || !file.commit()) {
+        RuntimeThrow("kra: cannot write cache file " + path.toStdString());
+    }
+    // drop stale versions of the same frame
+    QDir dir(cacheDirPath);
+    const auto entries = dir.entryList({safeBase + QLatin1String("_*.png")},
+                                       QDir::Files);
+    for (const auto& entry : entries) {
+        if (entry != QFileInfo(path).fileName()) {
+            QFile::remove(cacheDirPath + QLatin1Char('/') + entry);
+        }
+    }
+    return path;
+}
 
 bool ImportKRA::looksLikeKRA(const QString& filePath)
 {
@@ -1013,6 +1010,110 @@ bool ImportKRA::looksLikeKRA(const QString& filePath)
         return zip.read(QStringLiteral("mimetype")) ==
                 QByteArrayLiteral("application/x-krita");
     } catch(...) { return false; }
+}
+
+KraLayerState ImportKRA::checkLayerUpdate(const QString& filePath,
+                                          const QString& uuid,
+                                          const QString& frameFile,
+                                          const quint32 knownCrc)
+{
+    KraLayerState result;
+    try {
+        KraZip zip;
+        if (!zip.load(filePath)) { return result; }
+
+        QDomDocument doc;
+        if (!doc.setContent(zip.read(QStringLiteral("maindoc.xml")))) {
+            return result;
+        }
+        const QDomElement imageElem = doc.documentElement()
+                .firstChildElement(QStringLiteral("IMAGE"));
+        if (imageElem.isNull()) { return result; }
+
+        // image directory prefix (same logic as the importer)
+        const QString imageName = imageElem.attribute(QStringLiteral("name"));
+        QString prefix;
+        {
+            const QString want = imageName + QLatin1String("/layers/");
+            if (zip.has(want)) { prefix = want; }
+            else {
+                const QStringList candidates = zip.layersPrefixes();
+                if (candidates.isEmpty()) { return result; }
+                prefix = candidates.first();
+            }
+        }
+        const QString imageCs = imageElem.attribute(
+                    QStringLiteral("colorspacename"), QStringLiteral("RGBA"));
+
+        const QDomElement layersElem = imageElem.firstChildElement(
+                    QStringLiteral("layers"));
+        if (layersElem.isNull()) { return result; }
+        const QDomElement elem = findLayerByUuid(layersElem, uuid);
+        if (elem.isNull()) { return result; }
+
+        result.name = elem.attribute(QStringLiteral("name"));
+        result.opacity = elem.attribute(
+                    QStringLiteral("opacity"), "255").toInt();
+        result.visible = elem.attribute(
+                    QStringLiteral("visible"), "1") == QLatin1String("1");
+        result.blendMode = elem.attribute(
+                    QStringLiteral("compositeop"), QStringLiteral("normal"));
+        const int layerX = elem.attribute(QStringLiteral("x"), "0").toInt();
+        const int layerY = elem.attribute(QStringLiteral("y"), "0").toInt();
+
+        // resolve the pixel entry: static layers use the layer file,
+        // animated layers the per-keyframe frame file
+        QString pixelFile = frameFile;
+        int offX = 0, offY = 0;
+        const QString keyframesAttr = elem.attribute(
+                    QStringLiteral("keyframes"));
+        if (!keyframesAttr.isEmpty()) {
+            bool frameFound = false;
+            const auto keys = parseKeyFrames(
+                        zip.read(prefix + keyframesAttr));
+            for (const auto& k : keys) {
+                if (k.mFrameFile == frameFile) {
+                    offX = k.mOffX;
+                    offY = k.mOffY;
+                    frameFound = true;
+                    break;
+                }
+            }
+            if (!frameFound) { return result; } // frame removed
+        } else {
+            pixelFile = elem.attribute(QStringLiteral("filename"),
+                                       result.name);
+        }
+        if (pixelFile.isEmpty()) { return result; }
+
+        const auto entry = zip.find(prefix + pixelFile);
+        if (!entry) { return result; }
+        result.found = true;
+        result.crc = entry->crc;
+
+        // unchanged: the crc matches, skip the tile decode entirely
+        if (knownCrc != 0 && entry->crc == knownCrc) { return result; }
+
+        const QString cs = elem.attribute(
+                    QStringLiteral("colorspacename"), imageCs);
+        const auto decoded = decodeTiled(zip.read(prefix + pixelFile), cs);
+        if (decoded.mImage.isNull()) {
+            // empty/deleted content: report as changed with a null
+            // image, the caller decides how to handle it
+            result.pixelsChanged = true;
+            return result;
+        }
+        result.pixelsChanged = true;
+        result.image = decoded.mImage;
+        result.posX = decoded.mOriginX + (keyframesAttr.isEmpty()
+                                          ? layerX : offX);
+        result.posY = decoded.mOriginY + (keyframesAttr.isEmpty()
+                                          ? layerY : offY);
+        return result;
+    } catch(const std::exception& e) {
+        qWarning() << "kra: checkLayerUpdate failed:" << e.what();
+        return KraLayerState();
+    }
 }
 
 qsptr<ContainerBox> ImportKRA::loadKRAFile(const QString& filePath,
@@ -1089,20 +1190,9 @@ qsptr<ContainerBox> ImportKRA::loadKRAFile(const QString& filePath,
     st.mRangeTo = animInfo.mRangeTo;
     st.mReport = report;
     st.mSkipped = skippedOut;
-    {
-        const QString clean = QDir::cleanPath(filePath);
-        const QString hash = QString::fromLatin1(QCryptographicHash::hash(
-                    clean.toUtf8(), QCryptographicHash::Md5).toHex().left(12));
-        // configurable root (preferences); empty setting = cache default
-        QString kraRoot = AppSupport::getSettings(
-                    QStringLiteral("settings"),
-                    QStringLiteral("KraCachePath")).toString();
-        kraRoot = kraRoot.isEmpty() ?
-                    AppSupport::getAppCachePath() +
-                        QStringLiteral("/KRACache") :
-                    QDir::cleanPath(kraRoot);
-        st.mCacheDir = kraRoot + QLatin1Char('/') + hash;
-    }
+    st.mSourceKra = QDir::cleanPath(filePath);
+    st.mCacheDir = kraCacheDirForFile(filePath);
+    st.mScene = scene;
 
     // configure an empty scene with the document's canvas + framerate
     if (scene && scene->getContainedBoxesCount() == 0) {
@@ -1117,7 +1207,7 @@ qsptr<ContainerBox> ImportKRA::loadKRAFile(const QString& filePath,
     if (layersElem.isNull()) {
         RuntimeThrow("kra: document has no layers");
     }
-    st.mTotalFrames = countPaintFrames(layersElem, zip, prefix);
+    st.mTotalFrames = countPaintFrames(layersElem, st);
     if (st.mReport) st.mReport(0, qMax(st.mTotalFrames, 1));
 
     const auto rootGroup = enve::make_shared<ContainerBox>(eBoxType::group);

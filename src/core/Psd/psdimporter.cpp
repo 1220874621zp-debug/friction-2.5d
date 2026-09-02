@@ -34,11 +34,15 @@
 #include "fpsdpackage.h"
 #include "psdimagebox.h"
 
+#include <QAtomicInt>
 #include <QCryptographicHash>
 #include <QDebug>
 #include <QDir>
 #include <QFileInfo>
 #include <QTemporaryFile>
+#include <QThread>
+
+#include <QtConcurrent/QtConcurrentMap>
 
 #include "appsupport.h"
 #include "exceptions.h"
@@ -65,6 +69,20 @@ SkBlendMode psdBlendToSk(const QString &key)
     if (key == QLatin1String("sat"))  { return SkBlendMode::kSaturation; }
     if (key == QLatin1String("colr")) { return SkBlendMode::kColor; }
     if (key == QLatin1String("lum"))  { return SkBlendMode::kLuminosity; }
+    // linear dodge (add) has a real skia equivalent
+    if (key == QLatin1String("lddg")) { return SkBlendMode::kPlus; }
+    // linear burn / vivid/linear/pin light / hard mix / subtract /
+    // divide / darker|lighter color have no skia blend mode; fall
+    // back to normal rather than silently mis-blending
+    if (key == QLatin1String("lbrn") || key == QLatin1String("vLit")
+            || key == QLatin1String("lLit") || key == QLatin1String("pLit")
+            || key == QLatin1String("hMix") || key == QLatin1String("fsub")
+            || key == QLatin1String("fdiv") || key == QLatin1String("dkCl")
+            || key == QLatin1String("lgCl")) {
+        qWarning() << "PSD import: blend mode" << key
+                   << "has no skia equivalent, using normal";
+        return SkBlendMode::kSrcOver;
+    }
     // norm, pass and unknown keys
     return SkBlendMode::kSrcOver;
 }
@@ -101,7 +119,48 @@ QString resolvePackagePath(const QFileInfo &psdInfo)
     return dir + QStringLiteral("/") + hash + QStringLiteral(".fpsd");
 }
 
-qsptr<BoundingBox> compositeAsImageBox(psd::PsdFile &psd,
+// parallel decode task (QtConcurrent::mapped with a plain function
+// pointer: this Qt5's result-type deduction needs result_type, which
+// lambdas do not provide - function pointers map cleanly)
+struct PsdDecodedLayer {
+    Fpsd::LayerMeta lm;
+    QByteArray png;
+    bool ok = false;
+};
+
+struct PsdDecodeCtx {
+    const psd::PsdFile *psd = nullptr;
+    const psd::LayerRecord *rec = nullptr;
+    QAtomicInt *done = nullptr;
+};
+
+PsdDecodedLayer decodeLayerTask(const PsdDecodeCtx &ctx)
+{
+    const psd::LayerRecord &rec = *ctx.rec;
+    PsdDecodedLayer out;
+    out.lm.key = ImportPSD::PsdSync::layerKeyForRecord(rec);
+    out.lm.layerId = rec.layerId;
+    out.lm.name = rec.name;
+    out.lm.x = rec.rect.left();
+    out.lm.y = rec.rect.top();
+    out.lm.w = rec.rect.width();
+    out.lm.h = rec.rect.height();
+    // raw channel bytes hash: later syncs detect "unchanged"
+    // without re-decoding the pixels
+    out.lm.hash = ctx.psd->rawLayerHash(rec);
+    out.lm.opacity = rec.opacity;
+    out.lm.visible = rec.visible;
+    out.lm.blendKey = rec.blendKey;
+    const QByteArray rgba = ctx.psd->extractLayerRGBA(rec);
+    if (!rgba.isEmpty()) {
+        out.png = Fpsd::rgbaToPng(rgba, out.lm.w, out.lm.h);
+        out.ok = !out.png.isEmpty();
+    }
+    ctx.done->fetchAndAddRelaxed(1);
+    return out;
+}
+
+qsptr<BoundingBox> compositeAsImageBox(const psd::PsdFile &psd,
                                        const QString &path,
                                        const QString &packagePath)
 {
@@ -131,7 +190,7 @@ qsptr<BoundingBox> compositeAsImageBox(psd::PsdFile &psd,
     lm.name = QFileInfo(path).completeBaseName();
     lm.w = psd.width();
     lm.h = psd.height();
-    lm.hash = Fpsd::pixelHash(rgba);
+    lm.hash = psd.rawCompositeHash();
     meta.layers.append(lm);
 
     QMap<QString, QByteArray> entries;
@@ -183,20 +242,21 @@ qsptr<PsdImageBox> createLayerBox(const QString &packagePath,
     return box;
 }
 
-int updateLayerPixels(psd::PsdFile &psd,
+int updateLayerPixels(const psd::PsdFile &psd,
                       Fpsd::Meta &meta,
-                      QMap<QString, QByteArray> &entries,
+                      QMap<QString, QByteArray> &updates,
                       PsdImageBox *box)
 {
     const QString key = box->sourceLayerKey();
 
-    int x = 0, y = 0, w = 0, h = 0;
-    QByteArray rgba;
     const psd::LayerRecord *rec = nullptr;
+    QString rawHash;
+    int x = 0, y = 0, w = 0, h = 0;
     if (key == compositeKey()) {
-        rgba = psd.extractCompositeRGBA();
         w = psd.width();
         h = psd.height();
+        rawHash = psd.rawCompositeHash();
+        if (rawHash.isEmpty()) { return -1; }
     } else {
         if (key.startsWith(QStringLiteral("fb"))) {
             const int index = key.mid(2).toInt();
@@ -217,26 +277,40 @@ int updateLayerPixels(psd::PsdFile &psd,
         y = rec->rect.top();
         w = rec->rect.width();
         h = rec->rect.height();
-        rgba = psd.extractLayerRGBA(*rec);
+        rawHash = psd.rawLayerHash(*rec);
     }
-    if (rgba.isEmpty() || w <= 0 || h <= 0) { return -1; }
 
     Fpsd::LayerMeta *lm = nullptr;
     for (auto &l : meta.layers) {
         if (l.key == key) { lm = &l; break; }
     }
 
-    const QString hash = Fpsd::pixelHash(rgba);
-    if (lm && lm->hash == hash && lm->w == w && lm->h == h
+    // cheap path: the raw channel bytes (and the rect, which is part
+    // of the hash input) are identical - pixels cannot differ, skip
+    // the whole decode + PNG re-encode
+    if (lm && lm->hash == rawHash && lm->w == w && lm->h == h
             && lm->x == x && lm->y == y) {
-        // pixels unchanged; only refresh the stored name
-        if (rec && !rec->name.isEmpty()) { lm->name = rec->name; }
+        // pixels unchanged; refresh the non-pixel attributes
+        if (rec) {
+            if (!rec->name.isEmpty()) { lm->name = rec->name; }
+            lm->opacity = rec->opacity;
+            lm->visible = rec->visible;
+            lm->blendKey = rec->blendKey;
+        }
         return 0;
     }
 
+    QByteArray rgba;
+    if (key == compositeKey()) {
+        rgba = psd.extractCompositeRGBA();
+    } else {
+        rgba = psd.extractLayerRGBA(*rec);
+    }
+    if (rgba.isEmpty() || w <= 0 || h <= 0) { return -1; }
+
     const QByteArray png = Fpsd::rgbaToPng(rgba, w, h);
     if (png.isEmpty()) { return -1; }
-    entries.insert(Fpsd::layerEntryName(key), png);
+    updates.insert(Fpsd::layerEntryName(key), png);
 
     if (lm) {
         // layer moved in the psd: shift the whole transform (base
@@ -254,7 +328,7 @@ int updateLayerPixels(psd::PsdFile &psd,
         lm->y = y;
         lm->w = w;
         lm->h = h;
-        lm->hash = hash;
+        lm->hash = rawHash;
         if (rec) {
             if (!rec->name.isEmpty()) { lm->name = rec->name; }
             lm->opacity = rec->opacity;
@@ -270,7 +344,7 @@ int updateLayerPixels(psd::PsdFile &psd,
         nlm.y = y;
         nlm.w = w;
         nlm.h = h;
-        nlm.hash = hash;
+        nlm.hash = rawHash;
         nlm.opacity = rec ? rec->opacity : 255;
         nlm.visible = rec ? rec->visible : true;
         nlm.blendKey = rec ? rec->blendKey : QStringLiteral("norm");
@@ -322,12 +396,12 @@ qsptr<BoundingBox> loadPSDFile(
     meta.width = psd.width();
     meta.height = psd.height();
 
-    QMap<QString, QByteArray> entries;
-    int imagesCreated = 0;
-    const int totalLayers = psd.layers().count();
-    int layerIndex = 0;
+    // Phase 1: decode + PNG-encode the eligible layers in worker
+    // threads (pure pixel work, no document/box state touched);
+    // Phase 2: create cache files and boxes on the calling thread in
+    // file order (mapped() preserves the input order).
+    QVector<PsdDecodeCtx> tasks;
     for (const auto &rec : psd.layers()) {
-        if (progress) progress(++layerIndex, totalLayers);
         if (rec.divider != psd::Divider::None) {
             // group boundary records (folder begin/end) - skipped
             continue;
@@ -336,50 +410,46 @@ qsptr<BoundingBox> loadPSDFile(
             qWarning() << "PSD import: skip empty layer" << rec.index << rec.name;
             continue;
         }
-        qWarning() << "PSD import: extracting layer" << rec.index << rec.name
-                << rec.rect.width() << "x" << rec.rect.height();
-        const QByteArray rgba = psd.extractLayerRGBA(rec, &error);
-        if (rgba.isEmpty()) {
-            qWarning() << "PSD import: skipping layer"
-                       << rec.name << "-" << error;
-            error.clear();
-            continue;
-        }
-        const QString key = PsdSync::layerKeyForRecord(rec);
-        const QByteArray png = Fpsd::rgbaToPng(rgba,
-                                               rec.rect.width(),
-                                               rec.rect.height());
-        const QString cachePath = Fpsd::writeLayerCacheFile(packagePath,
-                                                            key, png);
-        if (png.isEmpty() || cachePath.isEmpty()) {
-            qWarning() << "PSD import: failed to cache layer" << rec.name;
-            continue;
-        }
-        entries.insert(Fpsd::layerEntryName(key), png);
+        tasks.append({&psd, &rec, nullptr});
+    }
+    const int totalLayers = tasks.count();
+    QAtomicInt decodedCount = 0;
+    for (auto &t : tasks) { t.done = &decodedCount; }
+    QFuture<PsdDecodedLayer> future = QtConcurrent::mapped(
+                tasks, &decodeLayerTask);
+    while (!future.isFinished()) {
+        if (progress) progress(decodedCount.loadAcquire(), totalLayers);
+        QThread::msleep(15);
+    }
+    if (progress) progress(totalLayers, totalLayers);
 
-        Fpsd::LayerMeta lm;
-        lm.key = key;
-        lm.layerId = rec.layerId;
-        lm.name = rec.name;
-        lm.x = rec.rect.left();
-        lm.y = rec.rect.top();
-        lm.w = rec.rect.width();
-        lm.h = rec.rect.height();
-        lm.hash = Fpsd::pixelHash(rgba);
-        lm.opacity = rec.opacity;
-        lm.visible = rec.visible;
-        lm.blendKey = rec.blendKey;
-        meta.layers.append(lm);
+    QMap<QString, QByteArray> entries;
+    int imagesCreated = 0;
+    const auto results = future.results();
+    for (const auto &out : results) {
+        if (!out.ok) {
+            qWarning() << "PSD import: skipping layer" << out.lm.name;
+            continue;
+        }
+        const QString key = out.lm.key;
+        const QString cachePath = Fpsd::writeLayerCacheFile(packagePath,
+                                                            key, out.png);
+        if (cachePath.isEmpty()) {
+            qWarning() << "PSD import: failed to cache layer" << out.lm.name;
+            continue;
+        }
+        entries.insert(Fpsd::layerEntryName(key), out.png);
+        meta.layers.append(out.lm);
 
         const auto imgBox = PsdSync::createLayerBox(packagePath,
-                                                    cachePath, lm);
+                                                    cachePath, out.lm);
         imagesCreated++;
         root->addContained(imgBox);
         // apply the name AFTER addContained: insertContained() runs the
         // name through makeNameUniqueForDescendants() whose prp_sFixName()
         // strips non-ASCII characters, replacing Chinese names with
         // "Object N" - set the real name back afterwards.
-        if (!rec.name.isEmpty()) { imgBox->prp_setName(rec.name); }
+        if (!out.lm.name.isEmpty()) { imgBox->prp_setName(out.lm.name); }
     }
 
     if (imagesCreated == 0) {

@@ -78,6 +78,18 @@ bool CORE_EXPORT writePackage(const QString &path,
 // Read the whole package into memory. Empty map on failure.
 QMap<QString, QByteArray> CORE_EXPORT readPackage(const QString &path);
 
+// Read a single entry without loading the whole package (seek-based:
+// only the central directory and the requested entry are read).
+QByteArray CORE_EXPORT readPackageEntry(const QString &path,
+                                        const QString &name);
+
+// Apply updates to an existing package: entries whose names appear in
+// 'updates' are (re)written, all other entries are raw-copied from the
+// old file (STORED entries are copied verbatim - no decode/re-encode,
+// no full in-memory load of unchanged layer PNGs).
+bool CORE_EXPORT updatePackage(const QString &path,
+                               const QMap<QString, QByteArray> &updates);
+
 // --- meta.json io ------------------------------------------------------
 
 QByteArray CORE_EXPORT metaToJson(const Meta &meta);
@@ -94,10 +106,9 @@ QString CORE_EXPORT layerEntryName(const QString &key);
 
 // --- pixel helpers (shared by importer and image box) -------------------
 
-// md5 hex of straight rgba pixel data, used for change detection.
-QString CORE_EXPORT pixelHash(const QByteArray &rgba);
-
 // Encode straight (unpremultiplied) rgba8 as PNG. Empty on failure.
+// Uses fast deflate (level 1): PNG is lossless, the level only trades
+// file size for encode speed, and this data is an intermediate cache.
 QByteArray CORE_EXPORT rgbaToPng(const QByteArray &rgba, const int w,
                                  const int h);
 

@@ -90,11 +90,20 @@ namespace psd {
 
         // Extract a layer as straight (unpremultiplied) RGBA8, mask
         // applied to alpha. Size is 4 * w * h bytes.
+        // const + thread-safe: extraction runs against the immutable
+        // mData buffer with a private QBuffer per call.
         QByteArray extractLayerRGBA(const LayerRecord &layer,
-                                    QString *error = nullptr);
+                                    QString *error = nullptr) const;
 
         // Extract the flattened composite image as straight RGBA8.
-        QByteArray extractCompositeRGBA(QString *error = nullptr);
+        QByteArray extractCompositeRGBA(QString *error = nullptr) const;
+
+        // MD5 over the raw (still compressed) channel byte ranges +
+        // geometry. Cheap change detector for sync: identical file
+        // bytes decode to identical pixels, so a matching hash lets
+        // the caller skip the full decode + PNG re-encode entirely.
+        QString rawLayerHash(const LayerRecord &rec) const;
+        QString rawCompositeHash() const;
 
     private:
         bool readLayerSection(QDataStream &s,
@@ -113,7 +122,7 @@ namespace psd {
                                 const ChannelInfo &info,
                                 int rowWidth,
                                 int rowHeight,
-                                QString *error);
+                                QString *error) const;
 
 
         // Assemble RGBA8 from decompressed channel planes.

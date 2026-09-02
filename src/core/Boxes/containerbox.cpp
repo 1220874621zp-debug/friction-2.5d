@@ -1807,6 +1807,7 @@ void ContainerBox::writeBoxOrSoundXEV(const stdsptr<XevZipFileSaver>& xevFileSav
 #include "bone.h"
 #include "bonelayer.h"
 #include "Psd/psdimagebox.h"
+#include "Kra/kraimagebox.h"
 
 qsptr<BoundingBox> createBoxOfNonCustomType(const eBoxType type) {
     switch(type) {
@@ -1850,6 +1851,8 @@ qsptr<BoundingBox> createBoxOfNonCustomType(const eBoxType type) {
             return enve::make_shared<CameraLayer>();
         case(eBoxType::psdImage):
             return enve::make_shared<PsdImageBox>();
+        case(eBoxType::kraImage):
+            return enve::make_shared<KraImageBox>();
         // adjustment layers were never registered here - saving one
         // and reloading the project threw "Invalid box type"
         case(eBoxType::adjustmentLayer):

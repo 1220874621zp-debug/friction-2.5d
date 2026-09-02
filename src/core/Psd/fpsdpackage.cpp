@@ -65,9 +65,15 @@ quint32 crc32(const QByteArray &data)
 
 struct ZipEntry {
     QString name;
+    quint16 method = 0;
     quint32 crc = 0;
     quint32 size = 0;
     quint32 localOffset = 0;
+    // extent of the complete local record (header + name + extra +
+    // data) inside the source image; used by updatePackage to copy
+    // unchanged entries verbatim without decoding them
+    qint64 rawStart = 0;
+    qint64 rawLen = 0;
     QByteArray data;
 };
 
@@ -131,7 +137,8 @@ void writeZipEntries(QDataStream &s, QList<ZipEntry> &entries)
       << quint16(0);                  // comment len
 }
 
-bool readZipEntries(const QByteArray &raw, QList<ZipEntry> *entries)
+bool readZipEntries(const QByteArray &raw, QList<ZipEntry> *entries,
+                    const bool fillData = true)
 {
     // locate the end-of-central-directory record (scan backwards,
     // comment can be up to 64k but ours are written comment-less)
@@ -183,6 +190,8 @@ bool readZipEntries(const QByteArray &raw, QList<ZipEntry> *entries)
 
         ZipEntry e;
         e.name = name;
+        e.method = quint8(raw.at(int(pos) + 10))
+                | (quint8(raw.at(int(pos) + 11)) << 8);
         e.crc = crc;
         e.size = usize;
         e.localOffset = localOff;
@@ -196,9 +205,18 @@ bool readZipEntries(const QByteArray &raw, QList<ZipEntry> *entries)
             const quint16 lExtraLen = quint8(raw.at(int(lh) + 28))
                     | (quint8(raw.at(int(lh) + 29)) << 8);
             const qint64 dataStart = lh + 30 + lNameLen + lExtraLen;
-            const int count = int(qMin<qint64>(usize, raw.size() - dataStart));
-            if (count > 0) {
-                e.data = QByteArray(raw.constData() + dataStart, count);
+            e.rawStart = lh;
+            e.rawLen = dataStart + qint64(csize) - lh;
+            if (e.rawStart + e.rawLen > raw.size()) {
+                e.rawStart = 0;
+                e.rawLen = 0;
+            }
+            if (fillData) {
+                const int count = int(qMin<qint64>(usize,
+                                                   raw.size() - dataStart));
+                if (count > 0) {
+                    e.data = QByteArray(raw.constData() + dataStart, count);
+                }
             }
         }
         entries->append(e);
@@ -254,6 +272,205 @@ QMap<QString, QByteArray> readPackage(const QString &path)
         }
     }
     return result;
+}
+
+QByteArray readPackageEntry(const QString &path, const QString &name)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) { return QByteArray(); }
+    const qint64 fileSize = file.size();
+    if (fileSize < 22) { return QByteArray(); }
+
+    // the eocd lives in the last 64k + 22 bytes - read only the tail
+    const qint64 tailLen = qMin(fileSize, qint64(65558));
+    if (!file.seek(fileSize - tailLen)) { return QByteArray(); }
+    const QByteArray tail = file.read(tailLen);
+    qint64 eocd = -1;
+    for (qint64 i = tail.size() - 22; i >= 0; i--) {
+        if (quint8(tail.at(int(i)))     == 0x50 &&
+            quint8(tail.at(int(i) + 1)) == 0x4b &&
+            quint8(tail.at(int(i) + 2)) == 0x05 &&
+            quint8(tail.at(int(i) + 3)) == 0x06) {
+            eocd = i;
+            break;
+        }
+    }
+    if (eocd < 0) { return QByteArray(); }
+    quint32 cdSize = 0, cdStart = 0;
+    for (int b = 0; b < 4; b++) {
+        cdSize  |= quint32(quint8(tail.at(int(eocd) + 12 + b))) << (8 * b);
+        cdStart |= quint32(quint8(tail.at(int(eocd) + 16 + b))) << (8 * b);
+    }
+    if (qint64(cdStart) + qint64(cdSize) > fileSize) { return QByteArray(); }
+    if (!file.seek(cdStart)) { return QByteArray(); }
+    const QByteArray cd = file.read(cdSize);
+    if (cd.size() != int(cdSize)) { return QByteArray(); }
+
+    const QByteArray nameUtf8 = name.toUtf8();
+    qint64 pos = 0;
+    while (pos + 46 <= cd.size()) {
+        if (!(quint8(cd.at(int(pos)))     == 0x50 &&
+              quint8(cd.at(int(pos) + 1)) == 0x4b &&
+              quint8(cd.at(int(pos) + 2)) == 0x01 &&
+              quint8(cd.at(int(pos) + 3)) == 0x02)) {
+            break;
+        }
+        const quint16 nameLen = quint8(cd.at(int(pos) + 28))
+                | (quint8(cd.at(int(pos) + 29)) << 8);
+        const quint16 extraLen = quint8(cd.at(int(pos) + 30))
+                | (quint8(cd.at(int(pos) + 31)) << 8);
+        const quint16 commentLen = quint8(cd.at(int(pos) + 32))
+                | (quint8(cd.at(int(pos) + 33)) << 8);
+        const quint16 method = quint8(cd.at(int(pos) + 10))
+                | (quint8(cd.at(int(pos) + 11)) << 8);
+        quint32 csize = 0, usize = 0, localOff = 0;
+        for (int b = 0; b < 4; b++) {
+            csize    |= quint32(quint8(cd.at(int(pos) + 20 + b))) << (8 * b);
+            usize    |= quint32(quint8(cd.at(int(pos) + 24 + b))) << (8 * b);
+            localOff |= quint32(quint8(cd.at(int(pos) + 42 + b))) << (8 * b);
+        }
+        if (int(nameLen) == nameUtf8.size()
+                && qstrncmp(cd.constData() + pos + 46,
+                            nameUtf8.constData(), nameLen) == 0) {
+            // found: read only this entry's local header + payload
+            if (method != 0 || !file.seek(localOff)) { return QByteArray(); }
+            const QByteArray lh = file.read(30);
+            if (lh.size() < 30) { return QByteArray(); }
+            const quint16 lNameLen = quint8(lh.at(26))
+                    | (quint8(lh.at(27)) << 8);
+            const quint16 lExtraLen = quint8(lh.at(28))
+                    | (quint8(lh.at(29)) << 8);
+            if (!file.seek(qint64(localOff) + 30 + lNameLen + lExtraLen)) {
+                return QByteArray();
+            }
+            QByteArray data = file.read(csize);
+            if (data.size() != int(csize)) { return QByteArray(); }
+            Q_UNUSED(usize)
+            return data;
+        }
+        pos += 46 + nameLen + extraLen + commentLen;
+    }
+    return QByteArray();
+}
+
+bool updatePackage(const QString &path,
+                   const QMap<QString, QByteArray> &updates)
+{
+    QByteArray raw;
+    QList<ZipEntry> oldEntries;
+    {
+        QFile file(path);
+        if (file.exists()) {
+            if (!file.open(QIODevice::ReadOnly)) { return false; }
+            raw = file.readAll();
+            // read the directory only; entry payloads stay in 'raw'
+            if (!readZipEntries(raw, &oldEntries, false)) {
+                oldEntries.clear();
+                raw.clear();
+            }
+        }
+    }
+
+    QSaveFile out(path);
+    if (!out.open(QIODevice::WriteOnly)) {
+        qWarning() << "Fpsd: cannot open package for writing" << path;
+        return false;
+    }
+    QDataStream s(&out);
+    s.setByteOrder(QDataStream::LittleEndian);
+
+    QList<ZipEntry> finalEntries;
+    // unchanged entries: raw-copy the local record verbatim
+    // (valid because the package writer always produces STORED
+    // entries without data descriptors; anything else falls back
+    // to the decoded data read from the old file)
+    for (const auto &e : oldEntries) {
+        if (updates.contains(e.name)) { continue; }
+        ZipEntry keep = e;
+        if (e.method != 0 || e.rawLen <= 0) {
+            // not raw-copyable: decode from the old image
+            const qint64 dataStart = e.rawStart + e.rawLen - e.size;
+            if (e.rawLen <= 0 || dataStart < 0
+                    || dataStart + e.size > raw.size()) { continue; }
+            keep.data = QByteArray(raw.constData() + dataStart,
+                                   int(e.size));
+            keep.rawLen = 0;
+        } else {
+            keep.data = QByteArray(raw.constData() + e.rawStart,
+                                   int(e.rawLen));
+        }
+        finalEntries.append(keep);
+    }
+    // new / replaced entries
+    for (auto it = updates.begin(); it != updates.end(); it++) {
+        ZipEntry e;
+        e.name = it.key();
+        e.data = it.value();
+        finalEntries.append(e);
+    }
+
+    // write local records, raw copies verbatim
+    for (auto &e : finalEntries) {
+        const bool rawCopy = e.rawLen > 0 && e.method == 0
+                && !updates.contains(e.name);
+        const QByteArray nameBytes = e.name.toUtf8();
+        e.localOffset = quint32(s.device()->pos());
+        if (rawCopy) {
+            s.writeRawData(e.data.constData(), int(e.data.size()));
+            continue;
+        }
+        e.method = 0;
+        e.crc = crc32(e.data);
+        e.size = quint32(e.data.size());
+        s << quint32(0x04034b50);
+        s << quint16(20)
+          << quint16(0)
+          << quint16(0)
+          << quint16(0)
+          << quint16(0)
+          << e.crc
+          << e.size
+          << e.size
+          << quint16(nameBytes.size())
+          << quint16(0);
+        s.writeRawData(nameBytes.constData(), nameBytes.size());
+        s.writeRawData(e.data.constData(), int(e.data.size()));
+    }
+
+    const quint32 cdOffset = quint32(s.device()->pos());
+    for (const auto &e : finalEntries) {
+        const QByteArray nameBytes = e.name.toUtf8();
+        s << quint32(0x02014b50);
+        s << quint16(20)
+          << quint16(20)
+          << quint16(0)
+          << quint16(0)
+          << quint16(0)
+          << quint16(0)
+          << e.crc
+          << e.size
+          << e.size
+          << quint16(nameBytes.size())
+          << quint16(0)
+          << quint16(0)
+          << quint16(0)
+          << quint16(0)
+          << quint32(0)
+          << e.localOffset;
+        s.writeRawData(nameBytes.constData(), nameBytes.size());
+    }
+    const quint32 cdSize = quint32(s.device()->pos()) - cdOffset;
+
+    s << quint32(0x06054b50);
+    s << quint16(0)
+      << quint16(0)
+      << quint16(finalEntries.size())
+      << quint16(finalEntries.size())
+      << cdSize
+      << cdOffset
+      << quint16(0);
+    if (s.status() != QDataStream::Ok) { return false; }
+    return out.commit();
 }
 
 QByteArray metaToJson(const Meta &meta)
@@ -333,12 +550,6 @@ QString layerEntryName(const QString &key)
     return QStringLiteral("layers/") + key + QStringLiteral(".png");
 }
 
-QString pixelHash(const QByteArray &rgba)
-{
-    return QString::fromLatin1(QCryptographicHash::hash(
-            rgba, QCryptographicHash::Md5).toHex());
-}
-
 QByteArray rgbaToPng(const QByteArray &rgba, const int w, const int h)
 {
     if (w <= 0 || h <= 0 || rgba.size() < 4 * w * h) { return QByteArray(); }
@@ -348,7 +559,10 @@ QByteArray rgbaToPng(const QByteArray &rgba, const int w, const int h)
     QByteArray png;
     QBuffer buffer(&png);
     if (!buffer.open(QIODevice::WriteOnly)) { return QByteArray(); }
-    if (!image.copy().save(&buffer, "PNG")) { return QByteArray(); }
+    // quality 85 -> Qt maps PNG quality to 100-quality compression
+    // -> zlib level 1. PNG is lossless: this only trades file size
+    // for encode speed (3-5x faster than the default level)
+    if (!image.save(&buffer, "PNG", 85)) { return QByteArray(); }
     return png;
 }
 

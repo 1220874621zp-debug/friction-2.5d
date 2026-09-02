@@ -96,6 +96,7 @@ enum class eBoxType {
     boneLayer,
     solid,
     cameraLayer,
+    kraImage,
 
     count
 };

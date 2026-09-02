@@ -103,6 +103,7 @@ find_package(
     Qml
     Xml
     Svg
+    Concurrent
     REQUIRED
 )
 
@@ -116,7 +117,16 @@ set(QT_LIBRARIES
     Qt${QT_VERSION_MAJOR}::Qml
     Qt${QT_VERSION_MAJOR}::Xml
     Qt${QT_VERSION_MAJOR}::Svg
+    Qt${QT_VERSION_MAJOR}::Concurrent
 )
+
+# the kra importer inflates raw-deflate zip entries with zlib; on
+# Windows the zlib symbols come from Qt5Core's bundled copy
+# (headers: <QtZlib/zlib.h>), elsewhere link the system zlib
+if(NOT WIN32)
+    find_package(ZLIB REQUIRED)
+    list(APPEND QT_LIBRARIES ZLIB::ZLIB)
+endif()
 
 if(WIN32)
     set(SKIA_LIBRARIES

@@ -373,6 +373,7 @@ set(
     Psd/fpsdpackage.cpp
     Psd/psdimagebox.cpp
     Kra/kraimporter.cpp
+    Kra/kraimagebox.cpp
     switchablecontext.cpp
     swt_abstraction.cpp
     swt_rulescollection.cpp
@@ -764,6 +765,7 @@ set(
     Psd/fpsdpackage.h
     Psd/psdimagebox.h
     Kra/kraimporter.h
+    Kra/kraimagebox.h
     switchablecontext.h
     swt_abstraction.h
     swt_rulescollection.h

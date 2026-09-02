@@ -32,9 +32,13 @@
 
 #include <QFile>
 #include <QBuffer>
+#include <QCryptographicHash>
 #include <QDataStream>
 #include <QDebug>
 #include <QElapsedTimer>
+
+#include <cstring>
+#include <limits>
 
 namespace {
 
@@ -95,15 +99,13 @@ QString readUnicodeString(QDataStream &s, qint64 blockEnd)
     return result;
 }
 
-// PackBits decompression
-QByteArray uncompressRLE(const QByteArray &src, int dstSize)
+// PackBits decompression straight into the destination buffer.
+// Returns the number of bytes written (< dstSize on truncation).
+int uncompressRLETo(const char *srcPtr, const int srcSize,
+                    char *dstPtr, const int dstSize)
 {
-    QByteArray dst(dstSize, Qt::Uninitialized);
-    const char *srcPtr = src.constData();
-    char *dstPtr = dst.data();
     int srcPos = 0;
     int dstPos = 0;
-    const int srcSize = src.size();
     while (srcPos < srcSize && dstPos < dstSize) {
         const qint8 n = qint8(srcPtr[srcPos++]);
         if (n >= 0) {
@@ -124,8 +126,7 @@ QByteArray uncompressRLE(const QByteArray &src, int dstSize)
             dstPos += count;
         } // -128: no-op
     }
-    if (dstPos < dstSize) { dst.resize(dstPos); }
-    return dst;
+    return dstPos;
 }
 
 inline quint8 depthTo8Raw(const uchar *data, int channelSize)
@@ -133,14 +134,19 @@ inline quint8 depthTo8Raw(const uchar *data, int channelSize)
     if (channelSize == 1) {
         return *data;
     } else if (channelSize == 2) {
-        const quint16 v = (data[0] << 8) | data[1];
-        return quint8(qRound(v * 255.0 / 65535.0));
+        const quint32 v = quint32((data[0] << 8) | data[1]);
+        // integer (v*255 + 32767)/65535 - same rounding as
+        // qRound(v * 255.0 / 65535.0) without the float ops
+        return quint8((v * 255u + 32767u) / 65535u);
     } else { // 4-byte float
+        // memcpy instead of reinterpret_cast: the channel data is
+        // not guaranteed to be aligned for a float load (UB)
         const quint32 raw = (quint32(data[0]) << 24)
                           | (quint32(data[1]) << 16)
                           | (quint32(data[2]) << 8)
                           | quint32(data[3]);
-        const float f = *reinterpret_cast<const float*>(&raw);
+        float f;
+        memcpy(&f, &raw, sizeof(float));
         const float c = qBound(0.0f, f, 1.0f);
         return quint8(qRound(c * 255.0f));
     }
@@ -516,7 +522,7 @@ QByteArray PsdFile::channelPlane(QIODevice &dev,
                                 const ChannelInfo &info,
                                 const int rowWidth,
                                 const int rowHeight,
-                                QString *error)
+                                QString *error) const
 {
     const int channelSize = mDepth / 8;
     const int rowBytes = rowWidth * channelSize;
@@ -539,19 +545,25 @@ QByteArray PsdFile::channelPlane(QIODevice &dev,
     } else if (compression == 1) { // RLE
         // per-row compressed length table
         QVector<qint64> rowLengths(rowHeight);
+        qint64 totalCompressed = 0;
         for (int y = 0; y < rowHeight; y++) {
             if (mIsPsb) { quint32 v = 0; s >> v; rowLengths[y] = qint64(v); }
             else { quint16 v = 0; s >> v; rowLengths[y] = qint64(v); }
+            totalCompressed += rowLengths[y];
         }
+        // one bulk read of all compressed rows, then decode each row
+        // straight into its plane slot - no per-row temporaries
+        const QByteArray packed = dev.read(qint64(qMin(totalCompressed,
+                qint64(std::numeric_limits<int>::max()))));
         QByteArray plane(planeSize, Qt::Uninitialized);
-        int dstPos = 0;
+        qint64 srcPos = 0;
         for (int y = 0; y < rowHeight; y++) {
-            const QByteArray compressed = dev.read(int(rowLengths[y]));
-            const QByteArray row = uncompressRLE(compressed, rowBytes);
-            const int copy = qMin(row.size(), planeSize - dstPos);
-            memcpy(plane.data() + dstPos, row.constData(), size_t(copy));
-            dstPos += rowBytes;
-            if (dstPos >= planeSize) { break; }
+            const qint64 avail = qMin(rowLengths[y],
+                                      qint64(packed.size()) - srcPos);
+            if (avail <= 0) { break; }
+            uncompressRLETo(packed.constData() + srcPos, int(avail),
+                            plane.data() + y * rowBytes, rowBytes);
+            srcPos += rowLengths[y];
         }
         return plane;
     }
@@ -571,14 +583,23 @@ QByteArray PsdFile::assembleRGBA(const QMap<int, QByteArray> &planes,
     const int expectedPlaneBytes = numPixels * channelSize;
     QByteArray rgba(4 * numPixels, 255);
     const bool gray = (mMode == ColorMode::Grayscale);
+    const bool cmyk = (mMode == ColorMode::CMYK);
 
     const auto p0It = planes.find(0);
     const auto p1It = planes.find(1);
     const auto p2It = planes.find(2);
+    const auto p3It = planes.find(3);
     const auto paIt = planes.find(-1);
 
     if (gray) {
         if (p0It == planes.end() || p0It.value().size() < expectedPlaneBytes) {
+            return QByteArray();
+        }
+    } else if (cmyk) {
+        if (p0It == planes.end() || p0It.value().size() < expectedPlaneBytes ||
+            p1It == planes.end() || p1It.value().size() < expectedPlaneBytes ||
+            p2It == planes.end() || p2It.value().size() < expectedPlaneBytes ||
+            p3It == planes.end() || p3It.value().size() < expectedPlaneBytes) {
             return QByteArray();
         }
     } else {
@@ -592,58 +613,50 @@ QByteArray PsdFile::assembleRGBA(const QMap<int, QByteArray> &planes,
     const uchar *p0 = reinterpret_cast<const uchar*>(p0It.value().constData());
     const uchar *p1 = (!gray && p1It != planes.end()) ? reinterpret_cast<const uchar*>(p1It.value().constData()) : nullptr;
     const uchar *p2 = (!gray && p2It != planes.end()) ? reinterpret_cast<const uchar*>(p2It.value().constData()) : nullptr;
+    const uchar *p3 = (cmyk && p3It != planes.end()) ? reinterpret_cast<const uchar*>(p3It.value().constData()) : nullptr;
     const bool hasAlpha = (paIt != planes.end() && paIt.value().size() >= expectedPlaneBytes);
     const uchar *pa = hasAlpha ? reinterpret_cast<const uchar*>(paIt.value().constData()) : nullptr;
 
     uchar *dst = reinterpret_cast<uchar*>(rgba.data());
 
-    if (channelSize == 1) {
+    for (int i = 0; i < numPixels; i++) {
+        const int offset = i * channelSize;
         if (gray) {
-            for (int i = 0; i < numPixels; i++) {
-                const quint8 val = p0[i];
-                dst[0] = val;
-                dst[1] = val;
-                dst[2] = val;
-                dst[3] = pa ? pa[i] : 255;
-                dst += 4;
-            }
+            const quint8 val = depthTo8Raw(p0 + offset, channelSize);
+            dst[0] = val;
+            dst[1] = val;
+            dst[2] = val;
+        } else if (cmyk) {
+            // PSD stores CMYK channels inverted (255 = no ink);
+            // flip to ink amounts, then rgb = 255 - min(255, ink + k)
+            const int c = 255 - depthTo8Raw(p0 + offset, channelSize);
+            const int m = 255 - depthTo8Raw(p1 + offset, channelSize);
+            const int y = 255 - depthTo8Raw(p2 + offset, channelSize);
+            const int k = 255 - depthTo8Raw(p3 + offset, channelSize);
+            dst[0] = quint8(255 - qMin(255, c + k));
+            dst[1] = quint8(255 - qMin(255, m + k));
+            dst[2] = quint8(255 - qMin(255, y + k));
         } else {
-            for (int i = 0; i < numPixels; i++) {
-                dst[0] = p0[i];
-                dst[1] = p1[i];
-                dst[2] = p2[i];
-                dst[3] = pa ? pa[i] : 255;
-                dst += 4;
-            }
+            dst[0] = depthTo8Raw(p0 + offset, channelSize);
+            dst[1] = depthTo8Raw(p1 + offset, channelSize);
+            dst[2] = depthTo8Raw(p2 + offset, channelSize);
         }
-    } else {
-        for (int i = 0; i < numPixels; i++) {
-            const int offset = i * channelSize;
-            if (gray) {
-                const quint8 val = depthTo8Raw(p0 + offset, channelSize);
-                dst[0] = val;
-                dst[1] = val;
-                dst[2] = val;
-            } else {
-                dst[0] = depthTo8Raw(p0 + offset, channelSize);
-                dst[1] = depthTo8Raw(p1 + offset, channelSize);
-                dst[2] = depthTo8Raw(p2 + offset, channelSize);
-            }
-            dst[3] = pa ? depthTo8Raw(pa + offset, channelSize) : 255;
-            dst += 4;
-        }
+        dst[3] = pa ? depthTo8Raw(pa + offset, channelSize) : 255;
+        dst += 4;
     }
     return rgba;
 }
 
 QByteArray PsdFile::extractLayerRGBA(const LayerRecord &layer,
-                                     QString *error)
+                                     QString *error) const
 {
     const int w = layer.rect.width();
     const int h = layer.rect.height();
     if (w <= 0 || h <= 0) { return QByteArray(); }
 
-    QBuffer buffer(&mData);
+    // const_cast: QBuffer wants a non-const QByteArray*, but opened
+    // ReadOnly it never writes; constness keeps extraction thread-safe
+    QBuffer buffer(const_cast<QByteArray*>(&mData));
     buffer.open(QIODevice::ReadOnly);
 
     QMap<int, QByteArray> planes;
@@ -688,11 +701,11 @@ QByteArray PsdFile::extractLayerRGBA(const LayerRecord &layer,
     return rgba;
 }
 
-QByteArray PsdFile::extractCompositeRGBA(QString *error)
+QByteArray PsdFile::extractCompositeRGBA(QString *error) const
 {
     if (mCompositeOffset <= 0 || mWidth <= 0 || mHeight <= 0) { return QByteArray(); }
 
-    QBuffer buffer(&mData);
+    QBuffer buffer(const_cast<QByteArray*>(&mData));
     if (!buffer.open(QIODevice::ReadOnly)
             || !buffer.seek(mCompositeOffset)) {
         if (error) { *error = QStringLiteral("Cannot seek composite data"); }
@@ -716,35 +729,45 @@ QByteArray PsdFile::extractCompositeRGBA(QString *error)
         for (int c = 0; c < nChannels; c++) {
             planes.insert(c, QByteArray(planeSize, 0));
         }
+        // one bulk read per channel instead of per-row reads
         for (int c = 0; c < nChannels; c++) {
-            for (int row = 0; row < mHeight; row++) {
-                const int dstRow = mHeight - 1 - row;
-                const QByteArray rawRow = buffer.read(rowBytes);
-                if (rawRow.size() < rowBytes) { continue; }
-                memcpy(planes[c].data() + dstRow * rowBytes,
-                       rawRow.constData(), size_t(rowBytes));
+            const QByteArray chanData = buffer.read(planeSize);
+            const int rows = qMin(mHeight, chanData.size() / rowBytes);
+            char *dst = planes[c].data();
+            const char *src = chanData.constData();
+            for (int row = 0; row < rows; row++) {
+                memcpy(dst + (mHeight - 1 - row) * rowBytes,
+                       src + row * rowBytes, size_t(rowBytes));
             }
         }
     } else if (compression == 1) { // RLE, planar order, rows bottom to top
         // first the per-row length tables for ALL channels,
         // then the compressed rows channel by channel
         QVector<QVector<qint64>> tables(nChannels);
+        QVector<qint64> totals(nChannels, 0);
         for (int c = 0; c < nChannels; c++) {
             tables[c].resize(mHeight);
             for (int y = 0; y < mHeight; y++) {
                 if (mIsPsb) { quint32 v = 0; s >> v; tables[c][y] = qint64(v); }
                 else { quint16 v = 0; s >> v; tables[c][y] = qint64(v); }
+                totals[c] += tables[c][y];
             }
         }
         for (int c = 0; c < nChannels; c++) {
             planes.insert(c, QByteArray(planeSize, 0));
+            // bulk read the whole channel, decode rows in place
+            const QByteArray packed = buffer.read(qMin(totals[c],
+                    qint64(std::numeric_limits<int>::max())));
+            char *dst = planes[c].data();
+            qint64 srcPos = 0;
             for (int row = 0; row < mHeight; row++) {
-                const int dstRow = mHeight - 1 - row;
-                const QByteArray compressed = buffer.read(int(tables[c][row]));
-                const QByteArray rowData = uncompressRLE(compressed, rowBytes);
-                const int copy = qMin(rowData.size(), rowBytes);
-                memcpy(planes[c].data() + dstRow * rowBytes,
-                       rowData.constData(), size_t(copy));
+                const qint64 avail = qMin(tables[c][row],
+                                          qint64(packed.size()) - srcPos);
+                if (avail <= 0) { break; }
+                uncompressRLETo(packed.constData() + srcPos, int(avail),
+                                dst + (mHeight - 1 - row) * rowBytes,
+                                rowBytes);
+                srcPos += tables[c][row];
             }
         }
     } else {
@@ -755,6 +778,35 @@ QByteArray PsdFile::extractCompositeRGBA(QString *error)
     }
 
     return assembleRGBA(planes, mWidth, mHeight);
+}
+
+QString PsdFile::rawLayerHash(const LayerRecord &rec) const
+{
+    QCryptographicHash md5(QCryptographicHash::Md5);
+    // geometry participates so pure moves/resizes register as changes
+    const qint32 geo[4] = { rec.rect.x(), rec.rect.y(),
+                            rec.rect.width(), rec.rect.height() };
+    md5.addData(reinterpret_cast<const char*>(geo), sizeof(geo));
+    for (const auto &ch : rec.channels) {
+        if (ch.id < -2 || ch.id > 3) { continue; }
+        md5.addData(reinterpret_cast<const char*>(&ch.id), sizeof(ch.id));
+        if (ch.length <= 0 || ch.dataOffset <= 0
+                || ch.dataOffset + ch.length > mData.size()) {
+            continue;
+        }
+        md5.addData(mData.constData() + ch.dataOffset, int(ch.length));
+    }
+    return QString::fromLatin1(md5.result().toHex());
+}
+
+QString PsdFile::rawCompositeHash() const
+{
+    if (mCompositeOffset <= 0 || mCompositeOffset >= mData.size()) {
+        return QString();
+    }
+    return QString::fromLatin1(QCryptographicHash::hash(
+            mData.mid(int(mCompositeOffset)),
+            QCryptographicHash::Md5).toHex());
 }
 
 } // namespace psd

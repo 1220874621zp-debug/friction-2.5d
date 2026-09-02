@@ -233,10 +233,10 @@ bool PsdImageBox::updateFromSource()
         return false;
     }
 
-    auto entries = Fpsd::readPackage(mSourcePackage);
+    // only meta.json is read - the layer PNGs stay on disk
     Fpsd::Meta meta;
-    if (!Fpsd::metaFromJson(entries.value(QStringLiteral("meta.json")),
-                            &meta)) {
+    if (!Fpsd::metaFromJson(Fpsd::readPackageEntry(
+                mSourcePackage, QStringLiteral("meta.json")), &meta)) {
         qWarning() << "PSD update: cannot read package meta"
                    << mSourcePackage;
         return false;
@@ -253,8 +253,9 @@ bool PsdImageBox::updateFromSource()
         return false;
     }
 
+    QMap<QString, QByteArray> updates;
     const int result = ImportPSD::PsdSync::updateLayerPixels(
-                psd, meta, entries, this);
+                psd, meta, updates, this);
     if (result < 0) {
         const QString name = prp_getName();
         if (!name.startsWith(missingPrefix())) {
@@ -273,14 +274,16 @@ bool PsdImageBox::updateFromSource()
         prp_setName(name.mid(missingPrefix().size()));
     }
 
-    entries.insert(QStringLiteral("meta.json"), Fpsd::metaToJson(meta));
-    if (!Fpsd::writePackage(mSourcePackage, entries)) {
+    updates.insert(QStringLiteral("meta.json"), Fpsd::metaToJson(meta));
+    // incremental rewrite: unchanged entries are raw-copied, not
+    // decoded and re-encoded
+    if (!Fpsd::updatePackage(mSourcePackage, updates)) {
         qWarning() << "PSD update: failed to write package" << mSourcePackage;
         return false;
     }
 
     if (result > 0) {
-        const QByteArray png = entries.value(
+        const QByteArray png = updates.value(
                     Fpsd::layerEntryName(mSourceLayerKey));
         const QString cachePath = Fpsd::writeLayerCacheFile(
                     mSourcePackage, mSourceLayerKey, png);
@@ -307,10 +310,11 @@ void PsdImageBox::syncAllFromSource()
 {
     if (mSourcePackage.isEmpty()) { return; }
 
-    auto entries = Fpsd::readPackage(mSourcePackage);
+    // only meta.json is read - unchanged layer PNGs are raw-copied
+    // by updatePackage without ever entering memory
     Fpsd::Meta meta;
-    if (!Fpsd::metaFromJson(entries.value(QStringLiteral("meta.json")),
-                            &meta)) {
+    if (!Fpsd::metaFromJson(Fpsd::readPackageEntry(
+                mSourcePackage, QStringLiteral("meta.json")), &meta)) {
         qWarning() << "PSD sync: cannot read package meta" << mSourcePackage;
         return;
     }
@@ -336,15 +340,17 @@ void PsdImageBox::syncAllFromSource()
     if (scene) { collectPsdImageBoxes(scene, mSourcePackage, boxes); }
     if (!boxes.contains(this)) { boxes.append(this); }
 
-    // update existing layers
+    // update existing layers (raw-hash skip: unchanged layers are
+    // detected without decoding their pixels)
     int updatedCount = 0;
     int missingCount = 0;
     QSet<QString> seenKeys;
     QList<PsdImageBox*> changedBoxes;
+    QMap<QString, QByteArray> updates;
     for (auto *box : boxes) {
         seenKeys.insert(box->sourceLayerKey());
         const int result = ImportPSD::PsdSync::updateLayerPixels(
-                    psd, meta, entries, box);
+                    psd, meta, updates, box);
         if (result > 0) {
             updatedCount++;
             changedBoxes << box;
@@ -398,7 +404,7 @@ void PsdImageBox::syncAllFromSource()
                            << rec->name;
                 continue;
             }
-            entries.insert(Fpsd::layerEntryName(key), png);
+            updates.insert(Fpsd::layerEntryName(key), png);
 
             Fpsd::LayerMeta lm;
             lm.key = key;
@@ -408,7 +414,7 @@ void PsdImageBox::syncAllFromSource()
             lm.y = rec->rect.top();
             lm.w = rec->rect.width();
             lm.h = rec->rect.height();
-            lm.hash = Fpsd::pixelHash(rgba);
+            lm.hash = psd.rawLayerHash(*rec);
             lm.opacity = rec->opacity;
             lm.visible = rec->visible;
             lm.blendKey = rec->blendKey;
@@ -428,9 +434,10 @@ void PsdImageBox::syncAllFromSource()
         }
     }
 
-    // persist the package (updated pixels + meta)
-    entries.insert(QStringLiteral("meta.json"), Fpsd::metaToJson(meta));
-    if (!Fpsd::writePackage(mSourcePackage, entries)) {
+    // persist the package incrementally: only the updated/added
+    // entries are rewritten, everything else is raw-copied
+    updates.insert(QStringLiteral("meta.json"), Fpsd::metaToJson(meta));
+    if (!Fpsd::updatePackage(mSourcePackage, updates)) {
         QMessageBox::warning(nullptr, tr("PSD Sync"),
                               tr("Failed to write package:\n%1")
                               .arg(mSourcePackage));
@@ -439,7 +446,7 @@ void PsdImageBox::syncAllFromSource()
 
     // refresh the pixel cache + textures of the changed layers
     for (auto *box : changedBoxes) {
-        const QByteArray png = entries.value(
+        const QByteArray png = updates.value(
                     Fpsd::layerEntryName(box->sourceLayerKey()));
         const QString cachePath = Fpsd::writeLayerCacheFile(
                     mSourcePackage, box->sourceLayerKey(), png);
