@@ -70,9 +70,14 @@
 
 #include <QInputDialog>
 #include <QMessageBox>
+#include <QMutex>
 
-int BoundingBox::sNextDocumentId = 0;
+std::atomic<int> BoundingBox::sNextDocumentId{0};
 QList<BoundingBox*> BoundingBox::sDocumentBoxes;
+// Guards sDocumentBoxes: preview panels create sample boxes on
+// QtConcurrent worker threads, while the gui thread iterates the
+// list in sGetBoxByDocumentId (session restore, matte resolve).
+static QMutex sDocumentBoxesMutex;
 int BoundingBox::sNextWriteId;
 QList<const BoundingBox*> BoundingBox::sBoxesWithWriteIds;
 
@@ -85,7 +90,10 @@ BoundingBox::BoundingBox(const QString& name, const eBoxType type) :
     mTransformAnimator(enve::make_shared<BoxTransformAnimator>()),
     mRasterEffectsAnimators(enve::make_shared<RasterEffectCollection>()),
     mTrackMatteTarget(enve::make_shared<BoxTargetProperty>("track matte")) {
-    sDocumentBoxes << this;
+    {
+        QMutexLocker lock(&sDocumentBoxesMutex);
+        sDocumentBoxes << this;
+    }
 
     // live follow: whenever the matte target changes (pick, unpick,
     // file load resolving the stored id) re-arm the follow connections
@@ -126,6 +134,7 @@ BoundingBox::BoundingBox(const QString& name, const eBoxType type) :
 }
 
 BoundingBox::~BoundingBox() {
+    QMutexLocker lock(&sDocumentBoxesMutex);
     sDocumentBoxes.removeOne(this);
 }
 
@@ -266,6 +275,7 @@ QDomElement BoundingBox::prp_writePropertyXEV_impl(const XevExporter& exp) const
 }
 
 BoundingBox *BoundingBox::sGetBoxByDocumentId(const int documentId) {
+    QMutexLocker lock(&sDocumentBoxesMutex);
     for(const auto& box : sDocumentBoxes) {
         if(box->getDocumentId() == documentId) return box;
     }

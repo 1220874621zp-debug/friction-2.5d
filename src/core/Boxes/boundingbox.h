@@ -38,6 +38,7 @@
 #include "BlendEffects/blendeffect.h"
 #include "TransformEffects/transformeffect.h"
 #include "Tasks/domeletask.h"
+#include <atomic>
 
 class Canvas;
 class BoxTargetProperty;
@@ -134,7 +135,7 @@ public:
     template <typename B, typename T>
     static void sWriteReadMember(const B* const from, B* const to, const T member);
 private:
-    static int sNextDocumentId;
+    static std::atomic<int> sNextDocumentId;
     static QList<BoundingBox*> sDocumentBoxes;
 
     static int sNextWriteId;
