@@ -61,49 +61,51 @@ struct LayerStylesData {
 };
 
 // Choke/spread tightens the blurred alpha: a' = clamp(a/(1-k) - k/(1-k)),
-// linear in alpha so a color matrix expresses it exactly (this Skia
-// build has no TableARGB).
-static sk_sp<SkColorFilter> chokeFilter(const qreal spread01)
-{
-    const qreal k = qBound(0.0, spread01, 0.98);
-    if (k < 0.001) return nullptr;
-    const float s = float(1.0 / (1.0 - k));
-    const float m[20] = {
-        1, 0, 0, 0, 0,
-        0, 1, 0, 0, 0,
-        0, 0, 1, 0, 0,
-        0, 0, 0, s, float(-k * s)
-    };
-    SkColorMatrix cm;
-    cm.setRowMajor(m);
-    return SkColorFilters::Matrix(cm);
-}
-
-// Blurred, choked, color-tinted copy of the source silhouette
+// linear in alpha. Expressed as one color matrix together with the
+// tint: rgb := color, a := opacity * clamp(s*a - k*s). Done in a
+// SECOND pass over a blurred snapshot - the nested filter chain
+// SkImageFilters::ColorFilter(choke, SkImageFilters::Blur(...))
+// renders nothing in this skia build (verified by bisect).
 static void paintShape(SkCanvas * const canvas, const SkImage * const src,
                        const qreal dx, const qreal dy,
                        const QColor& color, const qreal opacity,
                        const qreal sigma, const qreal spread01)
 {
-    SkPaint paint;
-    const qreal alphaF = qBound(0.0, color.alphaF() * opacity, 1.0);
-    const SkColor tint = SkColorSetARGB(static_cast<U8CPU>(qRound(alphaF * 255)),
-                                        color.red(), color.green(), color.blue());
-    paint.setColorFilter(SkColorFilters::Blend(tint, SkBlendMode::kSrcIn));
-    sk_sp<SkImageFilter> filter;
-    const auto blur = sigma > 0.01 ? SkImageFilters::Blur(
-                static_cast<SkScalar>(sigma), static_cast<SkScalar>(sigma), nullptr)
-                : nullptr;
-    const auto choke = chokeFilter(spread01);
-    if (choke) {
-        // blur first, then tighten the faded alpha (filter chain
-        // applies the input first)
-        filter = SkImageFilters::ColorFilter(choke, blur);
+    // 1. blur the silhouette onto a private surface (single filter
+    //    per draw, the pattern proven by the stroke path)
+    const auto surf = SkSurface::MakeRaster(src->imageInfo());
+    if (!surf) return;
+    const auto sc = surf->getCanvas();
+    sc->clear(SK_ColorTRANSPARENT);
+    if (sigma > 0.01) {
+        SkPaint bp;
+        bp.setImageFilter(SkImageFilters::Blur(
+                    static_cast<SkScalar>(sigma),
+                    static_cast<SkScalar>(sigma), nullptr));
+        sc->drawImage(src, 0, 0, &bp);
     } else {
-        filter = blur;
+        sc->drawImage(src, 0, 0);
     }
-    if (filter) paint.setImageFilter(filter);
-    canvas->drawImage(src, static_cast<SkScalar>(dx),
+    sc->flush();
+    const auto blurred = surf->makeImageSnapshot();
+    if (!blurred) return;
+
+    // 2. tint + choke as one color matrix (values in 0..1 space)
+    const qreal alphaF = qBound(0.0, color.alphaF() * opacity, 1.0);
+    const qreal k = qBound(0.0, spread01, 0.98);
+    const qreal s = k > 0.001 ? 1.0 / (1.0 - k) : 1.0;
+    const float m[20] = {
+        0, 0, 0, 0, static_cast<float>(color.redF()),
+        0, 0, 0, 0, static_cast<float>(color.greenF()),
+        0, 0, 0, 0, static_cast<float>(color.blueF()),
+        0, 0, 0, static_cast<float>(alphaF * s),
+                           static_cast<float>(-alphaF * k * s)
+    };
+    SkColorMatrix cm;
+    cm.setRowMajor(m);
+    SkPaint paint;
+    paint.setColorFilter(SkColorFilters::Matrix(cm));
+    canvas->drawImage(blurred.get(), static_cast<SkScalar>(dx),
                       static_cast<SkScalar>(dy), &paint);
 }
 
@@ -166,8 +168,11 @@ static void composeStyles(SkCanvas * const canvas, const SkImage * const src,
     }
     if (d.mGlow) {
         const qreal sigma = d.mGlowSize / 3.0;
+        // PS glow "spread" reads far more gradual than the linear
+        // alpha remap; halve it or typical PSD values (40+) would
+        // reduce the glow to a 1px rim
         paintShape(canvas, src, sx, sy, d.mGlowColor,
-                   d.mGlowOpacity, sigma, d.mGlowSpread);
+                   d.mGlowOpacity, sigma, d.mGlowSpread * 0.5);
     }
     canvas->drawImage(src, sx, sy);
     if (d.mStroke) {

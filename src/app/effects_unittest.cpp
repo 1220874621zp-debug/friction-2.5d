@@ -250,6 +250,55 @@ int main(int argc, char *argv[])
         if (SkColorGetA(*shadowPx) < 30) {
             throw std::runtime_error("no shadow to the left");
         }
+
+        // --- round 2: with spread/choke (the PSD-import parameter
+        // shape that failed on the user's GPU render) ---
+        dstBtmp.eraseARGB(0, 0, 0, 0);
+        styles->setShadow(true, 90.0, 10.0, 56.0, 7.0, 40.0, QColor(0, 0, 0));
+        styles->setGlow(true, 42.0, 54.0, 23.0, QColor(0, 255, 24));
+        const auto caller2 = styles->getEffectCaller(0.0, 1.0, 1.0, nullptr);
+        if (!caller2) { throw std::runtime_error("caller2 is null"); }
+        for (const auto& tile : tiles) {
+            SkBitmap tileDst;
+            if (!dstBtmp.extractSubset(&tileDst, tile)) {
+                throw std::runtime_error("extractSubset failed");
+            }
+            CpuRenderTools tools{srcBtmp, tileDst};
+            CpuRenderData data;
+            data.fTexTile = tile;
+            caller2->processCpu(tools, data);
+        }
+        // angle 90 -> shadow straight below (+10): spans y[26,58];
+        // sample below the square itself (y=52); shadow is black:
+        // tint must dominate, not the layer's purple
+        const auto shadowPx2 = static_cast<const uint32_t*>(dstBtmp.getAddr(20, 52));
+        if (SkColorGetA(*shadowPx2) < 20
+                || SkColorGetB(*shadowPx2) > SkColorGetR(*shadowPx2) + 10) {
+            throw std::runtime_error("no choked black shadow below");
+        }
+        // glow: green tint around the square (mild spread; the linear
+        // choke remap erases low-alpha tails so extreme spread values
+        // are covered by the shadow assertion above). Parameters are
+        // snapshotted into the caller, so recreate it after setGlow.
+        styles->setGlow(true, 20.0, 20.0, 60.0, QColor(0, 255, 24));
+        const auto caller3 = styles->getEffectCaller(0.0, 1.0, 1.0, nullptr);
+        if (!caller3) { throw std::runtime_error("caller3 is null"); }
+        dstBtmp.eraseARGB(0, 0, 0, 0);
+        for (const auto& tile : tiles) {
+            SkBitmap tileDst;
+            if (!dstBtmp.extractSubset(&tileDst, tile)) {
+                throw std::runtime_error("extractSubset failed");
+            }
+            CpuRenderTools tools{srcBtmp, tileDst};
+            CpuRenderData data;
+            data.fTexTile = tile;
+            caller3->processCpu(tools, data);
+        }
+        const auto glowPx = static_cast<const uint32_t*>(dstBtmp.getAddr(10, 32));
+        if (SkColorGetA(*glowPx) < 5
+                || SkColorGetG(*glowPx) < SkColorGetR(*glowPx)) {
+            throw std::runtime_error("no green glow around");
+        }
     });
 
     // Test 5b: PSD layer-styles parsing on a real file passed as
