@@ -24,8 +24,11 @@
 #include <QCoreApplication>
 #include <QTranslator>
 #include <QDebug>
+#include <QFile>
+#include <QDir>
 #include <iostream>
 #include <cassert>
+#include <cstring>
 
 #include "RasterEffects/rastereffectsinclude.h"
 #include "RasterEffects/rastereffectcollection.h"
@@ -329,6 +332,193 @@ int main(int argc, char *argv[])
                   << " effects=" << effects << " ";
         if (styled < 1) {
             throw std::runtime_error("expected at least one styled layer");
+        }
+    });
+
+    // Test 5c: synthetic multi-instance PSD (2 shadows + 2 glows +
+    // 2 strokes in lmfx, plus an lfx2 mirror that must be ignored).
+    // Hand-built bytes: locks the '*Multi' key spellings, the lmfx
+    // authority rule and the instance-to-effect assembly end to end
+    runTest("Test 5c: synthetic multi-instance PSD", [&]() {
+        struct Dw {
+            QByteArray b;
+            void u8v(const quint8 v) { b.append(char(v)); }
+            void u16v(const quint16 v) {
+                u8v(quint8(v >> 8)); u8v(quint8(v));
+            }
+            void u32v(const quint32 v) {
+                for (int i = 3; i >= 0; i--) { u8v(quint8(v >> (8 * i))); }
+            }
+            void i32v(const qint32 v) { u32v(quint32(v)); }
+            void i16v(const qint16 v) { u16v(quint16(v)); }
+            void f64v(const double v) {
+                quint64 bits = 0;
+                std::memcpy(&bits, &v, sizeof(bits));
+                for (int i = 7; i >= 0; i--) { u8v(quint8(bits >> (8 * i))); }
+            }
+            void raw(const char* const s, const int n) { b.append(s, n); }
+            void id(const char* const s) {
+                const int n = int(qstrlen(s));
+                if (n == 4) { i32v(0); raw(s, 4); }
+                else { i32v(n); raw(s, n); }
+            }
+            void unit(const char* const unitKey, const double v) {
+                raw("UntF", 4); raw(unitKey, 4); f64v(v);
+            }
+            void boolean(const bool v) { raw("bool", 4); u8v(v ? 1 : 0); }
+            void enumV(const char* const type, const char* const value) {
+                raw("enum", 4); id(type); id(value);
+            }
+            void color(const double r, const double g, const double bl) {
+                raw("Objc", 4); i32v(0); id("RGBC"); i32v(3);
+                id("Rd  "); raw("doub", 4); f64v(r);
+                id("Grn "); raw("doub", 4); f64v(g);
+                id("Bl  "); raw("doub", 4); f64v(bl);
+            }
+        };
+
+        const auto shadowObj = [&](const double dist) {
+            Dw w;
+            w.raw("Objc", 4); w.i32v(0); w.id("DrSh"); w.i32v(7);
+            w.id("enab"); w.boolean(true);
+            w.id("Opct"); w.unit("#Prc", 40.0);
+            w.id("lagl"); w.unit("#Ang", 90.0);
+            w.id("Dstn"); w.unit("#Pxl", dist);
+            w.id("Ckmt"); w.unit("#Prc", 0.0);
+            w.id("blur"); w.unit("#Pxl", 5.0);
+            w.id("Clr "); w.color(61.0, 27.0, 5.0);
+            return w.b;
+        };
+        const auto glowObj = [&](const double size) {
+            Dw w;
+            w.raw("Objc", 4); w.i32v(0); w.id("OrGl"); w.i32v(5);
+            w.id("enab"); w.boolean(true);
+            w.id("Opct"); w.unit("#Prc", 30.0);
+            w.id("Ckmt"); w.unit("#Prc", 0.0);
+            w.id("blur"); w.unit("#Pxl", size);
+            w.id("Clr "); w.color(0.0, 255.0, 24.0);
+            return w.b;
+        };
+        const auto strokeObj = [&](const double size) {
+            Dw w;
+            w.raw("Objc", 4); w.i32v(0); w.id("FrFX"); w.i32v(6);
+            w.id("enab"); w.boolean(true);
+            w.id("Opct"); w.unit("#Prc", 100.0);
+            w.id("Sz  "); w.unit("#Pxl", size);
+            w.id("Styl"); w.enumV("FTst", "FStF");
+            w.id("Md  "); w.enumV("BlnM", "Nrml");
+            w.id("Clr "); w.color(255.0, 0.0, 0.0);
+            return w.b;
+        };
+
+        // lmfx: authoritative, two instances of each type
+        Dw lmfxW;
+        lmfxW.i32v(0); lmfxW.id("null"); lmfxW.i32v(5);
+        lmfxW.id("Scl "); lmfxW.unit("#Prc", 100.0);
+        lmfxW.id("masterFXSwitch"); lmfxW.boolean(true);
+        lmfxW.id("dropShadowMulti");
+        lmfxW.raw("VlLs", 4); lmfxW.i32v(2);
+        lmfxW.b.append(shadowObj(20.0)); lmfxW.b.append(shadowObj(50.0));
+        lmfxW.id("outerGlowMulti");
+        lmfxW.raw("VlLs", 4); lmfxW.i32v(2);
+        lmfxW.b.append(glowObj(18.0)); lmfxW.b.append(glowObj(36.0));
+        lmfxW.id("frameFXMulti");
+        lmfxW.raw("VlLs", 4); lmfxW.i32v(2);
+        lmfxW.b.append(strokeObj(3.0)); lmfxW.b.append(strokeObj(8.0));
+
+        // lfx2 mirror: single shadow with a DIFFERENT distance - the
+        // assertion on dist proves the mirror was overridden
+        Dw lfx2W;
+        lfx2W.i32v(0); lfx2W.id("null"); lfx2W.i32v(3);
+        lfx2W.id("Scl "); lfx2W.unit("#Prc", 100.0);
+        lfx2W.id("masterFXSwitch"); lfx2W.boolean(true);
+        lfx2W.id("DrSh"); lfx2W.b.append(shadowObj(5.0));
+
+        Dw lmfxBlock;
+        lmfxBlock.raw("8BIM", 4); lmfxBlock.raw("lmfx", 4);
+        lmfxBlock.u32v(lmfxW.b.size() + 8);
+        lmfxBlock.i32v(0); lmfxBlock.i32v(16);
+        lmfxBlock.b.append(lmfxW.b);
+
+        Dw lfx2Block;
+        lfx2Block.raw("8BIM", 4); lfx2Block.raw("lfx2", 4);
+        lfx2Block.u32v(lfx2W.b.size() + 8);
+        lfx2Block.i32v(0); lfx2Block.i32v(16);
+        lfx2Block.b.append(lfx2W.b);
+
+        // minimal 1-layer PSD carrying both blocks
+        Dw psd;
+        psd.raw("8BPS", 4); psd.u16v(1);
+        for (int i = 0; i < 6; i++) { psd.u8v(0); }
+        psd.u16v(3);                    // channels
+        psd.i32v(1); psd.i32v(1);       // h, w
+        psd.u16v(8); psd.u16v(3);       // depth, RGB
+        psd.u32v(0);                    // color mode data
+        psd.u32v(0);                    // image resources
+        Dw li;
+        li.i16v(1);                     // layer count
+        li.i32v(0); li.i32v(0); li.i32v(1); li.i32v(1);  // rect
+        li.u16v(1);                     // channel count
+        li.i16v(0); li.u32v(2);         // channel id 0 (i16), len 2
+        li.raw("8BIM", 4); li.raw("norm", 4);
+        li.u8v(255); li.u8v(0); li.u8v(0); li.u8v(0);
+        Dw extra;
+        extra.u32v(0);                  // mask size
+        extra.u32v(0);                  // blending ranges
+        extra.u8v(1); extra.raw("a", 1);
+        extra.u8v(0); extra.u8v(0);
+        extra.b.append(lfx2Block.b);
+        extra.b.append(lmfxBlock.b);
+        li.u32v(extra.b.size()); li.b.append(extra.b);
+        if (li.b.size() & 1) { li.u8v(0); }
+        Dw lm;
+        lm.u32v(li.b.size() + 4); lm.u32v(li.b.size());
+        lm.b.append(li.b);
+        psd.b.append(lm.b);
+        psd.u16v(1); psd.u16v(0);       // channel data stub
+        psd.u16v(1); psd.u16v(0);       // image data stub
+
+        const QString tmpPath = QDir::temp().absoluteFilePath(
+                    QStringLiteral("friction_lfx_test.psd"));
+        {
+            QFile f(tmpPath);
+            if (!f.open(QIODevice::WriteOnly)) {
+                throw std::runtime_error("cannot write temp psd");
+            }
+            f.write(psd.b);
+        }
+
+        psd::PsdFile psdFile;
+        QString err;
+        if (!psdFile.load(tmpPath, &err)) {
+            throw std::runtime_error(("load failed: " + err).toStdString());
+        }
+        if (psdFile.layers().isEmpty()) {
+            throw std::runtime_error("no layers parsed");
+        }
+        const auto& rec = psdFile.layers().first();
+        std::cout << " effects=" << rec.stylesList.size() << " ";
+        if (rec.stylesList.size() != 4) {
+            throw std::runtime_error("expected 4 style effects (main + 3 extras)");
+        }
+        if (!rec.stylesFromLmfx) {
+            throw std::runtime_error("lmfx authority flag not set");
+        }
+        const auto& main = rec.stylesList.first();
+        if (!main.shadowEnabled || !main.glowEnabled || !main.strokeEnabled) {
+            throw std::runtime_error("main effect missing a style");
+        }
+        // the mirror said dist 5, lmfx says 20
+        if (qAbs(main.shadowDistance - 20.0) > 0.01) {
+            throw std::runtime_error("lfx2 mirror was not overridden by lmfx");
+        }
+        for (int i = 1; i < rec.stylesList.size(); i++) {
+            const auto& e = rec.stylesList.at(i);
+            const int on = int(e.shadowEnabled) + int(e.glowEnabled)
+                           + int(e.strokeEnabled);
+            if (on != 1) {
+                throw std::runtime_error("extra effect is not solo");
+            }
         }
     });
 

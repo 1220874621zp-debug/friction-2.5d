@@ -403,7 +403,8 @@ void fillStroke(psd::LayerStyles &st, const DescValue &obj)
                st.strokeR, st.strokeG, st.strokeB);
 }
 
-void applyLfxpStyles(const DescValue &root, psd::LayerRecord &rec)
+void applyLfxpStyles(const DescValue &root, psd::LayerRecord &rec,
+                     const bool isLmfx)
 {
     // 'lfxp' (CS2+) and 'lfx2' (PS 6) use different effect key
     // spellings; PS 2015+ stores additional instances of a type in
@@ -434,6 +435,11 @@ void applyLfxpStyles(const DescValue &root, psd::LayerRecord &rec)
             QByteArrayLiteral("frameFXMulti"), strokes);
     if (shadows.isEmpty() && glows.isEmpty() && strokes.isEmpty()) { return; }
 
+    // a layer can carry both the lfxp/lfx2 mirror and an lmfx block
+    // (and rarely more than one of each): whatever holds instances
+    // last wins, and an lmfx block wins outright via stylesFromLmfx
+    rec.stylesList.clear();
+
     // first instance of each type merges into one effect; every
     // additional instance becomes its own entry (stacked effects)
     psd::LayerStyles main;
@@ -453,6 +459,7 @@ void applyLfxpStyles(const DescValue &root, psd::LayerRecord &rec)
         fillStroke(rec.stylesList.last(), *strokes.at(i));
     }
     rec.stylesList.prepend(main);
+    if (isLmfx) { rec.stylesFromLmfx = true; }
 
     qWarning() << "PSD layer styles:" << rec.stylesList.size()
                << "effect(s): shadow x" << shadows.size()
@@ -462,8 +469,12 @@ void applyLfxpStyles(const DescValue &root, psd::LayerRecord &rec)
 
 } // namespace
 
-void readLfxpStyles(QDataStream &s, const qint64 blockEnd, psd::LayerRecord &rec)
+void readLfxpStyles(QDataStream &s, const qint64 blockEnd,
+                   psd::LayerRecord &rec, const bool isLmfx)
 {
+    // the lfxp/lfx2 mirror of a layer whose lmfx block was already
+    // parsed would duplicate the styles - lmfx is the authority
+    if (!isLmfx && rec.stylesFromLmfx) { return; }
     try {
         // version (0 or 2), descriptor version (16), then descriptor
         qint32 version = 0;
@@ -471,7 +482,7 @@ void readLfxpStyles(QDataStream &s, const qint64 blockEnd, psd::LayerRecord &rec
         s >> version >> descVersion;
         DescReader reader(s, blockEnd);
         const DescValue root = reader.readDescriptorBody();
-        applyLfxpStyles(root, rec);
+        applyLfxpStyles(root, rec, isLmfx);
     } catch (...) {
         // malformed or unexpected descriptor: keep defaults, the
         // caller skips the rest of the block regardless
@@ -849,7 +860,8 @@ bool PsdFile::readLayerRecords(QDataStream &s, qint64 layerInfoEnd,
                 // when a type has multiple instances - the legacy
                 // 'lrFX' block only mirrors the first instance and is
                 // skipped. All three share the same body layout.
-                readLfxpStyles(s, blockEnd, rec);
+                readLfxpStyles(s, blockEnd, rec,
+                               key == QLatin1String("lmfx"));
             } else if (key == QLatin1String("lsct")
                        || key == QLatin1String("lsdk")) {
                 quint32 dividerType = 0;

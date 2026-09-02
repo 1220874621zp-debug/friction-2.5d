@@ -106,6 +106,9 @@ namespace psd {
         // multiple per type, stored in '*Multi' lists) becomes its
         // own entry rendered as a stacked effect
         QVector<LayerStyles> stylesList;
+        // lmfx (multi-instance store) is authoritative: once seen,
+        // the lfxp/lfx2 mirror of the same layer is skipped
+        bool stylesFromLmfx = false;
     };
 
     // CORE_EXPORT for the effects unit-test exe (module-internal
