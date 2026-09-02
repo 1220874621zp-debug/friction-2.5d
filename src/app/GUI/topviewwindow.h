@@ -53,6 +53,7 @@ private:
         qreal fRotX = 0.;
         qreal fRotY = 0.;
         qreal fRotZ = 0.;
+        qreal fDz = -1.;      // D.z unit component (viewer side, negative)
     };
     enum class DragType { none, pan, layer, camera, cameraRot };
 
@@ -90,6 +91,9 @@ private:
     qreal mDragStartPanX = 0.;
     qreal mDragStartPanY = 0.;
     qreal mDragStartRotZ = 0.;
+    qreal mDragStartZoom = 1.;
+    qreal mDragStartCamZ = 0.;   // camera C.z at press (world depth)
+    qreal mDragDz = -1.;         // D.z at press
     qreal mPressRingAngle = 0.;  // device-space handle angle, degrees
     int mHoverIndex = -1;
 

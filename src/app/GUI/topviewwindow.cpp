@@ -137,6 +137,7 @@ TopViewWindow::CamPose TopViewWindow::cameraPose() const
     pose.fRotX = rotX;
     pose.fRotY = rotY;
     pose.fRotZ = rotZ;
+    pose.fDz = dz;
     pose.fValid = true;
     return pose;
 }
@@ -257,7 +258,7 @@ bool TopViewWindow::hitCamera(const QPointF& device) const
     const qreal pr = devicePixelRatioF();
     const QPointF c = mapToDevice(mPose.fPos);
     const QPointF d = device - c;
-    const qreal r = 10. * pr;
+    const qreal r = 12. * pr;
     return d.x() * d.x() + d.y() * d.y() <= r * r;
 }
 
@@ -318,7 +319,7 @@ void TopViewWindow::finishDrags()
         const auto cam = mScene ? mScene->getCameraLayer() : nullptr;
         if (cam) {
             cam->panXAnimator()->prp_finishTransform();
-            cam->panYAnimator()->prp_finishTransform();
+            cam->zoomAnimator()->prp_finishTransform();
         }
     } else if (mDragType == DragType::cameraRot) {
         const auto cam = mScene ? mScene->getCameraLayer() : nullptr;
@@ -562,6 +563,14 @@ void TopViewWindow::renderSk(SkCanvas* const canvas)
 
     // ---- HUD ----
     {
+        // always-on operation hint
+        const auto tip = QString::fromUtf8(
+                    "拖摄像机 = 平移/推拉 · 拖环手柄 = 旋转 · 拖线段 = 图层 x/z")
+                .toStdString();
+        SkPaint tipP;
+        tipP.setColor(SkColorSetARGB(110, 150, 150, 160));
+        canvas->drawString(tip.c_str(), SkScalar(8 * pr),
+                           H - SkScalar(22 * pr), labelFont, tipP);
         const auto hudFontV = hudFont(10);
         SkPaint hp;
         hp.setColor(SkColorSetARGB(210, 190, 190, 200));
@@ -578,9 +587,9 @@ void TopViewWindow::renderSk(SkCanvas* const canvas)
                     .arg(world.x(), 0, 'f', 1)
                     .arg(world.y(), 0, 'f', 1);
         } else if (mDragType == DragType::camera && cam) {
-            dragLab = QString::fromUtf8("pan(%1, %2)")
+            dragLab = QString::fromUtf8("位移 x=%1 · 缩放 %2")
                     .arg(cam->panXAnimator()->getCurrentBaseValue(), 0, 'f', 1)
-                    .arg(cam->panYAnimator()->getCurrentBaseValue(), 0, 'f', 1);
+                    .arg(cam->zoomAnimator()->getCurrentBaseValue(), 0, 'f', 2);
         } else if (mDragType == DragType::cameraRot && cam) {
             dragLab = QString::fromUtf8("旋转 %1°")
                     .arg(cam->rotZAnimator()->getCurrentBaseValue(), 0, 'f', 1);
@@ -620,9 +629,11 @@ void TopViewWindow::mousePressEvent(QMouseEvent* e)
                 mDragType = DragType::camera;
                 mPressTopWorld = mapToTopWorld(dev);
                 mDragStartPanX = cam->panXAnimator()->getCurrentBaseValue();
-                mDragStartPanY = cam->panYAnimator()->getCurrentBaseValue();
+                mDragStartZoom = cam->zoomAnimator()->getCurrentBaseValue();
+                mDragStartCamZ = mPose.fValid ? mPose.fPos.y() : 0.;
+                mDragDz = mPose.fValid ? mPose.fDz : -1.;
                 cam->panXAnimator()->prp_startTransform();
-                cam->panYAnimator()->prp_startTransform();
+                cam->zoomAnimator()->prp_startTransform();
                 setCursor(Qt::ClosedHandCursor);
                 return;
             }
@@ -679,13 +690,24 @@ void TopViewWindow::mouseMoveEvent(QMouseEvent* e)
         if (!cam) { mDragType = DragType::none; return; }
         const QPointF world = mapToTopWorld(dev);
         const QPointF dWorld = world - mPressTopWorld;
-        // the pose position follows panX 1:1, so the icon tracks the
-        // cursor exactly; panY is not visible from the top but edits
-        // the same animator pair the camera tool uses
+        // horizontal drag = camera x position: panX tracks the icon
+        // 1:1 (pan sits inside zoom in the matrix chain)
         cam->panXAnimator()->setCurrentBaseValue(
                     mDragStartPanX + dWorld.x());
-        cam->panYAnimator()->setCurrentBaseValue(
-                    mDragStartPanY + dWorld.y());
+        // vertical drag = dolly along depth: solve the zoom that puts
+        // the icon at the cursor height (C.z = dz * f / zoom), so the
+        // camera slides towards/away from the canvas following the
+        // mouse exactly
+        const qreal f = cam->focalAnimator()->getCurrentBaseValue();
+        const qreal dz = mDragDz;
+        if (qAbs(dz) > 1e-3 && qAbs(f) > 1e-3) {
+            const qreal targetZ = mDragStartCamZ + dWorld.y();
+            // keep the camera on the viewer side (z < 0)
+            if (targetZ < -1.) {
+                cam->zoomAnimator()->setCurrentBaseValue(
+                            qBound(0.01, dz * f / targetZ, 100.));
+            }
+        }
         update();
         return;
     }
