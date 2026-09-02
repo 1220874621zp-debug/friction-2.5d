@@ -109,6 +109,9 @@ public:
                                           const QString& uuid,
                                           const QString& frameFile,
                                           const quint32 knownCrc);
+
+    // krita compositeop id (SVG/CSS name) -> skia blend mode
+    static SkBlendMode blendModeFromKrita(const QString& mode);
 };
 
 #endif // KRAIMPORTER_H

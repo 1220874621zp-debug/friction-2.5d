@@ -199,6 +199,7 @@ bool KraImageBox::updateFromSource()
     const auto trans = getBoxTransformAnimator();
     trans->setOpacity(qBound(0., state.opacity / 2.55, 100.));
     if (state.visible) { show(); } else { hide(); }
+    setBlendModeSk(ImportKRA::blendModeFromKrita(state.blendMode));
 
     if (!state.pixelsChanged) {
         QMessageBox::information(nullptr, tr("KRA Update"),
@@ -265,6 +266,11 @@ void KraImageBox::syncAllFromSource()
         if (name.startsWith(missingPrefix())) {
             box->prp_setName(name.mid(missingPrefix().size()));
         }
+        // non-pixel attributes follow the source document
+        const auto boxTrans = box->getBoxTransformAnimator();
+        boxTrans->setOpacity(qBound(0., state.opacity / 2.55, 100.));
+        if (state.visible) { box->show(); } else { box->hide(); }
+        box->setBlendModeSk(ImportKRA::blendModeFromKrita(state.blendMode));
         if (!state.pixelsChanged) { continue; }
 
         // same position compensation as updateFromSource: shift the

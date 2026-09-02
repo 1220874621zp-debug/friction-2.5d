@@ -212,6 +212,9 @@ public:
             if (e.method == 0) {
                 return QByteArray(mData + e.dataStart, int(e.csize));
             } else if (e.method == 8) {
+                // empty deflate stream: inflate would never reach
+                // STREAM_END with avail_out 0
+                if (e.usize == 0) { return QByteArray(); }
                 QByteArray out(int(e.usize), Qt::Uninitialized);
                 inflateRaw(reinterpret_cast<const uchar*>(mData + e.dataStart),
                            e.csize,
@@ -484,44 +487,6 @@ KraImageData decodeTiled(const QByteArray& raw, const QString& colorSpace)
 }
 
 // ---------------------------------------------------------------------------
-// Blend mode mapping (Krita compositeop ids use SVG/CSS names, the same
-// set the OCA importer maps - reuse that table with '_' normalized)
-// ---------------------------------------------------------------------------
-
-SkBlendMode blendModeFromKrita(const QString& mode)
-{
-    QString m = mode.toLower();
-    m.replace(QLatin1Char('_'), QLatin1Char('-'));
-    if (m == QLatin1String("multiply"))   { return SkBlendMode::kMultiply; }
-    if (m == QLatin1String("screen"))     { return SkBlendMode::kScreen; }
-    if (m == QLatin1String("overlay"))    { return SkBlendMode::kOverlay; }
-    if (m == QLatin1String("darken"))     { return SkBlendMode::kDarken; }
-    if (m == QLatin1String("lighten"))    { return SkBlendMode::kLighten; }
-    if (m == QLatin1String("difference")) { return SkBlendMode::kDifference; }
-    if (m == QLatin1String("exclusion"))  { return SkBlendMode::kExclusion; }
-    if (m == QLatin1String("color-dodge") || m == QLatin1String("dodge"))
-                                          { return SkBlendMode::kColorDodge; }
-    if (m == QLatin1String("color-burn") || m == QLatin1String("burn"))
-                                          { return SkBlendMode::kColorBurn; }
-    if (m == QLatin1String("hard-light")) { return SkBlendMode::kHardLight; }
-    if (m == QLatin1String("soft-light")) { return SkBlendMode::kSoftLight; }
-    if (m == QLatin1String("hue"))        { return SkBlendMode::kHue; }
-    if (m == QLatin1String("saturation")) { return SkBlendMode::kSaturation; }
-    if (m == QLatin1String("color"))      { return SkBlendMode::kColor; }
-    if (m == QLatin1String("luminosity") || m == QLatin1String("value"))
-                                          { return SkBlendMode::kLuminosity; }
-    if (m == QLatin1String("dissolve"))   { return SkBlendMode::kSrcOver; }
-    if (m == QLatin1String("destination-in"))
-                                          { return SkBlendMode::kDstIn; }
-    if (m == QLatin1String("destination-out"))
-                                          { return SkBlendMode::kDstOut; }
-    if (m == QLatin1String("source-atop"))
-                                          { return SkBlendMode::kSrcATop; }
-    // "normal" and Krita-specific modes with no skia equivalent
-    return SkBlendMode::kSrcOver;
-}
-
-// ---------------------------------------------------------------------------
 // Import
 // ---------------------------------------------------------------------------
 
@@ -618,7 +583,7 @@ void applyLayerProps(BoundingBox* const box, const QDomElement& elem,
                     qBound(0., opacity / 2.55, 100.));
     }
     if (elem.attribute(QStringLiteral("visible"), "1") != "1") box->hide();
-    box->setBlendModeSk(blendModeFromKrita(
+    box->setBlendModeSk(ImportKRA::blendModeFromKrita(
                 elem.attribute(QStringLiteral("compositeop"), "normal")));
 }
 
@@ -825,7 +790,7 @@ qsptr<BoundingBox> buildNode(const QDomElement& elem,
                         qBound(0., opacity / 2.55, 100.));
         }
         if (elem.attribute(QStringLiteral("visible"), "1") != "1") group->hide();
-        group->setBlendModeSk(blendModeFromKrita(
+        group->setBlendModeSk(ImportKRA::blendModeFromKrita(
                     elem.attribute(QStringLiteral("compositeop"), "normal")));
         const QDomElement layers = elem.firstChildElement(QStringLiteral("layers"));
         if (!layers.isNull()) buildChildren(layers, group.get(), st);
@@ -976,6 +941,43 @@ QDomElement findLayerByUuid(const QDomElement& layersElem,
 }
 
 } // namespace
+
+// Blend mode mapping (Krita compositeop ids use SVG/CSS names, the same
+// set the OCA importer maps - reuse that table with '_' normalized).
+// Defined at file scope: MSVC rejects class member definitions inside
+// an anonymous namespace (C2888).
+SkBlendMode ImportKRA::blendModeFromKrita(const QString& mode)
+{
+    QString m = mode.toLower();
+    m.replace(QLatin1Char('_'), QLatin1Char('-'));
+    if (m == QLatin1String("multiply"))   { return SkBlendMode::kMultiply; }
+    if (m == QLatin1String("screen"))     { return SkBlendMode::kScreen; }
+    if (m == QLatin1String("overlay"))    { return SkBlendMode::kOverlay; }
+    if (m == QLatin1String("darken"))     { return SkBlendMode::kDarken; }
+    if (m == QLatin1String("lighten"))    { return SkBlendMode::kLighten; }
+    if (m == QLatin1String("difference")) { return SkBlendMode::kDifference; }
+    if (m == QLatin1String("exclusion"))  { return SkBlendMode::kExclusion; }
+    if (m == QLatin1String("color-dodge") || m == QLatin1String("dodge"))
+                                          { return SkBlendMode::kColorDodge; }
+    if (m == QLatin1String("color-burn") || m == QLatin1String("burn"))
+                                          { return SkBlendMode::kColorBurn; }
+    if (m == QLatin1String("hard-light")) { return SkBlendMode::kHardLight; }
+    if (m == QLatin1String("soft-light")) { return SkBlendMode::kSoftLight; }
+    if (m == QLatin1String("hue"))        { return SkBlendMode::kHue; }
+    if (m == QLatin1String("saturation")) { return SkBlendMode::kSaturation; }
+    if (m == QLatin1String("color"))      { return SkBlendMode::kColor; }
+    if (m == QLatin1String("luminosity") || m == QLatin1String("value"))
+                                          { return SkBlendMode::kLuminosity; }
+    if (m == QLatin1String("dissolve"))   { return SkBlendMode::kSrcOver; }
+    if (m == QLatin1String("destination-in"))
+                                          { return SkBlendMode::kDstIn; }
+    if (m == QLatin1String("destination-out"))
+                                          { return SkBlendMode::kDstOut; }
+    if (m == QLatin1String("source-atop"))
+                                          { return SkBlendMode::kSrcATop; }
+    // "normal" and Krita-specific modes with no skia equivalent
+    return SkBlendMode::kSrcOver;
+}
 
 QString kraCacheDirForFile(const QString& filePath)
 {

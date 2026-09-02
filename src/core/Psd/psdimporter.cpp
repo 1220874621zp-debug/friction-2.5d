@@ -278,6 +278,11 @@ int updateLayerPixels(const psd::PsdFile &psd,
         w = rec->rect.width();
         h = rec->rect.height();
         rawHash = psd.rawLayerHash(*rec);
+        // non-pixel attributes follow the source document
+        const auto trans = box->getBoxTransformAnimator();
+        trans->setOpacity(qBound(0., rec->opacity / 2.55, 100.));
+        if (rec->visible) { box->show(); } else { box->hide(); }
+        box->setBlendModeSk(psdBlendToSk(rec->blendKey));
     }
 
     Fpsd::LayerMeta *lm = nullptr;
