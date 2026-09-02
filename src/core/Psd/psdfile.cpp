@@ -840,12 +840,15 @@ bool PsdFile::readLayerRecords(QDataStream &s, qint64 layerInfoEnd,
                 s >> id;
                 rec.layerId = qint32(id);
             } else if (key == QLatin1String("lfxp")
-                       || key == QLatin1String("lfx2")) {
+                       || key == QLatin1String("lfx2")
+                       || key == QLatin1String("lmfx")) {
                 // Photoshop layer styles (descriptor-based); 'lfxp' is
                 // the CS2+ spelling, 'lfx2' the Photoshop 6-era one with
-                // short effect keys (DrSh/OrGl/FrFX) - same body layout.
-                // Shadow, outer glow and stroke are consumed, the rest
-                // walks past.
+                // short effect keys (DrSh/OrGl/FrFX), 'lmfx' (layer
+                // multi fx) is where current Photoshop stores styles
+                // when a type has multiple instances - the legacy
+                // 'lrFX' block only mirrors the first instance and is
+                // skipped. All three share the same body layout.
                 readLfxpStyles(s, blockEnd, rec);
             } else if (key == QLatin1String("lsct")
                        || key == QLatin1String("lsdk")) {
