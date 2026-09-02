@@ -733,6 +733,13 @@ void MainWindow::setupMenuBar()
 
     mViewMenu->addSeparator();
 
+    // AE-style orthographic top view window (X/Z plane with the
+    // scene camera shown) - floating auxiliary view
+    mViewTopViewAct = mViewMenu->addAction(tr("Top View Window"));
+    mViewTopViewAct->setCheckable(true);
+    connect(mViewTopViewAct, &QAction::triggered,
+            this, &MainWindow::toggleTopViewWindow);
+
     mViewTimelineAct = mViewMenu->addAction(tr("View Timeline"));
     mViewTimelineAct->setCheckable(true);
     mViewTimelineAct->setChecked(true);

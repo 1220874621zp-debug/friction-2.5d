@@ -25,6 +25,7 @@
 
 #include "mainwindow.h"
 #include "GUI/Expressions/expressiondialog.h"
+#include "GUI/topviewwindow.h"
 #include "canvas.h"
 #include <QKeyEvent>
 #include <QApplication>
@@ -516,6 +517,49 @@ void MainWindow::closedTimelineWindow()
         mTimelineDock->show();
         mTimeline->show();
         if (mViewTimelineAct) { mViewTimelineAct->setChecked(true); }
+    }
+}
+
+void MainWindow::openTopViewWindow()
+{
+    if (!mTopViewWindow) {
+        if (!mTopViewWidget) {
+            mTopViewWidget = new TopViewWindow(mDocument, this);
+        }
+        mTopViewWindow = new Window(this,
+                                     mTopViewWidget,
+                                     tr("Top View"),
+                                     QString("TopViewWindow"),
+                                     true,
+                                     true,
+                                     false);
+        mTopViewWindow->setMinimumSize(360, 300);
+        connect(mTopViewWindow, &Window::closed,
+                this, [this]() { closedTopViewWindow(); });
+        if (mViewTopViewAct) { mViewTopViewAct->setChecked(true); }
+    }
+    mTopViewWindow->focusWindow();
+}
+
+void MainWindow::closedTopViewWindow()
+{
+    if (mShutdown) { return; }
+    // cheap to rebuild - drop the window AND the GL widget so no
+    // context lingers (the widget dies as the window's child)
+    if (mTopViewWindow) {
+        mTopViewWindow->deleteLater();
+        mTopViewWindow = nullptr;
+    }
+    mTopViewWidget = nullptr;
+    if (mViewTopViewAct) { mViewTopViewAct->setChecked(false); }
+}
+
+void MainWindow::toggleTopViewWindow()
+{
+    if (mTopViewWindow) {
+        mTopViewWindow->close();
+    } else {
+        openTopViewWindow();
     }
 }
 

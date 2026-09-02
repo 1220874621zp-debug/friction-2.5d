@@ -5271,6 +5271,16 @@ Are you sure you want to save this project file?</source>
     </message>
     <message>
         <location filename="../GUI/menu.cpp" line="729"/>
+        <source>Top View Window</source>
+        <translation>顶视图窗口</translation>
+    </message>
+    <message>
+        <location filename="../GUI/mainwindow.cpp" line="520"/>
+        <source>Top View</source>
+        <translation>顶视图</translation>
+    </message>
+    <message>
+        <location filename="../GUI/menu.cpp" line="729"/>
         <source>View Timeline</source>
         <translation>显示时间轴</translation>
     </message>

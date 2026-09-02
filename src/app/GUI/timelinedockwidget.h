@@ -161,6 +161,7 @@ private:
     QAction *mLoopButton;
     QAction *mSnapshotButton = nullptr;
     QAction *mSafeFramesButton = nullptr;
+    QAction *mTopViewButton = nullptr;
     QAction *mClipCanvasButton = nullptr;
     QAction *mRulersButton = nullptr;
     QAction *mTransparencyGridButton = nullptr;

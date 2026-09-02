@@ -275,6 +275,38 @@ TimelineDockWidget::TimelineDockWidget(Document& document,
             if(scene) scene->setSafeFramesVisible(checked);
         });
 
+        // AE-style top view auxiliary window (X/Z plane with the
+        // scene camera) - canvas plane line + camera cone seen from
+        // above, next to the safe-frames toggle
+        {
+            QPixmap tpv(64, 64);
+            tpv.fill(Qt::transparent);
+            QPainter tp(&tpv);
+            tp.setRenderHint(QPainter::Antialiasing);
+            QPen cone(QColor(255, 158, 44, 200));
+            cone.setWidthF(4.5);
+            tp.setPen(cone);
+            tp.drawLine(32, 18, 13, 48);
+            tp.drawLine(32, 18, 51, 48);
+            QPen plane(QColor(235, 235, 242, 230));
+            plane.setWidthF(5.);
+            plane.setCapStyle(Qt::RoundCap);
+            tp.setPen(plane);
+            tp.drawLine(8, 48, 56, 48);
+            tp.setPen(Qt::NoPen);
+            tp.setBrush(QColor(255, 158, 44));
+            tp.drawEllipse(QRectF(26, 10, 12, 12));
+            tp.end();
+            mTopViewButton = new QAction(tpv, tr("顶视图"), this);
+        }
+        mTopViewButton->setToolTip(tr(
+                "打开/关闭顶视图窗口：X/Z 正交视图，显示摄像机位置与视野，"
+                "可直接拖动 3D 图层调整深度（同视图菜单 Top View Window）"));
+        connect(mTopViewButton, &QAction::triggered,
+                this, [this]() {
+            if (mMainWindow) { mMainWindow->toggleTopViewWindow(); }
+        });
+
         // mask everything outside the canvas - the same toggle as the
         // view menu "Clip to Scene" (shortcut C), surfaced as a button
         // next to the safe-frames toggle (user-supplied SVG icon)
@@ -724,6 +756,7 @@ TimelineDockWidget::TimelineDockWidget(Document& document,
     mToolBar->addAction(mLoopButton);
     mToolBar->addAction(mSnapshotButton);
     mToolBar->addAction(mSafeFramesButton);
+    mToolBar->addAction(mTopViewButton);
     mToolBar->addSeparator();
     mToolBar->addAction(mClipCanvasButton);
     mToolBar->addAction(mRulersButton);
