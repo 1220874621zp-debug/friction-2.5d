@@ -305,29 +305,38 @@ bool styleColor(const DescValue &obj, const QByteArray &key,
 
 void applyLfxpStyles(const DescValue &root, psd::LayerStyles &st)
 {
-    const auto shadow = objChild(root, QByteArrayLiteral("dropShadow"));
+    // 'lfxp' (CS2+) and 'lfx2' (PS 6) use different effect key
+    // spellings for the same objects
+    const DescValue *shadow = objChild(root, QByteArrayLiteral("dropShadow"));
+    if (!shadow) { shadow = objChild(root, QByteArrayLiteral("DrSh")); }
     if (shadow && styleEnabled(*shadow)) {
         st.hasAny = true;
         st.shadowEnabled = true;
         st.shadowOpacity = styleNum(*shadow, QByteArrayLiteral("Opct"), st.shadowOpacity);
         st.shadowAngle = styleNum(*shadow, QByteArrayLiteral("lagl"), st.shadowAngle);
         st.shadowDistance = styleNum(*shadow, QByteArrayLiteral("Dstn"), st.shadowDistance);
-        st.shadowSpread = styleNum(*shadow, QByteArrayLiteral("Ckmt"), st.shadowSpread);
+        // lfxp stores choke as #Prc percent; some lfx2 writers emit #Pxl
+        // - clamp either way, percent semantics
+        st.shadowSpread = qBound(0.0, styleNum(*shadow, QByteArrayLiteral("Ckmt"),
+                                                st.shadowSpread), 100.0);
         st.shadowSize = styleNum(*shadow, QByteArrayLiteral("blur"), st.shadowSize);
         styleColor(*shadow, QByteArrayLiteral("Clr "),
                    st.shadowR, st.shadowG, st.shadowB);
     }
-    const auto glow = objChild(root, QByteArrayLiteral("outerGlow"));
+    const DescValue *glow = objChild(root, QByteArrayLiteral("outerGlow"));
+    if (!glow) { glow = objChild(root, QByteArrayLiteral("OrGl")); }
     if (glow && styleEnabled(*glow)) {
         st.hasAny = true;
         st.glowEnabled = true;
         st.glowOpacity = styleNum(*glow, QByteArrayLiteral("Opct"), st.glowOpacity);
-        st.glowSpread = styleNum(*glow, QByteArrayLiteral("Ckmt"), st.glowSpread);
+        st.glowSpread = qBound(0.0, styleNum(*glow, QByteArrayLiteral("Ckmt"),
+                                              st.glowSpread), 100.0);
         st.glowSize = styleNum(*glow, QByteArrayLiteral("blur"), st.glowSize);
         styleColor(*glow, QByteArrayLiteral("Clr "),
                    st.glowR, st.glowG, st.glowB);
     }
-    const auto stroke = objChild(root, QByteArrayLiteral("frameFX"));
+    const DescValue *stroke = objChild(root, QByteArrayLiteral("frameFX"));
+    if (!stroke) { stroke = objChild(root, QByteArrayLiteral("FrFX")); }
     if (stroke && styleEnabled(*stroke)) {
         st.hasAny = true;
         st.strokeEnabled = true;
@@ -341,6 +350,12 @@ void applyLfxpStyles(const DescValue &root, psd::LayerStyles &st)
         }
         styleColor(*stroke, QByteArrayLiteral("Clr "),
                    st.strokeR, st.strokeG, st.strokeB);
+    }
+    if (st.hasAny) {
+        qWarning() << "PSD layer styles: shadow" << st.shadowEnabled
+                   << "glow" << st.glowEnabled << "stroke" << st.strokeEnabled
+                   << "dist" << st.shadowDistance << "angle" << st.shadowAngle
+                   << "size" << st.shadowSize << "strokeSize" << st.strokeSize;
     }
 }
 
@@ -359,6 +374,8 @@ void readLfxpStyles(QDataStream &s, const qint64 blockEnd, psd::LayerRecord &rec
     } catch (...) {
         // malformed or unexpected descriptor: keep defaults, the
         // caller skips the rest of the block regardless
+        qWarning() << "PSD layer styles: descriptor parse failed,"
+                      " keeping defaults";
     }
 }
 
@@ -721,9 +738,13 @@ bool PsdFile::readLayerRecords(QDataStream &s, qint64 layerInfoEnd,
                 quint32 id = 0;
                 s >> id;
                 rec.layerId = qint32(id);
-            } else if (key == QLatin1String("lfxp")) {
-                // Photoshop layer styles (descriptor-based); shadow,
-                // outer glow and stroke are consumed, the rest walks past
+            } else if (key == QLatin1String("lfxp")
+                       || key == QLatin1String("lfx2")) {
+                // Photoshop layer styles (descriptor-based); 'lfxp' is
+                // the CS2+ spelling, 'lfx2' the Photoshop 6-era one with
+                // short effect keys (DrSh/OrGl/FrFX) - same body layout.
+                // Shadow, outer glow and stroke are consumed, the rest
+                // walks past.
                 readLfxpStyles(s, blockEnd, rec);
             } else if (key == QLatin1String("lsct")
                        || key == QLatin1String("lsdk")) {

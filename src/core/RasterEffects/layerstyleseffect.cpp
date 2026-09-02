@@ -36,6 +36,7 @@
 #include "include/effects/SkColorMatrix.h"
 #include <QtMath>
 #include <QMargins>
+#include <QAtomicInt>
 
 struct LayerStylesData {
     bool mShadow = false;
@@ -256,6 +257,26 @@ LayerStylesEffect::LayerStylesEffect() :
     mStrokeColor->setColor(QColor(255, 0, 0, 255));
     strokeGroup->ca_addChild(mStrokeColor);
     ca_addChild(strokeGroup);
+
+    // margin-affecting parameters must retrigger the forced-margin
+    // machinery so the allocation bounds follow (blur pattern)
+    const auto wireMargin = [this](QrealAnimator * const a) {
+        connect(a, &QrealAnimator::effectiveValueChanged,
+                this, &RasterEffect::forcedMarginChanged);
+    };
+    wireMargin(mShadowAngle.get());
+    wireMargin(mShadowDistance.get());
+    wireMargin(mShadowSize.get());
+    wireMargin(mGlowSize.get());
+    wireMargin(mStrokeSize.get());
+    connect(mShadowEnabled.get(), &QrealAnimator::effectiveValueChanged,
+            this, &RasterEffect::forcedMarginChanged);
+    connect(mGlowEnabled.get(), &QrealAnimator::effectiveValueChanged,
+            this, &RasterEffect::forcedMarginChanged);
+    connect(mStrokeEnabled.get(), &QrealAnimator::effectiveValueChanged,
+            this, &RasterEffect::forcedMarginChanged);
+    connect(mStrokePosition.get(), &ComboBoxProperty::valueChanged,
+            this, &RasterEffect::forcedMarginChanged);
 }
 
 void LayerStylesEffect::setShadow(const bool enabled, const qreal angle,
@@ -351,6 +372,43 @@ stdsptr<RasterEffectCaller> LayerStylesEffect::getEffectCaller(
                 instanceHwSupport(), d, QMargins(mL, mT, mR, mB));
 }
 
+// allocation-time margin: computed from the CURRENT parameter values
+// (no frame context here); must stay in sync with the per-frame
+// margins in getEffectCaller
+QMargins LayerStylesEffect::getMargin() const
+{
+    int mL = 0, mT = 0, mR = 0, mB = 0;
+    if (mShadowEnabled->getBoolValue()) {
+        const qreal rad = qDegreesToRadians(
+                    mShadowAngle->getEffectiveValue());
+        const int pad = qCeil(mShadowSize->getEffectiveValue())
+                        + qCeil(qAbs(qCos(rad))
+                                * mShadowDistance->getEffectiveValue()) + 2;
+        const int padV = qCeil(mShadowSize->getEffectiveValue())
+                         + qCeil(qAbs(qSin(rad))
+                                 * mShadowDistance->getEffectiveValue()) + 2;
+        mL = qMax(mL, pad); mR = qMax(mR, pad);
+        mT = qMax(mT, padV); mB = qMax(mB, padV);
+    }
+    if (mGlowEnabled->getBoolValue()) {
+        const int pad = qCeil(mGlowSize->getEffectiveValue()) + 2;
+        mL = qMax(mL, pad); mT = qMax(mT, pad);
+        mR = qMax(mR, pad); mB = qMax(mB, pad);
+    }
+    if (mStrokeEnabled->getBoolValue()) {
+        const int pos = mStrokePosition->getCurrentValue();
+        const qreal size = mStrokeSize->getEffectiveValue();
+        const int r = pos == 0 ? qCeil(size) :
+                      pos == 1 ? qCeil(size * 0.5) : 0;
+        mL = qMax(mL, r); mT = qMax(mT, r);
+        mR = qMax(mR, r); mB = qMax(mB, r);
+    }
+    return QMargins(mL, mT, mR, mB);
+}
+
+static QAtomicInt g_lsGpuLogs = { 0 };
+static QAtomicInt g_lsCpuLogs = { 0 };
+
 void LayerStylesEffectCaller::processGpu(QGL33 * const gl,
                                          GpuRenderTools &renderTools)
 {
@@ -363,6 +421,12 @@ void LayerStylesEffectCaller::processGpu(QGL33 * const gl,
     const auto srcTex = renderTools.requestSrcTextureImageWrapper();
     if (!srcTex) return;
 
+    if (g_lsGpuLogs.fetchAndAddRelaxed(1) < 3) {
+        qWarning() << "[LayerStyles] GPU compose src"
+                   << srcTex->width() << "x" << srcTex->height()
+                   << "shadow" << mData.mShadow << "glow" << mData.mGlow
+                   << "stroke" << mData.mStroke;
+    }
     composeStyles(canvas, srcTex.get(), mData, 0, 0);
     canvas->flush();
 
@@ -379,6 +443,16 @@ void LayerStylesEffectCaller::processCpu(CpuRenderTools& renderTools,
 
     const auto srcImg = SkImage::MakeFromBitmap(renderTools.fSrcBtmp);
     if (!srcImg) return;
+
+    if (g_lsCpuLogs.fetchAndAddRelaxed(1) < 3) {
+        qWarning() << "[LayerStyles] CPU compose tile"
+                   << data.fTexTile.left() << data.fTexTile.top()
+                   << data.fTexTile.width() << "x" << data.fTexTile.height()
+                   << "src" << renderTools.fSrcBtmp.width()
+                   << "x" << renderTools.fSrcBtmp.height()
+                   << "shadow" << mData.mShadow << "glow" << mData.mGlow
+                   << "stroke" << mData.mStroke;
+    }
 
     SkCanvas canvas(renderTools.fDstBtmp);
     canvas.clear(SK_ColorTRANSPARENT);

@@ -180,7 +180,9 @@ int main(int argc, char *argv[])
     });
 
     // Test 2b: Layer Styles effect needs at least one style enabled
-    // before a caller exists (default state is all-off = null caller)
+    // before a caller exists (default state is all-off = null caller).
+    // Mirrors EffectSubTaskSpawner: full-size dst, per-tile subsets,
+    // then pixel assertions (styles must land outside the silhouette)
     runTest("Test 2b: Layer Styles CPU render", [&]() {
         const auto eff = createRasterEffectForNonCustomType(
                 RasterEffectType::LAYER_STYLES);
@@ -190,19 +192,56 @@ int main(int argc, char *argv[])
         styles->shadowEnabled()->setCurrentBoolValue(true);
         styles->glowEnabled()->setCurrentBoolValue(true);
         styles->strokeEnabled()->setCurrentBoolValue(true);
+        // angle 0 -> light from the right, shadow falls left
+        styles->setShadow(true, 0.0, 10.0, 0.0, 5.0, 100.0, QColor(0, 0, 0));
         const auto caller = styles->getEffectCaller(0.0, 1.0, 1.0, nullptr);
         if (!caller) { throw std::runtime_error("Layer styles caller is null"); }
 
         SkBitmap srcBtmp;
         srcBtmp.allocN32Pixels(64, 64);
-        srcBtmp.eraseARGB(255, 128, 64, 200);
+        srcBtmp.eraseARGB(0, 0, 0, 0);
+        {
+            SkCanvas c(srcBtmp);
+            SkPaint p;
+            p.setColor(SkColorSetARGB(255, 128, 64, 200));
+            c.drawRect(SkRect::MakeXYWH(16, 16, 32, 32), p);
+        }
+
         SkBitmap dstBtmp;
-        dstBtmp.allocN32Pixels(64, 64);
+        dstBtmp.allocN32Pixels(srcBtmp.width(), srcBtmp.height());
         dstBtmp.eraseARGB(0, 0, 0, 0);
-        CpuRenderTools tools{srcBtmp, dstBtmp};
-        CpuRenderData data;
-        data.fTexTile = SkIRect::MakeXYWH(0, 0, 64, 64);
-        caller->processCpu(tools, data);
+
+        // two vertical tiles, exactly like the spawner subsets them
+        const SkIRect tiles[] = { SkIRect::MakeXYWH(0, 0, 32, 64),
+                                  SkIRect::MakeXYWH(32, 0, 32, 64) };
+        for (const auto& tile : tiles) {
+            SkBitmap tileDst;
+            if (!dstBtmp.extractSubset(&tileDst, tile)) {
+                throw std::runtime_error("extractSubset failed");
+            }
+            CpuRenderTools tools{srcBtmp, tileDst};
+            CpuRenderData data;
+            data.fTexTile = tile;
+            caller->processCpu(tools, data);
+        }
+
+        // silhouette core survives with the original color
+        const auto core = static_cast<const uint32_t*>(dstBtmp.getAddr(32, 32));
+        if (SkColorGetA(*core) < 250) {
+            throw std::runtime_error("layer core lost alpha");
+        }
+        // stroke ring outside the right edge of the square (x=50)
+        const auto rightRing = static_cast<const uint32_t*>(dstBtmp.getAddr(50, 32));
+        if (SkColorGetA(*rightRing) < 100
+                || SkColorGetR(*rightRing) < 200) {
+            throw std::runtime_error("no red stroke ring on the right");
+        }
+        // shadow left of the square: square spans x[16,48], distance 10
+        // -> shadow spans x[6,38]; sample inside it
+        const auto shadowPx = static_cast<const uint32_t*>(dstBtmp.getAddr(7, 32));
+        if (SkColorGetA(*shadowPx) < 30) {
+            throw std::runtime_error("no shadow to the left");
+        }
     });
 
     // Test 3: Menu registry coverage

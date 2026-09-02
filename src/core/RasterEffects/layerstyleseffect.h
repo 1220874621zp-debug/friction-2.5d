@@ -37,13 +37,20 @@ class ComboBoxProperty;
 // computed from the layer's pristine alpha (the source image is
 // sampled directly, never a previous style's output), which is
 // what makes PSD files with layer styles render like Photoshop.
-class LayerStylesEffect : public RasterEffect {
+// CORE_EXPORT: the effects unit-test executable calls the import
+// setters directly (same-module users don't need it)
+class CORE_EXPORT LayerStylesEffect : public RasterEffect {
 public:
     LayerStylesEffect();
 
     stdsptr<RasterEffectCaller> getEffectCaller(
             const qreal relFrame, const qreal resolution,
             const qreal influence, BoxRenderData * const data) const override;
+
+    // allocation-time margin so the scene bounds account for the
+    // styles before any render data exists (blur pattern)
+    bool forceMargin() const { return true; }
+    QMargins getMargin() const;
 
     // per-style toggles, used by the layer context menu and the
     // PSD importer ("图层样式" entries create-or-toggle this effect)
