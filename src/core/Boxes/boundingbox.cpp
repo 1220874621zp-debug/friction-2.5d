@@ -45,8 +45,11 @@
 #include <functional>
 #include "RasterEffects/rastereffect.h"
 #include "RasterEffects/customrastereffectcreator.h"
+#include "RasterEffects/rastereffectcollection.h"
+#include "clipboardcontainer.h"
 #include "internallinkbox.h"
 #include "Animators/qpointfanimator.h"
+#include "Animators/qrealanimator.h"
 #include "MovablePoints/pathpointshandler.h"
 #include "typemenu.h"
 #include "patheffectsmenu.h"
@@ -1609,6 +1612,71 @@ void BoundingBox::prp_setupTreeViewMenu(PropertyMenu * const menu)
             if (ask != QMessageBox::Yes) { return; }*/
             pScene->removeSelectedBoxesAndClearList();
         })->setShortcut(Qt::Key_Delete);
+
+        // AE-style effect paste onto this layer: accepts a copied
+        // effects collection or a single copied effect (appended)
+        {
+            const auto clipProp = Document::sInstance->getPropertyClipboard();
+            const auto effects = rasterEffectsCollection();
+            const bool canPasteEffects =
+                    clipProp && effects && clipProp->fitsTarget(effects);
+            menu->addPlainAction(QIcon::fromTheme("edit-paste"),
+                                 tr("粘贴特效"),
+                    [effects, clipProp]() {
+                if (clipProp && clipProp->fitsTarget(effects)) {
+                    clipProp->paste(effects);
+                    qWarning() << "[PASTE] context: effects pasted onto layer";
+                }
+            })->setEnabled(canPasteEffects);
+        }
+
+        // remove every expression (e.g. loop expressions baked onto
+        // effect parameters) from this layer's property tree; each
+        // removal goes through the undoable set-expression path
+        {
+            const std::function<int(Property*)> countExpressions =
+                    [&](Property* const prop) {
+                int count = 0;
+                if (const auto anim = enve_cast<QrealAnimator*>(prop)) {
+                    if (anim->hasExpression()) count++;
+                }
+                if (const auto ca = enve_cast<ComplexAnimator*>(prop)) {
+                    const int n = ca->ca_getNumberOfChildren();
+                    for (int i = 0; i < n; i++) {
+                        const auto p = ca->ca_getChildAt(i);
+                        if (p) count += countExpressions(p);
+                    }
+                }
+                return count;
+            };
+            menu->addPlainAction(QIcon::fromTheme("dialog-information"),
+                                 tr("删除表达式"),
+                    [this]() {
+                int removed = 0;
+                std::function<void(Property*)> walk;
+                walk = [this, &removed, &walk](Property* const prop) {
+                    if (const auto anim = enve_cast<QrealAnimator*>(prop)) {
+                        if (anim->hasExpression()) {
+                            anim->setExpressionAction(nullptr);
+                            removed++;
+                        }
+                    }
+                    if (const auto ca = enve_cast<ComplexAnimator*>(prop)) {
+                        const int n = ca->ca_getNumberOfChildren();
+                        for (int i = 0; i < n; i++) {
+                            const auto p = ca->ca_getChildAt(i);
+                            if (p) walk(p);
+                        }
+                    }
+                };
+                walk(this);
+                qWarning() << "[EXPR] removed" << removed
+                           << "expression(s) from" << prp_getName();
+                if (removed > 0) {
+                    Document::sInstance->actionFinished();
+                }
+            })->setEnabled(countExpressions(this) > 0);
+        }
 
         // merge every selected layer into one timeline track anchored
         // at the last selected layer (UI-level grouping, not a group)

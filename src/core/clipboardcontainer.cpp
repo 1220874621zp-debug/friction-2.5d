@@ -30,6 +30,8 @@
 #include "PathEffects/patheffectcollection.h"
 #include "Animators/SmartPath/smartpathcollection.h"
 #include "Properties/boxtargetproperty.h"
+#include "RasterEffects/rastereffect.h"
+#include "RasterEffects/rastereffectcollection.h"
 #include "Private/document.h"
 
 Clipboard::Clipboard(const ClipboardType type) : mType(type) {}
@@ -154,14 +156,44 @@ void KeysClipboard::addTargetAnimator(
 PropertyClipboard::PropertyClipboard(const Property* const source) :
     Clipboard(ClipboardType::property),
     mContentType(std::type_index(typeid(*source))) {
-    const auto writer = [source](eWriteStream& writeStream) {
-        source->prp_writeProperty(writeStream);
-    };
-    write(writer);
+    if(const auto effect = dynamic_cast<const RasterEffect*>(source)) {
+        // a single raster effect is serialized as a one-element
+        // effects collection, so pasting onto another layer's effects
+        // collection appends it (AE-style effect copy/paste) while
+        // compatibleTarget still matches the original effect type
+        mIsSingleEffect = true;
+        const auto writer = [effect](eWriteStream& writeStream) {
+            writeStream << int(1);
+            const auto futureId = writeStream.planFuturePos();
+            effect->writeIdentifier(writeStream);
+            effect->prp_writeProperty(writeStream);
+            writeStream.assignFuturePos(futureId);
+        };
+        write(writer);
+    } else {
+        const auto writer = [source](eWriteStream& writeStream) {
+            source->prp_writeProperty(writeStream);
+        };
+        write(writer);
+    }
+}
+
+bool PropertyClipboard::fitsTarget(Property * const obj) const {
+    if(compatibleTarget(obj) && !mIsSingleEffect) return true;
+    return mIsSingleEffect &&
+            enve_cast<RasterEffectCollection*>(obj) != nullptr;
 }
 
 bool PropertyClipboard::paste(Property * const target) {
-    if(!compatibleTarget(target)) return false;
+    if(mIsSingleEffect) {
+        // the payload is a one-element collection stream - only an
+        // effects collection accepts it (append); the same effect
+        // type is rejected because the stream is not in plain
+        // property format
+        if(enve_cast<RasterEffectCollection*>(target) == nullptr) {
+            return false;
+        }
+    } else if(!compatibleTarget(target)) return false;
     const auto reader = [target](eReadStream& readStream) {
         target->prp_readProperty(readStream);
     };

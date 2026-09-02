@@ -1403,7 +1403,7 @@ void Canvas::pasteAction()
             int pastedCount = 0;
             for (const auto& box : mSelectedBoxes.getList()) {
                 const auto effects = box->rasterEffectsCollection();
-                if (effects && property->compatibleTarget(effects)) {
+                if (effects && property->fitsTarget(effects)) {
                     property->paste(effects);
                     pastedCount++;
                 }

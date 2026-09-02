@@ -145,6 +145,11 @@ public:
         return mContentType == std::type_index(typeid(*obj));
     }
 
+    // wider than compatibleTarget: a single copied raster effect
+    // (serialized as a one-element collection) also fits an effects
+    // collection target, where pasting appends the effect
+    bool fitsTarget(Property * const obj) const;
+
     template<typename T>
     static bool sCopyAndPaste(const T* const from, T* const to) {
         return PropertyClipboard(from).paste(to);
@@ -156,6 +161,7 @@ public:
     }
 private:
     const std::type_index mContentType;
+    bool mIsSingleEffect = false;
 };
 
 template <typename T>
