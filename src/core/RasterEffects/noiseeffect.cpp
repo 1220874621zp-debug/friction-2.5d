@@ -30,7 +30,7 @@
 #include <QtMath>
 
 NoiseEffect::NoiseEffect() :
-    RasterEffect("noise",
+    RasterEffect(QObject::tr("Noise"),
                  AppSupport::getRasterEffectHardwareSupport("Noise",
                                                             HardwareSupport::gpuPreffered),
                  true,

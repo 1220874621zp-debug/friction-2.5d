@@ -30,7 +30,7 @@
 #include <QtMath>
 
 ScanlinesEffect::ScanlinesEffect() :
-    RasterEffect("scanlines",
+    RasterEffect(QObject::tr("Scanlines"),
                  AppSupport::getRasterEffectHardwareSupport("Scanlines",
                                                             HardwareSupport::gpuPreffered),
                  true,

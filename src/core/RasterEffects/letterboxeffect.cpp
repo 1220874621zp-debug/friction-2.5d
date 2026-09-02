@@ -31,7 +31,7 @@
 #include "appsupport.h"
 
 LetterboxEffect::LetterboxEffect() :
-    RasterEffect("letterbox",
+    RasterEffect(QObject::tr("Letterbox"),
                  AppSupport::getRasterEffectHardwareSupport("Letterbox",
                                                             HardwareSupport::gpuPreffered),
                  true,

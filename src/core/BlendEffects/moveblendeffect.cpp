@@ -29,7 +29,7 @@
 #include "Boxes/boundingbox.h"
 
 MoveBlendEffect::MoveBlendEffect() :
-    BlendEffect("move", BlendEffectType::move) {
+    BlendEffect(QObject::tr("Move"), BlendEffectType::move) {
     mZIndex = enve::make_shared<IntAnimator>("z-index");
     mZIndex->setPrefferedValueStep(0.2);
     ca_addChild(mZIndex);

@@ -30,7 +30,7 @@
 #include "Animators/transformanimator.h"
 
 TrackEffect::TrackEffect() :
-    TargetTransformEffect("track", TransformEffectType::track) {
+    TargetTransformEffect(QObject::tr("Track"), TransformEffectType::track) {
     mInfluence = enve::make_shared<QrealAnimator>(1, -1, 1, 0.01, "influence");
 
     ca_prependChild(targetProperty(), mInfluence);

@@ -31,7 +31,7 @@
 #include <QtMath>
 
 MotionTileEffect::MotionTileEffect() :
-    RasterEffect("motion tile",
+    RasterEffect(QObject::tr("Motion Tile"),
                  AppSupport::getRasterEffectHardwareSupport("Motion Tile",
                                                             HardwareSupport::gpuPreffered),
                  true,

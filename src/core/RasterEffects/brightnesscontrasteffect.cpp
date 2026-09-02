@@ -33,7 +33,7 @@
 #include "appsupport.h"
 
 BrightnessContrastEffect::BrightnessContrastEffect() :
-    RasterEffect("brightness-contrast",
+    RasterEffect(QObject::tr("Brightness-Contrast"),
                  AppSupport::getRasterEffectHardwareSupport("BrightnessContrast",
                                                             HardwareSupport::gpuPreffered),
                  true,

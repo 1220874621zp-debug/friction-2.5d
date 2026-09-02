@@ -30,7 +30,7 @@
 #include <QtMath>
 
 ChromaticAberrationEffect::ChromaticAberrationEffect() :
-    RasterEffect("chromatic aberration",
+    RasterEffect(QObject::tr("Chromatic Aberration"),
                  AppSupport::getRasterEffectHardwareSupport("ChromaticAberration",
                                                             HardwareSupport::gpuPreffered),
                  true,

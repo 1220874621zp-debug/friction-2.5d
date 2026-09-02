@@ -30,7 +30,7 @@
 #include "Animators/qrealanimator.h"
 
 FollowObjectEffect::FollowObjectEffect() :
-    FollowObjectEffectBase("follow object",
+    FollowObjectEffectBase(QObject::tr("Follow Object"),
                            TransformEffectType::followObject) {}
 
 void FollowObjectEffect::applyEffect(const qreal relFrame,

@@ -33,7 +33,7 @@ private:
 };
 
 ShadowEffect::ShadowEffect() :
-    RasterEffect("shadow",
+    RasterEffect(QObject::tr("Shadow"),
                  AppSupport::getRasterEffectHardwareSupport("Shadow",
                                                             HardwareSupport::gpuPreffered),
                  false,

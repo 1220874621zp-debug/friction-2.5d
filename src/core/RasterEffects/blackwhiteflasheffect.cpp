@@ -19,7 +19,7 @@
 #include <cmath>
 
 BlackWhiteFlashEffect::BlackWhiteFlashEffect() :
-    RasterEffect("blackWhiteFlash",
+    RasterEffect(QObject::tr("Black-White Flash"),
                  AppSupport::getRasterEffectHardwareSupport("BlackWhiteFlash",
                                                             HardwareSupport::gpuPreffered),
                  true,

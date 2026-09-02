@@ -17,7 +17,7 @@
 #include <QtMath>
 
 LightSweepEffect::LightSweepEffect() :
-    RasterEffect("lightSweep",
+    RasterEffect(QObject::tr("Light Sweep"),
                  AppSupport::getRasterEffectHardwareSupport("LightSweep",
                                                             HardwareSupport::gpuPreffered),
                  true,

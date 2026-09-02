@@ -30,7 +30,7 @@
 #include <QtMath>
 
 HalftoneEffect::HalftoneEffect() :
-    RasterEffect("halftone",
+    RasterEffect(QObject::tr("Halftone"),
                  AppSupport::getRasterEffectHardwareSupport("Halftone",
                                                             HardwareSupport::gpuPreffered),
                  true,

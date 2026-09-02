@@ -28,7 +28,7 @@
 #include "Boxes/pathbox.h"
 
 SumPathEffect::SumPathEffect() :
-    PathEffect("sum effect", PathEffectType::SUM) {
+    PathEffect(QObject::tr("Sum"), PathEffectType::SUM) {
 }
 
 class SumEffectCaller : public PathEffectCaller {

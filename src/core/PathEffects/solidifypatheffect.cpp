@@ -28,7 +28,7 @@
 #include "Boxes/pathbox.h"
 
 SolidifyPathEffect::SolidifyPathEffect() :
-    PathEffect("solidify effect", PathEffectType::SOLIDIFY) {
+    PathEffect(QObject::tr("Solidify"), PathEffectType::SOLIDIFY) {
     mDisplacement = enve::make_shared<QrealAnimator>("displacement");
     mDisplacement->setValueRange(-999.999, 999.999);
     mDisplacement->setCurrentBaseValue(5);

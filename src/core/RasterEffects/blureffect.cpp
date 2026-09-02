@@ -20,7 +20,7 @@ private:
 };
 
 BlurEffect::BlurEffect() :
-    RasterEffect("blur",
+    RasterEffect(QObject::tr("Blur"),
                  AppSupport::getRasterEffectHardwareSupport("Blur",
                                                             HardwareSupport::gpuPreffered),
                  false,

@@ -30,7 +30,7 @@
 #include <QtMath>
 
 RadialBlurEffect::RadialBlurEffect() :
-    RasterEffect("radial blur",
+    RasterEffect(QObject::tr("Radial Blur"),
                  AppSupport::getRasterEffectHardwareSupport("RadialBlur",
                                                             HardwareSupport::gpuPreffered),
                  true,

@@ -29,7 +29,7 @@
 #include "pointhelpers.h"
 
 DisplacePathEffect::DisplacePathEffect() :
-    PathEffect("displace effect", PathEffectType::DISPLACE) {
+    PathEffect(QObject::tr("Displace"), PathEffectType::DISPLACE) {
     mSegLength = enve::make_shared<QrealAnimator>("segment length");
     mMaxDev = enve::make_shared<QrealAnimator>("max deviation");
     mSmoothness = QrealAnimator::sCreate0to1Animator("smoothness");

@@ -36,6 +36,7 @@
 #include "Boxes/imagebox.h"
 
 class CORE_EXPORT KraImageBox : public ImageBox {
+    Q_OBJECT
     e_OBJECT
     e_DECLARE_TYPE(KraImageBox)
 protected:

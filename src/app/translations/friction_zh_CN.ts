@@ -793,104 +793,6 @@
         <source>Freeze Pose</source>
         <translation type="vanished">冻结姿势</translation>
     </message>
-    <message>
-        <source>Update Layer from Source PSD</source>
-        <translation>从源 PSD 更新此图层</translation>
-    </message>
-    <message>
-        <source>Sync All Layers from Source PSD</source>
-        <translation>从源 PSD 同步所有图层</translation>
-    </message>
-    <message>
-        <source>PSD Update</source>
-        <translation>PSD 更新</translation>
-    </message>
-    <message>
-        <source>PSD Sync</source>
-        <translation>PSD 同步</translation>
-    </message>
-    <message>
-        <source>Layer no longer exists in the source PSD.
-It is kept (marked as missing) with all animation data.</source>
-        <translation>该图层在源 PSD 中已不存在。
-图层将保留（标记为缺失）及其全部动画数据。</translation>
-    </message>
-    <message>
-        <source>Layer updated from source PSD.</source>
-        <translation>图层已从源 PSD 更新。</translation>
-    </message>
-    <message>
-        <source>Layer pixels unchanged.</source>
-        <translation>图层像素无变化。</translation>
-    </message>
-    <message>
-        <source>Source PSD is missing:
-%1</source>
-        <translation>源 PSD 缺失：
-%1</translation>
-    </message>
-    <message>
-        <source>Failed to parse source PSD:
-%1</source>
-        <translation>解析源 PSD 失败：
-%1</translation>
-    </message>
-    <message>
-        <source>Failed to write package:
-%1</source>
-        <translation>写入包失败：
-%1</translation>
-    </message>
-    <message>
-        <source>All layers are up to date.</source>
-        <translation>所有图层均为最新。</translation>
-    </message>
-    <message>
-        <source>Updated layers: %1
-Missing layers: %2
-Added layers: %3</source>
-        <translation>已更新图层：%1
-缺失图层：%2
-新增图层：%3</translation>
-    </message>
-    <message>
-        <source>Update Layer from Source KRA</source>
-        <translation>从源 KRA 更新此图层</translation>
-    </message>
-    <message>
-        <source>Sync All Layers from Source KRA</source>
-        <translation>从源 KRA 同步所有图层</translation>
-    </message>
-    <message>
-        <source>KRA Update</source>
-        <translation>KRA 更新</translation>
-    </message>
-    <message>
-        <source>KRA Sync</source>
-        <translation>KRA 同步</translation>
-    </message>
-    <message>
-        <source>Source KRA is missing:
-%1</source>
-        <translation>源 KRA 缺失：
-%1</translation>
-    </message>
-    <message>
-        <source>Layer no longer exists in the source KRA.
-It is kept (marked as missing) with all animation data.</source>
-        <translation>该图层在源 KRA 中已不存在。
-图层将保留（标记为缺失）及其全部动画数据。</translation>
-    </message>
-    <message>
-        <source>Layer updated from source KRA.</source>
-        <translation>图层已从源 KRA 更新。</translation>
-    </message>
-    <message>
-        <source>Updated layers: %1
-Missing layers: %2</source>
-        <translation>已更新图层：%1
-缺失图层：%2</translation>
-    </message>
 </context>
 <context>
     <name>BoxSingleWidget</name>
@@ -4020,56 +3922,8 @@ The scaling factor will then round up for .75 and above.</source>
         <translation>重新加载</translation>
     </message>
     <message>
-        <source>Update Layer from Source PSD</source>
-        <translation type="vanished">从源 PSD 更新此图层</translation>
-    </message>
-    <message>
-        <source>Sync All Layers from Source PSD</source>
-        <translation type="vanished">从源 PSD 同步所有图层</translation>
-    </message>
-    <message>
-        <source>PSD Update</source>
-        <translation type="vanished">PSD 更新</translation>
-    </message>
-    <message>
-        <source>PSD Sync</source>
-        <translation type="vanished">PSD 同步</translation>
-    </message>
-    <message>
-        <source>New Layers in Source PSD</source>
-        <translation type="vanished">源 PSD 中的新图层</translation>
-    </message>
-    <message>
-        <source>The source PSD contains new layers.
-Select the layers you want to import:</source>
-        <translation type="vanished">源 PSD 包含新图层。
-请选择要导入的图层：</translation>
-    </message>
-    <message>
-        <source>Layer no longer exists in the source PSD.
-It is kept (marked as missing) with all animation data.</source>
-        <translation type="vanished">该图层在源 PSD 中已不存在。
-图层将保留（标记为缺失）及其全部动画数据。</translation>
-    </message>
-    <message>
-        <source>Layer updated from source PSD.</source>
-        <translation type="vanished">图层已从源 PSD 更新。</translation>
-    </message>
-    <message>
         <source>Layer pixels unchanged.</source>
         <translation type="vanished">图层像素无变化。</translation>
-    </message>
-    <message>
-        <source>Source PSD is missing:
-%1</source>
-        <translation type="vanished">源 PSD 缺失：
-%1</translation>
-    </message>
-    <message>
-        <source>Failed to parse source PSD:
-%1</source>
-        <translation type="vanished">解析源 PSD 失败：
-%1</translation>
     </message>
     <message>
         <source>Failed to write package:
@@ -6333,36 +6187,36 @@ Are you sure you want to save this project file?</source>
     <message>
         <location filename="../../core/Psd/psdimagebox.cpp" line="196"/>
         <source>Update Layer from Source PSD</source>
-        <translation type="unfinished">从源 PSD 更新此图层</translation>
+        <translation>从源 PSD 更新此图层</translation>
     </message>
     <message>
         <location filename="../../core/Psd/psdimagebox.cpp" line="207"/>
         <source>Sync All Layers from Source PSD</source>
-        <translation type="unfinished">从源 PSD 同步所有图层</translation>
+        <translation>从源 PSD 同步所有图层</translation>
     </message>
     <message>
         <location filename="../../core/Psd/psdimagebox.cpp" line="250"/>
         <location filename="../../core/Psd/psdimagebox.cpp" line="282"/>
         <location filename="../../core/Psd/psdimagebox.cpp" line="285"/>
         <source>PSD Update</source>
-        <translation type="unfinished">PSD 更新</translation>
+        <translation>PSD 更新</translation>
     </message>
     <message>
         <location filename="../../core/Psd/psdimagebox.cpp" line="251"/>
         <source>Layer no longer exists in the source PSD.
 It is kept (marked as missing) with all animation data.</source>
-        <translation type="unfinished">该图层在源 PSD 中已不存在。
+        <translation>该图层在源 PSD 中已不存在。
 图层将保留（标记为缺失）及其全部动画数据。</translation>
     </message>
     <message>
         <location filename="../../core/Psd/psdimagebox.cpp" line="283"/>
         <source>Layer updated from source PSD.</source>
-        <translation type="unfinished">图层已从源 PSD 更新。</translation>
+        <translation>图层已从源 PSD 更新。</translation>
     </message>
     <message>
         <location filename="../../core/Psd/psdimagebox.cpp" line="286"/>
         <source>Layer pixels unchanged.</source>
-        <translation type="unfinished">图层像素无变化。</translation>
+        <translation>图层像素无变化。</translation>
     </message>
     <message>
         <location filename="../../core/Psd/psdimagebox.cpp" line="303"/>
@@ -6371,44 +6225,89 @@ It is kept (marked as missing) with all animation data.</source>
         <location filename="../../core/Psd/psdimagebox.cpp" line="440"/>
         <location filename="../../core/Psd/psdimagebox.cpp" line="443"/>
         <source>PSD Sync</source>
-        <translation type="unfinished">PSD 同步</translation>
+        <translation>PSD 同步</translation>
     </message>
     <message>
         <location filename="../../core/Psd/psdimagebox.cpp" line="304"/>
         <source>Source PSD is missing:
 %1</source>
-        <translation type="unfinished">源 PSD 缺失：
+        <translation>源 PSD 缺失：
 %1</translation>
     </message>
     <message>
         <location filename="../../core/Psd/psdimagebox.cpp" line="313"/>
         <source>Failed to parse source PSD:
 %1</source>
-        <translation type="unfinished">解析源 PSD 失败：
+        <translation>解析源 PSD 失败：
 %1</translation>
     </message>
     <message>
         <location filename="../../core/Psd/psdimagebox.cpp" line="420"/>
         <source>Failed to write package:
 %1</source>
-        <translation type="unfinished">写入包失败：
+        <translation>写入包失败：
 %1</translation>
     </message>
     <message>
         <location filename="../../core/Psd/psdimagebox.cpp" line="441"/>
         <source>All layers are up to date.</source>
-        <translation type="unfinished">所有图层均为最新。</translation>
+        <translation>所有图层均为最新。</translation>
     </message>
     <message>
         <location filename="../../core/Psd/psdimagebox.cpp" line="444"/>
         <source>Updated layers: %1
 Missing layers: %2
 Added layers: %3</source>
-        <translation type="unfinished">已更新图层：%1
+        <translation>已更新图层：%1
 缺失图层：%2
 新增图层：%3</translation>
     </message>
 </context>
+
+    <context>
+    <name>KraImageBox</name>
+    <message>
+        <source>Layer pixels unchanged.</source>
+        <translation>图层像素无变化。</translation>
+    </message>
+    <message>
+        <source>All layers are up to date.</source>
+        <translation>所有图层均为最新。</translation>
+    </message>
+    <message>
+        <source>Update Layer from Source KRA</source>
+        <translation>从源 KRA 更新此图层</translation>
+    </message>
+    <message>
+        <source>Sync All Layers from Source KRA</source>
+        <translation>从源 KRA 同步所有图层</translation>
+    </message>
+    <message>
+        <source>KRA Update</source>
+        <translation>KRA 更新</translation>
+    </message>
+    <message>
+        <source>KRA Sync</source>
+        <translation>KRA 同步</translation>
+    </message>
+    <message>
+        <source>Source KRA is missing:
+%1</source>
+        <translation>源 KRA 缺失：
+%1</translation>
+    </message>
+    <message>
+        <source>Layer no longer exists in the source KRA.
+It is kept (marked as missing) with all animation data.</source>
+        <translation>该图层在源 KRA 中已不存在。
+图层将保留（标记为缺失）及其全部动画数据。</translation>
+    </message>
+    <message>
+        <source>Layer updated from source KRA.</source>
+        <translation>图层已从源 KRA 更新。</translation>
+    </message>
+    </context>
+
 <context>
     <name>QFontDatabase</name>
     <message>
@@ -7184,6 +7083,150 @@ Select the layers you want to import:</source>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
+        <message>
+            <source>Directional Blur</source>
+            <translation>定向模糊</translation>
+        </message>
+        <message>
+            <source>Radial Blur</source>
+            <translation>径向模糊</translation>
+        </message>
+        <message>
+            <source>Channel Blur</source>
+            <translation>通道模糊</translation>
+        </message>
+        <message>
+            <source>Zoom Blur</source>
+            <translation>缩放模糊</translation>
+        </message>
+        <message>
+            <source>Drop Shadow</source>
+            <translation>投影</translation>
+        </message>
+        <message>
+            <source>Color Grading</source>
+            <translation>色彩分级</translation>
+        </message>
+        <message>
+            <source>Invert</source>
+            <translation>反转</translation>
+        </message>
+        <message>
+            <source>Tint</source>
+            <translation>着色</translation>
+        </message>
+        <message>
+            <source>Posterize</source>
+            <translation>色调分离</translation>
+        </message>
+        <message>
+            <source>Glow</source>
+            <translation>辉光</translation>
+        </message>
+        <message>
+            <source>Chromatic Aberration</source>
+            <translation>色差</translation>
+        </message>
+        <message>
+            <source>Wave Warp</source>
+            <translation>波纹扭曲</translation>
+        </message>
+        <message>
+            <source>Mirror</source>
+            <translation>镜像</translation>
+        </message>
+        <message>
+            <source>Twirl</source>
+            <translation>旋转扭曲</translation>
+        </message>
+        <message>
+            <source>Shake</source>
+            <translation>抖动</translation>
+        </message>
+        <message>
+            <source>Vignette</source>
+            <translation>暗角</translation>
+        </message>
+        <message>
+            <source>Letterbox</source>
+            <translation>遮幅</translation>
+        </message>
+        <message>
+            <source>Scanlines</source>
+            <translation>扫描线</translation>
+        </message>
+        <message>
+            <source>Edge Detect</source>
+            <translation>边缘检测</translation>
+        </message>
+        <message>
+            <source>Pixelate</source>
+            <translation>像素化</translation>
+        </message>
+        <message>
+            <source>Noise</source>
+            <translation>噪点</translation>
+        </message>
+        <message>
+            <source>Glitch</source>
+            <translation>故障</translation>
+        </message>
+        <message>
+            <source>Halftone</source>
+            <translation>半调网点</translation>
+        </message>
+        <message>
+            <source>Motion Tile</source>
+            <translation>动态拼贴</translation>
+        </message>
+        <message>
+            <source>Fractal Noise</source>
+            <translation>分形噪波</translation>
+        </message>
+        <message>
+            <source>Light Sweep</source>
+            <translation>扫光</translation>
+        </message>
+        <message>
+            <source>Displacement Warp</source>
+            <translation>位移扭曲</translation>
+        </message>
+        <message>
+            <source>Film Grain</source>
+            <translation>胶片颗粒</translation>
+        </message>
+        <message>
+            <source>Black-White Flash</source>
+            <translation>黑白闪烁</translation>
+        </message>
+        <message>
+            <source>Pixel Art</source>
+            <translation>像素艺术</translation>
+        </message>
+        <message>
+            <source>Rain</source>
+            <translation>下雨</translation>
+        </message>
+        <message>
+            <source>Stripe</source>
+            <translation>条纹</translation>
+        </message>
+        <message>
+            <source>Light</source>
+            <translation>光效</translation>
+        </message>
+        <message>
+            <source>Stylize</source>
+            <translation>风格化</translation>
+        </message>
+        <message>
+            <source>Generate</source>
+            <translation>生成</translation>
+        </message>
+        <message>
+            <source>Simulation</source>
+            <translation>模拟</translation>
+        </message>
 </context>
 <context>
     <name>QrealAnimator</name>

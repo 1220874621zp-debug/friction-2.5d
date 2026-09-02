@@ -30,7 +30,7 @@
 #include "appsupport.h"
 
 ZoomBlurEffect::ZoomBlurEffect() :
-    RasterEffect("zoom blur",
+    RasterEffect(QObject::tr("Zoom Blur"),
                  AppSupport::getRasterEffectHardwareSupport("Zoom Blur",
                                                             HardwareSupport::gpuPreffered),
                  true,

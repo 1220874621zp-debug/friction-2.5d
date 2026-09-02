@@ -30,7 +30,7 @@
 #include "Properties/boolproperty.h"
 
 SubPathEffect::SubPathEffect() :
-    PathEffect("sub-path effect", PathEffectType::SUB) {
+    PathEffect(QObject::tr("Sub-Path"), PathEffectType::SUB) {
     mPathWise = enve::make_shared<BoolProperty>("path-wise");
 
     mMin = enve::make_shared<QrealAnimator>("min length");

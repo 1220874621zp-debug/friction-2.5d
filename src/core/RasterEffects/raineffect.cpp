@@ -32,7 +32,7 @@
 #include <QtMath>
 
 RainEffect::RainEffect() :
-    RasterEffect("rain",
+    RasterEffect(QObject::tr("Rain"),
                  AppSupport::getRasterEffectHardwareSupport("Rain",
                                                             HardwareSupport::gpuPreffered),
                  true,

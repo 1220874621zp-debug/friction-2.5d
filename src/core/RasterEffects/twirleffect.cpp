@@ -30,7 +30,7 @@
 #include <QtMath>
 
 TwirlEffect::TwirlEffect() :
-    RasterEffect("twirl",
+    RasterEffect(QObject::tr("Twirl"),
                  AppSupport::getRasterEffectHardwareSupport("Twirl",
                                                             HardwareSupport::gpuPreffered),
                  true,

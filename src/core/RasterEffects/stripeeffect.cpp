@@ -30,7 +30,7 @@
 #include <QtMath>
 
 StripeEffect::StripeEffect() :
-    RasterEffect("stripe",
+    RasterEffect(QObject::tr("Stripe"),
                  AppSupport::getRasterEffectHardwareSupport("Stripe",
                                                             HardwareSupport::gpuPreffered),
                  true,

@@ -27,7 +27,7 @@
 #include "Animators/qrealanimator.h"
 
 LinesPathEffect::LinesPathEffect() :
-    PathEffect("lines effect", PathEffectType::LINES) {
+    PathEffect(QObject::tr("Lines"), PathEffectType::LINES) {
     mAngle = enve::make_shared<QrealAnimator>(0, -9999, 9999, 1, "angle");
     mDistance = enve::make_shared<QrealAnimator>(10, 1, 9999, 1, "distance");
 

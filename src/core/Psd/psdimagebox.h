@@ -34,6 +34,7 @@
 #include "Boxes/imagebox.h"
 
 class CORE_EXPORT PsdImageBox : public ImageBox {
+    Q_OBJECT
     e_OBJECT
     e_DECLARE_TYPE(PsdImageBox)
 protected:

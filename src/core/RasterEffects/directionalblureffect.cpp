@@ -30,7 +30,7 @@
 #include <QtMath>
 
 DirectionalBlurEffect::DirectionalBlurEffect() :
-    RasterEffect("directional blur",
+    RasterEffect(QObject::tr("Directional Blur"),
                  AppSupport::getRasterEffectHardwareSupport("DirectionalBlur",
                                                             HardwareSupport::gpuPreffered),
                  true,

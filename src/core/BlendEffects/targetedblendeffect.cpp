@@ -29,7 +29,7 @@
 #include "Boxes/boundingbox.h"
 
 TargetedBlendEffect::TargetedBlendEffect() :
-    BlendEffect("targeted", BlendEffectType::targeted) {
+    BlendEffect(QObject::tr("Targeted"), BlendEffectType::targeted) {
     const auto poses = QStringList() << "above" << "below";
     mAboveBelow = enve::make_shared<ComboBoxProperty>("position", poses);
     mTarget = enve::make_shared<BoxTargetProperty>("target");

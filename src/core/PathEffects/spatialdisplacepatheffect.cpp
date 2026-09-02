@@ -30,7 +30,7 @@
 #include "pointhelpers.h"
 
 SpatialDisplacePathEffect::SpatialDisplacePathEffect() :
-    PathEffect("spatial displace effect",
+    PathEffect(QObject::tr("Spatial Displace"),
                PathEffectType::SPATIAL_DISPLACE) {
     mSegLength = enve::make_shared<QrealAnimator>("segment length");
     mMaxDev = enve::make_shared<QrealAnimator>("max deviation");
