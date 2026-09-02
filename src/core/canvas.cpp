@@ -1045,7 +1045,12 @@ FrameRange Canvas::prp_getIdenticalRelRange(const int relFrame) const {
 void Canvas::renderDataFinished(BoxRenderData *renderData) {
     const bool currentState = renderData->fBoxStateId == mStateId;
     if(currentState) mRenderDataHandler.removeItemAtRelFrame(renderData->fRelFrame);
-    else if(renderData->fBoxStateId < mLastStateId) return;
+    else if(renderData->fBoxStateId < mLastStateId) {
+        // stale completion, will never land in the cache - count it so
+        // the preview pipeline watchdog can re-feed the frame at once
+        mRenderDataDiscardCount++;
+        return;
+    }
     const int relFrame = qRound(renderData->fRelFrame);
     mLastStateId = renderData->fBoxStateId;
 
@@ -1053,7 +1058,16 @@ void Canvas::renderDataFinished(BoxRenderData *renderData) {
     const auto cont = enve::make_shared<SceneFrameContainer>(
                 this, renderData, range,
                 currentState ? &mSceneFramesHandler : nullptr);
-    if(currentState) mSceneFramesHandler.add(cont);
+    if(currentState) {
+        mSceneFramesHandler.add(cont);
+        // event-driven pipeline: wakes the preview/output feeder
+        // immediately instead of waiting for the next timer tick
+        emit sceneFrameCached();
+    } else {
+        // non-current-state completion gets a null handler and never
+        // lands in the cache - count it as a discard as well
+        mRenderDataDiscardCount++;
+    }
 
     if(!mPreviewing && !mRenderingOutput){
         bool newerSate = true;

@@ -248,6 +248,11 @@ public:
     qint64 effectiveContentGen();
     bool sceneFramesCacheIsFresh()
     { return mCacheGen == effectiveContentGen(); }
+    // counts render completions discarded for carrying a stale state
+    // id (edit mid-render): the preview pipeline watchdog uses a
+    // rising count to re-feed dropped frames immediately instead of
+    // waiting out the stuck-frame timeout
+    int renderDataDiscardCount() const { return mRenderDataDiscardCount; }
     bool transparencyGrid() const { return mTransparencyGrid; }
     void setWorldToScreen(const QTransform& transform,
                           qreal devicePixelRatio);
@@ -575,6 +580,8 @@ signals:
     void currentHoverColor(const QColor &color);
     void markersChanged();
     void canvasModeSet(const CanvasMode &mode);
+    // a frame container has just landed in the scene-frame cache
+    void sceneFrameCached();
 
 public:
     void makePointCtrlsSymmetric();
@@ -1080,6 +1087,7 @@ protected:
     bool mStylusDrawing = false;
 
     uint mLastStateId = 0;
+    int mRenderDataDiscardCount = 0;
     HddCachableCacheHandler mSceneFramesHandler;
 
     qsptr<ColorAnimator> mBackgroundColor = enve::make_shared<ColorAnimator>();

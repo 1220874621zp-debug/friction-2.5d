@@ -51,7 +51,9 @@ RenderHandler::RenderHandler(Document &document,
 
     mPreviewFPSTimer = new QTimer(this);
     mPipelineTimer = new QTimer(this);
-    mPipelineTimer->setInterval(4);
+    // low-rate keepalive/watchdog only - the hot path is event-driven
+    // through Canvas::sceneFrameCached
+    mPipelineTimer->setInterval(25);
     connect(mPipelineTimer, &QTimer::timeout,
             this, &RenderHandler::pipelineTick);
     mPreviewFPSTimer->setTimerType(Qt::PreciseTimer);
@@ -120,6 +122,10 @@ void RenderHandler::renderFromSettings(RenderInstanceSettings * const settings) 
         mCurrentScene->anim_setAbsFrame(mCurrentRenderFrame);
         mCurrentScene->setOutputRendering(true);
         TaskScheduler::instance()->setAlwaysQue(true);
+        // frame landings drive backlog draining and re-feeding
+        connect(mCurrentScene, &Canvas::sceneFrameCached,
+                this, &RenderHandler::onSceneFrameCached,
+                Qt::ConnectionType(Qt::QueuedConnection | Qt::UniqueConnection));
         mBacklogTimer->start(100);
         //fitSceneToSize();
         if(!isZero6Dec(mSavedResolutionFraction - resolutionFraction)) {
@@ -232,10 +238,15 @@ void RenderHandler::renderPreview() {
 
     emit previewBeingRendered();
 
-    // feed the first frames immediately; the timer keeps the pool fed
-    // while previous frames are still rendering
+    // feed the first frames immediately; frame-landing events keep the
+    // pool fed while previous frames are still rendering, the timer is
+    // the keepalive/watchdog fallback
     mInFlightFrames.clear();
     mInFlightFedAgo.clear();
+    mLastDiscardCount = mCurrentScene->renderDataDiscardCount();
+    connect(mCurrentScene, &Canvas::sceneFrameCached,
+            this, &RenderHandler::onSceneFrameCached,
+            Qt::ConnectionType(Qt::QueuedConnection | Qt::UniqueConnection));
     mPipelineTimer->start();
     pipelineTick();
 }
@@ -251,18 +262,25 @@ void RenderHandler::pipelineTick() {
     }
     // watchdog: an edit mid-warm-up bumps the state and the
     // completion check discards in-flight frames - they would never
-    // land and retirement would stall forever. Re-feed the oldest
-    // (queTasks is idempotent, the frame re-renders fresh).
-    if(!mInFlightFrames.isEmpty() && ++mInFlightFedAgo.first() > 250) {
-        const int stuck = mInFlightFrames.takeFirst();
-        mInFlightFedAgo.removeFirst();
-        setFrameAction(stuck);
-        mInFlightFrames.prepend(stuck);
-        mInFlightFedAgo.prepend(0);
+    // land and retirement would stall forever. A rising discard count
+    // proves a frame was dropped, so re-feed the oldest immediately
+    // (queTasks is idempotent, the frame re-renders fresh); the tick
+    // budget (~1s) remains as a fallback for silently dropped tasks.
+    if(!mInFlightFrames.isEmpty()) {
+        const int discards = mCurrentScene->renderDataDiscardCount();
+        const bool discarded = discards != mLastDiscardCount;
+        mLastDiscardCount = discards;
+        if(discarded || ++mInFlightFedAgo.first() > 40) {
+            const int stuck = mInFlightFrames.takeFirst();
+            mInFlightFedAgo.removeFirst();
+            setFrameAction(stuck);
+            mInFlightFrames.prepend(stuck);
+            mInFlightFedAgo.prepend(0);
+        }
     }
-    // feed up to the in-flight bound (2): the next frame assembles
+    // feed up to the adaptive in-flight bound: the next frame assembles
     // while the previous one's tasks are still on the pool
-    while(mInFlightFrames.count() < 2) {
+    while(mInFlightFrames.count() < maxInFlightFrames()) {
         const int nextFrame = cacheHandler.firstEmptyFrameAtOrAfter(
                     mCurrentRenderFrame + 1);
         if(nextFrame > mMaxRenderFrame) break;
@@ -537,6 +555,26 @@ int RenderHandler::maxBacklogFrames() const {
     return int(qMax<qint64>(8, budget / frameBytes));
 }
 
+int RenderHandler::maxInFlightFrames() const {
+    if(!mCurrentScene) return 2;
+    // each in-flight frame pins one full frame buffer (plus its render
+    // data) in RAM, so scale the bound with what a 128MB budget buys
+    // at the current effective frame size: ~4 for HD and below, ~3 for
+    // 4K, 2 for 8K - below 2 the pool starves at frame boundaries,
+    // beyond 4 the extra lookahead stops paying off
+    constexpr qint64 budgetBytes = 128LL*1024*1024;
+    const qreal resFrac = qMax<qreal>(1, mCurrentScene->getResolution())/100;
+    const qint64 w = qint64(mCurrentScene->getCanvasWidth()*resFrac);
+    const qint64 h = qint64(mCurrentScene->getCanvasHeight()*resFrac);
+    const qint64 frameBytes = qMax<qint64>(1, w*h*4);
+    return int(qBound<qint64>(2, budgetBytes/frameBytes, 4));
+}
+
+void RenderHandler::onSceneFrameCached() {
+    if(mRenderingPreview) pipelineTick();
+    else if(mCurrentRenderSettings) nextSaveOutputFrame();
+}
+
 void RenderHandler::nextSaveOutputFrame() {
     if(!mCurrentRenderSettings || !mCurrentScene) return;
     const auto& sCacheHandler = mCurrentSoundComposition->getCacheHandler();
@@ -582,17 +620,29 @@ void RenderHandler::nextSaveOutputFrame() {
             });
         }
     } else {
-        // backpressure: rendered-but-unencoded frames are pinned in RAM by
-        // the use range; cap the backlog instead of letting it grow until
-        // the system runs out of memory (render is multi-threaded, encoding
-        // is not, so the backlog would otherwise grow unbounded)
-        const auto useRange = mCurrentScene->getSceneFramesHandler().useRange();
-        const int encodedUpTo = useRange.isValid() ?
-                    useRange.fMin - 1 : mMinRenderFrame - 1;
-        const int backlog = mCurrentRenderFrame - encodedUpTo;
-        if(backlog >= maxBacklogFrames()) return; // encoder drains, timer re-invokes
-        mCurrentRenderSettings->setCurrentRenderFrame(mCurrentRenderFrame);
-        nextCurrentRenderFrame();
+        // multi-frame in-flight feed: assemble the next frames while
+        // the previous ones' tasks are still on the pool instead of
+        // waiting for every task of a frame to finish - the pool no
+        // longer drains at frame boundaries. Two bounds apply: the
+        // backlog cap keeps rendered-but-unencoded frames within the
+        // memory budget (render is multi-threaded, encoding is not, so
+        // the backlog would otherwise grow unbounded), and the
+        // per-pass cap keeps the event loop responsive - frame-landing
+        // and underflow callbacks re-enter and continue feeding
+        for(int fed = 0; fed < 8; fed++) {
+            const auto useRange =
+                    mCurrentScene->getSceneFramesHandler().useRange();
+            const int encodedUpTo = useRange.isValid() ?
+                        useRange.fMin - 1 : mMinRenderFrame - 1;
+            const int backlog = mCurrentRenderFrame - encodedUpTo;
+            if(backlog >= maxBacklogFrames()) return; // encoder drains, timer re-invokes
+            if(mCurrentRenderFrame >= mMaxRenderFrame) break;
+            mCurrentRenderSettings->setCurrentRenderFrame(mCurrentRenderFrame);
+            nextCurrentRenderFrame();
+            // pool busy with at least two frames in flight: enough
+            // lookahead for this pass, landing events will re-feed
+            if(!TaskScheduler::sAllTasksFinished() && fed >= 1) return;
+        }
         if(TaskScheduler::sAllTasksFinished()) {
             nextSaveOutputFrame();
         }

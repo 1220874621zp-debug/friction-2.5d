@@ -81,6 +81,7 @@ private:
     void setCurrentScene(Canvas * const scene);
 
     int maxBacklogFrames() const;
+    int maxInFlightFrames() const;
 
     void finishEncoding();
     void playPreviewAfterAllTasksCompleted();
@@ -96,6 +97,10 @@ private:
     // the thread pool fed through per-frame assembly gaps and
     // straggler tails; bounded to keep peak memory in check
     void pipelineTick();
+    // a frame landed in the scene cache: immediately retire/refeed the
+    // preview pipeline, or drain the output backlog - the event-driven
+    // counterpart of the timer ticks
+    void onSceneFrameCached();
 
     void setPreviewState(const PreviewState state);
     void setRenderingPreview(const bool rendering);
@@ -122,6 +127,10 @@ private:
     // ticks since each in-flight frame was (re)fed; the watchdog in
     // pipelineTick re-feeds frames whose completion was discarded
     QList<int> mInFlightFedAgo;
+    // snapshot of the scene's stale-render-discard counter; a rising
+    // count proves an in-flight frame was dropped by the state check
+    // and must be re-fed immediately
+    int mLastDiscardCount = 0;
     QTimer *mBacklogTimer = nullptr;
     RenderInstanceSettings *mCurrentRenderSettings = nullptr;
 
