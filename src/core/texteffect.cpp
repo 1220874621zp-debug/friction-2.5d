@@ -571,6 +571,17 @@ void TextEffect::setupFromPreset(const TextAnimPreset &preset,
                                  const int startFrame,
                                  const qreal fps,
                                  const qreal durationScale) {
+    // clear expressions left by a previously applied preset so presets
+    // never stack - sweep after wave used to keep the wave phase
+    // driver running underneath the new sweep
+    const auto clearExpr = [](QrealAnimator* const anim) {
+        if (anim && anim->hasExpression()) { anim->setExpression(nullptr); }
+    };
+    if (mP2Anim) { clearExpr(mP2Anim->getXAnimator()); }
+    if (mP3Anim) { clearExpr(mP3Anim->getXAnimator()); }
+    clearExpr(mPeriodicShift.get());
+    clearExpr(mInfluence.get());
+
     mTarget->setCurrentValue(preset.fragment);
     mStaggerBy->setCurrentValue(preset.byIndex ? 1 : 0);
 
@@ -602,6 +613,7 @@ void TextEffect::setupFromPreset(const TextAnimPreset &preset,
         if(yAnim) yAnim->setCurrentBaseValue(y);
         const QString script = QStringLiteral(
                     "// 扫掠前沿：从 %1 平滑移动到 %2（帧 %3 → %4）\n"
+                    "var f = frame;\n"
                     "return pLin(%1, %2, pSmooth(pSeg(f, %3, %4)));")
                 .arg(QString::number(x0, 'f', 1),
                      QString::number(x1, 'f', 1),
@@ -651,6 +663,7 @@ void TextEffect::setupFromPreset(const TextAnimPreset &preset,
         const int waveF = qMax(1, qRound(preset.waveTime*fps));
         attachPresetExpr(mPeriodicShift.get(), QStringLiteral(
                     "// 波浪相位：每 %1 帧推进一个周期（无限循环）\n"
+                    "var f = frame;\n"
                     "return %2 * (f - %3) / %1;")
                 .arg(QString::number(waveF),
                      QString::number(period, 'f', 1),
@@ -668,6 +681,7 @@ void TextEffect::setupFromPreset(const TextAnimPreset &preset,
         const qreal peak = qBound(0., preset.pulsePeak, 1.);
         attachPresetExpr(mInfluence.get(), QStringLiteral(
                     "// 脉冲：0 → 峰值 → 0 循环（周期 %1 帧，无限循环）\n"
+                    "var f = frame;\n"
                     "return %2 * (0.5 - 0.5 * Math.cos(Math.PI * (f - %3) / %1));")
                 .arg(QString::number(2*durF),
                      QString::number(peak),

@@ -168,6 +168,8 @@ private:
 
     QList<TextAnimTile*> mTiles;
     qreal mDurationScale = 1.0;
+    // debounced tile re-render when the duration scale changes
+    QTimer* mDurationReRenderTimer = nullptr;
     QImage mMascot;
     bool mMascotTried = false;
     QString mDefaultCjkFamily;

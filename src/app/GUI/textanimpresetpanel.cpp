@@ -488,11 +488,22 @@ TextAnimPresetPanel::TextAnimPresetPanel(Document& doc,
         }
     });
 
+    // duration-scale changes re-render every tile (debounced - the
+    // preview must show the same timing the next Apply will bake,
+    // which it previously did not: previews were pinned to 100%)
+    mDurationReRenderTimer = new QTimer(this);
+    mDurationReRenderTimer->setSingleShot(true);
+    mDurationReRenderTimer->setInterval(300);
+    connect(mDurationReRenderTimer, &QTimer::timeout, this, [this]() {
+        for (const auto tile : mTiles) { ensureTileFrames(tile); }
+    });
+
     connect(mDurationSlider, &QSlider::valueChanged, this, [this](const int v) {
         mDurationScale = v/100.;
         mDurationSpin->blockSignals(true);
         mDurationSpin->setValue(v);
         mDurationSpin->blockSignals(false);
+        mDurationReRenderTimer->start();
     });
     connect(mDurationSpin, static_cast<void(QSpinBox::*)(int)>(&QSpinBox::valueChanged),
             this, [this](const int v) {
@@ -500,6 +511,7 @@ TextAnimPresetPanel::TextAnimPresetPanel(Document& doc,
         mDurationSlider->blockSignals(true);
         mDurationSlider->setValue(v);
         mDurationSlider->blockSignals(false);
+        mDurationReRenderTimer->start();
     });
 
     mPlayTimer = new QTimer(this);
@@ -561,8 +573,9 @@ void TextAnimPresetPanel::ensureTileFrames(TextAnimTile* const tile)
         const auto box = enve::make_shared<TextBox>();
         configureSampleBox(box.get(), QStringLiteral("friction"),
                            defaultCjkFamily(), SkFontStyle(), 64);
-        TextAnimPresets::apply(box.get(), *preset, 0, gPreviewFps, 1.0);
-        const auto frames = framesForPreset(*preset, 1.0);
+        TextAnimPresets::apply(box.get(), *preset, 0, gPreviewFps,
+                               mDurationScale);
+        const auto frames = framesForPreset(*preset, mDurationScale);
         const auto imgs = TextAnimPresets::renderPreviewSequence(
                     box.get(), frames, QSize(160, 160));
         tile->setFrames(imgs);
@@ -575,12 +588,14 @@ void TextAnimPresetPanel::ensureTileFrames(TextAnimTile* const tile)
         configureSampleRect(box.get(), 55, 55);
         if (previewOut) {
             LayerAnimPresets::apply(box.get(), *preset, -1, 0,
-                                    gPreviewFps, 1.0, 400, 400, false);
+                                    gPreviewFps, mDurationScale,
+                                    400, 400, false);
         } else {
             LayerAnimPresets::apply(box.get(), *preset, 0, -1,
-                                    gPreviewFps, 1.0, 400, 400, false);
+                                    gPreviewFps, mDurationScale,
+                                    400, 400, false);
         }
-        const auto frames = framesForLayerPreset(*preset, 1.0);
+        const auto frames = framesForLayerPreset(*preset, mDurationScale);
         const auto imgs = LayerAnimPresets::renderPreviewSequence(
                     box.get(), frames, QSize(160, 160), mascotImage());
         tile->setFrames(imgs);

@@ -477,7 +477,16 @@ void apply(BoundingBox* const box,
         if (!tgt.anim) { continue; }
         const bool hasIn = tgt.inSc && !tgt.inSc->isEmpty();
         const bool hasOut = tgt.outSc && !tgt.outSc->isEmpty();
-        if (!hasIn && !hasOut) { continue; }
+        if (!hasIn && !hasOut) {
+            // clear any expression a previously applied preset left on
+            // this animator - presets must not stack (A then B used to
+            // leave A's motion driving the channels B does not touch)
+            if (tgt.anim->hasExpression()) {
+                if (action) { tgt.anim->setExpressionAction(nullptr); }
+                else { tgt.anim->setExpression(nullptr); }
+            }
+            continue;
+        }
         QString script;
         if (hasIn && hasOut) {
             // one expression per animator: the exit window takes over
