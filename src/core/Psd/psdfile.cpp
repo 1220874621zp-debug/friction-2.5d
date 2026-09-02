@@ -107,7 +107,10 @@ QString readUnicodeString(QDataStream &s, qint64 blockEnd)
 
 namespace {
 
-struct DescError {};
+struct DescError {
+    DescError(const char *why) : reason(why) {}
+    const char *reason = "";
+};
 
 struct DescValue {
     QByteArray tag;      // OSType, e.g. "doub", "enum"
@@ -137,7 +140,10 @@ public:
         qint32 count = 0;
         mS >> count;
         check();
-        if (count < 0 || count > 8192) { throw DescError(); }
+        if (count < 0 || count > 8192) {
+            qWarning() << "PSD lfx2: bad descriptor count" << count;
+            throw DescError("desccount");
+        }
         for (qint32 i = 0; i < count; i++) {
             const QByteArray key = readId();
             v.objV.insert(key, readValue());
@@ -149,14 +155,39 @@ private:
     const qint64 mEnd;
 
     void check() {
-        if (mS.status() != QDataStream::Ok || mS.device()->pos() > mEnd) {
-            throw DescError();
+        if (mS.status() != QDataStream::Ok) {
+            qWarning() << "PSD lfx2: stream status bad";
+            throw DescError("stream");
         }
+        if (mS.device()->pos() > mEnd) {
+            qWarning() << "PSD lfx2: bounds exceeded pos"
+                       << mS.device()->pos() << "end" << mEnd;
+            throw DescError("bounds");
+        }
+    }
+
+    double readDouble() {
+        // the shared stream is in SinglePrecision mode (channel data),
+        // operator>>(double&) would consume only 4 bytes; descriptor
+        // doubles are always 8-byte big-endian
+        char buf[8];
+        if (mS.readRawData(buf, 8) != 8) {
+            qWarning() << "PSD lfx2: short read on double";
+            throw DescError("dbl");
+        }
+        quint64 bits = 0;
+        for (int i = 0; i < 8; i++) { bits = (bits << 8) | quint8(buf[i]); }
+        double d = 0;
+        std::memcpy(&d, &bits, sizeof(d));
+        return d;
     }
 
     QByteArray readFourCCRaw() {
         char buf[4];
-        if (mS.readRawData(buf, 4) != 4) { throw DescError(); }
+        if (mS.readRawData(buf, 4) != 4) {
+            qWarning() << "PSD lfx2: short read on 4cc at" << mS.device()->pos();
+            throw DescError("4cc");
+        }
         return QByteArray(buf, 4);
     }
 
@@ -165,9 +196,15 @@ private:
         mS >> len;
         check();
         if (len == 0) { len = 4; }
-        else if (len < 0 || len > 8192) { throw DescError(); }
+        else if (len < 0 || len > 8192) {
+            qWarning() << "PSD lfx2: bad id length" << len;
+            throw DescError("idlen");
+        }
         QByteArray bytes(len, Qt::Uninitialized);
-        if (mS.readRawData(bytes.data(), len) != len) { throw DescError(); }
+        if (mS.readRawData(bytes.data(), len) != len) {
+            qWarning() << "PSD lfx2: short read on id" << len;
+            throw DescError("idread");
+        }
         return bytes;
     }
 
@@ -177,7 +214,10 @@ private:
         check();
         QString out;
         if (chars <= 0) { return out; }
-        if (chars > (1 << 20)) { throw DescError(); }
+        if (chars > (1 << 20)) {
+            qWarning() << "PSD lfx2: bad text length" << chars;
+            throw DescError("textlen");
+        }
         out.reserve(chars);
         for (qint32 i = 0; i < chars; i++) {
             quint16 ch = 0;
@@ -201,7 +241,10 @@ private:
         qint32 count = 0;
         mS >> count;
         check();
-        if (count < 0 || count > 4096) { throw DescError(); }
+        if (count < 0 || count > 4096) {
+            qWarning() << "PSD lfx2: bad reference count" << count;
+            throw DescError("refcount");
+        }
         for (qint32 i = 0; i < count; i++) {
             const QByteArray form = readFourCCRaw();
             readId(); // class ID
@@ -220,7 +263,7 @@ private:
         const QByteArray tag = readFourCCRaw();
         DescValue v;
         v.tag = tag;
-        if (tag == "obj") {
+        if (tag == "obj ") {
             readReference();
         } else if (tag == "Objc" || tag == "GlbO") {
             return readDescriptorBody();
@@ -229,17 +272,16 @@ private:
             mS >> count;
             check();
             if (count < 0) { count = 0; }
-            if (count > 65536) { throw DescError(); }
+            if (count > 65536) {
+                qWarning() << "PSD lfx2: bad list count" << count;
+                throw DescError("listcount");
+            }
             for (qint32 i = 0; i < count; i++) { readValue(); }
         } else if (tag == "doub") {
-            double d = 0;
-            mS >> d;
-            v.doubleV = d;
+            v.doubleV = readDouble();
         } else if (tag == "UntF") {
             readFourCCRaw(); // unit, e.g. "#Prc"
-            double d = 0;
-            mS >> d;
-            v.doubleV = d;
+            v.doubleV = readDouble();
         } else if (tag == "TEXT") {
             v.textV = readUnicode();
         } else if (tag == "enum") {
@@ -259,10 +301,15 @@ private:
             qint32 len = 0;
             mS >> len;
             check();
-            if (len < 0) { throw DescError(); }
+            if (len < 0) {
+                qWarning() << "PSD lfx2: bad tdta length" << len;
+                throw DescError("tdta");
+            }
             skipBytes((qint64(len) + 3) & ~qint64(3));
         } else {
-            throw DescError();
+            qWarning() << "PSD lfx2: unhandled type" << tag
+                       << "at" << mS.device()->pos();
+            throw DescError("type");
         }
         check();
         return v;

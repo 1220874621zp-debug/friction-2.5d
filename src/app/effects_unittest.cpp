@@ -30,6 +30,7 @@
 #include "RasterEffects/rastereffectsinclude.h"
 #include "RasterEffects/rastereffectcollection.h"
 #include "RasterEffects/rastereffectmenucreator.h"
+#include "Psd/psdfile.h"
 #include "include/core/SkBitmap.h"
 
 #include "themesupport.h"
@@ -37,6 +38,13 @@
 int main(int argc, char *argv[])
 {
     QCoreApplication app(argc, argv);
+    // surface qWarning from core (psd parser diagnostics) on stderr:
+    // the default Windows handler drops them when no real console
+    qInstallMessageHandler([](QtMsgType type, const QMessageLogContext&,
+                              const QString& msg) {
+        fprintf(stderr, "[QT%d] %s\n", int(type), qPrintable(msg));
+        fflush(stderr);
+    });
     int passed = 0;
     int failed = 0;
 
@@ -241,6 +249,26 @@ int main(int argc, char *argv[])
         const auto shadowPx = static_cast<const uint32_t*>(dstBtmp.getAddr(7, 32));
         if (SkColorGetA(*shadowPx) < 30) {
             throw std::runtime_error("no shadow to the left");
+        }
+    });
+
+    // Test 5b: PSD layer-styles parsing on a real file passed as
+    // argv[1] (skipped when no argument) - offline repro for imports
+    runTest("Test 5b: PSD layer styles (real file)", [&]() {
+        if (argc < 2) { std::cout << " (skipped, no file) "; return; }
+        psd::PsdFile psd;
+        QString err;
+        if (!psd.load(QString::fromLocal8Bit(argv[1]), &err)) {
+            throw std::runtime_error(("load failed: " + err).toStdString());
+        }
+        int styled = 0;
+        for (const auto& rec : psd.layers()) {
+            if (rec.styles.hasAny) { styled++; }
+        }
+        std::cout << " layers=" << psd.layers().size()
+                  << " styled=" << styled << " ";
+        if (styled < 1) {
+            throw std::runtime_error("expected at least one styled layer");
         }
     });
 

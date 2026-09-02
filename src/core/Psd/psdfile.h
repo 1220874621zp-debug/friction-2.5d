@@ -33,6 +33,8 @@
 #include <QVector>
 #include <QByteArray>
 
+#include "core_global.h"
+
 class QIODevice;
 class QDataStream;
 
@@ -102,7 +104,9 @@ namespace psd {
         LayerStyles styles;
     };
 
-    class PsdFile {
+    // CORE_EXPORT for the effects unit-test exe (module-internal
+    // users don't need it)
+    class CORE_EXPORT PsdFile {
     public:
         // Load the layer tree (records + channel offsets).
         bool load(const QString &path, QString *error = nullptr);
