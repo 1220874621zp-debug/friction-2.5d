@@ -1013,13 +1013,30 @@ void MainWindow::setupMenuScene()
                           tr("Set In"), this, [this]() {
                               const auto scene = *mDocument.fActiveScene;
                               if (!scene) { return; }
-                              scene->setFrameIn(true, scene->getCurrentFrame());
+                              const auto frame = scene->getCurrentFrame();
+                              // keep the same guard as the I shortcut: an in
+                              // point at/after the out point would make the
+                              // preview range empty and Space silently dead
+                              const auto fOut = scene->getFrameOut();
+                              if (fOut.enabled && frame >= fOut.frame) {
+                                  statusBar()->showMessage(
+                                      tr("In point must be before the out point"));
+                                  return;
+                              }
+                              scene->setFrameIn(true, frame);
                           });
     mSceneMenu->addAction(QIcon::fromTheme("range-out"),
                           tr("Set Out"), this, [this]() {
                               const auto scene = *mDocument.fActiveScene;
                               if (!scene) { return; }
-                              scene->setFrameOut(true, scene->getCurrentFrame());
+                              const auto frame = scene->getCurrentFrame();
+                              const auto fIn = scene->getFrameIn();
+                              if (fIn.enabled && frame <= fIn.frame) {
+                                  statusBar()->showMessage(
+                                      tr("Out point must be after the in point"));
+                                  return;
+                              }
+                              scene->setFrameOut(true, frame);
                           });
     mSceneMenu->addAction(QIcon::fromTheme("range-clear"),
                           tr("Clear In/Out"), this, [this]() {

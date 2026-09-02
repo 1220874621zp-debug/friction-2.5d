@@ -5451,6 +5451,14 @@ Are you sure you want to save this project file?</source>
         <translation>设置出点</translation>
     </message>
     <message>
+        <source>In point must be before the out point</source>
+        <translation>入点必须在出点之前</translation>
+    </message>
+    <message>
+        <source>Out point must be after the in point</source>
+        <translation>出点必须在入点之后</translation>
+    </message>
+    <message>
         <location filename="../GUI/menu.cpp" line="971"/>
         <source>Add Marker</source>
         <translation>添加标记</translation>
@@ -8461,6 +8469,10 @@ Select the layers you want to import:</source>
 </context>
 <context>
     <name>TimelineDockWidget</name>
+    <message>
+        <source>Cannot play: the preview range is empty - check the In/Out points</source>
+        <translation>无法播放：预览范围为空，请检查入点/出点设置</translation>
+    </message>
     <message>
         <location filename="../GUI/timelinedockwidget.cpp" line="133"/>
         <source>Rewind</source>

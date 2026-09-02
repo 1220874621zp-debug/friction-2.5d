@@ -34,6 +34,8 @@
 #include "CacheHandlers/sceneframecontainer.h"
 #include "Private/document.h"
 
+#include <QDebug>
+
 RenderHandler* RenderHandler::sInstance = nullptr;
 
 RenderHandler::RenderHandler(Document &document,
@@ -436,7 +438,16 @@ bool RenderHandler::playPreview() {
     const auto fOut = mCurrentScene->getFrameOut();
     const int minPreviewFrame = fIn.enabled? (fIn.frame < mSavedCurrentFrame && mSavedCurrentFrame < mCurrentRenderFrame ? mSavedCurrentFrame : fIn.frame) : mSavedCurrentFrame;
     const int maxPreviewFrame = qMin(mMaxRenderFrame, mCurrentRenderFrame);
-    if(minPreviewFrame >= maxPreviewFrame) return false;
+    if(minPreviewFrame >= maxPreviewFrame) {
+        // silent refusal makes Space look dead; log the exact range
+        // so the debug log shows why playback cannot start
+        qWarning() << "[SPACE] playPreview refused: empty range min="
+                   << minPreviewFrame << "max=" << maxPreviewFrame
+                   << "in=" << (fIn.enabled ? fIn.frame : -1)
+                   << "out=" << (fOut.enabled ? fOut.frame : -1)
+                   << "current=" << mSavedCurrentFrame;
+        return false;
+    }
     mMinPreviewFrame = mLoop ? (fIn.enabled? fIn.frame : mCurrentScene->getMinFrame()) : (fIn.enabled? (fIn.frame < minPreviewFrame && minPreviewFrame < mCurrentRenderFrame ? minPreviewFrame : fIn.frame) : minPreviewFrame);
     mMaxPreviewFrame = fOut.enabled ? fOut.frame : maxPreviewFrame;
     // Reload cached frames that were swapped out to tmp files while the
