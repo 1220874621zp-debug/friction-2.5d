@@ -127,6 +127,33 @@ namespace Friction
             Q_INVOKABLE QJSValue rotationY();
             Q_INVOKABLE QJSValue zPosition();
             Q_INVOKABLE QJSValue perspective();
+            Q_INVOKABLE QJSValue opacityProp();
+            // Styling & typography helpers
+            Q_INVOKABLE bool setFillColor(const QString &color);
+            Q_INVOKABLE bool setStrokeColor(const QString &color);
+            Q_INVOKABLE bool setStrokeWidth(const qreal width);
+            Q_INVOKABLE bool setFontSize(const qreal size);
+            Q_INVOKABLE bool setFontFamily(const QString &family);
+            Q_INVOKABLE bool setLetterSpacing(const qreal spacing);
+            Q_INVOKABLE bool setLineSpacing(const qreal spacing);
+            Q_INVOKABLE bool setText(const QString &text);
+            Q_INVOKABLE bool setTextAlignment(const QString &align);
+            Q_INVOKABLE bool setBlendMode(const QString &mode);
+            Q_INVOKABLE bool setCornerRadius(const qreal radius);
+            Q_INVOKABLE bool setRadius(const qreal radius);
+            // Effects & Filter management
+            Q_INVOKABLE bool addEffect(const QString &effectType);
+            Q_INVOKABLE bool removeEffect(const int index);
+            Q_INVOKABLE QJSValue effects();
+            // Text animation presets (staggered per-character animations)
+            Q_INVOKABLE bool applyTextPreset(const QString &presetId,
+                                             const qreal startFrame = 0,
+                                             const qreal durationScale = 1.0,
+                                             const bool out = false);
+            Q_INVOKABLE QJSValue textPresets();
+            // Lock & Visibility
+            Q_INVOKABLE bool isLocked() const;
+            Q_INVOKABLE void setLocked(const bool locked);
             // 2.5D layer toggle (timeline cube button state)
             Q_INVOKABLE bool is3DEnabled();
             Q_INVOKABLE void set3DEnabled(const bool enabled);

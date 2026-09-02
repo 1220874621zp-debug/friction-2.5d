@@ -37,9 +37,15 @@
 #include "Animators/SmartPath/smartpathanimator.h"
 #include "Animators/SmartPath/node.h"
 #include "Animators/transformanimator.h"
+#include "Boxes/pathbox.h"
+#include "Animators/paintsettingsanimator.h"
+#include "Animators/outlinesettingsanimator.h"
 #include "Animators/qpointfanimator.h"
 #include "Animators/qrealanimator.h"
 #include "Animators/key.h"
+#include "RasterEffects/rastereffectcollection.h"
+#include "RasterEffects/rastereffect.h"
+#include "textanimpresets.h"
 
 #include <QFile>
 #include <QTextStream>
@@ -69,7 +75,13 @@ namespace Friction
             Canvas *activeSceneOrNull()
             {
                 if (!Document::sInstance) { return nullptr; }
-                return Document::sInstance->fActiveScene;
+                if (Document::sInstance->fActiveScene) {
+                    return Document::sInstance->fActiveScene;
+                }
+                if (!Document::sInstance->fScenes.isEmpty()) {
+                    return Document::sInstance->fScenes.first().get();
+                }
+                return Document::sInstance->createNewScene(true);
             }
 
             // collect selected boxes depth-first (document order), so
@@ -427,6 +439,10 @@ namespace Friction
                 const auto boxTrans = mBox->getBoxTransformAnimator();
                 if (!boxTrans) { return QJSValue(QJSValue::NullValue); }
                 prop = boxTrans->getPerspectiveAnimator();
+            } else if (n == "opacity" || n == "op") {
+                const auto boxTrans = mBox->getBoxTransformAnimator();
+                if (!boxTrans) { return QJSValue(QJSValue::NullValue); }
+                prop = boxTrans->getOpacityAnimator();
             } else {
                 return QJSValue(QJSValue::NullValue);
             }
@@ -474,6 +490,319 @@ namespace Friction
         QJSValue JsLayerProxy::perspective()
         {
             return makeProperty(QStringLiteral("perspective"));
+        }
+
+        QJSValue JsLayerProxy::opacityProp()
+        {
+            return makeProperty(QStringLiteral("opacity"));
+        }
+
+        bool JsLayerProxy::setFillColor(const QString &color)
+        {
+            if (!mBox) { return false; }
+            const auto pathBox = enve_cast<PathBox*>(mBox.data());
+            if (!pathBox || !pathBox->getFillSettings()) { return false; }
+            const QString c = color.trimmed().toLower();
+            if (c == QStringLiteral("transparent") || c == QStringLiteral("none") || c.isEmpty()) {
+                pathBox->getFillSettings()->setPaintType(PaintType::NOPAINT);
+            } else {
+                pathBox->getFillSettings()->setPaintType(PaintType::FLATPAINT);
+                pathBox->getFillSettings()->setCurrentColor(QColor(color));
+            }
+            finishAction();
+            return true;
+        }
+
+        bool JsLayerProxy::setStrokeColor(const QString &color)
+        {
+            if (!mBox) { return false; }
+            const auto pathBox = enve_cast<PathBox*>(mBox.data());
+            if (!pathBox || !pathBox->getStrokeSettings()) { return false; }
+            const QString c = color.trimmed().toLower();
+            if (c == QStringLiteral("transparent") || c == QStringLiteral("none") || c.isEmpty()) {
+                pathBox->getStrokeSettings()->setPaintType(PaintType::NOPAINT);
+            } else {
+                pathBox->getStrokeSettings()->setPaintType(PaintType::FLATPAINT);
+                pathBox->getStrokeSettings()->setCurrentColor(QColor(color));
+            }
+            finishAction();
+            return true;
+        }
+
+        bool JsLayerProxy::setStrokeWidth(const qreal width)
+        {
+            if (!mBox) { return false; }
+            const auto pathBox = enve_cast<PathBox*>(mBox.data());
+            if (!pathBox || !pathBox->getStrokeSettings()) { return false; }
+            if (width <= 0.) {
+                pathBox->getStrokeSettings()->setPaintType(PaintType::NOPAINT);
+                pathBox->getStrokeSettings()->setCurrentStrokeWidth(0.);
+            } else {
+                pathBox->getStrokeSettings()->setPaintType(PaintType::FLATPAINT);
+                pathBox->getStrokeSettings()->setCurrentStrokeWidth(width);
+            }
+            finishAction();
+            return true;
+        }
+
+        bool JsLayerProxy::setFontSize(const qreal size)
+        {
+            if (!mBox) { return false; }
+            const auto textBox = enve_cast<TextBox*>(mBox.data());
+            if (!textBox) { return false; }
+            textBox->setFontSize(size);
+            finishAction();
+            return true;
+        }
+
+        bool JsLayerProxy::setText(const QString &text)
+        {
+            if (!mBox) { return false; }
+            const auto textBox = enve_cast<TextBox*>(mBox.data());
+            if (!textBox) { return false; }
+            textBox->setCurrentValue(text);
+            finishAction();
+            return true;
+        }
+
+        bool JsLayerProxy::setTextAlignment(const QString &align)
+        {
+            if (!mBox) { return false; }
+            const auto textBox = enve_cast<TextBox*>(mBox.data());
+            if (!textBox) { return false; }
+            const QString a = align.toLower();
+            if (a == QStringLiteral("center")) {
+                textBox->setTextHAlignment(Qt::AlignHCenter);
+                textBox->setTextVAlignment(Qt::AlignVCenter);
+            } else if (a == QStringLiteral("right")) {
+                textBox->setTextHAlignment(Qt::AlignRight);
+                textBox->setTextVAlignment(Qt::AlignVCenter);
+            } else {
+                textBox->setTextHAlignment(Qt::AlignLeft);
+                textBox->setTextVAlignment(Qt::AlignVCenter);
+            }
+            finishAction();
+            return true;
+        }
+
+        bool JsLayerProxy::setFontFamily(const QString &family)
+        {
+            if (!mBox) { return false; }
+            const auto textBox = enve_cast<TextBox*>(mBox.data());
+            if (!textBox) { return false; }
+            textBox->setFontFamilyAndStyle(family, textBox->getFontStyle());
+            finishAction();
+            return true;
+        }
+
+        bool JsLayerProxy::setLetterSpacing(const qreal spacing)
+        {
+            if (!mBox) { return false; }
+            const auto textBox = enve_cast<TextBox*>(mBox.data());
+            if (!textBox) { return false; }
+            textBox->setLetterSpacing(spacing);
+            finishAction();
+            return true;
+        }
+
+        bool JsLayerProxy::setLineSpacing(const qreal spacing)
+        {
+            if (!mBox) { return false; }
+            const auto textBox = enve_cast<TextBox*>(mBox.data());
+            if (!textBox) { return false; }
+            textBox->setLineSpacing(spacing);
+            finishAction();
+            return true;
+        }
+
+        bool JsLayerProxy::setBlendMode(const QString &mode)
+        {
+            if (!mBox) { return false; }
+            const QString m = mode.toLower().remove(QLatin1Char('_')).remove(QLatin1Char('-'));
+            SkBlendMode bm = SkBlendMode::kSrcOver;
+            if (m == QStringLiteral("multiply")) bm = SkBlendMode::kMultiply;
+            else if (m == QStringLiteral("screen")) bm = SkBlendMode::kScreen;
+            else if (m == QStringLiteral("overlay")) bm = SkBlendMode::kOverlay;
+            else if (m == QStringLiteral("darken")) bm = SkBlendMode::kDarken;
+            else if (m == QStringLiteral("lighten")) bm = SkBlendMode::kLighten;
+            else if (m == QStringLiteral("colordodge") || m == QStringLiteral("dodge")) bm = SkBlendMode::kColorDodge;
+            else if (m == QStringLiteral("colorburn") || m == QStringLiteral("burn")) bm = SkBlendMode::kColorBurn;
+            else if (m == QStringLiteral("hardlight")) bm = SkBlendMode::kHardLight;
+            else if (m == QStringLiteral("softlight")) bm = SkBlendMode::kSoftLight;
+            else if (m == QStringLiteral("difference")) bm = SkBlendMode::kDifference;
+            else if (m == QStringLiteral("exclusion")) bm = SkBlendMode::kExclusion;
+            else if (m == QStringLiteral("plus") || m == QStringLiteral("add")) bm = SkBlendMode::kPlus;
+            else if (m == QStringLiteral("clear")) bm = SkBlendMode::kClear;
+            else if (m == QStringLiteral("src")) bm = SkBlendMode::kSrc;
+            else if (m == QStringLiteral("dst")) bm = SkBlendMode::kDst;
+            else if (m == QStringLiteral("srcatop")) bm = SkBlendMode::kSrcATop;
+            else if (m == QStringLiteral("dstatop")) bm = SkBlendMode::kDstATop;
+            else if (m == QStringLiteral("xor")) bm = SkBlendMode::kXor;
+
+            mBox->setBlendMode(bm);
+            finishAction();
+            return true;
+        }
+
+        bool JsLayerProxy::setCornerRadius(const qreal radius)
+        {
+            if (!mBox) { return false; }
+            const auto rectBox = enve_cast<RectangleBox*>(mBox.data());
+            if (rectBox) {
+                rectBox->setXRadius(radius);
+                rectBox->setYRadius(radius);
+                finishAction();
+                return true;
+            }
+            return false;
+        }
+
+        bool JsLayerProxy::setRadius(const qreal radius)
+        {
+            if (!mBox) { return false; }
+            const auto circle = enve_cast<Circle*>(mBox.data());
+            if (circle) {
+                circle->setRadius(radius);
+                finishAction();
+                return true;
+            }
+            return setCornerRadius(radius);
+        }
+
+        bool JsLayerProxy::addEffect(const QString &effectType)
+        {
+            if (!mBox) { return false; }
+            const auto coll = mBox->rasterEffectsCollection();
+            if (!coll) { return false; }
+            const QString n = effectType.toLower().remove(QLatin1Char('_')).remove(QLatin1Char('-'));
+            RasterEffectType type = RasterEffectType::BLUR;
+            if (n == QStringLiteral("glow")) type = RasterEffectType::GLOW;
+            else if (n == QStringLiteral("liquidglass")) type = RasterEffectType::LIQUID_GLASS;
+            else if (n == QStringLiteral("vignette")) type = RasterEffectType::VIGNETTE;
+            else if (n == QStringLiteral("chromaticaberration")) type = RasterEffectType::CHROMATIC_ABERRATION;
+            else if (n == QStringLiteral("scanlines")) type = RasterEffectType::SCANLINES;
+            else if (n == QStringLiteral("glitch")) type = RasterEffectType::GLITCH;
+            else if (n == QStringLiteral("dropshadow") || n == QStringLiteral("shadow")) type = RasterEffectType::DROP_SHADOW;
+            else if (n == QStringLiteral("blur") || n == QStringLiteral("gaussianblur")) type = RasterEffectType::BLUR;
+            else if (n == QStringLiteral("motionblur")) type = RasterEffectType::MOTION_BLUR;
+            else if (n == QStringLiteral("directionalblur")) type = RasterEffectType::DIRECTIONAL_BLUR;
+            else if (n == QStringLiteral("radialblur")) type = RasterEffectType::RADIAL_BLUR;
+            else if (n == QStringLiteral("zoomblur")) type = RasterEffectType::ZOOM_BLUR;
+            else if (n == QStringLiteral("wavewarp") || n == QStringLiteral("wave")) type = RasterEffectType::WAVE_WARP;
+            else if (n == QStringLiteral("tint")) type = RasterEffectType::TINT;
+            else if (n == QStringLiteral("invert")) type = RasterEffectType::INVERT;
+            else if (n == QStringLiteral("pixelate")) type = RasterEffectType::PIXELATE;
+            else if (n == QStringLiteral("pixelart")) type = RasterEffectType::PIXEL_ART;
+            else if (n == QStringLiteral("noise")) type = RasterEffectType::NOISE;
+            else if (n == QStringLiteral("filmgrain")) type = RasterEffectType::FILM_GRAIN;
+            else if (n == QStringLiteral("halftone")) type = RasterEffectType::HALFTONE;
+            else if (n == QStringLiteral("posterize")) type = RasterEffectType::POSTERIZE;
+            else if (n == QStringLiteral("twirl")) type = RasterEffectType::TWIRL;
+            else if (n == QStringLiteral("shake")) type = RasterEffectType::SHAKE;
+            else if (n == QStringLiteral("stripe")) type = RasterEffectType::STRIPE;
+            else if (n == QStringLiteral("colorgrading")) type = RasterEffectType::COLOR_GRADING;
+            else if (n == QStringLiteral("brightnesscontrast")) type = RasterEffectType::BRIGHTNESS_CONTRAST;
+            else if (n == QStringLiteral("colorize")) type = RasterEffectType::COLORIZE;
+            else if (n == QStringLiteral("lightsweep")) type = RasterEffectType::LIGHT_SWEEP;
+            else if (n == QStringLiteral("fractalnoise")) type = RasterEffectType::FRACTAL_NOISE;
+            else if (n == QStringLiteral("motiontile")) type = RasterEffectType::MOTION_TILE;
+            else if (n == QStringLiteral("edgedetect")) type = RasterEffectType::EDGE_DETECT;
+            else if (n == QStringLiteral("rain")) type = RasterEffectType::RAIN;
+            else if (n == QStringLiteral("mirror")) type = RasterEffectType::MIRROR;
+            else if (n == QStringLiteral("chromakey")) type = RasterEffectType::CHROMA_KEY;
+            else if (n == QStringLiteral("displacementwarp") || n == QStringLiteral("displacement")) type = RasterEffectType::DISPLACEMENT_WARP;
+            else if (n == QStringLiteral("blackwhiteflash") || n == QStringLiteral("bwflash") || n == QStringLiteral("flash")) type = RasterEffectType::BLACK_WHITE_FLASH;
+            else if (n == QStringLiteral("channelblur")) type = RasterEffectType::CHANNEL_BLUR;
+            else if (n == QStringLiteral("letterbox")) type = RasterEffectType::LETTERBOX;
+            else if (n == QStringLiteral("noisefade")) type = RasterEffectType::NOISE_FADE;
+            else if (n == QStringLiteral("wipe")) type = RasterEffectType::WIPE;
+
+            auto eff = createRasterEffectForNonCustomType(type);
+            if (eff) {
+                coll->addChild(eff);
+                finishAction();
+                return true;
+            }
+            return false;
+        }
+
+        bool JsLayerProxy::removeEffect(const int index)
+        {
+            if (!mBox) { return false; }
+            const auto coll = mBox->rasterEffectsCollection();
+            if (!coll) { return false; }
+            if (index >= 0 && index < coll->ca_getNumberOfChildren()) {
+                const auto child = coll->getChild(index);
+                if (child) {
+                    coll->removeChild(child->ref<RasterEffect>());
+                    finishAction();
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        QJSValue JsLayerProxy::effects()
+        {
+            if (!mBox || !mEngine) { return QJSValue(QJSValue::NullValue); }
+            const auto coll = mBox->rasterEffectsCollection();
+            if (!coll) { return mEngine->newArray(); }
+            const int count = coll->ca_getNumberOfChildren();
+            auto arr = mEngine->newArray(count);
+            for (int i = 0; i < count; ++i) {
+                const auto child = coll->getChild(i);
+                arr.setProperty(i, child ? child->prp_getName() : QString());
+            }
+            return arr;
+        }
+
+        bool JsLayerProxy::applyTextPreset(const QString &presetId,
+                                           const qreal startFrame,
+                                           const qreal durationScale,
+                                           const bool out)
+        {
+            if (!mBox) { return false; }
+            const auto textBox = enve_cast<TextBox*>(mBox.data());
+            if (!textBox) { return false; }
+            const auto preset = TextAnimPresets::byId(presetId);
+            if (!preset) { return false; }
+            const qreal fps = sceneFps();
+            const bool ok = TextAnimPresets::apply(textBox, *preset, qRound(startFrame), fps, durationScale, out);
+            if (ok) {
+                finishAction();
+            }
+            return ok;
+        }
+
+        QJSValue JsLayerProxy::textPresets()
+        {
+            if (!mEngine) { return QJSValue(QJSValue::NullValue); }
+            const auto &presets = TextAnimPresets::all();
+            auto arr = mEngine->newArray(presets.count());
+            for (int i = 0; i < presets.count(); ++i) {
+                const auto &p = presets.at(i);
+                auto obj = mEngine->newObject();
+                obj.setProperty(QStringLiteral("id"), p.id);
+                obj.setProperty(QStringLiteral("name"), p.name);
+                obj.setProperty(QStringLiteral("desc"), p.desc);
+                obj.setProperty(QStringLiteral("category"), p.category);
+                obj.setProperty(QStringLiteral("duration"), p.duration);
+                arr.setProperty(i, obj);
+            }
+            return arr;
+        }
+
+        bool JsLayerProxy::isLocked() const
+        {
+            return mBox ? mBox->isLocked() : false;
+        }
+
+        void JsLayerProxy::setLocked(const bool locked)
+        {
+            if (mBox) {
+                mBox->setLocked(locked);
+                finishAction();
+            }
         }
 
         bool JsLayerProxy::is3DEnabled()
@@ -1099,6 +1428,9 @@ namespace Friction
             if (box) {
                 box->setTopLeftPos(QPointF(x, y));
                 box->setBottomRightPos(QPointF(x + w, y + h));
+                if (box->getStrokeSettings()) {
+                    box->getStrokeSettings()->setPaintType(PaintType::NOPAINT);
+                }
             }
             return result;
         }
@@ -1116,6 +1448,9 @@ namespace Friction
                 box->setRadius(radius);
                 const auto transform = box->getTransformAnimator();
                 if (transform) { transform->setRelativePos(QPointF(cx, cy)); }
+                if (box->getStrokeSettings()) {
+                    box->getStrokeSettings()->setPaintType(PaintType::NOPAINT);
+                }
             }
             return result;
         }
@@ -1128,7 +1463,21 @@ namespace Friction
             const auto box = static_cast<TextBox*>(
                         qobject_cast<JsLayerProxy*>(
                             result.toQObject())->box());
-            if (box && !text.isEmpty()) { box->setCurrentValue(text); }
+            if (box) {
+                if (Document::sInstance && !Document::sInstance->fFontFamily.isEmpty()) {
+                    box->setFontFamilyAndStyle(Document::sInstance->fFontFamily,
+                                               Document::sInstance->fFontStyle);
+                } else {
+#ifdef Q_OS_LINUX
+                    box->setFontFamilyAndStyle(QStringLiteral("Noto Sans CJK JP"),
+                                               SkFontStyle());
+#else
+                    box->setFontFamilyAndStyle(QStringLiteral("Microsoft YaHei"),
+                                               SkFontStyle());
+#endif
+                }
+                if (!text.isEmpty()) { box->setCurrentValue(text); }
+            }
             return result;
         }
 

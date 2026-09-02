@@ -255,6 +255,12 @@ public:
 
     virtual SkBlendMode getBlendMode() const
     { return mBlendMode; }
+    void setBlendMode(const SkBlendMode mode)
+    {
+        if (mBlendMode == mode) { return; }
+        mBlendMode = mode;
+        prp_afterWholeInfluenceRangeChanged();
+    }
 
     // AE-style solo: true when this box participates in drawing
     // while any sibling in the same container is soloed

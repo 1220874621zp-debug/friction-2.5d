@@ -18,6 +18,7 @@
 #include "widgets/performancesettingswidget.h"
 #include "widgets/canvassettingswidget.h"
 #include "widgets/presetsettingswidget.h"
+#include "aiagentsettingswidget.h"
 
 #include <QVBoxLayout>
 #include <QPushButton>
@@ -59,6 +60,9 @@ SettingsDialog::SettingsDialog(QWidget * const parent)
 
     const auto presets = new PresetSettingsWidget(this);
     addSettingsWidget(presets, tr("Presets"));
+
+    const auto aiAgent = new AIAgentSettingsWidget(this);
+    addSettingsWidget(aiAgent, tr("AI & MCP Agent"));
 
     mainLayout->addWidget(mTabWidget);
 
@@ -139,6 +143,18 @@ void SettingsDialog::addSettingsWidget(SettingsWidget * const widget,
 {
     mTabWidget->addTab(widget, name);
     mSettingWidgets << widget;
+}
+
+void SettingsDialog::setCurrentIndex(int index)
+{
+    if (mTabWidget && index >= 0 && index < mTabWidget->count()) {
+        mTabWidget->setCurrentIndex(index);
+    }
+}
+
+int SettingsDialog::count() const
+{
+    return mTabWidget ? mTabWidget->count() : 0;
 }
 
 void SettingsDialog::updateSettings(bool restore)

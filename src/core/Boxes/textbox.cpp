@@ -512,6 +512,20 @@ qreal TextBox::getLineSpacingAt(const qreal relFrame) const {
     return mLineSpacing->getEffectiveValue(relFrame);
 }
 
+void TextBox::setLetterSpacing(const qreal spacing) {
+    if (mLetterSpacing) {
+        mLetterSpacing->setCurrentBaseValue(spacing);
+        setPathsOutdated(UpdateReason::userChange);
+    }
+}
+
+void TextBox::setLineSpacing(const qreal spacing) {
+    if (mLineSpacing) {
+        mLineSpacing->setCurrentBaseValue(spacing);
+        setPathsOutdated(UpdateReason::userChange);
+    }
+}
+
 void TextBox::setupCanvasMenu(PropertyMenu * const menu)
 {
     if (menu->hasActionsForType<TextBox>()) { return; }
@@ -563,12 +577,15 @@ SkPath TextBox::getRelativePath(const qreal relFrame) const {
 
     SkFontMetrics metrics;
     mFont.getMetrics(&metrics);
-    const qreal height = (lines.count() - 1)*lineInc +
-            static_cast<qreal>(metrics.fAscent + metrics.fDescent);
+    const qreal totalLineInc = (lines.count() - 1) * lineInc;
     qreal yTranslate;
-    if(mVAlignment == Qt::AlignTop) yTranslate = 0;
-    else if(mVAlignment == Qt::AlignBottom) yTranslate = -height;
-    else /*if(mVAlignment == Qt::AlignCenter)*/ yTranslate = -0.5*height;
+    if (mVAlignment == Qt::AlignTop) {
+        yTranslate = -static_cast<qreal>(metrics.fAscent);
+    } else if (mVAlignment == Qt::AlignBottom) {
+        yTranslate = -(totalLineInc + static_cast<qreal>(metrics.fDescent));
+    } else { // VCenter / AlignCenter
+        yTranslate = -0.5 * (totalLineInc + static_cast<qreal>(metrics.fAscent + metrics.fDescent));
+    }
 
     SkPath result;
     for(int i = 0; i < lines.count(); i++) {

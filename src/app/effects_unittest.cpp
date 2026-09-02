@@ -33,6 +33,8 @@
 #include "include/core/SkBitmap.h"
 
 #include "themesupport.h"
+#include "AI/mcpserver.h"
+#include "AI/mcpdispatcher.h"
 
 int main(int argc, char *argv[])
 {
@@ -247,6 +249,81 @@ int main(int argc, char *argv[])
 
         // Restore friction theme
         ThemeSupport::setThemeFromId(QStringLiteral("friction"));
+    });
+
+    // Test 6: AI MCP Tool Dispatcher & Schema validation
+    runTest("Test 6: AI MCP Tool Dispatcher & Schema validation", [&]() {
+        Friction::AI::McpDispatcher dispatcher;
+        const auto schema = dispatcher.getToolsSchema();
+        if (schema.isEmpty()) {
+            throw std::runtime_error("McpDispatcher tools schema is empty");
+        }
+
+        bool hasSceneInfo = false;
+        bool hasCreateLayer = false;
+        bool hasSetKeyframe = false;
+        bool hasEvalScript = false;
+        bool hasCapture = false;
+
+        for (const auto &val : schema) {
+            const auto obj = val.toObject();
+            const QString name = obj.value(QStringLiteral("name")).toString();
+            if (name == QStringLiteral("friction_get_scene_info")) hasSceneInfo = true;
+            if (name == QStringLiteral("friction_create_layer")) hasCreateLayer = true;
+            if (name == QStringLiteral("friction_set_keyframe")) hasSetKeyframe = true;
+            if (name == QStringLiteral("friction_eval_script")) hasEvalScript = true;
+            if (name == QStringLiteral("friction_capture_viewport")) hasCapture = true;
+        }
+
+        if (!hasSceneInfo || !hasCreateLayer || !hasSetKeyframe || !hasEvalScript || !hasCapture) {
+            throw std::runtime_error("Required MCP tools missing from schema");
+        }
+    });
+
+    // Test 7: AI MCP Server JSON-RPC Protocol Parser
+    runTest("Test 7: AI MCP Server JSON-RPC Protocol Parser", [&]() {
+        Friction::AI::McpServer server;
+
+        // Test initialize
+        QJsonObject initReq;
+        initReq[QStringLiteral("jsonrpc")] = QStringLiteral("2.0");
+        initReq[QStringLiteral("id")] = 1;
+        initReq[QStringLiteral("method")] = QStringLiteral("initialize");
+
+        const auto initResp = server.processJsonRpc(initReq);
+        if (initResp.value(QStringLiteral("jsonrpc")).toString() != QStringLiteral("2.0")) {
+            throw std::runtime_error("Invalid jsonrpc version in response");
+        }
+        if (initResp.value(QStringLiteral("id")).toInt() != 1) {
+            throw std::runtime_error("Mismatch response id in initialize");
+        }
+        const auto resObj = initResp.value(QStringLiteral("result")).toObject();
+        if (!resObj.contains(QStringLiteral("serverInfo"))) {
+            throw std::runtime_error("serverInfo missing in initialize result");
+        }
+
+        // Test ping
+        QJsonObject pingReq;
+        pingReq[QStringLiteral("jsonrpc")] = QStringLiteral("2.0");
+        pingReq[QStringLiteral("id")] = 2;
+        pingReq[QStringLiteral("method")] = QStringLiteral("ping");
+
+        const auto pingResp = server.processJsonRpc(pingReq);
+        if (pingResp.value(QStringLiteral("id")).toInt() != 2) {
+            throw std::runtime_error("Mismatch response id in ping");
+        }
+
+        // Test tools/list
+        QJsonObject listReq;
+        listReq[QStringLiteral("jsonrpc")] = QStringLiteral("2.0");
+        listReq[QStringLiteral("id")] = 3;
+        listReq[QStringLiteral("method")] = QStringLiteral("tools/list");
+
+        const auto listResp = server.processJsonRpc(listReq);
+        const auto listResult = listResp.value(QStringLiteral("result")).toObject();
+        if (!listResult.contains(QStringLiteral("tools")) || !listResult.value(QStringLiteral("tools")).isArray()) {
+            throw std::runtime_error("Invalid tools array in tools/list result");
+        }
     });
 
     std::cout << "\n=========================================" << std::endl;

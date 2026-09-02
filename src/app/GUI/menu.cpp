@@ -23,6 +23,7 @@
 #include "mainwindow.h"
 
 #include "GUI/Settings/settingsdialog.h"
+#include "AI/mcpserver.h"
 #include "GUI/timelinedockwidget.h"
 #include "dialogs/commandpalette.h"
 #include "memoryhandler.h"
@@ -973,6 +974,34 @@ void MainWindow::setupMenuAiTools()
                "许可提示：小型模型为 Apache-2.0；基础模型为"
                "CC-BY-NC-4.0（禁止商业用途），下载前会再次确认。\n"
                "引擎：%1").arg(AiDepth::versionString()));
+    });
+
+    mAiToolsMenu->addSeparator();
+
+    mAiToolsMenu->addAction(QIcon::fromTheme("view_refresh"),
+                            tr("Restart AI / MCP Server"),
+                            this, [this]() {
+        if (mMcpServer) {
+            mMcpServer->stop();
+            const quint16 port = AppSupport::getSettings(QStringLiteral("ai"), QStringLiteral("port"), 9527).toInt();
+#ifdef Q_OS_WIN
+            const QString defSock = QStringLiteral("friction_mcp");
+#else
+            const QString defSock = QStringLiteral("/tmp/friction_mcp.sock");
+#endif
+            const QString socketName = AppSupport::getSettings(QStringLiteral("ai"), QStringLiteral("socketName"), defSock).toString();
+            mMcpServer->start(port, socketName);
+            statusBar()->showMessage(tr("AI Server restarted (%1)").arg(mMcpServer->httpUrl()), 3000);
+        }
+    });
+
+    mAiToolsMenu->addAction(QIcon::fromTheme("preferences"),
+                            tr("AI / MCP Agent Settings..."),
+                            this, [this]() {
+        const auto settDial = new SettingsDialog(this);
+        settDial->setAttribute(Qt::WA_DeleteOnClose);
+        settDial->setCurrentIndex(settDial->count() - 1);
+        settDial->show();
     });
 }
 
