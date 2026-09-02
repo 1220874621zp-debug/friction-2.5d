@@ -20,12 +20,11 @@
 namespace {
 // Blender-inspired viewport palette (flat dark grey, muted axes,
 // grey objects, orange selection)
-constexpr SkColor kTopBg        = SkColorSetARGB(255, 57, 57, 57);
-constexpr SkColor kGridMinor    = SkColorSetARGB(255, 66, 66, 66);
-constexpr SkColor kGridMajor    = SkColorSetARGB(255, 78, 78, 78);
-constexpr SkColor kAxisX        = SkColorSetARGB(255, 138, 74, 74);
-constexpr SkColor kAxisZ        = SkColorSetARGB(255, 93, 138, 80);
-constexpr SkColor kDepthLine    = SkColorSetARGB(60, 255, 255, 255);
+constexpr SkColor kTopBg        = SkColorSetARGB(255, 41, 41, 41);
+constexpr SkColor kGridMinor    = SkColorSetARGB(255, 52, 52, 52);
+constexpr SkColor kGridMajor    = SkColorSetARGB(255, 64, 64, 64);
+constexpr SkColor kAxisZ        = SkColorSetARGB(255, 80, 118, 70);
+constexpr SkColor kDepthLine    = SkColorSetARGB(48, 255, 255, 255);
 constexpr SkColor kObjectFill   = SkColorSetARGB(255, 95, 95, 95);
 constexpr SkColor kObjectEdge   = SkColorSetARGB(255, 151, 151, 151);
 constexpr SkColor kSelectOrange = SkColorSetARGB(255, 245, 160, 58);
@@ -34,6 +33,7 @@ constexpr SkColor kCamFill      = kTopBg;
 constexpr SkColor kTextMain     = SkColorSetARGB(255, 205, 205, 205);
 constexpr SkColor kTextDim      = SkColorSetARGB(165, 150, 150, 155);
 constexpr SkColor kTextHint     = SkColorSetARGB(120, 140, 140, 148);
+constexpr SkColor kCenterDot    = SkColorSetARGB(230, 210, 210, 215);
 }
 
 TopViewWindow::TopViewWindow(Document& document,
@@ -409,12 +409,12 @@ void TopViewWindow::renderSk(SkCanvas* const canvas)
     const qreal cw = mScene->getCanvasWidth();
     const qreal ch = mScene->getCanvasHeight();
 
-    // ---- Blender-style grid: adaptive two-level square grid with
-    // muted axis lines (x = 0 red, depth z = 0 green) ----
+    // ---- Blender-style grid: sparse adaptive two-level square grid
+    // with the muted canvas-plane line (z = 0, green) ----
     const auto labelFont = hudFont(9);
     SkPaint labelP;
     labelP.setColor(kTextDim);
-    qreal step = 26. / qMax(1e-9, qAbs(T.m11()));
+    qreal step = 64. / qMax(1e-9, qAbs(T.m11()));
     const qreal p10 = std::pow(10., std::floor(std::log10(step)));
     step = step / p10 < 1.5 ? p10 :
            step / p10 < 3.5 ? 2. * p10 : 5. * p10;
@@ -461,18 +461,26 @@ void TopViewWindow::renderSk(SkCanvas* const canvas)
                                labelFont, labelP);
         }
     }
-    // axis lines through the world origin (x = 0) and the canvas
-    // plane (z = 0), plus the far canvas edge
+    // canvas-plane line through z = 0 (muted green) + center marker
     {
-        SkPaint axX;
-        axX.setColor(kAxisX);
-        axX.setStrokeWidth(SkScalar(1.5 * pr));
-        canvas->drawLine(devX(0), 0, devX(0), H, axX);
-        canvas->drawLine(devX(cw), 0, devX(cw), H, axX);
         SkPaint axZ;
         axZ.setColor(kAxisZ);
         axZ.setStrokeWidth(SkScalar(1.5 * pr));
         canvas->drawLine(0, devY(0), W, devY(0), axZ);
+
+        const SkScalar cxp = devX(cw * 0.5);
+        const SkScalar cyp = devY(0);
+        SkPaint dot;
+        dot.setAntiAlias(true);
+        dot.setStyle(SkPaint::kFill_Style);
+        dot.setColor(kCenterDot);
+        canvas->drawCircle(cxp, cyp, SkScalar(2.2 * pr), dot);
+        SkPaint halo;
+        halo.setAntiAlias(true);
+        halo.setStyle(SkPaint::kStroke_Style);
+        halo.setStrokeWidth(SkScalar(1.1 * pr));
+        halo.setColor(SkColorSetARGB(90, 210, 210, 215));
+        canvas->drawCircle(cxp, cyp, SkScalar(5.5 * pr), halo);
     }
 
     // ---- canvas plane caption + orientation hint ----
