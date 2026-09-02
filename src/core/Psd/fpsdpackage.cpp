@@ -386,19 +386,16 @@ bool updatePackage(const QString &path,
     // to the decoded data read from the old file)
     for (const auto &e : oldEntries) {
         if (updates.contains(e.name)) { continue; }
-        ZipEntry keep = e;
+        // only STORED entries with a verified extent can be kept -
+        // anything else (foreign/deflated, truncated record) is
+        // dropped rather than risking a corrupt package
         if (e.method != 0 || e.rawLen <= 0) {
-            // not raw-copyable: decode from the old image
-            const qint64 dataStart = e.rawStart + e.rawLen - e.size;
-            if (e.rawLen <= 0 || dataStart < 0
-                    || dataStart + e.size > raw.size()) { continue; }
-            keep.data = QByteArray(raw.constData() + dataStart,
-                                   int(e.size));
-            keep.rawLen = 0;
-        } else {
-            keep.data = QByteArray(raw.constData() + e.rawStart,
-                                   int(e.rawLen));
+            qWarning() << "Fpsd: dropping non-stored entry" << e.name;
+            continue;
         }
+        ZipEntry keep = e;
+        keep.data = QByteArray(raw.constData() + e.rawStart,
+                               int(e.rawLen));
         finalEntries.append(keep);
     }
     // new / replaced entries

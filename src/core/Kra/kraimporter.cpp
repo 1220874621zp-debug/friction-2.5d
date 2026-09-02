@@ -37,6 +37,7 @@
 #include <algorithm>
 #include <climits>
 #include <cstring>
+#include <limits>
 #include <vector>
 
 // zlib for the raw-deflate zip entries. Qt5Core bundles zlib and
@@ -836,6 +837,39 @@ qsptr<BoundingBox> buildNode(const QDomElement& elem,
     QString reason;
     if (nodeType == QLatin1String("shapelayer") ||
         nodeType == QLatin1String("vectorlayer")) {
+        // krita stores vector layer content as an SVG document in the
+        // layer's file entry - hand it to the regular svg importer
+        const QString fileName = elem.attribute(QStringLiteral("filename"));
+        if (!fileName.isEmpty()) {
+            try {
+                const QByteArray svgData = st.mZip->read(
+                            st.mLayersPrefix + fileName);
+                if (svgData.contains("<svg")) {
+                    Canvas* const scene = st.mScene;
+                    const auto gradientCreator = [scene]() {
+                        return scene ? scene->createNewGradient()
+                                     : static_cast<Gradient*>(nullptr);
+                    };
+                    const auto box = ImportSVG::loadSVGFile(
+                                svgData, gradientCreator);
+                    if (box) {
+                        const int x = elem.attribute(
+                                    QStringLiteral("x"), "0").toInt();
+                        const int y = elem.attribute(
+                                    QStringLiteral("y"), "0").toInt();
+                        box->getBoxTransformAnimator()->getPosAnimator()
+                                ->setBaseValue(x, y);
+                        applyLayerProps(box.get(), elem, parent);
+                        return box;
+                    }
+                }
+            } catch(const std::exception& e) {
+                noteSkipped(st, elem.attribute(QStringLiteral("name"),
+                                               fileName),
+                            QString::fromUtf8(e.what()));
+                return nullptr;
+            }
+        }
         reason = QObject::tr("vector layer");
     } else if (nodeType == QLatin1String("adjustmentlayer") ||
                nodeType == QLatin1String("filterlayer")) {
