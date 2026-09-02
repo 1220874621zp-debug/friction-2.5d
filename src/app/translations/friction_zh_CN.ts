@@ -793,6 +793,104 @@
         <source>Freeze Pose</source>
         <translation type="vanished">冻结姿势</translation>
     </message>
+    <message>
+        <source>Update Layer from Source PSD</source>
+        <translation>从源 PSD 更新此图层</translation>
+    </message>
+    <message>
+        <source>Sync All Layers from Source PSD</source>
+        <translation>从源 PSD 同步所有图层</translation>
+    </message>
+    <message>
+        <source>PSD Update</source>
+        <translation>PSD 更新</translation>
+    </message>
+    <message>
+        <source>PSD Sync</source>
+        <translation>PSD 同步</translation>
+    </message>
+    <message>
+        <source>Layer no longer exists in the source PSD.
+It is kept (marked as missing) with all animation data.</source>
+        <translation>该图层在源 PSD 中已不存在。
+图层将保留（标记为缺失）及其全部动画数据。</translation>
+    </message>
+    <message>
+        <source>Layer updated from source PSD.</source>
+        <translation>图层已从源 PSD 更新。</translation>
+    </message>
+    <message>
+        <source>Layer pixels unchanged.</source>
+        <translation>图层像素无变化。</translation>
+    </message>
+    <message>
+        <source>Source PSD is missing:
+%1</source>
+        <translation>源 PSD 缺失：
+%1</translation>
+    </message>
+    <message>
+        <source>Failed to parse source PSD:
+%1</source>
+        <translation>解析源 PSD 失败：
+%1</translation>
+    </message>
+    <message>
+        <source>Failed to write package:
+%1</source>
+        <translation>写入包失败：
+%1</translation>
+    </message>
+    <message>
+        <source>All layers are up to date.</source>
+        <translation>所有图层均为最新。</translation>
+    </message>
+    <message>
+        <source>Updated layers: %1
+Missing layers: %2
+Added layers: %3</source>
+        <translation>已更新图层：%1
+缺失图层：%2
+新增图层：%3</translation>
+    </message>
+    <message>
+        <source>Update Layer from Source KRA</source>
+        <translation>从源 KRA 更新此图层</translation>
+    </message>
+    <message>
+        <source>Sync All Layers from Source KRA</source>
+        <translation>从源 KRA 同步所有图层</translation>
+    </message>
+    <message>
+        <source>KRA Update</source>
+        <translation>KRA 更新</translation>
+    </message>
+    <message>
+        <source>KRA Sync</source>
+        <translation>KRA 同步</translation>
+    </message>
+    <message>
+        <source>Source KRA is missing:
+%1</source>
+        <translation>源 KRA 缺失：
+%1</translation>
+    </message>
+    <message>
+        <source>Layer no longer exists in the source KRA.
+It is kept (marked as missing) with all animation data.</source>
+        <translation>该图层在源 KRA 中已不存在。
+图层将保留（标记为缺失）及其全部动画数据。</translation>
+    </message>
+    <message>
+        <source>Layer updated from source KRA.</source>
+        <translation>图层已从源 KRA 更新。</translation>
+    </message>
+    <message>
+        <source>Updated layers: %1
+Missing layers: %2</source>
+        <translation>已更新图层：%1
+缺失图层：%2</translation>
+    </message>
 </context>
 <context>
     <name>BoxSingleWidget</name>
