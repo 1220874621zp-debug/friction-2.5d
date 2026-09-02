@@ -468,8 +468,32 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
         if (!mTarget) { return; }
         const auto ebs = enve_cast<eBoxOrSound*>(mTarget->getTarget());
         if (!ebs) { return; }
-        // guarded: the nested menu loop may outlive the layer
+        // guarded: the nested menu loop may outlive the layer; applies
+        // to the whole selection when this row's layer is part of a
+        // multi-selection (AE label behavior), otherwise this row only
         const QPointer<eBoxOrSound> ebsGuard = ebs;
+        const auto applyColor = [ebsGuard](const QColor& c) {
+            if(!ebsGuard) return;
+            const auto scene = ebsGuard->getParentScene();
+            bool multiApplied = false;
+            if(scene) {
+                const auto sel = scene->getSelectedBoxesList();
+                if(sel.count() > 1) {
+                    bool inSel = false;
+                    for(const auto& box : sel) {
+                        if(box == ebsGuard.data()) { inSel = true; break; }
+                    }
+                    if(inSel) {
+                        for(const auto& box : sel) {
+                            if(box) box->setLabelColor(c);
+                        }
+                        multiApplied = true;
+                    }
+                }
+            }
+            if(!multiApplied) ebsGuard->setLabelColor(c);
+            Document::sInstance->actionFinished();
+        };
         QMenu menu(this);
         const QColor colors[] = {
             QColor(232, 32, 45),    // red
@@ -494,16 +518,14 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
         for(int i = 0; i < 8; i++) {
             const QColor c = colors[i];
             menu.addAction(QIcon(*labelColorPixmap(c)), names[i],
-                           this, [ebsGuard, c]() {
-                if(ebsGuard) ebsGuard->setLabelColor(c);
-                Document::sInstance->actionFinished();
+                           this, [applyColor, c]() {
+                applyColor(c);
             });
         }
         menu.addSeparator();
         menu.addAction(tr("No Color"), // no color
-                       this, [ebsGuard]() {
-            if(ebsGuard) ebsGuard->setLabelColor(QColor());
-            Document::sInstance->actionFinished();
+                       this, [applyColor]() {
+            applyColor(QColor());
         });
         menu.exec(QCursor::pos());
     });
@@ -2637,7 +2659,31 @@ void BoxSingleWidget::switchBoxVisibleAction() {
     const auto target = mTarget->getTarget();
     if(!target) return;
     if(const auto ebos = enve_cast<eBoxOrSound*>(target)) {
-        ebos->switchVisible();
+        // multi-selection: when this row's layer belongs to the
+        // selection, every selected layer follows this toggle -
+        // unified to the new state instead of individually flipped,
+        // so a mixed selection converges instead of swapping states
+        const auto scene = ebos->getParentScene();
+        bool multiApplied = false;
+        if(scene) {
+            const auto sel = scene->getSelectedBoxesList();
+            if(sel.count() > 1) {
+                bool inSel = false;
+                for(const auto& box : sel) {
+                    if(box == ebos) { inSel = true; break; }
+                }
+                if(inSel) {
+                    const bool newVis = !ebos->isVisible();
+                    for(const auto& box : sel) {
+                        if(box && box->isVisible() != newVis) {
+                            box->setVisible(newVis);
+                        }
+                    }
+                    multiApplied = true;
+                }
+            }
+        }
+        if(!multiApplied) ebos->switchVisible();
     } else if(const auto eEff = enve_cast<eEffect*>(target)) {
         eEff->switchVisible();
     } /*else if(const auto graph = enve_cast<GraphAnimator*>(target)) {
