@@ -22,8 +22,8 @@
 */
 
 // Text animation presets (AE "text animator"-style one-click recipes).
-// Each preset bakes a fully configured TextEffect (keyframed influence,
-// diminish sweep front and/or periodic wave) onto a TextBox.
+// Each preset adds a fully configured TextEffect (expression-driven
+// influence, diminish sweep front and/or periodic wave) onto a TextBox.
 
 #ifndef TEXTANIMPRESETS_H
 #define TEXTANIMPRESETS_H
@@ -84,9 +84,10 @@ namespace TextAnimPresets {
     CORE_EXPORT const QList<TextAnimPreset>& all();
     CORE_EXPORT const TextAnimPreset* byId(const QString& id);
 
-    // creates a fully configured TextEffect and adds it to the box's
-    // text effect collection (single undoable step); keyframes start
-    // at startFrame, durations are scaled by durationScale.
+    // creates a fully configured TextEffect (expression-driven) and
+    // adds it to the box's text effect collection (single undoable
+    // step); the animation starts at startFrame, durations are
+    // scaled by durationScale.
     // returns false when the preset could not be applied (e.g.
     // number-roll on non-numeric text)
     CORE_EXPORT bool apply(TextBox* const box,

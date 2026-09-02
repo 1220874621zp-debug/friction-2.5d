@@ -49,7 +49,7 @@
 #include <QTimer>
 #include <QVBoxLayout>
 
-// preview bake parameters
+// preview sampling parameters
 namespace {
 constexpr qreal gPreviewFps = 24.;
 constexpr int gMaxFrames = 72;
@@ -247,9 +247,9 @@ TextAnimTile::TextAnimTile(const TextAnimPreset* const textPreset,
     if (isLoop) {
         addBtn(QString::fromUtf8("应用"), 0);
     } else {
-        const bool hasIn = !mLayerPreset || mLayerPreset->bake;
+        const bool hasIn = !mLayerPreset || mLayerPreset->gen;
         const bool hasOut = mTextPreset ? mTextPreset->supportsOut :
-                            mLayerPreset ? mLayerPreset->outBake != nullptr
+                            mLayerPreset ? mLayerPreset->outGen != nullptr
                                          : false;
         const bool hasAll = hasIn && hasOut;
         if (hasIn) { addBtn(QStringLiteral("in"), 0); }
@@ -568,12 +568,18 @@ void TextAnimPresetPanel::ensureTileFrames(TextAnimTile* const tile)
         tile->setFrames(imgs);
     } else if (const auto preset = tile->layerPreset()) {
         // presets without an entrance recipe (sink) preview their
-        // exit direction instead
-        const bool previewOut = preset->bake == nullptr;
+        // exit direction instead; plain attach (no undo) - the
+        // sceneless sample box evaluates the same expressions
+        const bool previewOut = preset->gen == nullptr;
         const auto box = enve::make_shared<RectangleBox>();
         configureSampleRect(box.get(), 55, 55);
-        LayerAnimPresets::apply(box.get(), *preset, 0, gPreviewFps,
-                                1.0, 400, 400, previewOut);
+        if (previewOut) {
+            LayerAnimPresets::apply(box.get(), *preset, -1, 0,
+                                    gPreviewFps, 1.0, 400, 400, false);
+        } else {
+            LayerAnimPresets::apply(box.get(), *preset, 0, -1,
+                                    gPreviewFps, 1.0, 400, 400, false);
+        }
         const auto frames = framesForLayerPreset(*preset, 1.0);
         const auto imgs = LayerAnimPresets::renderPreviewSequence(
                     box.get(), frames, QSize(160, 160), mascotImage());
@@ -608,11 +614,11 @@ void TextAnimPresetPanel::applyPreset(TextAnimTile* const tile,
         }
         const qreal cw = scene->getCanvasWidth();
         const qreal ch = scene->getCanvasHeight();
-        if (dir == 1 && !preset->outBake) {
+        if (dir == 1 && !preset->outGen) {
             mStatusLabel->setText(QString::fromUtf8("该预设不支持出点。"));
             return;
         }
-        if (dir == 0 && !preset->bake) {
+        if (dir == 0 && !preset->gen) {
             mStatusLabel->setText(QString::fromUtf8("该预设不支持入点。"));
             return;
         }
@@ -627,18 +633,18 @@ void TextAnimPresetPanel::applyPreset(TextAnimTile* const tile,
                                         : scene->getMaxFrame();
             const int durF = qMax(2, qRound(preset->duration*
                                             mDurationScale*fps));
-            if (dir == 0 || dir == 2) {
-                LayerAnimPresets::apply(box, *preset, inF,
-                                        fps, mDurationScale, cw, ch,
-                                        false);
-            }
-            if (dir == 1 || dir == 2) {
+            // one combined expression per animator: entrance owns
+            // [inF, outStart), the exit window takes over from there
+            const int inStart = (dir == 0 || dir == 2) ? inF : -1;
+            int outStart = -1;
+            if ((dir == 1 || dir == 2) && preset->outGen) {
                 // exit finishes exactly at the layer's end
-                const int outStart = outEndF - durF;
-                LayerAnimPresets::apply(box, *preset, outStart,
-                                        fps, mDurationScale, cw, ch,
-                                        true);
+                outStart = outEndF - durF;
             }
+            box->prp_pushUndoRedoName(
+                        QString::fromUtf8("应用预设「%1」").arg(preset->name));
+            LayerAnimPresets::apply(box, *preset, inStart, outStart,
+                                    fps, mDurationScale, cw, ch);
             applied++;
         }
         const QString dirText = dir == 0 ? QString::fromUtf8("（入点）") :
@@ -647,6 +653,8 @@ void TextAnimPresetPanel::applyPreset(TextAnimTile* const tile,
         mStatusLabel->setText(
                     QString::fromUtf8("已应用「%1%2」到 %3 个图层。")
                     .arg(preset->name).arg(dirText).arg(applied));
+        Document::sInstance->actionFinished();
+        scene->updateAllBoxes(UpdateReason::userChange);
         return;
     }
 
@@ -671,6 +679,8 @@ void TextAnimPresetPanel::applyPreset(TextAnimTile* const tile,
         const int durF = qMax(2, qRound(preset->duration*
                                         mDurationScale*fps));
         bool ok = true;
+        tb->prp_pushUndoRedoName(
+                    QString::fromUtf8("应用文字预设「%1」").arg(preset->name));
         if (dir == 0 || dir == 2) {
             ok = TextAnimPresets::apply(tb, *preset, inF,
                                         fps, mDurationScale, false);
@@ -694,6 +704,8 @@ void TextAnimPresetPanel::applyPreset(TextAnimTile* const tile,
                     QString::fromUtf8("已应用「%1%2」到 %3 个文字层。")
                     .arg(preset->name).arg(dirText).arg(applied));
     }
+    Document::sInstance->actionFinished();
+    scene->updateAllBoxes(UpdateReason::userChange);
 }
 
 QList<BoundingBox*> TextAnimPresetPanel::selectedBoxes() const

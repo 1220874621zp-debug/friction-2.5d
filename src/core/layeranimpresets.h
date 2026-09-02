@@ -9,21 +9,13 @@
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-#
-# See 'README.md' for more information.
-#
 */
 
 // Layer animation presets (shape / image / any-box "one-click"
-// animations): each preset bakes keyframes onto the layer's box
-// transform animator (position / rotation / scale / opacity).
+// animations): each preset ATTACHES GENERATED EXPRESSIONS to the
+// layer's box transform sub-animators (position x/y, rotation, scale
+// x/y, opacity) instead of baking keyframes - the timeline stays
+// clean and loop presets run forever.
 
 #ifndef LAYERANIMPRESETS_H
 #define LAYERANIMPRESETS_H
@@ -38,6 +30,28 @@
 class BoundingBox;
 class AdvancedTransformAnimator;
 
+// everything a script generator needs: rel-frame windows (-1 = that
+// direction is not applied), duration in frames, canvas / content
+// sizes and the rest-state base values of the transform
+struct CORE_EXPORT LayerExprParams {
+    qreal inF0 = -1;
+    qreal outF0 = -1;
+    int D = 2;           // window length in frames (both directions)
+    qreal cw = 0, ch = 0;    // canvas size
+    qreal bw = 2, bh = 2;    // content bounds size
+    qreal px = 0, py = 0;    // rest position
+    qreal sx = 1, sy = 1;    // rest scale
+    qreal rot = 0;           // rest rotation (deg)
+    qreal op = 100;          // rest opacity (0..100)
+    qreal winF0() const { return inF0 >= 0 ? inF0 : outF0; }
+};
+
+// per-animator expression script bodies (JS, referencing `f` = the
+// frame); empty strings mean the preset does not touch that animator
+struct CORE_EXPORT LayerExprScripts {
+    QString posX, posY, scaleX, scaleY, rot, op;
+};
+
 struct CORE_EXPORT LayerAnimPreset {
     QString id;
     QString name;
@@ -45,16 +59,11 @@ struct CORE_EXPORT LayerAnimPreset {
     int category = 0;   // 0 = one-shot (in / out), 2 = loop
     qreal duration = 1.0;   // seconds (one cycle for loops)
 
-    // bakes the preset's keyframes; F0 = start frame, durF =
-    // duration in frames, cw/ch = canvas size, bw/bh = content
-    // bounds size (for off-canvas slides)
-    void (*bake)(AdvancedTransformAnimator* const t, const int F0,
-                 const int durF, const qreal cw, const qreal ch,
-                 const qreal bw, const qreal bh);
-    // exit-direction recipe; null when the preset is entrance-only
-    void (*outBake)(AdvancedTransformAnimator* const t, const int F0,
-                    const int durF, const qreal cw, const qreal ch,
-                    const qreal bw, const qreal bh) = nullptr;
+    // generates the entrance / exit scripts for the animators the
+    // preset touches; the active window comes from winF0()
+    void (*gen)(const LayerExprParams&, LayerExprScripts&) = nullptr;
+    // exit-direction generator; null when the preset is entrance-only
+    void (*outGen)(const LayerExprParams&, LayerExprScripts&) = nullptr;
 };
 
 namespace LayerAnimPresets {
@@ -62,16 +71,21 @@ namespace LayerAnimPresets {
     CORE_EXPORT const QList<LayerAnimPreset>& all();
     CORE_EXPORT const LayerAnimPreset* byId(const QString& id);
 
-    // bakes the preset's keyframes onto the box transform animator
-    // starting at startFrame; out = exit direction (outBake)
+    // attaches the preset's generated expressions to the box
+    // transform sub-animators; inStartFrame / outStartFrame are the
+    // entrance / exit window starts in ABS frames (-1 = direction not
+    // applied). action = undoable attach (real layers) vs plain
+    // attach (sceneless preview boxes). When both windows are given
+    // the exit window takes over from its start frame on.
     CORE_EXPORT void apply(BoundingBox* const box,
                            const LayerAnimPreset& preset,
-                           const int startFrame,
+                           const int inStartFrame,
+                           const int outStartFrame,
                            const qreal fps,
                            const qreal durationScale,
                            const qreal canvasW,
                            const qreal canvasH,
-                           const bool out = false);
+                           const bool action = true);
 
     // renders the given preview frames of a (sceneless) sample box;
     // animates the box's own transform, auto-fitted like the text
