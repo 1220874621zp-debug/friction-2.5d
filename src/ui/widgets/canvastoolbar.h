@@ -60,6 +60,10 @@ namespace Friction
                               Canvas * const target);
             void showContextMenu(const QPoint &pos);
 
+        protected:
+            bool eventFilter(QObject *watched, QEvent *event) override;
+
+        private:
             QDoubleSlider *mSpinWidth;
             QDoubleSlider *mSpinHeight;
             QComboBox *mComboResolution;

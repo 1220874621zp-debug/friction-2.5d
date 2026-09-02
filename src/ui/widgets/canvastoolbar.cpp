@@ -30,6 +30,7 @@
 #include <QLineEdit>
 #include <QDebug>
 #include <QLocale>
+#include <QKeyEvent>
 
 using namespace Friction::Ui;
 
@@ -163,11 +164,34 @@ void CanvasToolBar::setupResolution()
     mComboResolution->setSizePolicy(QSizePolicy::Preferred,
                                     QSizePolicy::Expanding);
 
+    // release focus after picking a value so Space returns to playback
+    connect(mComboResolution, QOverload<int>::of(&QComboBox::activated),
+            this, [this]() { mComboResolution->clearFocus(); });
+    connect(mComboResolution->lineEdit(), &QLineEdit::editingFinished,
+            this, [this]() { mComboResolution->clearFocus(); });
+    mComboResolution->installEventFilter(this);
+
     addSeparator();
     addAction(QIcon::fromTheme("resolution"),
               tr("Resolution"));
 
     addWidget(mComboResolution);
+}
+
+bool CanvasToolBar::eventFilter(QObject *watched, QEvent *event)
+{
+    // QComboBox accepts ShortcutOverride for Space (to open its popup),
+    // which blocks the window-level Space play/pause shortcut whenever
+    // the resolution combo keeps focus; ignore it so the shortcut fires
+    if (watched == mComboResolution &&
+        event->type() == QEvent::ShortcutOverride) {
+        const auto ke = static_cast<QKeyEvent*>(event);
+        if (ke->key() == Qt::Key_Space) {
+            ke->ignore();
+            return true;
+        }
+    }
+    return QToolBar::eventFilter(watched, event);
 }
 
 void CanvasToolBar::addSpacer()
