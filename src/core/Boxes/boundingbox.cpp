@@ -1307,20 +1307,32 @@ void BoundingBox::finishTransform() {
     //updateTotalTransform();
 }
 
-// cached matte render usable as a dependency anchor: finished samples
-// satisfy immediately, queued/processing ones complete in order. A
-// CANCELED sample (frame-cache retirement during playback) would drag
-// the dependent task into cancellation - the matted layer then
-// vanishes for the whole playback; created-state samples never run
-stdsptr<BoxRenderData> BoundingBox::usableMatteSample(
+// matte sample with an OWN cache: forced-raster external renders
+// only. The box's render cache is deliberately bypassed - preview
+// assemblies store DIRECT-DRAW items there that complete with a NULL
+// image, and a null-image sample erases the layer at composite time
+// (the TrackMatteCaller treats it as an empty matte). Keyed by
+// source+frame; content changes come through the follow connections
+// which reset the cache
+stdsptr<BoxRenderData> BoundingBox::freshMatteSample(
         BoundingBox * const matte, const qreal relFrame) {
     if(!matte) return nullptr;
-    const auto sample = matte->getCurrentRenderData(relFrame);
-    if(!sample) return nullptr;
-    const auto st = sample->getState();
-    if(st == eTaskState::canceled || st == eTaskState::created) {
-        return nullptr;
+    if(mMatteSampleSource == matte && mMatteSampleCache &&
+            qAbs(mMatteSampleFrame - relFrame) < 0.001) {
+        const auto st = mMatteSampleCache->getState();
+        if(st == eTaskState::finished) {
+            if(mMatteSampleCache->fRenderedImage) return mMatteSampleCache;
+        } else if(st == eTaskState::qued ||
+                  st == eTaskState::processing) {
+            return mMatteSampleCache;
+        }
+        // canceled/created/finished-without-image: fall through and
+        // queue a fresh forced-raster render
     }
+    const auto sample = matte->queExternalRender(relFrame, true);
+    mMatteSampleSource = matte;
+    mMatteSampleCache = sample;
+    mMatteSampleFrame = relFrame;
     return sample;
 }
 
@@ -1349,8 +1361,12 @@ void BoundingBox::setPreserveBelowSource(BoundingBox * const below) {
                         this, [this, below](const FrameRange& targetAbs) {
             const auto relRange = below->prp_absRangeToRelRange(targetAbs);
             prp_afterChangedRelRange(relRange);
+            mMatteSampleSource.clear();
+            mMatteSampleCache.reset();
         });
     }
+    mMatteSampleSource.clear();
+    mMatteSampleCache.reset();
     planUpdate(UpdateReason::userChange);
 }
 
@@ -1371,8 +1387,7 @@ void BoundingBox::setupRenderData(const qreal relFrame,
         // cycle guard: if the matte chain leads back here the two
         // renders would wait on each other forever (black canvas)
         if(matte && matte != this && !matte->matteChainReaches(this)) {
-            auto sample = usableMatteSample(matte, relFrame);
-            if(!sample) sample = matte->queExternalRender(relFrame, true);
+            const auto sample = freshMatteSample(matte, relFrame);
             if(sample) {
                 sample->addDependent(data);
                 data->setTrackMatte(sample, mTrackMatteMode);
@@ -1385,8 +1400,7 @@ void BoundingBox::setupRenderData(const qreal relFrame,
         // this implicit source.
         const auto below = preserveBelowSourceFor();
         setPreserveBelowSource(below);
-        auto sample = usableMatteSample(below, relFrame);
-        if(!sample && below) sample = below->queExternalRender(relFrame, true);
+        const auto sample = freshMatteSample(below, relFrame);
         // no layer below: the matte is empty - TrackMatteCaller erases
         // the alpha (AE: preserve transparency over nothing hides the
         // layer entirely)
@@ -2100,6 +2114,9 @@ void BoundingBox::setTrackMatteSource(BoundingBox * const matte) {
             prp_afterChangedRelRange(relRange);
         });
     }
+    // the cached sample belongs to the old content - force a re-render
+    mMatteSampleSource.clear();
+    mMatteSampleCache.reset();
     planUpdate(UpdateReason::userChange);
 }
 

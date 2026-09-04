@@ -270,12 +270,14 @@ public:
     { return mTrackMatteMode != 0 && mTrackMatteTarget &&
                mTrackMatteTarget->getTarget() != nullptr; }
 
-    // matte-cache helpers: usableMatteSample rejects canceled/created
-    // cached renders (a canceled sample cancels its dependent - the
-    // matted layer vanishes during playback); preserve-alpha uses the
-    // sibling DIRECTLY below as an implicit alpha matte
-    stdsptr<BoxRenderData> usableMatteSample(BoundingBox * const matte,
-                                             const qreal relFrame);
+    // matte-sample cache (track matte + preserve-alpha): holds the
+    // forced-raster external render keyed by source+frame; NEVER the
+    // box's own render cache - a preview/direct-draw item completes
+    // with a NULL image and would erase the layer at composite time.
+    // Content changes are handled by the follow connections clearing
+    // the cache (see setTrackMatteSource/setPreserveBelowSource).
+    stdsptr<BoxRenderData> freshMatteSample(BoundingBox * const matte,
+                                            const qreal relFrame);
     BoundingBox *preserveBelowSourceFor();
     void setPreserveBelowSource(BoundingBox * const below);
 
@@ -597,6 +599,10 @@ protected:
     // preserve-alpha (T): implicit alpha-matte source = the sibling
     // directly below; kept for change-following
     ConnContextQPtr<BoundingBox> mPreserveBelowSource;
+    // own matte-sample cache (see freshMatteSample)
+    qptr<BoundingBox> mMatteSampleSource;
+    stdsptr<BoxRenderData> mMatteSampleCache;
+    qreal mMatteSampleFrame = 0.;
     int mTrackMatteMode = 0; // 0 none, 1 alpha, 2 alphaInv, 3 luma, 4 lumaInv
     // AE semantics: a layer referenced as a matte source stops drawing
     // itself (its pixels only live inside the matte); refcounted so

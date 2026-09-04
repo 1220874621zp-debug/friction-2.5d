@@ -226,6 +226,25 @@ static int runTrackMatteTest(Document& document, TaskScheduler& tasks) {
     scene->addContained(matte);
     pump();
 
+    // GUI-order reproduction: the canvas previews the scene FIRST -
+    // both layers get DIRECT-DRAW render items (no raster image) in
+    // their handlers. Sampling those as mattes must not erase the
+    // target (the 22:38 canvas-blank regression)
+    {
+        const auto sceneRd = scene->queExternalRender(0, false);
+        for(int w = 0; w < 200; w++) {
+            pump();
+            if(sceneRd && sceneRd->finished()) break;
+        }
+        const auto cont = enve::shared(
+                    static_cast<ContainerBoxRenderData*>(sceneRd.get()));
+        fprintf(stderr, "[harness] trkmat: preview-first children=%d "
+                "finished=%d\n",
+                cont ? cont->fChildrenRenderData.count() : -1,
+                int(sceneRd && sceneRd->finished()));
+        fflush(stderr);
+    }
+
     const auto matteRd = renderAndWait(matte.get());
     const int matteCov = alphaCoverage(matteRd);
     fprintf(stderr, "[harness] trkmat: matte coverage=%d finished=%d\n",
@@ -329,7 +348,8 @@ static int runTrackMatteTest(Document& document, TaskScheduler& tasks) {
     // below, never the accumulated stack. Arrangement top->bottom:
     // [pT (preserve), below (150x150 bottom-right quadrant), bottom
     // (150x150 top-left quadrant)] - next-layer rule clips to ~1/4 of
-    // the target, the old SrcATop rule would have taken ~1/2
+    // the target, the old SrcATop rule would have taken ~1/2.
+    // Preview-first again (direct-draw items) to match the GUI flow.
     {
         const auto pT = enve::make_shared<RectangleBox>();
         pT->setTopLeftPos(QPointF(0, 0));
@@ -344,8 +364,13 @@ static int runTrackMatteTest(Document& document, TaskScheduler& tasks) {
         scene->addContained(below);
         scene->addContained(pT);
         pump();
-        renderAndWait(below.get());
-        renderAndWait(bottom.get());
+        {
+            const auto sceneRd = scene->queExternalRender(0, false);
+            for(int w = 0; w < 200; w++) {
+                pump();
+                if(sceneRd && sceneRd->finished()) break;
+            }
+        }
         const auto plain = renderAndWait(pT.get());
         const int full = alphaCoverage(plain);
         pT->setPreserveAlpha(true);
