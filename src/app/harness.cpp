@@ -180,6 +180,38 @@ static LONG WINAPI writeHarnessDump(EXCEPTION_POINTERS* const pep) {
     return EXCEPTION_CONTINUE_SEARCH;
 }
 
+// load a real user project and render every scene - the [MATTE]
+// diagnostics print the actual attach/skip verdicts for the saved
+// track-matte / preserve-alpha state
+static bool loadProject(Document& document, TaskScheduler& tasks,
+                        const QString& path);
+static int runLoadRender(Document& document, TaskScheduler& tasks,
+                         const QString& path) {
+    Q_UNUSED(tasks)
+    if(eSettings::sInstance) eSettings::sInstance->fPathGpuAcc = false;
+    if(!loadProject(document, tasks, path)) return 30;
+    fprintf(stderr, "[harness] LOADRENDER: loaded %d scenes\n",
+            document.fScenes.count());
+    fflush(stderr);
+    for(int i = 0; i < 40; i++) {
+        for(int j = 0; j < 25; j++) QApplication::processEvents();
+    }
+    for(int round = 0; round < 4; round++) {
+        document.updateScenes();
+        for(int i = 0; i < 300; i++) QApplication::processEvents();
+    }
+    for(const auto& scene : document.fScenes) {
+        if(!scene) continue;
+        fprintf(stderr, "[harness] LOADRENDER: scene '%s' boxes=%d\n",
+                scene->prp_getName().toLocal8Bit().constData(),
+                scene->getContainedBoxesCount());
+        fflush(stderr);
+    }
+    fprintf(stderr, "[harness] LOADRENDER done\n");
+    fflush(stderr);
+    return 0;
+}
+
 // track matte differential test: a 300x300 target rectangle matted by
 // a 100x100 rectangle must lose ~8/9 of its alpha coverage; verifies
 // the whole chain headlessly (combo-level model state -> render data
@@ -331,6 +363,28 @@ static int runTrackMatteTest(Document& document, TaskScheduler& tasks) {
         }
     }
 
+    // GUI-path render: enter the scheduler's queing window the way
+    // actionFinished does (updateScenes -> queScheduledCpuTasks ->
+    // beginQue ... scene assembly with the nested matte que ... endQue
+    // -> deferred processing). The direct queExternalRender calls above
+    // bypass this path entirely (mCpuQueing false) - a blind spot that
+    // hid the deferral regressions
+    {
+        document.updateScenes();
+        for(int w = 0; w < 3000; w++) QApplication::processEvents();
+        const auto guiRd = target->getCurrentRenderData(0);
+        const int guiCov = alphaCoverage(guiRd);
+        fprintf(stderr, "[harness] trkmat: gui-path cov=%d finished=%d\n",
+                guiCov, int(guiRd && guiRd->finished()));
+        fflush(stderr);
+        if(guiCov <= 0 || guiCov > cov0/2) {
+            fprintf(stderr, "[harness] TRKMAT FAIL (gui-path deferral "
+                    "cov=%d)\n", guiCov);
+            fflush(stderr);
+            return 24;
+        }
+    }
+
     // the matte and target images render at their own global-rect
     // resolutions, so compare in ratios: the matted target must keep
     // a positive but much smaller coverage (100/300 area + AA edges)
@@ -418,6 +472,49 @@ static int runTrackMatteTest(Document& document, TaskScheduler& tasks) {
             }
         }
         fprintf(stderr, "[harness] trkmat: mixed-cycle survived\n");
+        fflush(stderr);
+    }
+
+    // synthetic "遮罩.friction": mirror the user's saved project shape -
+    // image inside a mask-host layer group, rect matte, preserve-alpha
+    // toggles, visibility flips, GUI-path renders - and check the
+    // matte attach verdicts and outcomes
+    {
+        const auto simImg = enve::make_shared<RectangleBox>();
+        simImg->setTopLeftPos(QPointF(0, 0));
+        simImg->setBottomRightPos(QPointF(280, 280));
+        scene->addContained(simImg);
+        const auto simRect = enve::make_shared<RectangleBox>();
+        simRect->setTopLeftPos(QPointF(40, 40));
+        simRect->setBottomRightPos(QPointF(200, 200));
+        scene->addContained(simRect);
+        pump();
+        // trkmat: the RECT is matted by the image (mask blend shape
+        // mimics saved mask layers living in the stack)
+        simImg->setBlendModeSk(SkBlendMode::kDstIn);
+        simImg->prp_setName(QStringLiteral("蒙版层sim"));
+        pump();
+        // trkmat: the RECT is matted by the (masked) image
+        simRect->trackMatteTarget()->setTargetAction(simImg.get());
+        simRect->setTrackMatteMode(1);
+        pump();
+        // user-like cycles: DIRECT scene assembly (updateScenes is a
+        // no-op headless - fVisibleScenes stays empty without the
+        // layout machinery, queScheduledCpuTasks gates on it) + eye
+        // toggles
+        for(int round = 0; round < 2; round++) {
+            scene->queTasks();
+            for(int i = 0; i < 300; i++) QApplication::processEvents();
+        }
+        simRect->switchVisible(); pump();
+        scene->queTasks();
+        for(int i = 0; i < 300; i++) QApplication::processEvents();
+        simRect->switchVisible(); pump();
+        // preserve on the rect: below is now... the mask-run content
+        simRect->setPreserveAlpha(true);
+        scene->queTasks();
+        for(int i = 0; i < 300; i++) QApplication::processEvents();
+        fprintf(stderr, "[harness] trkmat: maskproj simulation done\n");
         fflush(stderr);
     }
 
@@ -792,7 +889,21 @@ int main(int argc, char *argv[]) {
         FilesHandler filesHandler;
         MemoryHandler memoryHandler;
         eFilterSettings filterSettings;
+        // Canvas::queTasks dereferences Actions::sInstance
+        Actions actions(document);
         return runTrackMatteTest(document, taskScheduler);
+    }
+    if(!args.isEmpty() && args.first() == "--loadrender") {
+        eSettings settings(HardwareInfo::sCpuThreads(),
+                           HardwareInfo::sRamKB());
+        ImportHandler importHandler;
+        TaskScheduler taskScheduler;
+        Document document(taskScheduler);
+        FilesHandler filesHandler;
+        MemoryHandler memoryHandler;
+        eFilterSettings filterSettings;
+        return runLoadRender(document, taskScheduler,
+                             args.count() > 1 ? args.at(1) : QString());
     }
     if(!args.isEmpty() && args.first() == "--aidepth") {
         eSettings settings(HardwareInfo::sCpuThreads(),
