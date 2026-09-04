@@ -578,6 +578,22 @@ protected:
     // else triggers a re-render of this layer
     ConnContextQPtr<BoundingBox> mTrackMatteSource;
     int mTrackMatteMode = 0; // 0 none, 1 alpha, 2 alphaInv, 3 luma, 4 lumaInv
+    // AE semantics: a layer referenced as a matte source stops drawing
+    // itself (its pixels only live inside the matte); refcounted so
+    // several targets can share one source
+    int mMatteSourceUseCount = 0;
+
+public:
+    bool usedAsTrackMatteSource() const
+    { return mMatteSourceUseCount > 0; }
+protected:
+    void matteSourceUseDelta(const int delta) {
+        const bool was = mMatteSourceUseCount > 0;
+        mMatteSourceUseCount = qMax(0, mMatteSourceUseCount + delta);
+        if((mMatteSourceUseCount > 0) != was) {
+            planUpdate(UpdateReason::userChange);
+        }
+    }
 
     // AE-style layer switches
     bool mEffectsEnabled = true;

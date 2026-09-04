@@ -1098,6 +1098,12 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
         box->prp_afterWholeInfluenceRangeChanged();
         Document::sInstance->actionFinished();
         mTrkMatModeButton->update();
+        // reflect the pick on the closed combo (rebuild only runs on
+        // the next press)
+        {
+            const QSignalBlocker blocker(mTrkMatLayerCombo);
+            mTrkMatLayerCombo->setCurrentIndex(index);
+        }
     });
     mTrkMatLayerCombo->setSizePolicy(QSizePolicy::Maximum,
                                      QSizePolicy::Minimum);
@@ -2572,9 +2578,13 @@ void BoxSingleWidget::rebuildTrkMatLayerCandidates() {
                 // exclude boxes whose matte chain already reaches this
                 // box - picking one would close a matte cycle
                 if(b->matteChainReaches(box)) continue;
+                // entries carry the documentId; the activated handler
+                // resolves it via sGetBoxByDocumentId (storing the raw
+                // pointer here made every pick resolve to nullptr -
+                // the matte silently reset to None)
                 mTrkMatLayerCombo->addItem(
                             b->prp_getName(),
-                            QVariant::fromValue(reinterpret_cast<quintptr>(b)));
+                            QVariant::fromValue(b->getDocumentId()));
                 if(b == cur) match = mTrkMatLayerCombo->count() - 1;
                 if(const auto g = enve_cast<ContainerBox*>(b)) walk(g);
             }

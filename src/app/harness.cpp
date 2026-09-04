@@ -248,6 +248,30 @@ static int runTrackMatteTest(Document& document, TaskScheduler& tasks) {
     target->setTrackMatteMode(1); // alpha matte
     pump();
 
+    // AE auto-hide: the matte source must drop out of container
+    // compositing while referenced (scene render assembles only the
+    // target then)
+    {
+        const auto sceneRd = scene->queExternalRender(0, false);
+        for(int w = 0; w < 200; w++) {
+            pump();
+            if(sceneRd && sceneRd->finished()) break;
+        }
+        const auto cont = enve::shared(
+                    static_cast<ContainerBoxRenderData*>(sceneRd.get()));
+        const int nChildren = cont ?
+                    cont->fChildrenRenderData.count() : -1;
+        const bool hidden = matte->usedAsTrackMatteSource();
+        fprintf(stderr, "[harness] trkmat: auto-hide source=%d "
+                "sceneChildren=%d\n", int(hidden), nChildren);
+        fflush(stderr);
+        if(!hidden || nChildren != 1) {
+            fprintf(stderr, "[harness] TRKMAT FAIL (auto-hide)\n");
+            fflush(stderr);
+            return 21;
+        }
+    }
+
     const auto after = renderAndWait(target.get());
     const int cov1 = alphaCoverage(after);
     fprintf(stderr, "[harness] trkmat: target after coverage=%d "

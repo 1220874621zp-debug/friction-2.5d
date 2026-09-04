@@ -1212,6 +1212,9 @@ void processChildData(BoundingBox * const child,
                       QList<ChildRenderData>& delayed,
                       const bool soloActive) {
     if(!child->isFrameFVisibleAndInDurationRect(childRelFrame)) return;
+    // AE track matte: the matte source layer stops drawing itself
+    // while referenced (its pixels only live inside the matte)
+    if(child->usedAsTrackMatteSource()) return;
     if(soloActive && !child->soloAffectsDraw()) return;
     if(child->isGroup() && !linkRendersAsLayer(child)) {
         const auto childGroup = static_cast<ContainerBox*>(child);

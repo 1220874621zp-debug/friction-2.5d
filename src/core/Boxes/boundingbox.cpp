@@ -2009,6 +2009,14 @@ bool BoundingBox::SWT_dropSupport(const QMimeData * const data) {
 // cache (and the scene frame cache) is invalidated whenever the matte
 // layer moves, animates or changes shape
 void BoundingBox::setTrackMatteSource(BoundingBox * const matte) {
+    // AE auto-hide bookkeeping: the previous source draws again once
+    // nothing references it, the new source stops drawing (refcounted,
+    // several targets may share one source)
+    const auto prevSource = mTrackMatteSource.get();
+    if(prevSource && prevSource != matte) {
+        prevSource->matteSourceUseDelta(-1);
+    }
+    if(matte && matte != prevSource) matte->matteSourceUseDelta(1);
     auto& conn = mTrackMatteSource.assign(matte);
     // follow only when it cannot loop back: with a matte cycle the
     // change forwarding would ping-pong between the two boxes forever
