@@ -578,6 +578,8 @@ void BoundingBox::setEffectsEnabled(const bool enable) {
 
 void BoundingBox::setPreserveAlpha(const bool preserve) {
     if(mPreserveAlpha == preserve) return;
+    qWarning() << "[MATTE] 保留透明度" << (preserve ? "开" : "关")
+               << prp_getName();
     {
         prp_pushUndoRedoName(preserve ? tr("Preserve Underlying Transparency")
                                       : tr("Stop Preserving Underlying Transparency"));
@@ -1380,36 +1382,54 @@ void BoundingBox::setupRenderData(const qreal relFrame,
     // source's setupRenderData SYNCHRONOUSLY (queExternalRender), so
     // mixed cycles (A track-mattes B, B preserve-alphas against A)
     // would recurse forever - mInMatteAttach breaks any revisit of a
-    // box whose setup is still on the call stack
+    // box whose setup is still on the call stack.
+    // diagnostics log on verdict CHANGE only (assembly runs per frame)
     if(data && !mInMatteAttach) {
         mInMatteAttach = true;
+        const auto setVerdict = [this](const int v, const QString& why) {
+            if(mMatteDiagVerdict == v) return;
+            mMatteDiagVerdict = v;
+            qWarning() << "[MATTE]" << prp_getName() << why;
+        };
         if(mTrackMatteMode != 0) {
             const auto matte = mTrackMatteTarget ?
                         mTrackMatteTarget->getTarget() : nullptr;
-            // cycle guard: if the matte chain leads back here the two
-            // renders would wait on each other forever (black canvas)
-            if(matte && matte != this && !matte->matteChainReaches(this)) {
+            if(!matte) {
+                setVerdict(2, QStringLiteral("轨道遮罩：模式%1但无目标层（无效果）")
+                           .arg(mTrackMatteMode));
+            } else if(matte == this) {
+                setVerdict(7, QStringLiteral("轨道遮罩：目标是自己（忽略）"));
+            } else if(matte->matteChainReaches(this)) {
+                setVerdict(3, QStringLiteral("轨道遮罩：环形依赖已降级（%1）")
+                           .arg(matte->prp_getName()));
+            } else {
                 const auto sample = freshMatteSample(matte, relFrame);
                 if(sample) {
                     sample->addDependent(data);
                     data->setTrackMatte(sample, mTrackMatteMode);
+                    setVerdict(1, QStringLiteral("轨道遮罩挂接 -> %1 模式%2")
+                               .arg(matte->prp_getName())
+                               .arg(mTrackMatteMode));
+                } else {
+                    setVerdict(8, QStringLiteral("轨道遮罩：采样排队失败（%1）")
+                               .arg(matte->prp_getName()));
                 }
             }
         } else if(mPreserveAlpha) {
-            // preserve-alpha (T button): implicit alpha matte sourced
-            // from the layer DIRECTLY BELOW - only that layer counts,
-            // never the accumulated backdrop. An explicit track matte
-            // set wins over this implicit source. A below whose matte
-            // chain loops back here would recurse - treat as none.
             auto below = preserveBelowSourceFor();
             if(below && below->matteChainReaches(this)) below = nullptr;
             setPreserveBelowSource(below);
             const auto sample = freshMatteSample(below, relFrame);
-            // no layer below: the matte is empty - TrackMatteCaller
-            // erases the alpha (AE: preserve transparency over nothing
-            // hides the layer entirely)
             data->setTrackMatte(sample, 1);
             if(sample) sample->addDependent(data);
+            if(below) {
+                setVerdict(4, QStringLiteral("保留透明度 -> 正下一层 %1")
+                           .arg(below->prp_getName()));
+            } else {
+                setVerdict(5, QStringLiteral("保留透明度：无下一层（整层隐藏）"));
+            }
+        } else {
+            setVerdict(0, QStringLiteral("蒙版未启用"));
         }
         mInMatteAttach = false;
     }

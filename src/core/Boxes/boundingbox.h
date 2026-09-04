@@ -609,6 +609,8 @@ protected:
     // forever - a re-visit of a box whose setup is still on the stack
     // skips the matte attach for that render
     bool mInMatteAttach = false;
+    // diagnostics: last logged matte-attach verdict (logs on change)
+    int mMatteDiagVerdict = -1;
     int mTrackMatteMode = 0; // 0 none, 1 alpha, 2 alphaInv, 3 luma, 4 lumaInv
     // AE semantics: a layer referenced as a matte source stops drawing
     // itself (its pixels only live inside the matte); refcounted so

@@ -1091,6 +1091,8 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
                         mTrkMatLayerCombo->itemData(index).toInt());
         }
         if(picked == box) return;
+        qWarning() << "[MATTE] 下拉选择：" << box->prp_getName() << "->"
+                   << (picked ? picked->prp_getName() : QStringLiteral("无"));
         box->trackMatteTarget()->setTargetAction(picked);
         if(picked && box->getTrackMatteMode() <= 0) {
             box->setTrackMatteMode(1); // default: alpha matte
