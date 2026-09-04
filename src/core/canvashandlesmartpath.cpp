@@ -50,6 +50,19 @@ bool isMaskPathBox(BoundingBox * const box) {
     return path && path->getMaskMode();
 }
 
+bool isBitmapBox(BoundingBox * const box) {
+    // raster images (+PSD) and frame-based media (video/sequences)
+    return enve_cast<ImageBox*>(box) ||
+           enve_cast<AnimationBox*>(box);
+}
+
+bool hostsMaskPaths(ContainerBox * const group) {
+    for(const auto& child : group->getContainedBoxes()) {
+        if(isMaskPathBox(child)) return true;
+    }
+    return false;
+}
+
 // nearest layer-type ancestor: masks placed there clip that whole
 // layer (AE semantics), unwrapped boxes get wrapped on first use.
 // the Canvas itself also reports isLayer() (it promotes for render
@@ -67,10 +80,24 @@ ContainerBox *layerAncestorOrSelf(BoundingBox * const box) {
 }
 }
 
-ContainerBox *Canvas::resolveMaskHost(const eMouseEvent &e) {
-    // resolution order: the layer under the press point; with no hit,
-    // a single selected layer (AE semantics - drawing commonly starts
-    // outside the layer bounds)
+// bitmap auto-detect rule: on a bitmap layer (or over an existing
+// mask / mask-hosting group) the pen and rectangle tools draw MASKS
+// instead of shapes; everything else keeps drawing shapes
+bool Canvas::isMaskIntentTarget(BoundingBox * const target) {
+    if(!target) return false;
+    if(isBitmapBox(target)) return true;
+    if(const auto group = enve_cast<ContainerBox*>(target)) {
+        if(group->isLayer() && !enve_cast<Canvas*>(group)) {
+            return hostsMaskPaths(group);
+        }
+    }
+    return false;
+}
+
+BoundingBox *Canvas::resolveMaskTarget(const eMouseEvent &e) {
+    // pure resolution, no tree mutation: the layer under the press
+    // point; with no hit, a single selected layer (AE semantics -
+    // drawing commonly starts outside the layer bounds)
     BoundingBox *target = getBoxAtFromAllDescendents(e.fPos);
     if(isMaskPathBox(target)) {
         // drawing over an existing mask stacks another mask onto the
@@ -90,9 +117,19 @@ ContainerBox *Canvas::resolveMaskHost(const eMouseEvent &e) {
             target = sel;
         }
     }
+    return target;
+}
+
+ContainerBox *Canvas::ensureMaskHost(BoundingBox * const target) {
     if(!target) {
         qWarning() << "蒙版：起笔点未命中图层，且没有单一选中图层，请在要裁剪的图层上起笔（或先选中它）";
         return nullptr;
+    }
+    // a selected layer-type group hosts the mask itself
+    if(const auto group = enve_cast<ContainerBox*>(target)) {
+        if(group->isLayer() && !enve_cast<Canvas*>(group)) {
+            return group;
+        }
     }
     if(const auto host = layerAncestorOrSelf(target)) return host;
     // mask: wrap the target layer into its own layer box and add
@@ -115,6 +152,10 @@ ContainerBox *Canvas::resolveMaskHost(const eMouseEvent &e) {
     parentGroup->insertContained(tId, group);
     group->addContained(target->ref<eBoxOrSound>());
     return group.get();
+}
+
+ContainerBox *Canvas::resolveMaskHost(const eMouseEvent &e) {
+    return ensureMaskHost(resolveMaskTarget(e));
 }
 
 qsptr<SmartVectorPath> Canvas::createMaskPath(
@@ -151,13 +192,21 @@ void Canvas::handleAddSmartPointMousePress(const eMouseEvent &e) {
     if(nodePointUnderMouse == mLastEndPoint &&
             nodePointUnderMouse) return;
     if(!mLastEndPoint && !nodePointUnderMouse) {
-        // mask pen: an unresolved target must never fall through to a
+        // mask session: forced via the mask pen button, or
+        // auto-detected - on a bitmap layer (or over an existing
+        // mask / mask-hosting group) the plain pen draws a mask too;
+        // an unresolved forced target must never fall through to a
         // raw DstIn path in the current container - once closed it
         // would erase every layer below it on the whole canvas
-        const auto newPath = enve::make_shared<SmartVectorPath>();
-        newPath->planCenterPivotPosition();
+        BoundingBox *maskTarget = nullptr;
         if(mDocument.fMaskPenActive) {
-            const auto host = resolveMaskHost(e);
+            maskTarget = resolveMaskTarget(e);
+        } else {
+            const auto autoTarget = resolveMaskTarget(e);
+            if(isMaskIntentTarget(autoTarget)) maskTarget = autoTarget;
+        }
+        if(maskTarget) {
+            const auto host = ensureMaskHost(maskTarget);
             if(!host) return;
             const auto maskPath = createMaskPath(host);
             host->setRevealRowsOnce();
@@ -171,7 +220,10 @@ void Canvas::handleAddSmartPointMousePress(const eMouseEvent &e) {
             const auto node = newHandler->createNewSubPathAtRelPos({0, 0});
             setCurrentSmartEndPoint(node);
             return;
-        } else if(!newPath->getParentGroup()) {
+        }
+        const auto newPath = enve::make_shared<SmartVectorPath>();
+        newPath->planCenterPivotPosition();
+        if(!newPath->getParentGroup()) {
             mCurrentContainer->addContained(newPath);
         }
         clearBoxesSelection();

@@ -1201,16 +1201,22 @@ protected:
     void handleAddSmartPointMouseMove(const eMouseEvent &e);
     void handleAddSmartPointMouseRelease(const eMouseEvent &e);
 
-    // AE-style masks (pen + rect tool): resolve the layer group the new
-    // mask belongs to (wraps the hit layer on first use, joins the
-    // existing mask group afterwards); nullptr + warning when the
-    // press resolves to no layer
+    // AE-style masks (pen + rect tool): resolveMaskTarget is pure
+    // hit/selection resolution (no tree mutation); ensureMaskHost
+    // wraps the target layer on first use or joins the existing mask
+    // group; nullptr + warning when the press resolves to no layer
+    BoundingBox *resolveMaskTarget(const eMouseEvent &e);
+    ContainerBox *ensureMaskHost(BoundingBox * const target);
     ContainerBox *resolveMaskHost(const eMouseEvent &e);
+    // bitmap auto-detect: bitmap layer / existing mask / mask-hosting
+    // layer group → the plain pen and rect tools draw masks
+    bool isMaskIntentTarget(BoundingBox * const target);
     // common mask-path factory (DstIn Add mode, flat fill, no stroke,
     // 0-radius blur as the feather slot)
     qsptr<SmartVectorPath> createMaskPath(BoundingBox * const nameSource);
-    // rect mask tool drag state
-    bool startMaskRectDrag(const eMouseEvent &e);
+    // rect tool on a bitmap layer (or existing mask) drags a rect
+    // mask instead of a shape
+    bool startMaskRectDrag(BoundingBox * const target, const eMouseEvent &e);
     void updateMaskRectDrag(const eMouseEvent &e);
     void finishMaskRectDrag(const eMouseEvent &e);
 

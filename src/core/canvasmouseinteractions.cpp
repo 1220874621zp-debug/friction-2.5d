@@ -658,9 +658,12 @@ void Canvas::handleLeftButtonMousePress(const eMouseEvent& e)
         clearBoxesSelection();
         addBoxToSelection(newPath.get());
     } else if (mCurrentMode == CanvasMode::rectCreate) {
-        if (mDocument.fMaskRectActive) {
-            // AE-style rect mask: drag a rectangle onto a layer
-            if (!startMaskRectDrag(e)) { return; }
+        // bitmap auto-detect: drawing a rectangle over a bitmap layer
+        // (or an existing mask / mask group) creates a rect mask;
+        // everything else keeps drawing a plain rectangle shape
+        const auto maskTarget = resolveMaskTarget(e);
+        if (maskTarget && isMaskIntentTarget(maskTarget)) {
+            if (!startMaskRectDrag(maskTarget, e)) { return; }
         } else {
             const auto newPath = enve::make_shared<RectangleBox>();
             newPath->planCenterPivotPosition();
@@ -964,9 +967,10 @@ void Canvas::applyPixelColor(const QColor &color,
     }
 }
 
-bool Canvas::startMaskRectDrag(const eMouseEvent &e)
+bool Canvas::startMaskRectDrag(BoundingBox * const target,
+                               const eMouseEvent &e)
 {
-    const auto host = resolveMaskHost(e);
+    const auto host = ensureMaskHost(target);
     if (!host) { return false; }
     const auto maskPath = createMaskPath(host);
     host->setRevealRowsOnce();

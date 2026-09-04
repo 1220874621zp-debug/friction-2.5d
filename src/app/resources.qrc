@@ -31,7 +31,6 @@
         <file alias="bone_select.svg">../ui/widgets/bone_select.svg</file>
         <file alias="camera_tool.svg">../ui/widgets/camera_tool.svg</file>
         <file alias="pen_tool.svg">../ui/widgets/pen_tool.svg</file>
-        <file alias="rect_mask.svg">../ui/widgets/rect_mask.svg</file>
         <file alias="clip_canvas.svg">../ui/widgets/clip_canvas.svg</file>
         <file alias="top_view.svg">../ui/widgets/top_view.svg</file>
         <file alias="canvas_rulers.svg">../ui/widgets/canvas_rulers.svg</file>

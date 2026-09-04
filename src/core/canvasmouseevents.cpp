@@ -165,8 +165,7 @@ void Canvas::mouseMoveEvent(const eMouseEvent &e)
                 mCurrentCircle->moveRadiusesByAbs(delta);
             }
         } else if (mCurrentMode == CanvasMode::rectCreate) {
-            if (mDocument.fMaskRectActive &&
-                    !mCurrentMaskRectNodes.isEmpty()) {
+            if (!mCurrentMaskRectNodes.isEmpty()) {
                 updateMaskRectDrag(e);
             } else if (mCurrentRectangle) {
                 const QPointF anchor = mHasCreationPressPos ? mCreationPressPos : snapPosToGrid(e.fLastPressPos,
