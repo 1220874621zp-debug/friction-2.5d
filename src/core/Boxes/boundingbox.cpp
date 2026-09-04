@@ -1369,7 +1369,14 @@ void BoundingBox::setPreserveBelowSource(BoundingBox * const below) {
     }
     mMatteSampleSource.clear();
     mMatteSampleCache.reset();
-    planUpdate(UpdateReason::userChange);
+    // the first assignment happens DURING render assembly (inside
+    // the scheduler's queScheduledCpuTasks window) - a synchronous
+    // planUpdate there invalidates the data being assembled and
+    // re-enters the task machinery (0xC0000005 in QList detach).
+    // Defer the invalidation to the next event-loop pass
+    QMetaObject::invokeMethod(this, [this]() {
+        planUpdate(UpdateReason::userChange);
+    }, Qt::QueuedConnection);
 }
 
 void BoundingBox::setupRenderData(const qreal relFrame,
