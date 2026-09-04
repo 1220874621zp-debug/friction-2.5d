@@ -106,6 +106,14 @@ void TaskScheduler::queHddTask(const stdsptr<eTask>& task) {
 
 void TaskScheduler::queCpuTask(const stdsptr<eTask>& task) {
     mQuedCGTasks.addTask(task);
+    // nested que during the scene-assembly iteration (queScheduled-
+    // CpuTasks runs between beginQue/endQue): addTask appends to the
+    // CURRENT que which is safe, but processing from here would
+    // recurse into processNextTasks -> underflow -> updateScenes ->
+    // queTasks and re-enter the queue structures mid-iteration
+    // (0xC0000005 in QList detach). Defer to the outer loop's
+    // endQue + processNextTasks
+    if(mCpuQueing) return;
     if(task->readyToBeProcessed()) {
         if(task->hardwareSupport() == HardwareSupport::cpuOnly ||
            !processNextQuedGpuTask()) {
