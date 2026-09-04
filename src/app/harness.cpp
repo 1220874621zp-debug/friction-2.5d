@@ -180,6 +180,95 @@ static LONG WINAPI writeHarnessDump(EXCEPTION_POINTERS* const pep) {
     return EXCEPTION_CONTINUE_SEARCH;
 }
 
+// track matte differential test: a 300x300 target rectangle matted by
+// a 100x100 rectangle must lose ~8/9 of its alpha coverage; verifies
+// the whole chain headlessly (combo-level model state -> render data
+// effect attach -> TrackMatteCaller tiles -> final image)
+static int runTrackMatteTest(Document& document, TaskScheduler& tasks) {
+    Q_UNUSED(tasks)
+    // headless: no GL context exists, GPU-preferred render tasks would
+    // park forever - force the CPU rasterization paths
+    if(eSettings::sInstance) eSettings::sInstance->fPathGpuAcc = false;
+    auto pump = []() {
+        for(int j = 0; j < 30; j++) QApplication::processEvents();
+    };
+    const auto alphaCoverage = [](const stdsptr<BoxRenderData>& rd) {
+        if(!rd || !rd->fRenderedImage) return -1;
+        const auto raster = rd->fRenderedImage->makeRasterImage();
+        if(!raster) return -1;
+        SkPixmap pm;
+        if(!raster->peekPixels(&pm)) return -1;
+        int count = 0;
+        const int n = qMin(pm.width()*pm.height(), 4 << 20);
+        const auto px = static_cast<const uint32_t*>(pm.addr32());
+        for(int i = 0; i < n; i++) {
+            if((px[i] >> 24) > 128) count++;
+        }
+        return count;
+    };
+    const auto renderAndWait = [&](BoundingBox* const box) {
+        const auto rd = box->queExternalRender(0, true);
+        for(int w = 0; w < 200; w++) {
+            pump();
+            if(rd && rd->finished()) break;
+        }
+        return rd;
+    };
+
+    const auto scene = document.createNewScene(false);
+    const auto target = enve::make_shared<RectangleBox>();
+    target->setTopLeftPos(QPointF(0, 0));
+    target->setBottomRightPos(QPointF(300, 300));
+    scene->addContained(target);
+    const auto matte = enve::make_shared<RectangleBox>();
+    matte->setTopLeftPos(QPointF(0, 0));
+    matte->setBottomRightPos(QPointF(100, 100));
+    scene->addContained(matte);
+    pump();
+
+    const auto matteRd = renderAndWait(matte.get());
+    const int matteCov = alphaCoverage(matteRd);
+    fprintf(stderr, "[harness] trkmat: matte coverage=%d finished=%d\n",
+            matteCov, int(matteRd && matteRd->finished()));
+    fflush(stderr);
+
+    const auto before = renderAndWait(target.get());
+    const int cov0 = alphaCoverage(before);
+    fprintf(stderr, "[harness] trkmat: target before coverage=%d "
+            "finished=%d img=%dx%d\n", cov0,
+            int(before && before->finished()),
+            before && before->fRenderedImage ?
+                before->fRenderedImage->width() : -1,
+            before && before->fRenderedImage ?
+                before->fRenderedImage->height() : -1);
+    fflush(stderr);
+
+    // same calls the timeline TrkMat combo makes
+    target->trackMatteTarget()->setTargetAction(matte.get());
+    target->setTrackMatteMode(1); // alpha matte
+    pump();
+
+    const auto after = renderAndWait(target.get());
+    const int cov1 = alphaCoverage(after);
+    fprintf(stderr, "[harness] trkmat: target after coverage=%d "
+            "finished=%d mode=%d\n", cov1,
+            int(after && after->finished()),
+            target->getTrackMatteMode());
+    fflush(stderr);
+
+    // the matte and target images render at their own global-rect
+    // resolutions, so compare in ratios: the matted target must keep
+    // a positive but much smaller coverage (100/300 area + AA edges)
+    const bool ok = matteCov > 0 && cov0 > 1000 &&
+                    cov1 > 0 && cov1 < cov0/2;
+    fprintf(stderr, "[harness] TRKMAT %s (cov0=%d cov1=%d matte=%d "
+            "ratio=%.2f)\n",
+            ok ? "PASS" : "FAIL", cov0, cov1, matteCov,
+            cov0 > 0 ? double(cov1)/double(cov0) : -1.);
+    fflush(stderr);
+    return ok ? 0 : 20;
+}
+
 // core part of MainWindow::loadEVFile minus dialogs/layout/render widget
 static bool loadProject(Document& document, TaskScheduler& tasks,
                         const QString& path) {
@@ -536,6 +625,17 @@ int main(int argc, char *argv[]) {
         MemoryHandler memoryHandler;
         eFilterSettings filterSettings;
         return runBindTest(document, taskScheduler);
+    }
+    if(!args.isEmpty() && args.first() == "--trkmat") {
+        eSettings settings(HardwareInfo::sCpuThreads(),
+                           HardwareInfo::sRamKB());
+        ImportHandler importHandler;
+        TaskScheduler taskScheduler;
+        Document document(taskScheduler);
+        FilesHandler filesHandler;
+        MemoryHandler memoryHandler;
+        eFilterSettings filterSettings;
+        return runTrackMatteTest(document, taskScheduler);
     }
     if(!args.isEmpty() && args.first() == "--aidepth") {
         eSettings settings(HardwareInfo::sCpuThreads(),
