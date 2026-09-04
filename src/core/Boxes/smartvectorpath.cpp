@@ -193,36 +193,6 @@ void SmartVectorPath::setupCanvasMenu(PropertyMenu * const menu)
     };
     menu->addSeparator();
     menu->addPlainAction(QIcon::fromTheme("loop2"), tr("Apply Transformation"), op);
-    setupMaskModeMenu(menu);
-}
-
-void SmartVectorPath::setupMaskModeMenu(PropertyMenu * const menu)
-{
-    if (!mMaskMode) return;
-    menu->addSeparator();
-    // AE语义蒙版模式：存于混合模式 kDstIn(相加)/kDstOut(相减)。
-    // 多蒙版在父容器合成：相加=并集、相减=擦除，按自顶向下顺序应用
-    const auto maskMenu = menu->addMenu(QIcon(), tr("蒙版模式"));
-    PropertyMenu::CheckSelectedOp<SmartVectorPath> addOp =
-            [](SmartVectorPath * const box, const bool on) {
-        if (on) box->setBlendModeSk(SkBlendMode::kDstIn);
-    };
-    PropertyMenu::CheckSelectedOp<SmartVectorPath> subOp =
-            [](SmartVectorPath * const box, const bool on) {
-        if (on) box->setBlendModeSk(SkBlendMode::kDstOut);
-    };
-    maskMenu->addCheckableAction(tr("相加"),
-            getBlendMode() != SkBlendMode::kDstOut, addOp);
-    maskMenu->addCheckableAction(tr("相减"),
-            getBlendMode() == SkBlendMode::kDstOut, subOp);
-}
-
-void SmartVectorPath::prp_setupTreeViewMenu(PropertyMenu * const menu)
-{
-    if (menu->hasActionsForType<SmartVectorPath>()) { return; }
-    menu->addedActionsForType<SmartVectorPath>();
-    PathBox::prp_setupTreeViewMenu(menu);
-    setupMaskModeMenu(menu);
 }
 
 void SmartVectorPath::writeBoundingBox(eWriteStream& dst) const

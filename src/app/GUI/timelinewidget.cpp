@@ -274,6 +274,16 @@ TimelineWidget::TimelineWidget(Document &document,
                 scene->addSolidLayerAction();
             }
         });
+        // AE shape layer: empty vector layer that collects the shapes
+        // drawn after creating it (creating enters the layer)
+        layerMenu->addAction(tr("矢量图层"), this, [this]() {
+            const auto scroller = mBoxesListWidget ?
+                        mBoxesListWidget->getBoxScroller() : nullptr;
+            if(const auto scene = scroller ?
+                        scroller->currentScene() : nullptr) {
+                scene->addVectorLayerAction();
+            }
+        });
         layerMenu->addAction(tr("Camera"), this, [this]() {
             const auto scroller = mBoxesListWidget ?
                         mBoxesListWidget->getBoxScroller() : nullptr;

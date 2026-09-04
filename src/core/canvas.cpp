@@ -2180,6 +2180,21 @@ void Canvas::addSolidLayerAction() {
     if(Document::sInstance) Document::sInstance->actionFinished();
 }
 
+// AE shape/vector layer: an empty layer-type container collecting the
+// shapes drawn afterwards; creating it enters the layer (like AE's new
+// shape layer being the active shape target), double-click empty
+// canvas to leave it
+void Canvas::addVectorLayerAction() {
+    const auto layer = enve::make_shared<ContainerBox>(
+                QObject::tr("矢量图层"), eBoxType::layer);
+    ContainerBox* const parent = mCurrentContainer ? mCurrentContainer.data()
+                                                   : this;
+    parent->addContained(layer);
+    setCurrentBoxesGroup(layer.get());
+    layer->planUpdate(UpdateReason::userChange);
+    if(Document::sInstance) Document::sInstance->actionFinished();
+}
+
 // ---- scene camera (AE-like, driven by a CameraLayer box) ----
 
 // freeze pose across the whole rig: key every channel of every bone

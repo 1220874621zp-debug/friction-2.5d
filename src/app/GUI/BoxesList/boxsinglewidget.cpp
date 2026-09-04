@@ -50,6 +50,7 @@
 #include "Boxes/bone.h"
 #include "Boxes/bonelayer.h"
 #include "Boxes/pathbox.h"
+#include "Boxes/smartvectorpath.h"
 #include "canvas.h"
 #include "BlendEffects/blendeffectcollection.h"
 #include "BlendEffects/blendeffectboxshadow.h"
@@ -1010,6 +1011,22 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
             this, &BoxSingleWidget::setCompositionMode);
     mBlendModeCombo->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Minimum);
 
+    // AE mask mode: on mask-path rows this dropdown replaces the blend
+    // dropdown (Add = kDstIn, Subtract = kDstOut); multi-mask rows
+    // combine Add = union / Subtract = erase, topmost-first (AE)
+    mMaskModeCombo = createCombo(this);
+    mMainLayout->addWidget(mMaskModeCombo);
+    mMaskModeCombo->setObjectName("maskModeCombo");
+    mMaskModeCombo->setToolTip(tr("蒙版模式"));
+    mMaskModeCombo->addItem(tr("相加"));
+    mMaskModeCombo->addItem(tr("相减"));
+    mMaskModeCombo->setVisible(false);
+    connect(mMaskModeCombo, qOverload<int>(&QComboBox::activated),
+            this, &BoxSingleWidget::setMaskMode);
+    mMaskModeCombo->setSizePolicy(QSizePolicy::Maximum,
+                                  QSizePolicy::Minimum);
+    mMaskModeCombo->setFixedWidth(eSizesUI::widget*3);
+
     // parent link combo: sits behind the blend mode ("覆盖") dropdown and
     // mirrors the node-link parent of this layer; opening the popup
     // rebuilds the candidate list, picking an entry re-links
@@ -1411,6 +1428,7 @@ void BoxSingleWidget::setTargetAbstraction(SWT_Abstraction *abs) {
     mPathBlendModeVisible = false;
     mBlendModeVisible = false;
     mFillTypeVisible = false;
+    mMaskModeVisible = false;
     // sync highlight with the layer's current selection state (the row
     // may be (re)assigned to a layer that is already selected)
     mSelected = false;
@@ -1427,14 +1445,30 @@ void BoxSingleWidget::setTargetAbstraction(SWT_Abstraction *abs) {
     bool colorButtonVisible = false;
 
     if(boundingBox) {
-        mBlendModeVisible = true;
-        const auto blendName = SkBlendMode_Name(boundingBox->getBlendMode());
-        mBlendModeCombo->setCurrentText(blendName);
-        mBlendModeCombo->setEnabled(!boundingBox->isGroup());
-        mTargetConn << connect(boundingBox, &BoundingBox::blendModeChanged,
-                               this, [this](const SkBlendMode mode) {
-            mBlendModeCombo->setCurrentText(SkBlendMode_Name(mode));
-        });
+        // AE mask row: the generic blend dropdown becomes the mask-mode
+        // dropdown (the blend mode IS the storage: kDstIn/kDstOut)
+        const auto maskPath = enve_cast<SmartVectorPath*>(boundingBox);
+        if(maskPath && maskPath->getMaskMode()) {
+            mMaskModeVisible = true;
+            mMaskModeCombo->setCurrentIndex(
+                        boundingBox->getBlendMode() == SkBlendMode::kDstOut ?
+                            1 : 0);
+            mTargetConn << connect(boundingBox,
+                                   &BoundingBox::blendModeChanged,
+                                   this, [this](const SkBlendMode mode) {
+                mMaskModeCombo->setCurrentIndex(
+                            mode == SkBlendMode::kDstOut ? 1 : 0);
+            });
+        } else {
+            mBlendModeVisible = true;
+            const auto blendName = SkBlendMode_Name(boundingBox->getBlendMode());
+            mBlendModeCombo->setCurrentText(blendName);
+            mBlendModeCombo->setEnabled(!boundingBox->isGroup());
+            mTargetConn << connect(boundingBox, &BoundingBox::blendModeChanged,
+                                   this, [this](const SkBlendMode mode) {
+                mBlendModeCombo->setCurrentText(SkBlendMode_Name(mode));
+            });
+        }
 
         // parent-link combo: visible on every layer row; shows the
         // current node-link parent and allows switching it directly
@@ -1605,6 +1639,7 @@ void BoxSingleWidget::setTargetAbstraction(SWT_Abstraction *abs) {
     updateCompositionBoxVisible();
     updatePathCompositionBoxVisible();
     updateFillTypeBoxVisible();
+    updateMaskModeBoxVisible();
 }
 
 void BoxSingleWidget::loadStaticPixmaps(int iconSize)
@@ -2805,10 +2840,29 @@ void BoxSingleWidget::updateFillTypeBoxVisible() {
     } else mFillTypeCombo->hide();
 }
 
+void BoxSingleWidget::updateMaskModeBoxVisible() {
+    if(!mTarget) return;
+    if(mMaskModeVisible && width() - mFillWidget->x() > 7*eSizesUI::widget) {
+        mMaskModeCombo->show();
+    } else mMaskModeCombo->hide();
+}
+
+void BoxSingleWidget::setMaskMode(const int index) {
+    if(!mTarget) return;
+    const auto box = enve_cast<BoundingBox*>(mTarget->getTarget());
+    if(!box) return;
+    const auto mode = index == 1 ? SkBlendMode::kDstOut
+                                 : SkBlendMode::kDstIn;
+    if(box->getBlendMode() == mode) return;
+    box->setBlendModeSk(mode);
+    Document::sInstance->actionFinished();
+}
+
 void BoxSingleWidget::resizeEvent(QResizeEvent *) {
     updateCompositionBoxVisible();
     updatePathCompositionBoxVisible();
     updateFillTypeBoxVisible();
+    updateMaskModeBoxVisible();
     updateValueSlidersForQPointFAnimator();
     if(mSelOverlay) mSelOverlay->setGeometry(rect());
 }

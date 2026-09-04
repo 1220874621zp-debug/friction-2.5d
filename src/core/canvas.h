@@ -881,6 +881,9 @@ public:
     void addBoneLayerAction();
     void addAdjustmentLayerAction();
     void addSolidLayerAction();
+    // empty layer-type container for vector shapes; entering it makes
+    // subsequent shape draws land inside (AE shape layer)
+    void addVectorLayerAction();
     // empty group flagged as a switch group, ready to receive layers
     void addSwitchGroupAction();
 

@@ -64,10 +64,8 @@ public:
                          Canvas* const scene) override;
 
     // AE-style mask mode (Add/Subtract) lives in the blend mode:
-    // kDstIn = Add, kDstOut = Subtract; the timeline row context menu
-    // exposes it as 蒙版模式
-    void prp_setupTreeViewMenu(PropertyMenu * const menu) override;
-    void setupMaskModeMenu(PropertyMenu * const menu);
+    // kDstIn = Add, kDstOut = Subtract; the timeline mask row shows
+    // a dedicated dropdown (BoxSingleWidget)
 
     void writeBoundingBox(eWriteStream& dst) const override;
     void readBoundingBox(eReadStream& src) override;
