@@ -280,15 +280,25 @@ static int runTrackMatteTest(Document& document, TaskScheduler& tasks) {
             target->getTrackMatteMode());
     fflush(stderr);
 
+    // z-order independence: flip the matte BELOW the target - the
+    // clip must stay identical wherever the layers sit in the stack
+    scene->moveContainedInList(matte.get(), 1);
+    pump();
+    const auto flipped = renderAndWait(target.get());
+    const int cov2 = alphaCoverage(flipped);
+    fprintf(stderr, "[harness] trkmat: z-flip coverage=%d\n", cov2);
+    fflush(stderr);
+
     // the matte and target images render at their own global-rect
     // resolutions, so compare in ratios: the matted target must keep
     // a positive but much smaller coverage (100/300 area + AA edges)
     const bool ok = matteCov > 0 && cov0 > 1000 &&
-                    cov1 > 0 && cov1 < cov0/2;
+                    cov1 > 0 && cov1 < cov0/2 &&
+                    cov2 > 0 && qAbs(cov2 - cov1) < qMax(4, cov1/4);
     fprintf(stderr, "[harness] TRKMAT %s (cov0=%d cov1=%d matte=%d "
-            "ratio=%.2f)\n",
+            "ratio=%.2f zflip=%d)\n",
             ok ? "PASS" : "FAIL", cov0, cov1, matteCov,
-            cov0 > 0 ? double(cov1)/double(cov0) : -1.);
+            cov0 > 0 ? double(cov1)/double(cov0) : -1., cov2);
     fflush(stderr);
     return ok ? 0 : 20;
 }

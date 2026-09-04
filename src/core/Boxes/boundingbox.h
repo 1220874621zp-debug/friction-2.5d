@@ -262,6 +262,14 @@ public:
     // matte (Add = union / Subtract = erase) at composite time
     virtual bool isMaskBox() const { return false; }
 
+    // resolved track matte (mode set AND a live target) - the render
+    // side skips the drag-time stale-bitmap transform for such layers:
+    // sliding an already-matted bitmap moves the clip region along
+    // with the content until the re-render snaps it back
+    bool hasActiveTrackMatte() const
+    { return mTrackMatteMode != 0 && mTrackMatteTarget &&
+               mTrackMatteTarget->getTarget() != nullptr; }
+
     // AE-style solo: true when this box participates in drawing
     // while any sibling in the same container is soloed
     // (ContainerBox overrides to include soloed descendants)

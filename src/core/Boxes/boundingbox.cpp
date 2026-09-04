@@ -1310,16 +1310,20 @@ void BoundingBox::setupRenderData(const qreal relFrame,
                                   Canvas* const scene) {
     setupWithoutRasterEffects(relFrame, parentM, data, scene);
     setupRasterEffects(relFrame, data, scene);
-    // track matte: queue the matte layer's independent render (main
-    // thread) and mask this layer's final image with it in the effects
-    // phase - matte runs LAST, after the layer's own effects/blur
+    // track matte: mask this layer's final image with the matte
+    // layer's render in the effects phase - matte runs LAST, after the
+    // layer's own effects/blur. Reuse a fresh cached matte render when
+    // possible: queueing a new external render per assembly round-trips
+    // a task every frame (visible lag while dragging the target)
     if(mTrackMatteMode != 0 && data) {
         const auto matte = mTrackMatteTarget ?
                     mTrackMatteTarget->getTarget() : nullptr;
         // cycle guard: if the matte chain leads back here the two
         // renders would wait on each other forever (black canvas)
         if(matte && matte != this && !matte->matteChainReaches(this)) {
-            if(const auto sample = matte->queExternalRender(relFrame, true)) {
+            auto sample = matte->getCurrentRenderData(relFrame);
+            if(!sample) sample = matte->queExternalRender(relFrame, true);
+            if(sample) {
                 sample->addDependent(data);
                 data->setTrackMatte(sample, mTrackMatteMode);
             }
@@ -1427,7 +1431,11 @@ QPointF BoundingBox::getAbsolutePos() const {
 }
 
 void BoundingBox::updateDrawRenderContainerTransform() {
-    if(mNReasonsNotToApplyUglyTransform == 0) {
+    // track-matted layers never slide the stale bitmap: the matte clip
+    // region is fixed in place, only the content moves - the live
+    // paint transform would carry the clip along and snap back on
+    // release. Let the normal re-render path update the preview
+    if(mNReasonsNotToApplyUglyTransform == 0 && !hasActiveTrackMatte()) {
         // the compensation matrix must use the same transform family the
         // stale bitmap was rasterized with (see RenderContainer): bake the
         // scene camera in for 3D layers, or dragging under a rotated camera
