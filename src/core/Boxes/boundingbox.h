@@ -270,6 +270,15 @@ public:
     { return mTrackMatteMode != 0 && mTrackMatteTarget &&
                mTrackMatteTarget->getTarget() != nullptr; }
 
+    // matte-cache helpers: usableMatteSample rejects canceled/created
+    // cached renders (a canceled sample cancels its dependent - the
+    // matted layer vanishes during playback); preserve-alpha uses the
+    // sibling DIRECTLY below as an implicit alpha matte
+    stdsptr<BoxRenderData> usableMatteSample(BoundingBox * const matte,
+                                             const qreal relFrame);
+    BoundingBox *preserveBelowSourceFor();
+    void setPreserveBelowSource(BoundingBox * const below);
+
     // AE-style solo: true when this box participates in drawing
     // while any sibling in the same container is soloed
     // (ContainerBox overrides to include soloed descendants)
@@ -585,6 +594,9 @@ protected:
     // target), otherwise the canvas shows a stale matte until something
     // else triggers a re-render of this layer
     ConnContextQPtr<BoundingBox> mTrackMatteSource;
+    // preserve-alpha (T): implicit alpha-matte source = the sibling
+    // directly below; kept for change-following
+    ConnContextQPtr<BoundingBox> mPreserveBelowSource;
     int mTrackMatteMode = 0; // 0 none, 1 alpha, 2 alphaInv, 3 luma, 4 lumaInv
     // AE semantics: a layer referenced as a matte source stops drawing
     // itself (its pixels only live inside the matte); refcounted so

@@ -130,19 +130,11 @@ void TrackMatteCaller::processCpu(CpuRenderTools& renderTools,
             }
         }
     };
-    if(!mMatte) {
-        // AE semantics: no matte at all shows everything (the setup
-        // code only attaches this caller with a resolved matte, so
-        // this is the degenerate corner)
-        if(inverted) return;
-        copySrcTile();
-        return;
-    }
-    const auto& img = mMatte->fRenderedImage;
+    // no sample at all (preserve-alpha with nothing below) or an
     // empty/degenerate matte (e.g. a zero-area shape): AE hides the
     // target entirely, inverted modes show everything - never a
     // silent no-op
-    if(!img) {
+    if(!mMatte || !mMatte->fRenderedImage) {
         copySrcTile();
         if(!inverted) {
             SkCanvas clear(renderTools.fDstBtmp);
@@ -153,6 +145,7 @@ void TrackMatteCaller::processCpu(CpuRenderTools& renderTools,
         }
         return;
     }
+    const auto& img = mMatte->fRenderedImage;
     const auto raster = img->makeRasterImage();
     if(!raster) return;
     SkPixmap mattePix;

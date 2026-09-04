@@ -289,6 +289,29 @@ static int runTrackMatteTest(Document& document, TaskScheduler& tasks) {
     fprintf(stderr, "[harness] trkmat: z-flip coverage=%d\n", cov2);
     fflush(stderr);
 
+    // playback simulation: render consecutive frames the way the
+    // preview pipeline does (fresh render data per frame, short pump
+    // windows so late/canceled tasks show up as missing layers)
+    for(int f = 0; f <= 12; f++) {
+        const auto rdF = target->queExternalRender(f, true);
+        const int fx = rdF ? rdF->fEffectCallers.count() : -1;
+        for(int j = 0; j < 8; j++) QApplication::processEvents();
+        const int covEarly = alphaCoverage(rdF);
+        for(int j = 0; j < 3000; j++) QApplication::processEvents();
+        const int covF = alphaCoverage(rdF);
+        fprintf(stderr, "[harness] trkmat: play f=%d fx=%d covEarly=%d "
+                "cov=%d finished=%d img=%d\n", f, fx, covEarly, covF,
+                int(rdF && rdF->finished()),
+                int(rdF && rdF->fRenderedImage != nullptr));
+        fflush(stderr);
+        if(covF <= 0) {
+            fprintf(stderr, "[harness] TRKMAT FAIL (playback drop at "
+                    "frame %d)\n", f);
+            fflush(stderr);
+            return 22;
+        }
+    }
+
     // the matte and target images render at their own global-rect
     // resolutions, so compare in ratios: the matted target must keep
     // a positive but much smaller coverage (100/300 area + AA edges)
@@ -300,7 +323,50 @@ static int runTrackMatteTest(Document& document, TaskScheduler& tasks) {
             ok ? "PASS" : "FAIL", cov0, cov1, matteCov,
             cov0 > 0 ? double(cov1)/double(cov0) : -1., cov2);
     fflush(stderr);
-    return ok ? 0 : 20;
+    if(!ok) return 20;
+
+    // preserve-alpha (T): clips ONLY against the sibling directly
+    // below, never the accumulated stack. Arrangement top->bottom:
+    // [pT (preserve), below (150x150 bottom-right quadrant), bottom
+    // (150x150 top-left quadrant)] - next-layer rule clips to ~1/4 of
+    // the target, the old SrcATop rule would have taken ~1/2
+    {
+        const auto pT = enve::make_shared<RectangleBox>();
+        pT->setTopLeftPos(QPointF(0, 0));
+        pT->setBottomRightPos(QPointF(300, 300));
+        const auto below = enve::make_shared<RectangleBox>();
+        below->setTopLeftPos(QPointF(150, 150));
+        below->setBottomRightPos(QPointF(300, 300));
+        const auto bottom = enve::make_shared<RectangleBox>();
+        bottom->setTopLeftPos(QPointF(0, 0));
+        bottom->setBottomRightPos(QPointF(150, 150));
+        scene->addContained(bottom);
+        scene->addContained(below);
+        scene->addContained(pT);
+        pump();
+        renderAndWait(below.get());
+        renderAndWait(bottom.get());
+        const auto plain = renderAndWait(pT.get());
+        const int full = alphaCoverage(plain);
+        pT->setPreserveAlpha(true);
+        pump();
+        const auto prd = renderAndWait(pT.get());
+        const int pcov = alphaCoverage(prd);
+        const double pratio = full > 0 ? double(pcov)/double(full) : -1.;
+        fprintf(stderr, "[harness] trkmat: preserve full=%d clipped=%d "
+                "ratio=%.2f\n", full, pcov, pratio);
+        fflush(stderr);
+        if(!(pcov > 0 && pratio > 0.10 && pratio < 0.38)) {
+            fprintf(stderr, "[harness] TRKMAT FAIL (preserve-next-layer "
+                    "ratio=%.2f)\n", pratio);
+            fflush(stderr);
+            return 23;
+        }
+    }
+
+    fprintf(stderr, "[harness] TRKMAT PASS2\n");
+    fflush(stderr);
+    return 0;
 }
 
 // core part of MainWindow::loadEVFile minus dialogs/layout/render widget

@@ -595,7 +595,10 @@ void BoundingBox::setPreserveAlpha(const bool preserve) {
 
 SkBlendMode BoundingBox::getPaintBlendMode(const qreal relFrame) const {
     Q_UNUSED(relFrame)
-    if(mPreserveAlpha) return SkBlendMode::kSrcATop;
+    // preserve-alpha no longer paints kSrcATop against the whole
+    // backdrop: it is an implicit alpha matte sourced from the layer
+    // DIRECTLY BELOW (user rule: only the next layer counts, never
+    // the accumulated stack) - attached in setupRenderData
     return mBlendMode;
 }
 
@@ -1304,6 +1307,53 @@ void BoundingBox::finishTransform() {
     //updateTotalTransform();
 }
 
+// cached matte render usable as a dependency anchor: finished samples
+// satisfy immediately, queued/processing ones complete in order. A
+// CANCELED sample (frame-cache retirement during playback) would drag
+// the dependent task into cancellation - the matted layer then
+// vanishes for the whole playback; created-state samples never run
+stdsptr<BoxRenderData> BoundingBox::usableMatteSample(
+        BoundingBox * const matte, const qreal relFrame) {
+    if(!matte) return nullptr;
+    const auto sample = matte->getCurrentRenderData(relFrame);
+    if(!sample) return nullptr;
+    const auto st = sample->getState();
+    if(st == eTaskState::canceled || st == eTaskState::created) {
+        return nullptr;
+    }
+    return sample;
+}
+
+// the layer DIRECTLY below in the same container (mContainedBoxes
+// index 0 = top, below = the next index after ours)
+BoundingBox *BoundingBox::preserveBelowSourceFor() {
+    const auto parent = getParentGroup();
+    if(!parent) return nullptr;
+    const auto& boxes = parent->getContainedBoxes();
+    const int myId = boxes.indexOf(this);
+    if(myId < 0) return nullptr;
+    for(int i = myId + 1; i < boxes.count(); i++) {
+        if(boxes.at(i)) return boxes.at(i);
+    }
+    return nullptr;
+}
+
+// preserve-alpha follow: the below layer's changes must invalidate
+// our cached render (same-container re-assembly alone reuses our
+// stale clip) - mirrors the track-matte source follow
+void BoundingBox::setPreserveBelowSource(BoundingBox * const below) {
+    if(mPreserveBelowSource == below) return;
+    auto& conn = mPreserveBelowSource.assign(below);
+    if(below) {
+        conn << connect(below, &BoundingBox::prp_absFrameRangeChanged,
+                        this, [this, below](const FrameRange& targetAbs) {
+            const auto relRange = below->prp_absRangeToRelRange(targetAbs);
+            prp_afterChangedRelRange(relRange);
+        });
+    }
+    planUpdate(UpdateReason::userChange);
+}
+
 void BoundingBox::setupRenderData(const qreal relFrame,
                                   const QMatrix& parentM,
                                   BoxRenderData * const data,
@@ -1321,13 +1371,27 @@ void BoundingBox::setupRenderData(const qreal relFrame,
         // cycle guard: if the matte chain leads back here the two
         // renders would wait on each other forever (black canvas)
         if(matte && matte != this && !matte->matteChainReaches(this)) {
-            auto sample = matte->getCurrentRenderData(relFrame);
+            auto sample = usableMatteSample(matte, relFrame);
             if(!sample) sample = matte->queExternalRender(relFrame, true);
             if(sample) {
                 sample->addDependent(data);
                 data->setTrackMatte(sample, mTrackMatteMode);
             }
         }
+    } else if(mPreserveAlpha && data) {
+        // preserve-alpha (T button): implicit alpha matte sourced from
+        // the layer DIRECTLY BELOW - only that layer counts, never the
+        // accumulated backdrop. No explicit track matte set wins over
+        // this implicit source.
+        const auto below = preserveBelowSourceFor();
+        setPreserveBelowSource(below);
+        auto sample = usableMatteSample(below, relFrame);
+        if(!sample && below) sample = below->queExternalRender(relFrame, true);
+        // no layer below: the matte is empty - TrackMatteCaller erases
+        // the alpha (AE: preserve transparency over nothing hides the
+        // layer entirely)
+        data->setTrackMatte(sample, 1);
+        if(sample) sample->addDependent(data);
     }
 }
 
