@@ -603,6 +603,12 @@ protected:
     qptr<BoundingBox> mMatteSampleSource;
     stdsptr<BoxRenderData> mMatteSampleCache;
     qreal mMatteSampleFrame = 0.;
+    // recursion breaker for mixed matte cycles (A track-mattes B
+    // while B preserve-alphas against A): queExternalRender runs the
+    // source's setupRenderData SYNCHRONOUSLY, a cycle would nest
+    // forever - a re-visit of a box whose setup is still on the stack
+    // skips the matte attach for that render
+    bool mInMatteAttach = false;
     int mTrackMatteMode = 0; // 0 none, 1 alpha, 2 alphaInv, 3 luma, 4 lumaInv
     // AE semantics: a layer referenced as a matte source stops drawing
     // itself (its pixels only live inside the matte); refcounted so

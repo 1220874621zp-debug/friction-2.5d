@@ -1376,36 +1376,42 @@ void BoundingBox::setupRenderData(const qreal relFrame,
                                   Canvas* const scene) {
     setupWithoutRasterEffects(relFrame, parentM, data, scene);
     setupRasterEffects(relFrame, data, scene);
-    // track matte: mask this layer's final image with the matte
-    // layer's render in the effects phase - matte runs LAST, after the
-    // layer's own effects/blur. Reuse a fresh cached matte render when
-    // possible: queueing a new external render per assembly round-trips
-    // a task every frame (visible lag while dragging the target)
-    if(mTrackMatteMode != 0 && data) {
-        const auto matte = mTrackMatteTarget ?
-                    mTrackMatteTarget->getTarget() : nullptr;
-        // cycle guard: if the matte chain leads back here the two
-        // renders would wait on each other forever (black canvas)
-        if(matte && matte != this && !matte->matteChainReaches(this)) {
-            const auto sample = freshMatteSample(matte, relFrame);
-            if(sample) {
-                sample->addDependent(data);
-                data->setTrackMatte(sample, mTrackMatteMode);
+    // track matte / preserve-alpha attach. freshMatteSample runs the
+    // source's setupRenderData SYNCHRONOUSLY (queExternalRender), so
+    // mixed cycles (A track-mattes B, B preserve-alphas against A)
+    // would recurse forever - mInMatteAttach breaks any revisit of a
+    // box whose setup is still on the call stack
+    if(data && !mInMatteAttach) {
+        mInMatteAttach = true;
+        if(mTrackMatteMode != 0) {
+            const auto matte = mTrackMatteTarget ?
+                        mTrackMatteTarget->getTarget() : nullptr;
+            // cycle guard: if the matte chain leads back here the two
+            // renders would wait on each other forever (black canvas)
+            if(matte && matte != this && !matte->matteChainReaches(this)) {
+                const auto sample = freshMatteSample(matte, relFrame);
+                if(sample) {
+                    sample->addDependent(data);
+                    data->setTrackMatte(sample, mTrackMatteMode);
+                }
             }
+        } else if(mPreserveAlpha) {
+            // preserve-alpha (T button): implicit alpha matte sourced
+            // from the layer DIRECTLY BELOW - only that layer counts,
+            // never the accumulated backdrop. An explicit track matte
+            // set wins over this implicit source. A below whose matte
+            // chain loops back here would recurse - treat as none.
+            auto below = preserveBelowSourceFor();
+            if(below && below->matteChainReaches(this)) below = nullptr;
+            setPreserveBelowSource(below);
+            const auto sample = freshMatteSample(below, relFrame);
+            // no layer below: the matte is empty - TrackMatteCaller
+            // erases the alpha (AE: preserve transparency over nothing
+            // hides the layer entirely)
+            data->setTrackMatte(sample, 1);
+            if(sample) sample->addDependent(data);
         }
-    } else if(mPreserveAlpha && data) {
-        // preserve-alpha (T button): implicit alpha matte sourced from
-        // the layer DIRECTLY BELOW - only that layer counts, never the
-        // accumulated backdrop. No explicit track matte set wins over
-        // this implicit source.
-        const auto below = preserveBelowSourceFor();
-        setPreserveBelowSource(below);
-        const auto sample = freshMatteSample(below, relFrame);
-        // no layer below: the matte is empty - TrackMatteCaller erases
-        // the alpha (AE: preserve transparency over nothing hides the
-        // layer entirely)
-        data->setTrackMatte(sample, 1);
-        if(sample) sample->addDependent(data);
+        mInMatteAttach = false;
     }
 }
 

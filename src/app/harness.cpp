@@ -389,6 +389,38 @@ static int runTrackMatteTest(Document& document, TaskScheduler& tasks) {
         }
     }
 
+    // mixed matte cycle: A (top, preserve-alpha, next-below = B) while
+    // B track-mattes back to A - queExternalRender recursion must be
+    // broken by mInMatteAttach instead of overflowing the stack (the
+    // crash-on-T-click regression)
+    {
+        const auto cycA = enve::make_shared<RectangleBox>();
+        cycA->setTopLeftPos(QPointF(0, 0));
+        cycA->setBottomRightPos(QPointF(200, 200));
+        const auto cycB = enve::make_shared<RectangleBox>();
+        cycB->setTopLeftPos(QPointF(0, 0));
+        cycB->setBottomRightPos(QPointF(100, 100));
+        scene->addContained(cycB);
+        scene->addContained(cycA);
+        pump();
+        cycA->setPreserveAlpha(true);        // A clips against B (below)
+        cycB->trackMatteTarget()->setTargetAction(cycA.get()); // B matted by A
+        cycB->setTrackMatteMode(1);
+        pump();
+        // both direct renders and a scene assembly must survive
+        renderAndWait(cycA.get());
+        renderAndWait(cycB.get());
+        {
+            const auto sceneRd = scene->queExternalRender(0, false);
+            for(int w = 0; w < 200; w++) {
+                pump();
+                if(sceneRd && sceneRd->finished()) break;
+            }
+        }
+        fprintf(stderr, "[harness] trkmat: mixed-cycle survived\n");
+        fflush(stderr);
+    }
+
     fprintf(stderr, "[harness] TRKMAT PASS2\n");
     fflush(stderr);
     return 0;
