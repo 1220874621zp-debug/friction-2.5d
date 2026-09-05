@@ -172,14 +172,8 @@ protected:
     bool mDelayDataSet = false;
     bool mDataSet = false;
 private:
-    void addImageCopy(const sk_sp<SkImage>& img) {
-        mImageCopies << img;
-    }
-
     Step mStep = Step::BOX_IMAGE;
     EffectsRenderer mEffectsRenderer;
-    stdptr<BoxRenderData> mCopySource;
-    QList<sk_sp<SkImage>> mImageCopies;
 };
 
 #endif // BOXRENDERDATA_H

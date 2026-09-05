@@ -60,7 +60,6 @@ void BoxRenderData::transformRenderCanvas(SkCanvas &canvas) const {
 }
 
 void BoxRenderData::copyFrom(BoxRenderData *src) {
-    mCopySource = src;
     fRelTransform = src->fRelTransform;
     fInheritedTransform = src->fInheritedTransform;
     fTotalTransform = src->fTotalTransform;
@@ -97,8 +96,12 @@ stdsptr<BoxRenderData> BoxRenderData::makeCopy() {
 }
 
 sk_sp<SkImage> BoxRenderData::requestImageCopy() {
-    if(mImageCopies.isEmpty()) return SkiaHelpers::makeCopy(fRenderedImage);
-    else return mImageCopies.takeLast();
+    // SkImage is immutable and ref-counted, so handing out the shared
+    // ref is enough - the old deep copy memmoved entire layer bitmaps
+    // per link per frame on the GUI thread during task assembly, which
+    // was the main queue-render bottleneck (hundreds of MB per frame)
+    // and froze the UI for the whole render
+    return fRenderedImage;
 }
 
 void BoxRenderData::drawOnParentLayer(SkCanvas * const canvas) {
@@ -223,9 +226,9 @@ void BoxRenderData::afterProcessing() {
     }
     if(fParentBox && fParentIsTarget) {
         fParentBox->renderDataFinished(this);
-    } else if(mCopySource) {
-        mCopySource->addImageCopy(std::move(fRenderedImage));
     }
+    // copies share the source image ref now, so there is nothing to
+    // recycle back into a pool here anymore
 }
 
 void BoxRenderData::afterQued() {
