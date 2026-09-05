@@ -238,8 +238,19 @@ FrameRange ILBB::prp_getIdenticalRelRange(const int relFrame) const {
     if(this->isVisible() && linkTarget)
         range *= BoxT::prp_getIdenticalRelRange(relFrame);
     else return range;
-    auto targetRange = linkTarget->prp_getIdenticalRelRange(relFrame);
-    return range*targetRange;
+    // the link target lives in its own frame coordinate space (e.g. a
+    // linked scene with its own start offset): querying it with this
+    // box's rel frame and intersecting the raw ranges mixes two
+    // coordinate spaces and produces shifted/INVALID ranges - the
+    // canvas-level identical range then collapses to a single frame for
+    // every rendered frame (no cross-frame cache reuse). Convert through
+    // the shared abs frame, same as ContainerBox does for children and
+    // TargetTransformEffect for its target.
+    const int absFrame = this->prp_relFrameToAbsFrame(relFrame);
+    const int targetRelFrame = linkTarget->prp_absFrameToRelFrame(absFrame);
+    const auto targetRange = linkTarget->prp_getIdenticalRelRange(targetRelFrame);
+    const auto targetAbsRange = linkTarget->prp_relRangeToAbsRange(targetRange);
+    return range*this->prp_absRangeToRelRange(targetAbsRange);
 }
 
 template <typename BoxT>
