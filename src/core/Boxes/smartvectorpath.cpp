@@ -57,12 +57,22 @@ bool SmartVectorPath::differenceInEditPathBetweenFrames(
 }
 
 SkBlendMode SmartVectorPath::getPaintBlendMode(const qreal relFrame) const {
-    // while any sub-path is open the mask shape draws normally
-    // (SrcOver) instead of clipping the layers below with DstIn;
-    // evaluate at the frame being rendered, never the global current
-    // frame (stale inside scene links)
-    if(mMaskMode && !allSubPathsClosed(relFrame)) {
-        return SkBlendMode::kSrcOver;
+    if(mMaskMode) {
+        // a mask only clips its owner layer - creation always wraps a
+        // host layer, but the timeline lets the user drag a mask to
+        // the scene root, where a DstIn/DstOut blend would erase every
+        // layer below it; disable clipping there
+        const auto parent = getParentGroup();
+        if(!parent || enve_cast<Canvas*>(parent)) {
+            return SkBlendMode::kSrcOver;
+        }
+        // while any sub-path is open the mask shape draws normally
+        // (SrcOver) instead of clipping the layers below with DstIn;
+        // evaluate at the frame being rendered, never the global current
+        // frame (stale inside scene links)
+        if(!allSubPathsClosed(relFrame)) {
+            return SkBlendMode::kSrcOver;
+        }
     }
     return PathBox::getPaintBlendMode(relFrame);
 }
