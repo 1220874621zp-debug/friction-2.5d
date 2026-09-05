@@ -740,26 +740,12 @@ void BoundingBox::updateCurrentPreviewDataFromRenderData(
 }
 
 void BoundingBox::planUpdate(const UpdateReason reason) {
-    // matte-involved layers log every early-out: an eaten invalidation
-    // here means the layer never re-renders and the matte never
-    // attaches ("没有效果")
-    const bool matteDbg = mPreserveAlpha || mTrackMatteMode != 0;
-    if(mUpdatePlanned && mPlannedReason == UpdateReason::userChange) {
-        if(matteDbg) qWarning() << "[MATTE]" << prp_getName()
-                                << "planUpdate早退：已有计划";
-        return;
-    }
-    if(!isVisibleAndInVisibleDurationRect()) {
-        if(matteDbg) qWarning() << "[MATTE]" << prp_getName()
-                                << "planUpdate早退：不可见/超出时长";
-        return;
-    }
+    if(mUpdatePlanned && mPlannedReason == UpdateReason::userChange) return;
+    if(!isVisibleAndInVisibleDurationRect()) return;
     const auto parent = getParentGroup();
     if(parent) parent->planUpdate(reason);
     else if(!enve_cast<Canvas*>(this)) return;
     if(reason == UpdateReason::userChange) {
-        if(matteDbg) qWarning() << "[MATTE]" << prp_getName()
-                                << "planUpdate生效（stateId已提升）";
         mStateId++;
         mRenderDataHandler.clear();
 #ifdef Q_OS_MAC
@@ -809,26 +795,11 @@ stdsptr<BoxRenderData> BoundingBox::queRender(
 }
 
 void BoundingBox::queTasks() {
-    const bool matteDbg = mPreserveAlpha || mTrackMatteMode != 0;
-    if(!mUpdatePlanned) {
-        if(matteDbg) qWarning() << "[MATTE]" << prp_getName()
-                                << "queTasks早退：未计划";
-        return;
-    }
+    if(!mUpdatePlanned) return;
     mUpdatePlanned = false;
-    if(!shouldScheduleUpdate()) {
-        if(matteDbg) qWarning() << "[MATTE]" << prp_getName()
-                                << "queTasks早退：不应更新";
-        return;
-    }
+    if(!shouldScheduleUpdate()) return;
     const int relFrame = anim_getCurrentRelFrame();
-    if(hasCurrentRenderData(relFrame)) {
-        if(matteDbg) qWarning() << "[MATTE]" << prp_getName()
-                                << "queTasks早退：缓存命中（stale clip）";
-        return;
-    }
-    if(matteDbg) qWarning() << "[MATTE]" << prp_getName()
-                            << "queTasks排队重渲";
+    if(hasCurrentRenderData(relFrame)) return;
     const auto parentM = getInheritedTransformAtFrame(relFrame);
     queRender(relFrame, parentM);
 }
@@ -1355,14 +1326,20 @@ stdsptr<BoxRenderData> BoundingBox::freshMatteSample(
     if(mMatteSampleSource == matte && mMatteSampleCache &&
             qAbs(mMatteSampleFrame - relFrame) < 0.001) {
         const auto st = mMatteSampleCache->getState();
-        if(st == eTaskState::finished) {
+        const bool fresh = mMatteSampleCache->fBoxStateId ==
+                matte->getBoxStateId();
+        if(fresh && st == eTaskState::finished) {
             if(mMatteSampleCache->fRenderedImage) return mMatteSampleCache;
-        } else if(st == eTaskState::qued ||
-                  st == eTaskState::processing) {
+        } else if(fresh && (st == eTaskState::qued ||
+                            st == eTaskState::processing)) {
             return mMatteSampleCache;
         }
-        // canceled/created/finished-without-image: fall through and
-        // queue a fresh forced-raster render
+        // canceled/created/finished-without-image/STALE (the matte
+        // changed since the sample was taken): fall through and queue
+        // a fresh forced-raster render. The stateId comparison makes
+        // the follow-connections' cache resets unnecessary - a below
+        // layer drag no longer re-external-renders per move beyond
+        // the one render its own change needs
     }
     const auto sample = matte->queExternalRender(relFrame, true);
     mMatteSampleSource = matte;
@@ -1396,12 +1373,8 @@ void BoundingBox::setPreserveBelowSource(BoundingBox * const below) {
                         this, [this, below](const FrameRange& targetAbs) {
             const auto relRange = below->prp_absRangeToRelRange(targetAbs);
             prp_afterChangedRelRange(relRange);
-            mMatteSampleSource.clear();
-            mMatteSampleCache.reset();
         });
     }
-    mMatteSampleSource.clear();
-    mMatteSampleCache.reset();
     // the first assignment happens DURING render assembly (inside
     // the scheduler's queScheduledCpuTasks window) - a synchronous
     // planUpdate there invalidates the data being assembled and
@@ -1431,7 +1404,10 @@ void BoundingBox::setupRenderData(const qreal relFrame,
             mMatteDiagLastMsg = why;
             qWarning() << "[MATTE]" << prp_getName() << why;
         };
-        if(mTrackMatteMode != 0) {
+        // hasActiveTrackMatte: a SAVED mode with a dead/unresolved
+        // target must NOT win over preserve-alpha (probe-verified:
+        // image layers carried a stale mode=1 forever blocking T)
+        if(hasActiveTrackMatte()) {
             const auto matte = mTrackMatteTarget ?
                         mTrackMatteTarget->getTarget() : nullptr;
             if(!matte) {
@@ -2161,6 +2137,10 @@ bool BoundingBox::SWT_dropSupport(const QMimeData * const data) {
 // cache (and the scene frame cache) is invalidated whenever the matte
 // layer moves, animates or changes shape
 void BoundingBox::setTrackMatteSource(BoundingBox * const matte) {
+    // no matte means no matte mode: heals saved projects whose target
+    // failed to resolve on load (a stale mode would block
+    // preserve-alpha, see setupRenderData)
+    if(!matte && mTrackMatteMode != 0) mTrackMatteMode = 0;
     // AE auto-hide bookkeeping: the previous source draws again once
     // nothing references it, the new source stops drawing (refcounted,
     // several targets may share one source)
@@ -2180,9 +2160,8 @@ void BoundingBox::setTrackMatteSource(BoundingBox * const matte) {
             prp_afterChangedRelRange(relRange);
         });
     }
-    // the cached sample belongs to the old content - force a re-render
-    mMatteSampleSource.clear();
-    mMatteSampleCache.reset();
+    // the sample cache is source-keyed and stateId-checked; switching
+    // sources misses on the source compare alone
     planUpdate(UpdateReason::userChange);
 }
 

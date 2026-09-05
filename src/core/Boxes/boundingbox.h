@@ -298,6 +298,9 @@ public:
     void setPreserveAlpha(const bool preserve);
     void switchPreserveAlpha() { setPreserveAlpha(!mPreserveAlpha); }
     bool getPreserveAlpha() const { return mPreserveAlpha; }
+    // content generation of this box; matte samplers compare it
+    // against the sample's fBoxStateId to detect staleness
+    int getBoxStateId() const { return mStateId; }
     virtual SkBlendMode getPaintBlendMode(const qreal relFrame) const;
 
     virtual qreal getOpacity(const qreal relFrame) const;

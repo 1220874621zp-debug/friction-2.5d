@@ -1096,6 +1096,10 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
         box->trackMatteTarget()->setTargetAction(picked);
         if(picked && box->getTrackMatteMode() <= 0) {
             box->setTrackMatteMode(1); // default: alpha matte
+        } else if(!picked) {
+            // "无" clears the mode too - a stale mode with no target
+            // would block preserve-alpha (setupRenderData gate)
+            box->setTrackMatteMode(0);
         }
         box->prp_afterWholeInfluenceRangeChanged();
         Document::sInstance->actionFinished();
