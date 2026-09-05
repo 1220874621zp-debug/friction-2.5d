@@ -1140,11 +1140,13 @@ const QString AppSupport::filterFormatsName(const QString &text)
     if (text.contains("VP9")) { return "VP9"; }
 
     if (text.contains("AAC")) { return "AAC"; }
-    if (text.contains("vorbis")) { return "Vorbis"; }
-    if (text.contains("libopus")) { return "Opus"; }
+    if (text.contains("vorbis", Qt::CaseInsensitive)) { return "Vorbis"; }
+    if (text.contains("opus", Qt::CaseInsensitive)) { return "Opus"; }
+    if (text.contains("PCM unsigned 8-bit")) { return "PCM 8-bit"; }
     if (text.contains("PCM signed 16-bit")) { return "PCM 16-bit"; }
     if (text.contains("PCM signed 24-bit")) { return "PCM 24-bit"; }
     if (text.contains("PCM 32-bit floating point")) { return "PCM 32-bit"; }
+    if (text.contains("MPEG-4 part 2")) { return "MPEG-4"; }
 
     return text;
 }

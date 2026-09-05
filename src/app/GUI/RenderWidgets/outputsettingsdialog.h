@@ -75,6 +75,27 @@ protected:
     void restoreInitialSettings();
     void restoreVideoProfileSettings();
 
+    struct PresetData {
+        QString fName;
+        QString fTooltip;
+        const char *fFormat = nullptr;
+        bool fVideoEnabled = false;
+        AVCodecID fVideoCodecId = AV_CODEC_ID_NONE;
+        AVPixelFormat fPixelFormat = AV_PIX_FMT_NONE;
+        int fVideoBitrateMbs = 0;
+        bool fAudioEnabled = false;
+        AVCodecID fAudioCodecId = AV_CODEC_ID_NONE;
+        int fSampleRate = 0;
+        int fAudioBitrateKbs = 0;
+    };
+
+    void setupPresets();
+    void applyPreset(const int index);
+    void markPresetCustom();
+    QList<PresetData> mPresets;
+    int mDefaultPresetIndex = 0;
+    bool mApplyingPreset = false;
+
     void setShowAllFormatsAndCodecs(const bool bT) {
         if(mShowAllFormatsAndCodecs == bT) return;
         mShowAllFormatsAndCodecs = bT;
@@ -93,6 +114,10 @@ protected:
 
     const OutputSettings mInitialSettings;
     QVBoxLayout *mMainLayout = nullptr;
+
+    QHBoxLayout *mPresetLayout = nullptr;
+    QLabel *mPresetLabel = nullptr;
+    QComboBox *mPresetComboBox = nullptr;
 
     QHBoxLayout *mOutputFormatsLayout = nullptr;
     QLabel *mOutputFormatsLabel = nullptr;

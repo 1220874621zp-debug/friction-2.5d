@@ -30,18 +30,18 @@ QList<qsptr<OutputSettingsProfile>> OutputSettingsProfile::sOutputProfiles;
 bool OutputSettingsProfile::sOutputProfilesLoaded = false;
 
 const std::map<int, QString> OutputSettings::sSampleFormatNames = {
-    {AV_SAMPLE_FMT_U8, "8 bits unsigned"},
-    {AV_SAMPLE_FMT_S16, "16 bits signed"},
-    {AV_SAMPLE_FMT_S32, "32 bits signed"},
-    {AV_SAMPLE_FMT_FLT, "32 bits float"},
-    {AV_SAMPLE_FMT_DBL, "64 bits double"},
-    {AV_SAMPLE_FMT_U8P, "8 bits unsigned, planar"},
-    {AV_SAMPLE_FMT_S16P, "16 bits signed, planar"},
-    {AV_SAMPLE_FMT_S32P, "32 bits signed, planar"},
-    {AV_SAMPLE_FMT_FLTP, "32 bits float, planar"},
-    {AV_SAMPLE_FMT_DBLP, "64 bits double, planar"},
-    {AV_SAMPLE_FMT_S64, "64 bits signed"},
-    {AV_SAMPLE_FMT_S64P, "64 bits signed, planar"}
+    {AV_SAMPLE_FMT_U8, "8位无符号"},
+    {AV_SAMPLE_FMT_S16, "16位有符号"},
+    {AV_SAMPLE_FMT_S32, "32位有符号"},
+    {AV_SAMPLE_FMT_FLT, "32位浮点"},
+    {AV_SAMPLE_FMT_DBL, "64位双精度"},
+    {AV_SAMPLE_FMT_U8P, "8位无符号（平面）"},
+    {AV_SAMPLE_FMT_S16P, "16位有符号（平面）"},
+    {AV_SAMPLE_FMT_S32P, "32位有符号（平面）"},
+    {AV_SAMPLE_FMT_FLTP, "32位浮点（平面）"},
+    {AV_SAMPLE_FMT_DBLP, "64位双精度（平面）"},
+    {AV_SAMPLE_FMT_S64, "64位有符号"},
+    {AV_SAMPLE_FMT_S64P, "64位有符号（平面）"}
 };
 
 const std::map<uint64_t, QString> gChannelLayouts = {
