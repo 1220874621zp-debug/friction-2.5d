@@ -848,12 +848,15 @@ void VideoEncoder::process() {
                 const auto loadTask = cacheCont->scheduleLoadFromTmpFile();
                 if(loadTask) {
                     mWaitingForFrameLoad = true;
-                    loadTask->addDependent({[this]() {
+                    // the failure branch must also re-queue: dropping the
+                    // encode here left the queue render frozen forever -
+                    // re-running process() either finds the image or
+                    // fails the encode with a visible error
+                    const auto resume = [this]() {
                         mWaitingForFrameLoad = false;
                         queTask();
-                    }, [this]() {
-                        mWaitingForFrameLoad = false;
-                    }});
+                    };
+                    loadTask->addDependent({resume, resume});
                     return;
                 }
                 RuntimeThrow("Missing scene frame image data");
@@ -911,8 +914,9 @@ void VideoEncoder::beforeProcessing(const Hardware) {
 }
 
 void VideoEncoder::afterProcessing() {
+    // the target canvas may already be gone (project closed mid-render)
     const auto currCanvas = mRenderInstanceSettings->getTargetCanvas();
-    if(_mCurrentContainerId != 0) {
+    if(currCanvas && _mCurrentContainerId != 0) {
         const auto lastEncoded = _mContainers.at(_mCurrentContainerId - 1);
         currCanvas->setSceneFrame(lastEncoded);
         currCanvas->setMinFrameUseRange(lastEncoded->getRange().fMax + 1);

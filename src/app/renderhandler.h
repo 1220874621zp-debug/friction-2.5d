@@ -132,7 +132,7 @@ private:
     // and must be re-fed immediately
     int mLastDiscardCount = 0;
     QTimer *mBacklogTimer = nullptr;
-    RenderInstanceSettings *mCurrentRenderSettings = nullptr;
+    qptr<RenderInstanceSettings> mCurrentRenderSettings;
 
     int mCurrentPreviewFrame;
     int mMaxPreviewFrame;

@@ -124,6 +124,9 @@ void RenderHandler::renderFromSettings(RenderInstanceSettings * const settings) 
         mCurrentScene->anim_setAbsFrame(mCurrentRenderFrame);
         mCurrentScene->setOutputRendering(true);
         TaskScheduler::instance()->setAlwaysQue(true);
+        // feed only the target scene while output rendering - tasks from
+        // other visible scenes just steal thread-pool slots
+        TaskScheduler::sSetOutputRenderScene(mCurrentScene);
         // frame landings drive backlog draining and re-feeding
         connect(mCurrentScene, &Canvas::sceneFrameCached,
                 this, &RenderHandler::onSceneFrameCached,
@@ -131,7 +134,13 @@ void RenderHandler::renderFromSettings(RenderInstanceSettings * const settings) 
         mBacklogTimer->start(100);
         //fitSceneToSize();
         if(!isZero6Dec(mSavedResolutionFraction - resolutionFraction)) {
-            mCurrentScene->setResolution(resolutionFraction);
+            {
+                // exporting at another resolution is not a user edit -
+                // keep it off the undo stack so rendering a queue does
+                // not mark the document dirty
+                const auto block = mCurrentScene->blockUndoRedo();
+                mCurrentScene->setResolution(resolutionFraction);
+            }
             mDocument.actionFinished();
         } else {
             nextCurrentRenderFrame();
@@ -348,8 +357,17 @@ void RenderHandler::interruptPreviewRendering() {
 }
 
 void RenderHandler::interruptOutputRendering() {
-    if(mCurrentScene) mCurrentScene->setOutputRendering(false);
+    if(mCurrentScene) {
+        // drop the frame-landing hook together with the settings: late
+        // sceneFrameCached events (queued signals, user edits after
+        // Stop) used to drive nextSaveOutputFrame with a stale state
+        disconnect(mCurrentScene, &Canvas::sceneFrameCached,
+                   this, &RenderHandler::onSceneFrameCached);
+        mCurrentScene->setOutputRendering(false);
+    }
+    mCurrentRenderSettings = nullptr;
     TaskScheduler::instance()->setAlwaysQue(false);
+    TaskScheduler::sSetOutputRenderScene(nullptr);
     TaskScheduler::sClearAllFinishedFuncs();
     mBacklogTimer->stop();
     stopPreview();
@@ -547,20 +565,28 @@ void RenderHandler::finishEncoding() {
     TaskScheduler::sClearAllFinishedFuncs();
     mBacklogTimer->stop();
     mCurrentRenderSettings = nullptr;
-    mCurrentScene->setOutputRendering(false);
     TaskScheduler::instance()->setAlwaysQue(false);
-    setFrameAction(mSavedCurrentFrame);
-    if(!isZero4Dec(mSavedResolutionFraction - mCurrentScene->getResolution())) {
-        mCurrentScene->setResolution(mSavedResolutionFraction);
+    TaskScheduler::sSetOutputRenderScene(nullptr);
+    if(mCurrentScene) {
+        disconnect(mCurrentScene, &Canvas::sceneFrameCached,
+                   this, &RenderHandler::onSceneFrameCached);
+        mCurrentScene->setOutputRendering(false);
+        setFrameAction(mSavedCurrentFrame);
+        if(!isZero4Dec(mSavedResolutionFraction - mCurrentScene->getResolution())) {
+            // restore without an undo step (mirrors renderFromSettings)
+            const auto block = mCurrentScene->blockUndoRedo();
+            mCurrentScene->setResolution(mSavedResolutionFraction);
+        }
+        // actually release the rendered frames: without this they stay in
+        // RAM until the next memory-pressure pass, so a second render of
+        // the same scene starts with the previous run's whole output
+        // still resident (second render then hits CRITICAL memory state
+        // and deadlocks)
+        mCurrentScene->getSceneFramesHandler().clearUseRange();
+        mCurrentScene->getSceneFramesHandler().clear();
     }
-    mCurrentSoundComposition->clearUseRange();
+    if(mCurrentSoundComposition) mCurrentSoundComposition->clearUseRange();
     VideoEncoder::sFinishEncoding();
-    // actually release the rendered frames: without this they stay in RAM
-    // until the next memory-pressure pass, so a second render of the same
-    // scene starts with the previous run's whole output still resident
-    // (second render then hits CRITICAL memory state and deadlocks)
-    mCurrentScene->getSceneFramesHandler().clearUseRange();
-    mCurrentScene->getSceneFramesHandler().clear();
     mDocument.actionFinished();
 }
 
@@ -596,26 +622,28 @@ void RenderHandler::onSceneFrameCached() {
 
 void RenderHandler::nextSaveOutputFrame() {
     if(!mCurrentRenderSettings || !mCurrentScene) return;
-    const auto& sCacheHandler = mCurrentSoundComposition->getCacheHandler();
-    const qreal fps = mCurrentScene->getFps();
-    const int sampleRate = eSoundSettings::sSampleRate();
-    while(mCurrentEncodeSoundSecond <= mMaxSoundSec) {
-        const auto cont = sCacheHandler.atFrame(mCurrentEncodeSoundSecond);
-        if(!cont) break;
-        const auto sCont = cont->ref<SoundCacheContainer>();
-        const auto samples = sCont->getSamples();
-        if(mCurrentEncodeSoundSecond == mFirstEncodeSoundSecond) {
-            const int minSample = qRound(mMinRenderFrame*sampleRate/fps);
-            const int max = samples->fSampleRange.fMax;
-            VideoEncoder::sAddCacheContainerToEncoder(
-                        samples->mid({minSample, max}));
-        } else {
-            VideoEncoder::sAddCacheContainerToEncoder(
-                        enve::make_shared<Samples>(samples));
+    if(mCurrentSoundComposition) {
+        const auto& sCacheHandler = mCurrentSoundComposition->getCacheHandler();
+        const qreal fps = mCurrentScene->getFps();
+        const int sampleRate = eSoundSettings::sSampleRate();
+        while(mCurrentEncodeSoundSecond <= mMaxSoundSec) {
+            const auto cont = sCacheHandler.atFrame(mCurrentEncodeSoundSecond);
+            if(!cont) break;
+            const auto sCont = cont->ref<SoundCacheContainer>();
+            const auto samples = sCont->getSamples();
+            if(mCurrentEncodeSoundSecond == mFirstEncodeSoundSecond) {
+                const int minSample = qRound(mMinRenderFrame*sampleRate/fps);
+                const int max = samples->fSampleRange.fMax;
+                VideoEncoder::sAddCacheContainerToEncoder(
+                            samples->mid({minSample, max}));
+            } else {
+                VideoEncoder::sAddCacheContainerToEncoder(
+                            enve::make_shared<Samples>(samples));
+            }
+            mCurrentEncodeSoundSecond++;
         }
-        mCurrentEncodeSoundSecond++;
+        if(mCurrentEncodeSoundSecond > mMaxSoundSec) VideoEncoder::sAllAudioProvided();
     }
-    if(mCurrentEncodeSoundSecond > mMaxSoundSec) VideoEncoder::sAllAudioProvided();
 
     const auto& cacheHandler = mCurrentScene->getSceneFramesHandler();
     while(mCurrentEncodeFrame <= mMaxRenderFrame) {

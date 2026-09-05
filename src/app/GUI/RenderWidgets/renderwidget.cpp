@@ -30,7 +30,6 @@
 #include "optimalscrollarena/scrollarea.h"
 #include "videoencoder.h"
 #include "renderhandler.h"
-#include "videoencoder.h"
 #include "themesupport.h"
 #include "../mainwindow.h"
 #include "../timelinedockwidget.h"
@@ -258,37 +257,76 @@ void RenderWidget::handleRenderStarted()
     handleRenderState(RenderState::rendering);
 }
 
+void RenderWidget::releaseCurrentRenderedSettings()
+{
+    if (mCurrentRenderedSettings.isNull()) { return; }
+    disconnect(mCurrentRenderedSettings, nullptr, this, nullptr);
+    mCurrentRenderedSettings = nullptr;
+}
+
 void RenderWidget::handleRenderFinished()
 {
+    releaseCurrentRenderedSettings();
     handleRenderState(RenderState::finished);
 }
 
 void RenderWidget::handleRenderInterrupted()
 {
+    releaseCurrentRenderedSettings();
     handleRenderState(RenderState::finished);
 }
 
 void RenderWidget::handleRenderFailed()
 {
+    releaseCurrentRenderedSettings();
     handleRenderState(RenderState::error);
 }
 
 void RenderWidget::setRenderedFrame(const int frame)
 {
-    if (!mCurrentRenderedSettings) { return; }
-    mRenderProgressBar->setValue(frame);
-    emit progress(frame, mRenderProgressBar->maximum());
+    if (mCurrentRenderedSettings.isNull()) { return; }
+    mRenderProgressBar->setValue(frame - mProgressBase);
+    emit progress(frame - mProgressBase, mRenderProgressBar->maximum());
 }
 
 void RenderWidget::clearRenderQueue()
 {
+    // the encoder and RenderHandler reference the active settings
+    // asynchronously (the interrupt flag is processed on the encoder
+    // thread), so the rendering item must outlive the teardown - hand
+    // its deletion to the terminal encoding signals instead of
+    // deleting it here (used to UAF in the encoder's afterProcessing)
+    RenderInstanceWidget *activeWid = nullptr;
+    if ((mState == RenderState::rendering || mState == RenderState::paused) &&
+        !mCurrentRenderedSettings.isNull()) {
+        for (const auto wid : mRenderInstanceWidgets) {
+            if (&wid->getSettings() == mCurrentRenderedSettings) {
+                activeWid = wid;
+                break;
+            }
+        }
+    }
+    if (activeWid) {
+        const auto emitter = VideoEncoder::sInstance->getEmitter();
+        const auto deleteActive = [activeWid]() { activeWid->deleteLater(); };
+        connect(emitter, &VideoEncoderEmitter::encodingInterrupted,
+                activeWid, deleteActive);
+        connect(emitter, &VideoEncoderEmitter::encodingFinished,
+                activeWid, deleteActive);
+        connect(emitter, &VideoEncoderEmitter::encodingFailed,
+                activeWid, deleteActive);
+        connect(emitter, &VideoEncoderEmitter::encodingStartFailed,
+                activeWid, deleteActive);
+    }
     if (mState == RenderState::rendering ||
         mState == RenderState::paused ||
         mState == RenderState::waiting) {
         stopRendering();
     }
     for (int i = mRenderInstanceWidgets.count() - 1; i >= 0; i--) {
-        delete mRenderInstanceWidgets.at(i);
+        const auto wid = mRenderInstanceWidgets.at(i);
+        if (wid == activeWid) { continue; }
+        delete wid;
     }
 }
 
@@ -320,28 +358,41 @@ void RenderWidget::updateRenderSettings()
 void RenderWidget::render(RenderInstanceSettings &settings)
 {
     const RenderSettings &renderSettings = settings.getRenderSettings();
-    mRenderProgressBar->setRange(renderSettings.fMinFrame,
-                                 renderSettings.fMaxFrame);
-    mRenderProgressBar->setValue(renderSettings.fMinFrame);
+    // 0..span range: a single-frame render (min == max) would put
+    // QProgressBar into busy mode
+    mProgressBase = renderSettings.fMinFrame;
+    mRenderProgressBar->setRange(0, qMax(1, renderSettings.fMaxFrame -
+                                         renderSettings.fMinFrame));
+    mRenderProgressBar->setValue(0);
     handleRenderState(RenderState::waiting);
+    // drop the previous item's connections first - they used to
+    // accumulate on every re-render of the same queue item
+    releaseCurrentRenderedSettings();
     mCurrentRenderedSettings = &settings;
 
     connect(&settings, &RenderInstanceSettings::renderFrameChanged,
-            this, &RenderWidget::setRenderedFrame);
+            this, &RenderWidget::setRenderedFrame, Qt::UniqueConnection);
     connect(&settings, &RenderInstanceSettings::stateChanged,
-            this, &RenderWidget::handleRenderState);
+            this, &RenderWidget::handleRenderState, Qt::UniqueConnection);
 
     // the scene we want to render MUST be visible!
     // this is a workaround until we detach the renderer from the app
     const auto lay = MainWindow::sGetInstance()->getLayoutHandler();
     lay->setCurrentScene(settings.getTargetCanvas());
 
-    // set correct resolution
-    settings.getTargetCanvas()->setResolution(renderSettings.fResolution);
+    // set correct resolution; not a user edit - keep it off the undo
+    // stack so queue rendering does not mark the document dirty
+    if (const auto canvas = settings.getTargetCanvas()) {
+        const auto block = canvas->blockUndoRedo();
+        canvas->setResolution(renderSettings.fResolution);
+    }
 
-    // give the ui time to update before renderer starts
-    QTimer::singleShot(1000, [&settings]() {
-        RenderHandler::sInstance->renderFromSettings(&settings);
+    // give the ui time to update before renderer starts; a Stop or
+    // queue clear inside this second must not launch a ghost render
+    QTimer::singleShot(1000, this, [this, settingsPtr = &settings]() {
+        if (mCurrentRenderedSettings.isNull() ||
+            mCurrentRenderedSettings != settingsPtr) { return; }
+        RenderHandler::sInstance->renderFromSettings(settingsPtr);
     });
 }
 
@@ -363,10 +414,7 @@ void RenderWidget::stopRendering()
 {
     clearAwaitingRender();
     VideoEncoder::sInterruptEncoding();
-    if (mCurrentRenderedSettings) {
-        disconnect(mCurrentRenderedSettings, nullptr, this, nullptr);
-        mCurrentRenderedSettings = nullptr;
-    }
+    releaseCurrentRenderedSettings();
 }
 
 void RenderWidget::clearAwaitingRender()
@@ -380,13 +428,14 @@ void RenderWidget::clearAwaitingRender()
 
 void RenderWidget::sendNextForRender()
 {
-    if (mAwaitingSettings.isEmpty()) { return; }
-    const auto wid = mAwaitingSettings.takeFirst();
-    if (wid->isChecked() && wid->getSettings().getTargetCanvas()) {
-        //disableButtons();
-        wid->setDisabled(true);
-        render(wid->getSettings());
-    } else { sendNextForRender(); }
+    while (!mAwaitingSettings.isEmpty()) {
+        const auto wid = mAwaitingSettings.takeFirst();
+        if (wid->isChecked() && wid->getSettings().getTargetCanvas()) {
+            wid->setDisabled(true);
+            render(wid->getSettings());
+            return;
+        }
+    }
 }
 
 int RenderWidget::count()

@@ -27,6 +27,7 @@
 #define TASKSCHEDULER_H
 
 #include <QObject>
+#include <QPointer>
 
 #include "Tasks/etask.h"
 #include "taskquehandler.h"
@@ -86,6 +87,11 @@ public:
 
     void setAlwaysQue(const bool alwaysQue);
 
+    // while set, only this scene is fed CPU tasks (output rendering);
+    // other visible scenes would just steal thread-pool slots without
+    // their frames ever being consumed
+    static void sSetOutputRenderScene(Canvas * const scene);
+
     void addComplexTask(const qsptr<ComplexTask>& task);
 
     void enterCriticalMemoryState();
@@ -127,6 +133,8 @@ private:
     QList<stdsptr<CpuExecController>> mCpuExecs;
     stdsptr<GpuExecController> mGpuExec;
     stdsptr<HddExecController> mHddExec;
+
+    QPointer<Canvas> mOutputRenderScene;
 
     Func mTaskUnderflowFunc;
     Func mAllTasksFinishedFunc;

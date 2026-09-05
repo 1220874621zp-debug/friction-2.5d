@@ -161,12 +161,20 @@ void TaskScheduler::queTasks() {
     processNextQuedHddTask();
 }
 
+void TaskScheduler::sSetOutputRenderScene(Canvas * const scene) {
+    sInstance->mOutputRenderScene = scene;
+}
+
 void TaskScheduler::queScheduledCpuTasks() {
     if(!mAlwaysQue && !shouldQueMoreCpuTasks()) return;
     mCpuQueing = true;
     mQuedCGTasks.beginQue();
     for(const auto& it : Document::sInstance->fVisibleScenes) {
         const auto scene = it.first;
+        // during output rendering only the target scene is fed - other
+        // visible scenes would compete for the pool without their frames
+        // ever being encoded
+        if(mOutputRenderScene && scene != mOutputRenderScene) continue;
         scene->queTasks();
     }
     mQuedCGTasks.endQue();

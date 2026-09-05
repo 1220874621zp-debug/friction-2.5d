@@ -504,13 +504,14 @@ OutputProfilesListButton::OutputProfilesListButton(RenderInstanceWidget *parent)
 void OutputProfilesListButton::mousePressEvent(QMouseEvent *e)
 {
     if (e->button() == Qt::LeftButton) {
-        QMenu menu;
+        // menu.addAction(QString) creates actions owned by the menu -
+        // bare "new QAction" used to leak one action per menu opening
+        QMenu menu(this);
         int i = 0;
 
         for (const auto& profile : OutputSettingsProfile::sOutputProfiles) {
-            QAction *actionT = new QAction(profile->getName());
+            QAction *actionT = menu.addAction(profile->getName());
             actionT->setData(QVariant(i));
-            menu.addAction(actionT);
             i++;
         }
 
@@ -520,9 +521,8 @@ void OutputProfilesListButton::mousePressEvent(QMouseEvent *e)
 
         menu.addSeparator();
 
-        QAction *actionT = new QAction(tr("Edit..."));
+        QAction *actionT = menu.addAction(tr("Edit..."));
         actionT->setData(QVariant(-1));
-        menu.addAction(actionT);
 
         QAction *selectedAction = menu.exec(mapToGlobal(QPoint(0, height())));
         if (selectedAction) {
