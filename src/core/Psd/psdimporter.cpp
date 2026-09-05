@@ -260,7 +260,10 @@ qsptr<PsdImageBox> createLayerBox(const QString &packagePath,
     // psd clipping layer sits directly above its base in the stacking
     // order (file order is preserved by loadPSDFile), which is exactly
     // the "layer directly below" the preserve-transparency switch samples
-    if (lm.clipping) { box->setPreserveAlpha(true); }
+    if (lm.clipping) {
+        box->setClippingMask(true);
+        box->setPreserveAlpha(true);
+    }
     box->planCenterPivotPosition();
     trans->translate(lm.x, lm.y);
     return box;
@@ -326,6 +329,7 @@ int updateLayerPixels(const psd::PsdFile &psd,
             lm->visible = rec->visible;
             lm->clipping = rec->clipping;
             lm->blendKey = rec->blendKey;
+            box->setClippingMask(rec->clipping);
             box->setPreserveAlpha(rec->clipping);
         }
         return 0;
@@ -366,6 +370,7 @@ int updateLayerPixels(const psd::PsdFile &psd,
             lm->visible = rec->visible;
             lm->clipping = rec->clipping;
             lm->blendKey = rec->blendKey;
+            box->setClippingMask(rec->clipping);
             box->setPreserveAlpha(rec->clipping);
         }
     } else {

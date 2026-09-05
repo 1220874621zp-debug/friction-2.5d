@@ -298,6 +298,11 @@ public:
     void setPreserveAlpha(const bool preserve);
     void switchPreserveAlpha() { setPreserveAlpha(!mPreserveAlpha); }
     bool getPreserveAlpha() const { return mPreserveAlpha; }
+    // PSD clipping-mask member (PsdImageBox overrides): preserve-alpha
+    // source search skips fellow clipping layers so the whole clipped
+    // stack resolves to the single shared base below it (Photoshop
+    // semantics) instead of chaining clip-into-clip
+    virtual bool isClippingMaskLayer() const { return false; }
     // content generation of this box; matte samplers compare it
     // against the sample's fBoxStateId to detect staleness
     int getBoxStateId() const { return mStateId; }

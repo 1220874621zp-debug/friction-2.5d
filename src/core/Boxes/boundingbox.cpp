@@ -1380,6 +1380,11 @@ BoundingBox *BoundingBox::preserveBelowSourceFor(const qreal relFrame) {
         const qreal belowRel = below->prp_absFrameToRelFrameF(absFrame);
         if(!below->isFrameFVisibleAndInDurationRect(belowRel)) continue;
         if(below->usedAsTrackMatteSource()) continue;
+        // PSD clipping chain: this layer and 'below' are both members of
+        // the same clipped stack - the base is the first NON-clipping
+        // drawable layer further down (Photoshop semantics), so fellow
+        // clipping layers never act as the base for each other
+        if(isClippingMaskLayer() && below->isClippingMaskLayer()) continue;
         return below;
     }
     return nullptr;

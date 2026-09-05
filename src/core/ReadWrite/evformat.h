@@ -79,6 +79,10 @@ namespace EvFormat {
         // writeBoundingBox, after the base box block); older files
         // lack the byte and must skip it (positional)
         maskPathMode = 44,
+        // PSD clipping-mask member flag on PsdImageBox (appended byte
+        // in writeBoundingBox, after the package/layerKey block); older
+        // files lack the byte and must skip it (positional)
+        psdClippingMask = 45,
 
         nextVersion
     };
