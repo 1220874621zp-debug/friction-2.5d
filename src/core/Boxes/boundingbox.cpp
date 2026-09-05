@@ -1482,7 +1482,11 @@ void BoundingBox::setupRenderData(const qreal relFrame,
                 setVerdict(QStringLiteral("保留透明度：无下一层（整层隐藏）"));
             }
         } else {
-            setVerdict(QStringLiteral("蒙版未启用"));
+            // the default verdict is not worth a log line - it fires
+            // once per box per first assembly and floods the debug log
+            // with hundreds of lines on scene switches; keep the dedup
+            // state so a later real verdict still logs
+            mMatteDiagLastMsg = QStringLiteral("蒙版未启用");
         }
     }
 }
