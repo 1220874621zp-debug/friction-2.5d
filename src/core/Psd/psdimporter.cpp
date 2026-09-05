@@ -152,6 +152,7 @@ PsdDecodedLayer decodeLayerTask(const PsdDecodeCtx &ctx)
     out.lm.hash = ctx.psd->rawLayerHash(rec);
     out.lm.opacity = rec.opacity;
     out.lm.visible = rec.visible;
+    out.lm.clipping = rec.clipping;
     out.lm.blendKey = rec.blendKey;
     out.stylesList = rec.stylesList;
     const QByteArray rgba = ctx.psd->extractLayerRGBA(rec);
@@ -256,6 +257,10 @@ qsptr<PsdImageBox> createLayerBox(const QString &packagePath,
     trans->setOpacity(qBound(0., lm.opacity / 2.55, 100.));
     box->setBlendModeSk(psdBlendToSk(lm.blendKey));
     if (!lm.visible) { box->hide(); }
+    // psd clipping layer sits directly above its base in the stacking
+    // order (file order is preserved by loadPSDFile), which is exactly
+    // the "layer directly below" the preserve-transparency switch samples
+    if (lm.clipping) { box->setPreserveAlpha(true); }
     box->planCenterPivotPosition();
     trans->translate(lm.x, lm.y);
     return box;
@@ -319,7 +324,9 @@ int updateLayerPixels(const psd::PsdFile &psd,
             if (!rec->name.isEmpty()) { lm->name = rec->name; }
             lm->opacity = rec->opacity;
             lm->visible = rec->visible;
+            lm->clipping = rec->clipping;
             lm->blendKey = rec->blendKey;
+            box->setPreserveAlpha(rec->clipping);
         }
         return 0;
     }
@@ -357,7 +364,9 @@ int updateLayerPixels(const psd::PsdFile &psd,
             if (!rec->name.isEmpty()) { lm->name = rec->name; }
             lm->opacity = rec->opacity;
             lm->visible = rec->visible;
+            lm->clipping = rec->clipping;
             lm->blendKey = rec->blendKey;
+            box->setPreserveAlpha(rec->clipping);
         }
     } else {
         Fpsd::LayerMeta nlm;
@@ -371,6 +380,7 @@ int updateLayerPixels(const psd::PsdFile &psd,
         nlm.hash = rawHash;
         nlm.opacity = rec ? rec->opacity : 255;
         nlm.visible = rec ? rec->visible : true;
+        nlm.clipping = rec ? rec->clipping : false;
         nlm.blendKey = rec ? rec->blendKey : QStringLiteral("norm");
         meta.layers.append(nlm);
     }

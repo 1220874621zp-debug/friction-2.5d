@@ -92,6 +92,9 @@ namespace psd {
         QString blendKey = QStringLiteral("norm");
         int opacity = 255;
         bool visible = true;
+        // Photoshop clipping flag: true = non-base layer, clipped to
+        // the base layer directly below it (PS "Create/Release Clipping Mask")
+        bool clipping = false;
         QString name;
         Divider divider = Divider::None;
         QRect maskRect;

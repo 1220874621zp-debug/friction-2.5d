@@ -57,6 +57,9 @@ struct CORE_EXPORT LayerMeta {
     QString hash;       // md5 hex of the straight rgba pixel data
     int opacity = 255;
     bool visible = true;
+    // psd clipping flag: layer is clipped to the base layer directly
+    // below it (imported as Friction "preserve transparency")
+    bool clipping = false;
     QString blendKey = QStringLiteral("norm");
 };
 

@@ -786,9 +786,9 @@ bool PsdFile::readLayerRecords(QDataStream &s, qint64 layerInfoEnd,
         rec.blendKey = readFourCC(s);
         quint8 opacity = 0, clipping = 0, flags = 0, filler = 0;
         s >> opacity >> clipping >> flags >> filler;
-        Q_UNUSED(clipping)
         Q_UNUSED(filler)
         rec.opacity = int(opacity);
+        rec.clipping = (clipping != 0);
         rec.visible = !(flags & 2);
 
         // ---- extra data ----
