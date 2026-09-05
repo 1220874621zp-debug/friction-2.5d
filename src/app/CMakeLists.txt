@@ -629,4 +629,11 @@ if(UNIX AND NOT APPLE)
         #    )
         #endif()
     endif()
+    install(
+        FILES
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/mcp/friction_markup.py
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/mcp/FRICTION_AI_CONNECT.md
+        DESTINATION
+        ${CMAKE_INSTALL_DATAROOTDIR}/friction/tools/mcp
+    )
 endif()

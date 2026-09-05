@@ -102,6 +102,10 @@ namespace Friction
             QJsonObject toolListAvailableEffects(const QJsonObject &args);
             QJsonObject toolAddRasterEffect(const QJsonObject &args);
             QJsonObject toolRemoveRasterEffect(const QJsonObject &args);
+            QJsonObject toolRenderMarkup(const QJsonObject &args);
+            QJsonObject toolUpdateLayer(const QJsonObject &args);
+            QJsonObject toolAnimateLayer(const QJsonObject &args);
+            QJsonObject toolGetStoryboard(const QJsonObject &args);
             QJsonObject toolUndo(const QJsonObject &args);
             QJsonObject toolRedo(const QJsonObject &args);
 

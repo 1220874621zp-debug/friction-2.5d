@@ -359,9 +359,16 @@ namespace Friction
                 result[QStringLiteral("tools")] = mDispatcher->getToolsSchema();
                 response[QStringLiteral("result")] = result;
                 return response;
-            } else if (method == QStringLiteral("tools/call")) {
-                const QString toolName = params.value(QStringLiteral("name")).toString();
-                const QJsonObject toolArgs = params.value(QStringLiteral("arguments")).toObject();
+            } else if (method == QStringLiteral("tools/call") || method.startsWith(QStringLiteral("friction_"))) {
+                QString toolName;
+                QJsonObject toolArgs;
+                if (method == QStringLiteral("tools/call")) {
+                    toolName = params.value(QStringLiteral("name")).toString();
+                    toolArgs = params.value(QStringLiteral("arguments")).toObject();
+                } else {
+                    toolName = method;
+                    toolArgs = params;
+                }
                 const QJsonObject toolResult = mDispatcher->dispatchTool(toolName, toolArgs);
 
                 const bool isSuccess = toolResult.value(QStringLiteral("success")).toBool(true);
@@ -384,6 +391,9 @@ namespace Friction
                 QJsonObject result;
                 result[QStringLiteral("content")] = contentArray;
                 result[QStringLiteral("isError")] = !isSuccess;
+                for (auto it = toolResult.begin(); it != toolResult.end(); ++it) {
+                    result[it.key()] = it.value();
+                }
                 response[QStringLiteral("result")] = result;
                 return response;
             } else if (method == QStringLiteral("resources/list")) {

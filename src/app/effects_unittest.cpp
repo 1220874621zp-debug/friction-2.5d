@@ -262,21 +262,103 @@ int main(int argc, char *argv[])
         bool hasSceneInfo = false;
         bool hasCreateLayer = false;
         bool hasSetKeyframe = false;
+        bool hasSetKeyframeEasing = false;
+        bool hasSetInOutPoint = false;
+        bool hasSetLayerOrder = false;
         bool hasEvalScript = false;
         bool hasCapture = false;
+        bool hasKeyframeEasingParam = false;
+        bool hasRenderMarkup = false;
+        bool hasUpdateLayer = false;
+        bool hasAnimateLayer = false;
+        bool hasGetStoryboard = false;
 
         for (const auto &val : schema) {
             const auto obj = val.toObject();
             const QString name = obj.value(QStringLiteral("name")).toString();
             if (name == QStringLiteral("friction_get_scene_info")) hasSceneInfo = true;
             if (name == QStringLiteral("friction_create_layer")) hasCreateLayer = true;
-            if (name == QStringLiteral("friction_set_keyframe")) hasSetKeyframe = true;
+            if (name == QStringLiteral("friction_set_keyframe")) {
+                hasSetKeyframe = true;
+                const auto inputSchema = obj.value(QStringLiteral("inputSchema")).toObject();
+                const auto props = inputSchema.value(QStringLiteral("properties")).toObject();
+                if (props.contains(QStringLiteral("easing"))) hasKeyframeEasingParam = true;
+            }
+            if (name == QStringLiteral("friction_set_keyframe_easing")) hasSetKeyframeEasing = true;
+            if (name == QStringLiteral("friction_set_in_out_point")) hasSetInOutPoint = true;
+            if (name == QStringLiteral("friction_set_layer_order")) hasSetLayerOrder = true;
             if (name == QStringLiteral("friction_eval_script")) hasEvalScript = true;
             if (name == QStringLiteral("friction_capture_viewport")) hasCapture = true;
+            if (name == QStringLiteral("friction_render_markup")) hasRenderMarkup = true;
+            if (name == QStringLiteral("friction_update_layer")) hasUpdateLayer = true;
+            if (name == QStringLiteral("friction_animate_layer")) hasAnimateLayer = true;
+            if (name == QStringLiteral("friction_get_storyboard")) hasGetStoryboard = true;
         }
 
         if (!hasSceneInfo || !hasCreateLayer || !hasSetKeyframe || !hasEvalScript || !hasCapture) {
             throw std::runtime_error("Required MCP tools missing from schema");
+        }
+        if (!hasSetKeyframeEasing || !hasSetInOutPoint || !hasSetLayerOrder) {
+            throw std::runtime_error("Newly added MCP animation tools missing from schema");
+        }
+        if (!hasKeyframeEasingParam) {
+            throw std::runtime_error("friction_set_keyframe schema missing 'easing' parameter");
+        }
+        if (!hasRenderMarkup || !hasUpdateLayer || !hasAnimateLayer || !hasGetStoryboard) {
+            throw std::runtime_error("Advanced AI orchestration tools (markup, update, animate, storyboard) missing from schema");
+        }
+
+        // Test tool dispatcher error handling / execution path for newly registered tools
+        QJsonObject dummyArgs;
+        dummyArgs[QStringLiteral("index")] = 1;
+        const auto respEasing = dispatcher.dispatchTool(QStringLiteral("friction_set_keyframe_easing"), dummyArgs);
+        if (!respEasing.contains(QStringLiteral("success"))) {
+            throw std::runtime_error("friction_set_keyframe_easing dispatch response malformed");
+        }
+
+        const auto respInOut = dispatcher.dispatchTool(QStringLiteral("friction_set_in_out_point"), dummyArgs);
+        if (!respInOut.contains(QStringLiteral("success"))) {
+            throw std::runtime_error("friction_set_in_out_point dispatch response malformed");
+        }
+
+        dummyArgs[QStringLiteral("order")] = QStringLiteral("top");
+        const auto respOrder = dispatcher.dispatchTool(QStringLiteral("friction_set_layer_order"), dummyArgs);
+        if (!respOrder.contains(QStringLiteral("success"))) {
+            throw std::runtime_error("friction_set_layer_order dispatch response malformed");
+        }
+
+        // Test update_layer dispatch
+        QJsonObject updateArgs;
+        updateArgs[QStringLiteral("name")] = QStringLiteral("NonExistentLayer");
+        updateArgs[QStringLiteral("opacity")] = 50.0;
+        const auto respUpdate = dispatcher.dispatchTool(QStringLiteral("friction_update_layer"), updateArgs);
+        if (!respUpdate.contains(QStringLiteral("success"))) {
+            throw std::runtime_error("friction_update_layer dispatch response malformed");
+        }
+
+        // Test animate_layer dispatch
+        QJsonObject animArgs;
+        animArgs[QStringLiteral("name")] = QStringLiteral("NonExistentLayer");
+        animArgs[QStringLiteral("preset")] = QStringLiteral("pop");
+        const auto respAnim = dispatcher.dispatchTool(QStringLiteral("friction_animate_layer"), animArgs);
+        if (!respAnim.contains(QStringLiteral("success"))) {
+            throw std::runtime_error("friction_animate_layer dispatch response malformed");
+        }
+
+        // Test render_markup dispatch validation (empty markup returns error)
+        QJsonObject markupArgs;
+        markupArgs[QStringLiteral("markup")] = QStringLiteral("");
+        const auto respMarkup = dispatcher.dispatchTool(QStringLiteral("friction_render_markup"), markupArgs);
+        if (respMarkup.value(QStringLiteral("success")).toBool() != false) {
+            throw std::runtime_error("friction_render_markup should fail gracefully on empty markup");
+        }
+
+        // Test storyboard dispatch (handled without crash when window absent in test harness)
+        QJsonObject sbArgs;
+        sbArgs[QStringLiteral("numFrames")] = 3;
+        const auto respSb = dispatcher.dispatchTool(QStringLiteral("friction_get_storyboard"), sbArgs);
+        if (!respSb.contains(QStringLiteral("success"))) {
+            throw std::runtime_error("friction_get_storyboard dispatch response malformed");
         }
     });
 

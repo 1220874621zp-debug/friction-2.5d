@@ -134,6 +134,11 @@ Method | Description
 `lay.rotationX()` / `lay.rotationY()` / `lay.zPosition()` | 2.5D spatial rotation and depth
 `lay.opacityProp()` | 0-100% opacity animator
 `lay.set3DEnabled(true/false)` | Enable/disable 2.5D perspective billboard transforms
+`lay.setInPoint(frame)` / `lay.setOutPoint(frame)` | Set clip in/out boundaries in frames
+`lay.inPoint()` / `lay.outPoint()` | Query clip in/out frame boundaries
+`lay.bringToFront()` / `lay.bringToEnd()` | Reorder layer to top or bottom of stack
+`lay.moveUp()` / `lay.moveDown()` | Reorder layer one step higher or lower
+`lay.setParentLayer(parentGroup)` | Reparent layer under a ContainerBox / Group
 `lay.applyTextPreset(id, startFrame, durScale, out)` | Apply AE-style per-character animator
 `lay.textPresets()` | Query array of all available text animation presets
 `lay.setFillColor(hex)` / `lay.setStrokeColor(hex)` | Fill and outline color (`#rrggbb`, `transparent`)
@@ -146,13 +151,16 @@ Method | Description
 `lay.addEffect(type)` | Add one of 35+ GPU shaders (`glow`, `glitch`, `scanlines`, `liquid_glass`, etc.)
 `lay.setAnchorPoint([x, y])` | Shift layer transform pivot
 
-### 3.2 Property Keyframe Methods
+### 3.2 Property Keyframe & Easing Methods
 
 Method | Description
 :--- | :---
 `prop.setValue(v)` | Set static base value (`scalar` or `[x, y]`)
 `prop.setValueAtFrame(frame, v)` | Set keyframe value at integer frame
 `prop.setValueAtTime(sec, v)` | Set keyframe value at time in seconds
+`prop.setValueAtFrameWithEasing(frame, v, easing)` | Set keyframe and apply Robert Penner curve from previous key
+`prop.setValueAtTimeWithEasing(sec, v, easing)` | Set keyframe at time and apply easing curve from previous key
+`prop.setEasing(easing, [startFrame], [endFrame])` | Apply mathematical easing curve between keyframes (`easeOutCubic`, `easeOutBack`, `easeInOutQuad`, etc.)
 `prop.valueAtFrame(frame)` | Sample interpolated value at frame
 `prop.removeKeyAtFrame(frame)` | Remove keyframe
 
@@ -162,8 +170,32 @@ Method | Description
 
 Category | Key Tools
 :--- | :---
+**High-Level Orchestration** | `friction_render_markup` (declarative replace/append), `friction_update_layer` (non-destructive in-place edit), `friction_animate_layer` (macro motion presets), `friction_get_storyboard` (multi-frame vision review)
 **Scene** | `friction_get_scene_info`, `friction_set_scene_info`, `friction_create_scene`, `friction_list_scenes`
-**Layer** | `friction_create_layer`, `friction_list_layers`, `friction_duplicate_layer`, `friction_delete_layer`, `friction_set_3d_mode`
-**Keyframe** | `friction_set_property_value`, `friction_set_keyframe`, `friction_remove_keyframe`, `friction_clear_keyframes`
+**Layer** | `friction_create_layer`, `friction_list_layers`, `friction_duplicate_layer`, `friction_delete_layer`, `friction_set_3d_mode`, `friction_set_parent_layer`, `friction_set_layer_order`, `friction_set_in_out_point`
+**Keyframe** | `friction_set_property_value`, `friction_set_keyframe` (with `easing`), `friction_set_keyframe_easing`, `friction_remove_keyframe`, `friction_clear_keyframes`
 **Effects** | `friction_add_raster_effect`, `friction_remove_raster_effect`, `friction_list_available_effects`
-**Script & Viewport** | `friction_eval_script`, `friction_seek_timeline`, `friction_play_pause`, `friction_capture_viewport`
+**Script & Viewport** | `friction_eval_script`, `friction_seek_timeline`, `friction_play_pause`, `friction_capture_viewport`, `friction_undo`, `friction_redo`
+
+--------------------------------------------------------------------------------
+
+## 5. Non-Destructive Human-AI Collaboration Workflow
+
+- **Never Blindly Wipe Canvas**: Use `friction_render_markup` with `mode="append"` or use `friction_update_layer` to tweak text, fonts, colors, and layout without destroying layers the human artist arranged
+- **Incremental Layer Updates**: When user asks to change title font size, change color, or adjust position, use `friction_update_layer` to mutate the layer in-place
+- **Macro Animation**: Use `friction_animate_layer` with `preset="pop"`, `slide_up`, `zoom`, or `flip_y` to animate elements with automatic easing curves
+- **Storyboard Review Loop**: Call `friction_get_storyboard` to capture 4 thumbnails across the timeline, inspecting composition, rhythm, and typography across all acts
+- **Self-Healing Diagnostics**: When a layer or property is missing, the system error message lists all existing layers and valid properties in the scene for immediate correction
+
+--------------------------------------------------------------------------------
+
+## 6. Motion Design Iron Laws for AI Agents
+
+Follow these quality principles to produce broadcast-grade motion graphics:
+
+- **Easing Over Linear**: Never use raw linear interpolation for visual motion; always apply easing curves (`easeOutCubic` for natural deceleration, `easeOutBack` for springy impact, `easeInOutQuad` for loops)
+- **Spatial Parenting**: When building composite 2.5D cards or layouts, reparent child layers into a container group so 3D rotations, scales, and positions stay locked in perspective without drifting
+- **Z-Depth Separation**: Assign distinct Z offsets (`zPosition`) to text (+8) and decorative lines (+4) relative to backgrounds to produce authentic parallax depth
+- **Rhythmic Staggering**: Offset sibling element entrances by 0.05s to 0.15s; simultaneous entrance across all layers feels flat and mechanical
+- **Color Contrast & Morandi Harmony**: Pair high-contrast primary text (`#ffffff` or Morandi accents) with subdued secondary metadata (`#94a3b8`, `#64748b`); avoid screaming saturated fills
+- **Character Reveal Independence**: When using per-character text presets (`typewriter`, `rise`, `drop`), never apply conflicting layer opacity fade-ins that clobber the character-by-character sequence

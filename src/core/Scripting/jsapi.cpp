@@ -46,6 +46,10 @@
 #include "RasterEffects/rastereffectcollection.h"
 #include "RasterEffects/rastereffect.h"
 #include "textanimpresets.h"
+#include "Private/esettings.h"
+#include "Expressions/expression.h"
+#include "Expressions/propertybindingparser.h"
+#include "Timeline/durationrectangle.h"
 
 #include <QFile>
 #include <QTextStream>
@@ -183,6 +187,103 @@ namespace Friction
                         Document::sInstance->actionFinished();
                     }
                 }
+            }
+
+            bool applyEasingOnQreal(QrealAnimator * const anim, const FrameRange &range, const QString &easingName)
+            {
+                if (!anim || easingName.isEmpty() || !range.isValid() || range.fMin >= range.fMax) { return false; }
+
+                QString normalized = easingName.trimmed();
+                // Match common shorthand names to Friction core expression presets
+                if (normalized.compare(QStringLiteral("easeOut"), Qt::CaseInsensitive) == 0) {
+                    normalized = QStringLiteral("easeOutCubic");
+                } else if (normalized.compare(QStringLiteral("easeIn"), Qt::CaseInsensitive) == 0) {
+                    normalized = QStringLiteral("easeInCubic");
+                } else if (normalized.compare(QStringLiteral("easeInOut"), Qt::CaseInsensitive) == 0) {
+                    normalized = QStringLiteral("easeInOutCubic");
+                } else if (normalized.compare(QStringLiteral("bounce"), Qt::CaseInsensitive) == 0) {
+                    normalized = QStringLiteral("easeOutBounce");
+                } else if (normalized.compare(QStringLiteral("elastic"), Qt::CaseInsensitive) == 0) {
+                    normalized = QStringLiteral("easeOutElastic");
+                } else if (normalized.compare(QStringLiteral("back"), Qt::CaseInsensitive) == 0 ||
+                           normalized.compare(QStringLiteral("spring"), Qt::CaseInsensitive) == 0) {
+                    normalized = QStringLiteral("easeOutBack");
+                }
+
+                if (!eSettings::sInstance) { return false; }
+
+                auto preset = eSettings::sInstance->fExpressions.getExpr(normalized);
+                if (!preset.valid) {
+                    preset = eSettings::sInstance->fExpressions.getExpr(QStringLiteral("graphics.friction.") + normalized);
+                }
+                if (!preset.valid) {
+                    const auto allCore = eSettings::sInstance->fExpressions.getAll();
+                    for (const auto &p : allCore) {
+                        if (p.id.endsWith(normalized, Qt::CaseInsensitive) ||
+                            p.title.compare(normalized, Qt::CaseInsensitive) == 0) {
+                            preset = p;
+                            break;
+                        }
+                    }
+                }
+                if (!preset.valid || !preset.enabled) {
+                    qWarning() << "[JsAPI] Easing preset not found or disabled:" << easingName;
+                    return false;
+                }
+
+                QString script = preset.script;
+                script.replace(QStringLiteral("__START_VALUE__"), QString::number(anim->getBaseValue(range.fMin)));
+                script.replace(QStringLiteral("__END_VALUE__"), QString::number(anim->getBaseValue(range.fMax)));
+                script.replace(QStringLiteral("__START_FRAME__"), QString::number(range.fMin));
+                script.replace(QStringLiteral("__END_FRAME__"), QString::number(range.fMax));
+
+                PropertyBindingMap bindings;
+                try {
+                    bindings = PropertyBindingParser::parseBindings(preset.bindings, nullptr, anim);
+                } catch (const std::exception &) {
+                    return false;
+                }
+
+                auto engine = std::make_unique<QJSEngine>();
+                try {
+                    Expression::sAddDefinitionsTo(preset.definitions, *engine);
+                } catch (const std::exception &) {
+                    return false;
+                }
+
+                QJSValue eEvaluate;
+                try {
+                    Expression::sAddScriptTo(script, bindings, *engine, eEvaluate, Expression::sQrealAnimatorTester);
+                } catch (const std::exception &) {
+                    return false;
+                }
+
+                const auto scene = anim->getParentScene();
+                const bool cacheWasFresh = scene && scene->sceneFramesCacheIsFresh();
+                FrameRange dirtyRange = range;
+                if (const auto prevK = anim->anim_getPrevKey<Key>(range.fMin)) {
+                    dirtyRange.fMin = prevK->getRelFrame();
+                }
+                if (const auto nextK = anim->anim_getNextKey<Key>(range.fMax)) {
+                    dirtyRange.fMax = nextK->getRelFrame();
+                }
+
+                try {
+                    auto expr = Expression::sCreate(preset.definitions, script, std::move(bindings),
+                                                    std::move(engine), std::move(eEvaluate));
+                    if (expr && !expr->isValid()) { expr = nullptr; }
+                    anim->setExpression(expr, dirtyRange);
+                    anim->applyExpression(range, 10, true, true);
+                    if (cacheWasFresh && scene) {
+                        const auto absDirty = anim->prp_relRangeToAbsRange(dirtyRange);
+                        scene->getSceneFramesHandler().remove(absDirty);
+                        scene->setCacheGen(scene->effectiveContentGen());
+                    }
+                    finishAction();
+                } catch (const std::exception &) {
+                    return false;
+                }
+                return true;
             }
         }
 
@@ -339,6 +440,97 @@ namespace Friction
             }
         }
 
+        bool JsPropertyProxy::setEasing(const QString &easing,
+                                        const int startFrame,
+                                        const int endFrame)
+        {
+            if (!mProp) { return false; }
+            if (mKind == Kind::Point) {
+                const auto point = static_cast<QPointFAnimator*>(mProp.data());
+                if (!point) { return false; }
+                const auto x = point->getXAnimator();
+                const auto y = point->getYAnimator();
+                bool okX = false;
+                bool okY = false;
+                if (x) {
+                    FrameRange r{startFrame, endFrame};
+                    if (startFrame < 0 || endFrame < 0) {
+                        const auto keys = x->anim_getKeys();
+                        if (keys.count() >= 2) {
+                            r = {keys.first()->getRelFrame(), keys.last()->getRelFrame()};
+                        }
+                    }
+                    if (r.isValid()) {
+                        okX = applyEasingOnQreal(x, r, easing);
+                    }
+                }
+                if (y) {
+                    FrameRange r{startFrame, endFrame};
+                    if (startFrame < 0 || endFrame < 0) {
+                        const auto keys = y->anim_getKeys();
+                        if (keys.count() >= 2) {
+                            r = {keys.first()->getRelFrame(), keys.last()->getRelFrame()};
+                        }
+                    }
+                    if (r.isValid()) {
+                        okY = applyEasingOnQreal(y, r, easing);
+                    }
+                }
+                return okX || okY;
+            } else {
+                const auto scalar = static_cast<QrealAnimator*>(mProp.data());
+                if (!scalar) { return false; }
+                FrameRange r{startFrame, endFrame};
+                if (startFrame < 0 || endFrame < 0) {
+                    const auto keys = scalar->anim_getKeys();
+                    if (keys.count() >= 2) {
+                        r = {keys.first()->getRelFrame(), keys.last()->getRelFrame()};
+                    }
+                }
+                if (r.isValid()) {
+                    return applyEasingOnQreal(scalar, r, easing);
+                }
+            }
+            return false;
+        }
+
+        void JsPropertyProxy::setValueAtFrameWithEasing(const int frame,
+                                                        const QJSValue &v,
+                                                        const QString &easing)
+        {
+            if (!mProp) { return; }
+            int prevFrame = -1;
+            bool hasPrev = false;
+            if (mKind == Kind::Point) {
+                const auto point = static_cast<QPointFAnimator*>(mProp.data());
+                if (point && point->getXAnimator()) {
+                    if (const auto prevK = point->getXAnimator()->anim_getPrevKey<Key>(frame)) {
+                        prevFrame = prevK->getRelFrame();
+                        hasPrev = true;
+                    }
+                }
+            } else {
+                const auto scalar = static_cast<QrealAnimator*>(mProp.data());
+                if (scalar) {
+                    if (const auto prevK = scalar->anim_getPrevKey<Key>(frame)) {
+                        prevFrame = prevK->getRelFrame();
+                        hasPrev = true;
+                    }
+                }
+            }
+            setValueAtFrame(frame, v);
+            if (hasPrev && prevFrame < frame && !easing.isEmpty()) {
+                setEasing(easing, prevFrame, frame);
+            }
+        }
+
+        void JsPropertyProxy::setValueAtTimeWithEasing(const qreal seconds,
+                                                       const QJSValue &v,
+                                                       const QString &easing)
+        {
+            setValueAtFrameWithEasing(qRound(seconds * fps()), v, easing);
+        }
+
         //---------------------------- JsLayerProxy ----------------------------
 
         JsLayerProxy::JsLayerProxy(const QPointer<BoundingBox> &box,
@@ -356,6 +548,33 @@ namespace Friction
         QString JsLayerProxy::name() const
         {
             return mBox ? mBox->prp_getName() : QString();
+        }
+
+        QString JsLayerProxy::type() const
+        {
+            if (!mBox) { return QString(); }
+            switch (mBox->getBoxType()) {
+            case eBoxType::vectorPath: return QStringLiteral("path");
+            case eBoxType::circle: return QStringLiteral("circle");
+            case eBoxType::image: return QStringLiteral("image");
+            case eBoxType::rectangle: return QStringLiteral("rectangle");
+            case eBoxType::text: return QStringLiteral("text");
+            case eBoxType::layer: return QStringLiteral("layer");
+            case eBoxType::canvas: return QStringLiteral("canvas");
+            case eBoxType::group: return QStringLiteral("group");
+            case eBoxType::nullObject: return QStringLiteral("null");
+            case eBoxType::adjustmentLayer: return QStringLiteral("adjustment");
+            case eBoxType::solid: return QStringLiteral("solid");
+            case eBoxType::cameraLayer: return QStringLiteral("camera");
+            default: return QStringLiteral("layer");
+            }
+        }
+
+        QString JsLayerProxy::text() const
+        {
+            if (!mBox) { return QString(); }
+            const auto textBox = enve_cast<TextBox*>(mBox.data());
+            return textBox ? textBox->getCurrentValue() : QString();
         }
 
         void JsLayerProxy::setName(const QString &name)
@@ -669,6 +888,26 @@ namespace Friction
             return setCornerRadius(radius);
         }
 
+        bool JsLayerProxy::setSize(const qreal width, const qreal height)
+        {
+            if (!mBox) { return false; }
+            const auto rectBox = enve_cast<RectangleBox*>(mBox.data());
+            if (rectBox) {
+                const auto tlAnim = rectBox->getTopLeftAnimator();
+                const QPointF tl = tlAnim ? tlAnim->getBaseValue() : QPointF(-width / 2.0, -height / 2.0);
+                rectBox->setBottomRightPos(QPointF(tl.x() + width, tl.y() + height));
+                finishAction();
+                return true;
+            }
+            const auto circle = enve_cast<Circle*>(mBox.data());
+            if (circle) {
+                circle->setRadius(qMin(width, height) / 2.0);
+                finishAction();
+                return true;
+            }
+            return false;
+        }
+
         bool JsLayerProxy::addEffect(const QString &effectType)
         {
             if (!mBox) { return false; }
@@ -931,6 +1170,86 @@ namespace Friction
             }
             finishAction();
             return true;
+        }
+
+        bool JsLayerProxy::setInPoint(const int frame)
+        {
+            if (!mBox) { return false; }
+            if (!mBox->hasDurationRectangle()) {
+                mBox->createDurationRectangle();
+            }
+            const auto dur = mBox->getDurationRectangle();
+            if (!dur) { return false; }
+            mBox->startMinFramePosTransform();
+            dur->setMinAbsFrame(qMin(frame, dur->getMaxAbsFrame() - 1));
+            mBox->finishMinFramePosTransform();
+            finishAction();
+            return true;
+        }
+
+        bool JsLayerProxy::setOutPoint(const int frame)
+        {
+            if (!mBox) { return false; }
+            if (!mBox->hasDurationRectangle()) {
+                mBox->createDurationRectangle();
+            }
+            const auto dur = mBox->getDurationRectangle();
+            if (!dur) { return false; }
+            mBox->startMaxFramePosTransform();
+            dur->setMaxAbsFrame(qMax(frame, dur->getMinAbsFrame() + 1));
+            mBox->finishMaxFramePosTransform();
+            finishAction();
+            return true;
+        }
+
+        int JsLayerProxy::inPoint() const
+        {
+            if (!mBox || !mBox->hasDurationRectangle()) { return 0; }
+            const auto dur = mBox->getDurationRectangle();
+            return dur ? dur->getMinAbsFrame() : 0;
+        }
+
+        int JsLayerProxy::outPoint() const
+        {
+            if (!mBox) { return 0; }
+            if (mBox->hasDurationRectangle()) {
+                const auto dur = mBox->getDurationRectangle();
+                if (dur) { return dur->getMaxAbsFrame(); }
+            }
+            const auto s = activeSceneOrNull();
+            return s ? s->getFrameRange().fMax : 0;
+        }
+
+        void JsLayerProxy::bringToFront()
+        {
+            if (mBox) {
+                mBox->bringToFront();
+                finishAction();
+            }
+        }
+
+        void JsLayerProxy::bringToEnd()
+        {
+            if (mBox) {
+                mBox->bringToEnd();
+                finishAction();
+            }
+        }
+
+        void JsLayerProxy::moveUp()
+        {
+            if (mBox) {
+                mBox->moveUp();
+                finishAction();
+            }
+        }
+
+        void JsLayerProxy::moveDown()
+        {
+            if (mBox) {
+                mBox->moveDown();
+                finishAction();
+            }
         }
 
         QJSValue JsLayerProxy::paths()
@@ -1305,6 +1624,22 @@ namespace Friction
             return mEngine->newQObject(proxy);
         }
 
+        static BoundingBox *findBoxRecursive(ContainerBox * const parent, const QString &name)
+        {
+            if (!parent) { return nullptr; }
+            for (const auto &child : parent->getContained()) {
+                const auto box = enve_cast<BoundingBox*>(child.get());
+                if (!box) { continue; }
+                if (box->prp_getName() == name) { return box; }
+                if (const auto cont = enve_cast<ContainerBox*>(box)) {
+                    if (auto found = findBoxRecursive(cont, name)) {
+                        return found;
+                    }
+                }
+            }
+            return nullptr;
+        }
+
         QJSValue JsSceneProxy::layer(const QJSValue &indexOrName)
         {
             if (!mScene || !mEngine) { return QJSValue(QJSValue::NullValue); }
@@ -1318,8 +1653,19 @@ namespace Friction
             }
             if (indexOrName.isString()) {
                 const QString name = indexOrName.toString();
+                // 1. Direct top-level match
                 for (const auto box : layers) {
                     if (box->prp_getName() == name) { return wrapBox(box); }
+                }
+                // 2. Search recursively in child containers
+                if (auto recursiveBox = findBoxRecursive(mScene.data(), name)) {
+                    return wrapBox(recursiveBox);
+                }
+                // 3. Fallback: integer string (e.g. "1")
+                bool isNumeric = false;
+                const int numIdx = name.toInt(&isNumeric);
+                if (isNumeric && numIdx >= 1 && numIdx <= layers.count()) {
+                    return wrapBox(layers.at(numIdx - 1));
                 }
             }
             return QJSValue(QJSValue::NullValue);

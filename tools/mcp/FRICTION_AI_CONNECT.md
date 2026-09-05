@@ -100,6 +100,10 @@ def eval_script(js_code):
 
 | 工具名 | 说明 | 关键参数 |
 |:---|:---|:---|
+| `friction_render_markup` | 声明式编译并渲染 XML 动效工程，支持全量替换或增量追加 | `markup`, `mode` (`replace`/`append`), `timeOffset` |
+| `friction_update_layer` | 非破坏性就地修改已有图层文字/字号/颜色/位置/缩放/出入点 | `index`/`name`, `text`, `fontSize`, `fillColor`, `position`, `inPoint`, `outPoint` 等 |
+| `friction_animate_layer` | 高阶宏动画生成器（弹跳/上滑/下滑/缩放/淡入/2.5D翻转）并自动匹配物理缓动 | `index`/`name`, `preset`, `startFrame`, `durationFrames`, `easing`, `distance`, `isOut` |
+| `friction_get_storyboard` | 沿时间轴多点采样生成 Base64 审片故事板条带进行视觉复核 | `numFrames` (2-8), `frames`, `width`, `format` (jpeg/png), `quality` |
 | `friction_get_scene_info` | 查询当前场景分辨率/帧率/时长/图层数 | - |
 | `friction_seek_timeline` | 跳转播放头 | `frame` 或 `time` |
 | `friction_play_pause` | 切换播放/暂停 | - |
@@ -107,4 +111,30 @@ def eval_script(js_code):
 | `friction_eval_script` | 执行原生 JavaScript 动效脚本 | `script`, `undoGroupName` |
 | `friction_list_layers` | 列出当前所有图层 | - |
 | `friction_set_3d_mode` | 开关图层 2.5D 空间模式 | `index`/`name`, `enabled` |
+| `friction_set_keyframe` | 属性关键帧设置，支持平滑物理缓动 | `property`, `value`, `frame`/`time`, `easing` |
+| `friction_set_keyframe_easing` | 为指定属性关键帧区间应用物理缓动曲线 | `property`, `easing`, `startFrame`, `endFrame` |
+| `friction_set_in_out_point` | 设定图层时间轴出入点裁切区间 | `index`/`name`, `inFrame`/`outFrame`, `inTime`/`outTime` |
+| `friction_set_layer_order` | 调整图层上下层级顺序 | `index`/`name`, `order` (`top`/`bottom`/`up`/`down`) |
+| `friction_set_parent_layer` | 绑定父子图层关系实现群组联动 | `index`/`name`, `parentIndex`/`parentName` |
 | `friction_undo` / `friction_redo` | 撤销与重做 | - |
+
+--------------------------------------------------------------------------------
+
+## 人机协同与非破坏性修改准则
+
+- **严禁全量粗暴清屏**：在已有工程中修改时，严禁反复清空图层重绘；优先使用 `friction_update_layer` 针对指定图层进行增量微调，或在 `friction_render_markup` 中使用 `mode="append"` 追加片段
+- **多帧视觉审片闭环**：在关键动作完成后，调用 `friction_get_storyboard` 获取 4-6 帧缩略图条带，从时间轴不同时刻核验构图层级与动态节奏
+- **自愈型错误修正**：调用接口时若图层或属性名不存在，系统错误信息将自动回传场景内所有现存图层与合法属性列表，便于单轮自主修正重试
+
+--------------------------------------------------------------------------------
+
+## 动效设计动力学铁律（Motion Design Iron Laws）
+
+AI 创作必须遵循以下动效质量准则，杜绝生硬机械的低质效果：
+
+- **缓动优先（Easing Over Linear）**：严禁使用纯线性插值；位移、缩放与三维旋转必须搭配缓动（`easeOutCubic`、`easeOutBack`、`easeInOutQuad`）
+- **空间父子绑定（Spatial Parenting）**：复合 3D 卡片与文字必须绑定至容器 Group，确保三维旋转与透视变换完全同步不穿帮
+- **Z 轴空间层次（Z-Depth Offset）**：文字图层在卡片基础上保持微小 Z 偏移（+8px），产生真实空间视差与悬浮感
+- **节奏错峰出场（Staggered Timing）**：并列元素出场时间交错 0.05s - 0.15s，杜绝全场元素整齐划一同时运动
+- **字符预设独立性（Preset Independence）**：启用打字机或上浮等逐字动画时，禁止施加全局透明度淡入遮蔽字效
+- **莫兰迪配色体系（Morandi Harmony）**：主体文字采用高反差（`#ffffff`），次要信息降饱和（`#94a3b8`），辅以克制点缀色（`#00f2fe`、`#ff2a6d`）

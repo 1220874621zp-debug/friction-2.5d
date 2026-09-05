@@ -41,14 +41,16 @@ def sanitize_markup(xml_text: str) -> str:
     return xml_text
 
 class FrictionMarkupCompiler:
-    def __init__(self, xml_content: str):
+    def __init__(self, xml_content: str, mode: str = "replace", time_offset: float = 0.0):
         self.raw_xml = xml_content.strip()
+        self.mode = mode.lower() if mode else "replace"
+        self.time_offset = float(time_offset or 0.0)
         self.js_lines: List[str] = []
         self.layer_counter = 0
 
     def compile(self) -> str:
         clean_xml = sanitize_markup(self.raw_xml)
-        if not re.match(r'^\s*<scene\b', clean_xml, re.IGNORECASE):
+        if not re.match(r'^\s*<(scene|friction|canvas|animation|comp|composition)\b', clean_xml, re.IGNORECASE):
             clean_xml = f"<scene>{clean_xml}</scene>"
         
         try:
@@ -67,30 +69,34 @@ class FrictionMarkupCompiler:
         self.js_lines.append("var s = app.activeScene;")
         self.js_lines.append("if (!s) throw new Error('No active scene');")
         self.js_lines.append(f"var W = {width}; var H = {height}; var FPS = {fps};")
-        self.js_lines.append(f"s.width = W; s.height = H; s.fps = FPS; s.duration = {duration};")
+        if self.mode == "replace":
+            self.js_lines.append(f"s.width = W; s.height = H; s.fps = FPS; s.duration = {duration};")
+        else:
+            self.js_lines.append(f"if (s.duration < {duration + self.time_offset}) s.duration = {duration + self.time_offset};")
         self.js_lines.append("var CX = W / 2.0; var CY = H / 2.0;")
         self.js_lines.append("var S = Math.min(W / 1920.0, H / 1080.0);")
         self.js_lines.append("function f(t) { return Math.round(t * FPS); }")
         
-        # Clear existing layers
-        self.js_lines.append("""
-        var oldLayers = s.layers();
-        for (var i = oldLayers.length - 1; i >= 0; i--) {
-            try { oldLayers[i].remove(); } catch(e) {}
-        }
-        """)
+        # Clear existing layers only in replace mode
+        if self.mode == "replace":
+            self.js_lines.append("""
+            var oldLayers = s.layers();
+            for (var i = oldLayers.length - 1; i >= 0; i--) {
+                try { oldLayers[i].remove(); } catch(e) {}
+            }
+            """)
 
-        # Add background if not transparent
-        if bg_color != "transparent":
-            self.js_lines.append(f"var bg = s.addRect('00_Background', 0, 0, W, H);")
-            self.js_lines.append(f"bg.position().setValue([0, 0]);")
-            self.js_lines.append(f"bg.setFillColor('{bg_color}');")
-            self.js_lines.append(f"bg.setStrokeWidth(0);")
-            self.js_lines.append(f"bg.setStrokeColor('transparent');")
+            # Add background if not transparent or none
+            if bg_color.lower() not in ("transparent", "none", ""):
+                self.js_lines.append(f"var bg = s.addRect('00_Background', 0, 0, W, H);")
+                self.js_lines.append(f"bg.position().setValue([0, 0]);")
+                self.js_lines.append(f"bg.setFillColor('{bg_color}');")
+                self.js_lines.append(f"bg.setStrokeWidth(0);")
+                self.js_lines.append(f"bg.setStrokeColor('transparent');")
 
         # Process elements
         for elem in root:
-            self.render_node(elem, 0.0, duration, "CX", "CY")
+            self.render_node(elem, self.time_offset, duration + self.time_offset, "CX", "CY")
 
         self.js_lines.append("s.currentFrame = 0;")
         self.js_lines.append("return { success: true, numLayers: s.numLayers, duration: s.duration, fps: s.fps };")
@@ -125,40 +131,43 @@ class FrictionMarkupCompiler:
         except ValueError:
             return default_start, default_end
 
-    def render_node(self, elem: ET.Element, t_from: float, t_to: float, cx: Any, cy: Any, parent_3d: Optional[Dict[str, Any]] = None):
+    def render_node(self, elem: ET.Element, t_from: float, t_to: float, cx: Any, cy: Any, parent_3d: Optional[Dict[str, Any]] = None, parent_container: Optional[str] = None):
         tag = elem.tag.lower()
-        if tag in ["seq", "sequence", "act", "scene-section"]:
+        if tag in ["scene", "friction", "canvas", "animation", "comp", "composition", "root"]:
+            for child in elem:
+                self.render_node(child, t_from, t_to, cx, cy, parent_3d=parent_3d, parent_container=parent_container)
+        elif tag in ["seq", "sequence", "act", "scene-section"]:
             self.render_sequence(elem)
         elif tag in ["col", "column", "vstack", "valign"]:
-            self.render_stack(elem, t_from, t_to, cx, cy, is_vertical=True, parent_3d=parent_3d)
+            self.render_stack(elem, t_from, t_to, cx, cy, is_vertical=True, parent_3d=parent_3d, parent_container=parent_container)
         elif tag in ["row", "hstack", "halign"]:
-            self.render_stack(elem, t_from, t_to, cx, cy, is_vertical=False, parent_3d=parent_3d)
-        elif tag in ["card", "div", "box", "rect", "rectangle"]:
-            self.render_card_or_rect(elem, t_from, t_to, cx, cy)
+            self.render_stack(elem, t_from, t_to, cx, cy, is_vertical=False, parent_3d=parent_3d, parent_container=parent_container)
+        elif tag in ["card", "div", "box", "rect", "rectangle", "group", "container", "panel"]:
+            self.render_card_or_rect(elem, t_from, t_to, cx, cy, parent_container=parent_container)
         elif tag in ["text", "h1", "h2", "h3", "p", "span", "stagger-text", "kinetic-text"]:
-            self.render_text(elem, t_from, t_to, cx, cy, parent_3d=parent_3d)
+            self.render_text(elem, t_from, t_to, cx, cy, parent_3d=parent_3d, parent_container=parent_container)
         elif tag in ["text-strip", "ribbon"]:
-            self.render_text_strip(elem, t_from, t_to, cx, cy)
+            self.render_text_strip(elem, t_from, t_to, cx, cy, parent_container=parent_container)
         elif tag in ["glow-cards", "text-cards", "char-grid"]:
-            self.render_glow_cards(elem, t_from, t_to, cx, cy)
+            self.render_glow_cards(elem, t_from, t_to, cx, cy, parent_container=parent_container)
         elif tag in ["vertical-text", "v-text"]:
-            self.render_vertical_text(elem, t_from, t_to, cx, cy)
+            self.render_vertical_text(elem, t_from, t_to, cx, cy, parent_container=parent_container)
         elif tag in ["scatter-text", "scattered-text"]:
             self.render_scatter_text(elem, t_from, t_to)
         elif tag in ["formula-scatter", "formula-text"]:
             self.render_formula_scatter(elem, t_from, t_to)
         elif tag in ["concentric", "concentric-circles"]:
-            self.render_concentric(elem, t_from, t_to, cx, cy)
+            self.render_concentric(elem, t_from, t_to, cx, cy, parent_container=parent_container)
         elif tag in ["burst-lines", "ray-burst"]:
-            self.render_burst_lines(elem, t_from, t_to, cx, cy)
+            self.render_burst_lines(elem, t_from, t_to, cx, cy, parent_container=parent_container)
         elif tag in ["ruler", "scale-bar"]:
             self.render_ruler(elem, t_from, t_to)
         elif tag in ["bg-blocks", "background-blocks"]:
             self.render_bg_blocks(elem, t_from, t_to)
         elif tag in ["line", "divider", "hr"]:
-            self.render_line(elem, t_from, t_to, cx, cy, parent_3d=parent_3d)
+            self.render_line(elem, t_from, t_to, cx, cy, parent_3d=parent_3d, parent_container=parent_container)
         elif tag in ["circle", "ring"]:
-            self.render_circle(elem, t_from, t_to, cx, cy)
+            self.render_circle(elem, t_from, t_to, cx, cy, parent_container=parent_container)
         elif tag in ["hud"]:
             self.render_hud(elem, t_from, t_to)
         elif tag in ["crosshair"]:
@@ -167,8 +176,8 @@ class FrictionMarkupCompiler:
             self.render_barcode(elem, t_from, t_to)
 
     def render_sequence(self, elem: ET.Element):
-        t_from = float(self.get_attr(elem, ["from", "start", "t0"], 0.0))
-        t_to = float(self.get_attr(elem, ["to", "end", "t1"], 3.0))
+        t_from = float(self.get_attr(elem, ["from", "start", "t0"], 0.0)) + self.time_offset
+        t_to = float(self.get_attr(elem, ["to", "end", "t1"], 3.0)) + self.time_offset
         for child in elem:
             self.render_node(child, t_from, t_to, "CX", "CY")
 
@@ -246,7 +255,7 @@ class FrictionMarkupCompiler:
             {v_b2}.setStrokeWidth(0);
             """)
 
-    def render_stack(self, elem: ET.Element, t_from: float, t_to: float, cx: Any, cy: Any, is_vertical: bool, parent_3d: Optional[Dict[str, Any]] = None):
+    def render_stack(self, elem: ET.Element, t_from: float, t_to: float, cx: Any, cy: Any, is_vertical: bool, parent_3d: Optional[Dict[str, Any]] = None, parent_container: Optional[str] = None):
         gap = float(self.get_attr(elem, ["gap", "spacing"], 20))
         custom_x = self.get_attr(elem, ["x"], "")
         custom_y = self.get_attr(elem, ["y"], "")
@@ -283,9 +292,9 @@ class FrictionMarkupCompiler:
             pos_y = f"({stack_cy} + ({offset_center} * S))" if is_vertical else stack_cy
             pos_x = stack_cx if is_vertical else f"({stack_cx} + ({offset_center} * S))"
 
-            self.render_node(child, t_from, t_to, pos_x, pos_y, parent_3d=parent_3d)
+            self.render_node(child, t_from, t_to, pos_x, pos_y, parent_3d=parent_3d, parent_container=parent_container)
 
-    def render_card_or_rect(self, elem: ET.Element, t_from: float, t_to: float, cx: Any, cy: Any):
+    def render_card_or_rect(self, elem: ET.Element, t_from: float, t_to: float, cx: Any, cy: Any, parent_container: Optional[str] = None):
         w = float(self.get_attr(elem, ["w", "width"], 1100))
         h = float(self.get_attr(elem, ["h", "height"], 450))
         bg = self.get_attr(elem, ["bg", "background", "fill"], "#101422")
@@ -302,14 +311,31 @@ class FrictionMarkupCompiler:
         pos_cx = f"({custom_x}*S)" if custom_x else cx
         pos_cy = f"({custom_y}*S)" if custom_y else cy
 
-        v_rect = self.next_var("card")
+        has_children = len(elem) > 0
+        v_card_grp = None
+        if has_children:
+            v_card_grp = self.next_var("card_grp")
+            self.js_lines.append(f"""
+            var {v_card_grp} = s.addGroup('{v_card_grp}');
+            {v_card_grp}.position().setValue([{pos_cx}, {pos_cy}]);
+            {v_card_grp}.setInPoint(f({t_from}));
+            {v_card_grp}.setOutPoint(f({t_to}));
+            """)
+            if parent_container:
+                self.js_lines.append(f"{v_card_grp}.setParentLayer({parent_container});")
+
+        v_rect = self.next_var("card_bg" if has_children else "card")
         self.js_lines.append(f"""
         var {v_rect}_w = Math.round({w} * S);
         var {v_rect}_h = Math.round({h} * S);
         var {v_rect} = s.addRect('{v_rect}', -{v_rect}_w/2, -{v_rect}_h/2, {v_rect}_w, {v_rect}_h);
         {v_rect}.position().setValue([{pos_cx}, {pos_cy}]);
         {v_rect}.setFillColor('{bg}');
+        {v_rect}.setInPoint(f({t_from}));
+        {v_rect}.setOutPoint(f({t_to}));
         """)
+        if has_children:
+            self.js_lines.append(f"{v_rect}.setParentLayer({v_card_grp});")
 
         if border and border != "none" and border != "transparent":
             self.js_lines.append(f"""
@@ -322,38 +348,31 @@ class FrictionMarkupCompiler:
             {v_rect}.setStrokeColor('transparent');
             """)
 
+        target_var = v_card_grp if has_children else v_rect
         if is_3d or rot_y or rot_x or z_pos:
-            self.js_lines.append(f"{v_rect}.set3DEnabled(true);")
+            self.js_lines.append(f"{target_var}.set3DEnabled(true);")
             if rot_y:
                 ry0, ry1 = self.parse_range(rot_y)
-                self.js_lines.append(f"{v_rect}.rotationY().setValueAtFrame(f({t_from}), {ry0});")
-                self.js_lines.append(f"{v_rect}.rotationY().setValueAtFrame(f({t_from + 0.55}), {ry1});")
+                self.js_lines.append(f"{target_var}.rotationY().setValueAtFrame(f({t_from}), {ry0});")
+                self.js_lines.append(f"{target_var}.rotationY().setValueAtFrameWithEasing(f({t_from + 0.65}), {ry1}, 'easeOutCubic');")
             if rot_x:
                 rx0, rx1 = self.parse_range(rot_x)
-                self.js_lines.append(f"{v_rect}.rotationX().setValueAtFrame(f({t_from}), {rx0});")
-                self.js_lines.append(f"{v_rect}.rotationX().setValueAtFrame(f({t_from + 0.55}), {rx1});")
+                self.js_lines.append(f"{target_var}.rotationX().setValueAtFrame(f({t_from}), {rx0});")
+                self.js_lines.append(f"{target_var}.rotationX().setValueAtFrameWithEasing(f({t_from + 0.65}), {rx1}, 'easeOutCubic');")
             if z_pos:
                 z0, z1 = self.parse_range(z_pos)
-                self.js_lines.append(f"{v_rect}.zPosition().setValueAtFrame(f({t_from}), {z0});")
-                self.js_lines.append(f"{v_rect}.zPosition().setValueAtFrame(f({t_from + 0.55}), {z1});")
+                self.js_lines.append(f"{target_var}.zPosition().setValueAtFrame(f({t_from}), {z0});")
+                self.js_lines.append(f"{target_var}.zPosition().setValueAtFrameWithEasing(f({t_from + 0.65}), {z1}, 'easeOutCubic');")
 
         if motion_in:
-            self.apply_motion_in(v_rect, motion_in, t_from, pos_cx, pos_cy)
+            self.apply_motion_in(target_var, motion_in, t_from, pos_cx, pos_cy)
         self.apply_common_modifiers(v_rect, elem)
-        self.apply_opacity_envelope(v_rect, t_from, t_to, 0.3)
+        self.apply_opacity_envelope(target_var, t_from, t_to, 0.25)
 
-        if len(elem) > 0:
-            parent_3d = None
-            if is_3d or rot_y or rot_x or z_pos:
-                parent_3d = {
-                    "is3D": True,
-                    "rotX": rot_x,
-                    "rotY": rot_y,
-                    "z": "15"
-                }
-            self.render_stack(elem, t_from, t_to, pos_cx, pos_cy, is_vertical=True, parent_3d=parent_3d)
+        if has_children:
+            self.render_stack(elem, t_from, t_to, pos_cx, pos_cy, is_vertical=True, parent_container=v_card_grp)
 
-    def render_text(self, elem: ET.Element, t_from: float, t_to: float, cx: Any, cy: Any, parent_3d: Optional[Dict[str, Any]] = None):
+    def render_text(self, elem: ET.Element, t_from: float, t_to: float, cx: Any, cy: Any, parent_3d: Optional[Dict[str, Any]] = None, parent_container: Optional[str] = None):
         text = (elem.text or "").strip()
         tag = elem.tag.lower()
         default_size = 96 if tag == "h1" else (48 if tag == "h2" else 26)
@@ -369,7 +388,7 @@ class FrictionMarkupCompiler:
         elif parent_3d and parent_3d.get("is3D"):
             is_3d = True
         else:
-            is_3d = tag in ["h1", "stagger-text"]
+            is_3d = (tag in ["h1", "stagger-text"] and not parent_container)
 
         rot_y = self.get_attr(elem, ["rotY", "rotateY", "rot-y"], parent_3d.get("rotY", "") if parent_3d else "")
         rot_x = self.get_attr(elem, ["rotX", "rotateX", "rot-x"], parent_3d.get("rotX", "") if parent_3d else "")
@@ -386,7 +405,7 @@ class FrictionMarkupCompiler:
 
         act_from = t_from + delay
         v_text = self.next_var("txt")
-        safe_text = text.replace("'", "\\'").replace("\n", "\\n")
+        safe_text = text.replace('\\', '\\\\').replace("'", "\\'").replace("\n", "\\n").replace("\r", "")
 
         self.js_lines.append(f"""
         var {v_text} = s.addText('{v_text}', '{safe_text}');
@@ -395,34 +414,41 @@ class FrictionMarkupCompiler:
         {v_text}.setFillColor('{color}');
         {v_text}.setTextAlignment('{align}');
         {v_text}.position().setValue([{pos_cx}, {pos_cy}]);
+        {v_text}.setInPoint(f({act_from}));
+        {v_text}.setOutPoint(f({t_to}));
         """)
+
+        if parent_container:
+            self.js_lines.append(f"{v_text}.setParentLayer({parent_container});")
+            self.js_lines.append(f"{v_text}.zPosition().setValue(8 * S);")
 
         # Call C++ TextAnimPresets if specified
         if text_anim:
             self.js_lines.append(f"{v_text}.applyTextPreset('{text_anim}', f({act_from}), {dur_scale}, false);")
 
-        if is_3d or rot_y or rot_x or z_pos:
+        if (is_3d or rot_y or rot_x or z_pos) and not parent_container:
             self.js_lines.append(f"{v_text}.set3DEnabled(true);")
             if rot_y:
                 ry0, ry1 = self.parse_range(rot_y)
                 self.js_lines.append(f"{v_text}.rotationY().setValueAtFrame(f({act_from}), {ry0});")
-                self.js_lines.append(f"{v_text}.rotationY().setValueAtFrame(f({act_from + 0.45}), {ry1});")
+                self.js_lines.append(f"{v_text}.rotationY().setValueAtFrameWithEasing(f({act_from + 0.5}), {ry1}, 'easeOutCubic');")
             if rot_x:
                 rx0, rx1 = self.parse_range(rot_x)
                 self.js_lines.append(f"{v_text}.rotationX().setValueAtFrame(f({act_from}), {rx0});")
-                self.js_lines.append(f"{v_text}.rotationX().setValueAtFrame(f({act_from + 0.45}), {rx1});")
+                self.js_lines.append(f"{v_text}.rotationX().setValueAtFrameWithEasing(f({act_from + 0.5}), {rx1}, 'easeOutCubic');")
             if z_pos:
                 z0, z1 = self.parse_range(z_pos)
                 self.js_lines.append(f"{v_text}.zPosition().setValueAtFrame(f({act_from}), {z0});")
-                self.js_lines.append(f"{v_text}.zPosition().setValueAtFrame(f({act_from + 0.45}), {z1});")
+                self.js_lines.append(f"{v_text}.zPosition().setValueAtFrameWithEasing(f({act_from + 0.5}), {z1}, 'easeOutCubic');")
 
-        if not text_anim and motion_in:
+        if not text_anim and motion_in and motion_in != "none":
             self.apply_motion_in(v_text, motion_in, act_from, pos_cx, pos_cy)
 
         self.apply_common_modifiers(v_text, elem)
-        self.apply_opacity_envelope(v_text, act_from, t_to, 0.25)
+        # If text_anim is active, per-character preset already handles intro; only do exit fade
+        self.apply_opacity_envelope(v_text, act_from, t_to, 0.25, skip_in=bool(text_anim))
 
-    def render_text_strip(self, elem: ET.Element, t_from: float, t_to: float, cx: Any, cy: Any):
+    def render_text_strip(self, elem: ET.Element, t_from: float, t_to: float, cx: Any, cy: Any, parent_container: Optional[str] = None):
         """Rotated text ribbon / banner (Yorushika style)"""
         text = self.get_attr(elem, ["text"], (elem.text or "").strip())
         rot = float(self.get_attr(elem, ["rot", "rotation"], -22.0))
@@ -453,10 +479,13 @@ class FrictionMarkupCompiler:
         {v_txt}.position().setValue([{cx}, {cy}]);
         {v_txt}.rotation().setValue({rot});
         """)
+        if parent_container:
+            self.js_lines.append(f"{v_strip}.setParentLayer({parent_container});")
+            self.js_lines.append(f"{v_txt}.setParentLayer({parent_container});")
         self.apply_opacity_envelope(v_strip, t_from, t_to, 0.3)
         self.apply_opacity_envelope(v_txt, t_from, t_to, 0.3)
 
-    def render_glow_cards(self, elem: ET.Element, t_from: float, t_to: float, cx: Any, cy: Any):
+    def render_glow_cards(self, elem: ET.Element, t_from: float, t_to: float, cx: Any, cy: Any, parent_container: Optional[str] = None):
         """Segmented character tiles / glowing cards (BluePlane / HystericNight style)"""
         text = self.get_attr(elem, ["text"], (elem.text or "").strip())
         card_bg = self.get_attr(elem, ["card-bg", "bg"], "#ffffff")
@@ -496,6 +525,10 @@ class FrictionMarkupCompiler:
             {v_t}.position().setValue([{cx} + ({offset_x} * S), {cy}]);
             """)
 
+            if parent_container:
+                self.js_lines.append(f"{v_c}.setParentLayer({parent_container});")
+                self.js_lines.append(f"{v_t}.setParentLayer({parent_container});")
+
             if is_3d:
                 self.js_lines.append(f"""
                 {v_c}.set3DEnabled(true);
@@ -509,7 +542,7 @@ class FrictionMarkupCompiler:
             self.apply_opacity_envelope(v_c, t_from + delay, t_to, 0.25)
             self.apply_opacity_envelope(v_t, t_from + delay, t_to, 0.25)
 
-    def render_vertical_text(self, elem: ET.Element, t_from: float, t_to: float, cx: Any, cy: Any):
+    def render_vertical_text(self, elem: ET.Element, t_from: float, t_to: float, cx: Any, cy: Any, parent_container: Optional[str] = None):
         """Vertical Japanese/Chinese typesetting"""
         text = self.get_attr(elem, ["text"], (elem.text or "").strip())
         size = float(self.get_attr(elem, ["size", "font-size"], 24))
@@ -534,6 +567,8 @@ class FrictionMarkupCompiler:
             {v_ch}.setTextAlignment('center');
             {v_ch}.position().setValue([{pos_cx}, {pos_cy} + ({offset_y} * S)]);
             """)
+            if parent_container:
+                self.js_lines.append(f"{v_ch}.setParentLayer({parent_container});")
             self.apply_opacity_envelope(v_ch, t_from + i * 0.04, t_to, 0.2)
 
     def render_scatter_text(self, elem: ET.Element, t_from: float, t_to: float):
@@ -590,17 +625,17 @@ class FrictionMarkupCompiler:
             """)
             self.apply_opacity_envelope(v_fm, t_from, t_to, 0.3)
 
-    def render_concentric(self, elem: ET.Element, t_from: float, t_to: float, cx: Any, cy: Any):
-        """Concentric geometric structure circles / orbits"""
-        count = int(self.get_attr(elem, ["count"], 4))
-        max_r = float(self.get_attr(elem, ["max-r", "r"], 280))
+    def render_concentric(self, elem: ET.Element, t_from: float, t_to: float, cx: Any, cy: Any, parent_container: Optional[str] = None):
+        """Concentric technical / radar rings"""
+        count = int(self.get_attr(elem, ["count", "num"], 3))
+        max_r = float(self.get_attr(elem, ["max-r", "r", "radius"], 360))
         stroke = self.get_attr(elem, ["stroke", "color"], "#00f2fe")
-        bw = float(self.get_attr(elem, ["bw", "stroke-width"], 1.5))
-        is_3d = str(self.get_attr(elem, ["is3D", "3d"], "true")).lower() == "true"
-        rot_x = self.get_attr(elem, ["rotX", "rot-x"], "55->70")
-        rot_y = self.get_attr(elem, ["rotY", "rot-y"], "0->90")
+        bw = float(self.get_attr(elem, ["bw", "strokeWidth"], 1.0))
+        is_3d = str(self.get_attr(elem, ["is3D", "3d"], "false")).lower() == "true"
+        rot_x = self.get_attr(elem, ["rotX", "rotateX"], "")
+        rot_y = self.get_attr(elem, ["rotY", "rotateY"], "")
 
-        step = max_r / float(count)
+        step = max_r / max(1, count)
         for i in range(1, count + 1):
             r = step * i
             v_ring = self.next_var(f"concentric_{i}")
@@ -611,6 +646,8 @@ class FrictionMarkupCompiler:
             {v_ring}.setStrokeColor('{stroke}');
             {v_ring}.setStrokeWidth({bw});
             """)
+            if parent_container:
+                self.js_lines.append(f"{v_ring}.setParentLayer({parent_container});")
             if is_3d:
                 self.js_lines.append(f"{v_ring}.set3DEnabled(true);")
                 if rot_x:
@@ -624,7 +661,7 @@ class FrictionMarkupCompiler:
 
             self.apply_opacity_envelope(v_ring, t_from, t_to, 0.3)
 
-    def render_burst_lines(self, elem: ET.Element, t_from: float, t_to: float, cx: Any, cy: Any):
+    def render_burst_lines(self, elem: ET.Element, t_from: float, t_to: float, cx: Any, cy: Any, parent_container: Optional[str] = None):
         """Radial burst rays / speed lines"""
         count = int(self.get_attr(elem, ["count", "rays"], 8))
         inner = float(self.get_attr(elem, ["inner"], 80))
@@ -646,6 +683,8 @@ class FrictionMarkupCompiler:
             {v_ray}.setStrokeWidth(0);
             {v_ray}.rotation().setValue({angle});
             """)
+            if parent_container:
+                self.js_lines.append(f"{v_ray}.setParentLayer({parent_container});")
             if rot:
                 r0, r1 = self.parse_range(rot)
                 self.js_lines.append(f"{v_ray}.rotation().setValueAtFrame(f({t_from}), {angle + r0});")
@@ -702,7 +741,7 @@ class FrictionMarkupCompiler:
             """)
             self.apply_opacity_envelope(v_blk, t_from, t_to, 0.3)
 
-    def render_line(self, elem: ET.Element, t_from: float, t_to: float, cx: Any, cy: Any, parent_3d: Optional[Dict[str, Any]] = None):
+    def render_line(self, elem: ET.Element, t_from: float, t_to: float, cx: Any, cy: Any, parent_3d: Optional[Dict[str, Any]] = None, parent_container: Optional[str] = None):
         w = float(self.get_attr(elem, ["w", "width"], 500))
         h = float(self.get_attr(elem, ["h", "height"], 3))
         color = self.get_attr(elem, ["color", "fill"], "#ff2a6d")
@@ -723,32 +762,38 @@ class FrictionMarkupCompiler:
         {v_line}.position().setValue([{pos_cx}, {pos_cy}]);
         {v_line}.setFillColor('{color}');
         {v_line}.setStrokeWidth(0);
+        {v_line}.setInPoint(f({act_from}));
+        {v_line}.setOutPoint(f({t_to}));
         """)
 
-        if parent_3d and parent_3d.get("is3D"):
+        if parent_container:
+            self.js_lines.append(f"{v_line}.setParentLayer({parent_container});")
+            self.js_lines.append(f"{v_line}.zPosition().setValue(4 * S);")
+
+        if parent_3d and parent_3d.get("is3D") and not parent_container:
             self.js_lines.append(f"{v_line}.set3DEnabled(true);")
             rot_y = parent_3d.get("rotY")
             rot_x = parent_3d.get("rotX")
             if rot_y:
                 ry0, ry1 = self.parse_range(rot_y)
                 self.js_lines.append(f"{v_line}.rotationY().setValueAtFrame(f({act_from}), {ry0});")
-                self.js_lines.append(f"{v_line}.rotationY().setValueAtFrame(f({act_from + 0.45}), {ry1});")
+                self.js_lines.append(f"{v_line}.rotationY().setValueAtFrameWithEasing(f({act_from + 0.5}), {ry1}, 'easeOutCubic');")
             if rot_x:
                 rx0, rx1 = self.parse_range(rot_x)
                 self.js_lines.append(f"{v_line}.rotationX().setValueAtFrame(f({act_from}), {rx0});")
-                self.js_lines.append(f"{v_line}.rotationX().setValueAtFrame(f({act_from + 0.45}), {rx1});")
+                self.js_lines.append(f"{v_line}.rotationX().setValueAtFrameWithEasing(f({act_from + 0.5}), {rx1}, 'easeOutCubic');")
             self.js_lines.append(f"{v_line}.zPosition().setValue(15);")
 
         if motion_in in ["expand", "expand-x"]:
             self.js_lines.append(f"""
             {v_line}.scale().setValueAtFrame(f({act_from}), [0.01, 1]);
-            {v_line}.scale().setValueAtFrame(f({act_from + 0.35}), [1.0, 1]);
+            {v_line}.scale().setValueAtFrameWithEasing(f({act_from + 0.45}), [1.0, 1], 'easeOutCubic');
             """)
         
         self.apply_common_modifiers(v_line, elem)
         self.apply_opacity_envelope(v_line, act_from, t_to, 0.2)
 
-    def render_circle(self, elem: ET.Element, t_from: float, t_to: float, cx: Any, cy: Any):
+    def render_circle(self, elem: ET.Element, t_from: float, t_to: float, cx: Any, cy: Any, parent_container: Optional[str] = None):
         r = float(self.get_attr(elem, ["radius", "r"], 200))
         color = self.get_attr(elem, ["color", "fill"], "transparent")
         stroke = self.get_attr(elem, ["stroke", "border"], "#00f2fe")
@@ -771,6 +816,9 @@ class FrictionMarkupCompiler:
         {v_circ}.setStrokeColor('{stroke}');
         {v_circ}.setStrokeWidth({stroke_w});
         """)
+
+        if parent_container:
+            self.js_lines.append(f"{v_circ}.setParentLayer({parent_container});")
 
         if is_3d or rot_x or rot_y:
             self.js_lines.append(f"{v_circ}.set3DEnabled(true);")
@@ -862,44 +910,57 @@ class FrictionMarkupCompiler:
         if m in ["pop", "pop-spring", "spring", "bounce"]:
             self.js_lines.append(f"""
             {var_name}.scale().setValueAtFrame(f({t_in}), [0.15, 0.15]);
-            {var_name}.scale().setValueAtFrame(f({t_in + 0.28}), [1.18, 1.18]);
-            {var_name}.scale().setValueAtFrame(f({t_in + 0.42}), [0.96, 0.96]);
-            {var_name}.scale().setValueAtFrame(f({t_in + 0.55}), [1.0, 1.0]);
+            {var_name}.scale().setValueAtFrameWithEasing(f({t_in + 0.5}), [1.0, 1.0], 'easeOutBack');
             """)
         elif m in ["slide-up", "up"]:
             self.js_lines.append(f"""
-            {var_name}.position().setValueAtFrame(f({t_in}), [{cx}, {cy} + 35*S]);
-            {var_name}.position().setValueAtFrame(f({t_in + 0.35}), [{cx}, {cy}]);
+            {var_name}.position().setValueAtFrame(f({t_in}), [{cx}, {cy} + 45*S]);
+            {var_name}.position().setValueAtFrameWithEasing(f({t_in + 0.45}), [{cx}, {cy}], 'easeOutCubic');
             """)
         elif m in ["slide-down", "down"]:
             self.js_lines.append(f"""
-            {var_name}.position().setValueAtFrame(f({t_in}), [{cx}, {cy} - 35*S]);
-            {var_name}.position().setValueAtFrame(f({t_in + 0.35}), [{cx}, {cy}]);
+            {var_name}.position().setValueAtFrame(f({t_in}), [{cx}, {cy} - 45*S]);
+            {var_name}.position().setValueAtFrameWithEasing(f({t_in + 0.45}), [{cx}, {cy}], 'easeOutCubic');
             """)
         elif m in ["slide-left", "left"]:
             self.js_lines.append(f"""
             {var_name}.position().setValueAtFrame(f({t_in}), [{cx} + 120*S, {cy}]);
-            {var_name}.position().setValueAtFrame(f({t_in + 0.35}), [{cx}, {cy}]);
+            {var_name}.position().setValueAtFrameWithEasing(f({t_in + 0.45}), [{cx}, {cy}], 'easeOutCubic');
             """)
         elif m in ["slide-right", "right"]:
             self.js_lines.append(f"""
             {var_name}.position().setValueAtFrame(f({t_in}), [{cx} - 120*S, {cy}]);
-            {var_name}.position().setValueAtFrame(f({t_in + 0.35}), [{cx}, {cy}]);
+            {var_name}.position().setValueAtFrameWithEasing(f({t_in + 0.45}), [{cx}, {cy}], 'easeOutCubic');
             """)
         elif m in ["zoom", "zoom-in", "scale"]:
             self.js_lines.append(f"""
-            {var_name}.scale().setValueAtFrame(f({t_in}), [0.6, 0.6]);
-            {var_name}.scale().setValueAtFrame(f({t_in + 0.4}), [1.0, 1.0]);
+            {var_name}.scale().setValueAtFrame(f({t_in}), [0.35, 0.35]);
+            {var_name}.scale().setValueAtFrameWithEasing(f({t_in + 0.45}), [1.0, 1.0], 'easeOutCubic');
             """)
+        elif m in ["fade"]:
+            pass
 
-    def apply_opacity_envelope(self, var_name: str, t_from: float, t_to: float, fade_dur: float = 0.25):
-        self.js_lines.append(f"""
-        {var_name}.opacityProp().setValueAtFrame(f(0.0), 0);
-        if (f({t_from}) > 0) {{ {var_name}.opacityProp().setValueAtFrame(f({t_from}), 0); }}
-        {var_name}.opacityProp().setValueAtFrame(f({t_from + fade_dur}), 100);
-        {var_name}.opacityProp().setValueAtFrame(f({t_to - fade_dur}), 100);
-        {var_name}.opacityProp().setValueAtFrame(f({t_to}), 0);
-        """)
+    def apply_opacity_envelope(self, var_name: str, t_from: float, t_to: float, fade_dur: float = 0.25, skip_in: bool = False):
+        total_dur = max(0.05, t_to - t_from)
+        eff_fade = min(fade_dur, total_dur * 0.4)
+        t_in_end = t_from + eff_fade
+        t_out_start = t_to - eff_fade
+        if skip_in:
+            self.js_lines.append(f"""
+            if (f({t_out_start}) < f({t_to})) {{
+                {var_name}.opacityProp().setValueAtFrame(f({t_out_start}), 100);
+                {var_name}.opacityProp().setValueAtFrameWithEasing(f({t_to}), 0, 'easeOutQuad');
+            }}
+            """)
+        else:
+            self.js_lines.append(f"""
+            {var_name}.opacityProp().setValueAtFrame(f({t_from}), 0);
+            {var_name}.opacityProp().setValueAtFrameWithEasing(f({t_in_end}), 100, 'easeOutQuad');
+            if (f({t_out_start}) > f({t_in_end})) {{
+                {var_name}.opacityProp().setValueAtFrame(f({t_out_start}), 100);
+            }}
+            {var_name}.opacityProp().setValueAtFrameWithEasing(f({t_to}), 0, 'easeOutQuad');
+            """)
 
 def send_request(req_obj: dict, port: int = DEFAULT_HTTP_PORT, socket_path: str = DEFAULT_SOCKET_PATH) -> dict:
     if os.path.exists(socket_path) or sys.platform == "win32":
@@ -928,8 +989,8 @@ def send_request(req_obj: dict, port: int = DEFAULT_HTTP_PORT, socket_path: str 
     with urllib.request.urlopen(req, timeout=10) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
-def render_markup_to_friction(markup_xml: str, port: int = DEFAULT_HTTP_PORT, socket_path: str = DEFAULT_SOCKET_PATH) -> dict:
-    compiler = FrictionMarkupCompiler(markup_xml)
+def render_markup_to_friction(markup_xml: str, port: int = DEFAULT_HTTP_PORT, socket_path: str = DEFAULT_SOCKET_PATH, mode: str = "replace", time_offset: float = 0.0) -> dict:
+    compiler = FrictionMarkupCompiler(markup_xml, mode=mode, time_offset=time_offset)
     js_code = compiler.compile()
 
     req = {
@@ -940,7 +1001,7 @@ def render_markup_to_friction(markup_xml: str, port: int = DEFAULT_HTTP_PORT, so
             "name": "friction_eval_script",
             "arguments": {
                 "script": js_code,
-                "undoGroupName": "Render Friction Markup"
+                "undoGroupName": f"Render Friction Markup ({mode})"
             }
         }
     }
@@ -950,6 +1011,8 @@ def main():
     parser = argparse.ArgumentParser(description="Friction 2.5D Semantic HTML Motion Graphics DSL")
     parser.add_argument("file", nargs="?", help="Input .html / .xml file")
     parser.add_argument("-m", "--markup", "--code", type=str, help="Inline HTML markup string")
+    parser.add_argument("--mode", choices=["replace", "append"], default="replace", help="Compilation mode: replace (clean scene) or append (add to existing scene)")
+    parser.add_argument("--time-offset", "--offset", type=float, default=0.0, help="Timeline start offset in seconds for added layers")
     parser.add_argument("--compile-only", action="store_true", help="Output compiled JavaScript without sending")
     parser.add_argument("--port", type=int, default=DEFAULT_HTTP_PORT, help="Friction TCP HTTP port")
     parser.add_argument("--socket", type=str, default=DEFAULT_SOCKET_PATH, help="Friction IPC socket path")
@@ -958,66 +1021,23 @@ def main():
     if args.markup:
         markup = args.markup
     elif args.file:
-        with open(args.file, "r", encoding="utf-8") as f:
-            markup = f.read()
+        if args.file == "-":
+            markup = sys.stdin.read()
+        else:
+            with open(args.file, "r", encoding="utf-8") as f:
+                markup = f.read()
     else:
-        # Example demonstrating rich composable MG primitives
-        markup = """
-<scene width="1920" height="1080" fps="60" duration="8.0" bg="#08090e">
-  <hud title="// MOTION ENGINE" sub="60 FPS // SKIA" timecode="true" brackets="true" />
-  <crosshair x="120" y="240" size="14" color="#00f2fe" />
-  <barcode x="1700" y="230" w="100" h="16" color="#718093" />
-
-  <!-- Act 1: 2.5D Floating Card with Staggered Typewriter Text -->
-  <seq from="0.0" to="2.6">
-    <bg-blocks count="5" color="#0f1422" alpha="30" />
-    <card w="1200" h="460" bg="#101422" border="#1e283d" 3d="true" rotY="-28->0" rotX="16->0">
-      <col gap="16">
-        <text size="22" color="#00f2fe" in="slide-down">KINETIC ENGINE // PHASE 01</text>
-        <h1 size="92" color="#ffffff" anim="rise">KINETIC TYPOGRAPHY</h1>
-        <line w="650" color="#ff2a6d" in="expand" />
-        <p size="24" color="#94a3b8" in="slide-up">REALTIME 2.5D VECTOR MOTION GRAPHICS</p>
-      </col>
-    </card>
-  </seq>
-
-  <!-- Act 2: Concentric Geometry & Text Ribbon -->
-  <seq from="2.6" to="5.2">
-    <concentric count="4" max-r="260" stroke="#00f2fe" bw="1.5" 3d="true" rotX="55->70" rotY="0->90" />
-    <burst-lines count="8" inner="70" outer="420" color="#ff2a6d" rot="0->30" />
-    <col gap="18">
-      <text size="24" color="#ffd000" in="slide-down">GEOMETRIC STRUCTURE // 秩序重构</text>
-      <h1 size="108" color="#ffffff" anim="zoom">存 在 証 明</h1>
-      <line w="520" color="#00f2fe" in="expand" />
-      <p size="24" color="#cbd5e1">THE HARMONY OF 2.5D MOTION GRAPHICS</p>
-    </col>
-    <ruler x="160" y="960" w="1600" spacing="40" color="#1e2538" tick-color="#00f2fe" />
-  </seq>
-
-  <!-- Act 3: Glowing Character Cards & Formula Scatter -->
-  <seq from="5.2" to="8.0">
-    <formula-scatter count="10" color="#64748b" />
-    <card w="1300" h="480" bg="#0d121f" border="#ff2a6d" radius="16" 3d="true" rotX="-22->0">
-      <col gap="16">
-        <text size="24" color="#ffd000" in="slide-down">Q.E.D. // FINAL THEOREM ESTABLISHED</text>
-        <h1 size="110" color="#ffffff" anim="typewriter">サイエンス</h1>
-        <line w="720" color="#00f2fe" in="expand" />
-        <text size="40" color="#ff2a6d" in="zoom">S C I E N C E !</text>
-        <p size="22" color="#e2e8f0">MIMI feat. 重音テト // PRODUCED IN FRICTION 2.5D</p>
-      </col>
-    </card>
-  </seq>
-</scene>
-"""
+        parser.print_help()
+        return
 
     if args.compile_only:
-        compiler = FrictionMarkupCompiler(markup)
+        compiler = FrictionMarkupCompiler(markup, mode=args.mode, time_offset=args.time_offset)
         print(compiler.compile())
         return
 
     print("Compiling and sending HTML Motion Markup to Friction 2.5D...")
     try:
-        res = render_markup_to_friction(markup, args.port, args.socket)
+        res = render_markup_to_friction(markup, args.port, args.socket, mode=args.mode, time_offset=args.time_offset)
         print("Friction Response:", json.dumps(res, indent=2))
         print("Scene successfully compiled and updated in Friction")
     except Exception as e:
