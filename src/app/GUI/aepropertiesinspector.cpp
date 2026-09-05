@@ -27,6 +27,8 @@
 #include "GUI/BoxesList/boxsinglewidget.h"
 #include "themesupport.h"
 #include "Private/document.h"
+#include "clipboardcontainer.h"
+#include "smartPointers/ememory.h"
 #include "widgets/qrealanimatorvalueslider.h"
 #include "widgets/colorsettingswidget.h"
 
@@ -1077,12 +1079,23 @@ void AEPropertiesInspector::setupEffectsControls(QVBoxLayout *layout, BoundingBo
         });
         ehLayout->addWidget(eyeBtn);
 
-        // right-click anywhere on the effect card offers delete
+        // right-click anywhere on the effect card offers copy/delete
         effectWidget->setContextMenuPolicy(Qt::CustomContextMenu);
         connect(effectWidget, &QWidget::customContextMenuRequested,
                 this, [effectWidget, box, effect, this](const QPoint &pos) {
             QMenu menu(effectWidget);
             menu.setPalette(ThemeSupport::getDefaultPalette());
+            const auto copyAct = menu.addAction(
+                        QIcon::fromTheme(QStringLiteral("edit-copy")),
+                        tr("复制特效"));
+            connect(copyAct, &QAction::triggered,
+                    this, [effect, this]() {
+                const auto clipboard = enve::make_shared<PropertyClipboard>(
+                            static_cast<const Property*>(effect));
+                Document::sInstance->replaceClipboard(clipboard);
+                qWarning() << "[PASTE] inspector copy: effect"
+                           << effect->prp_getName();
+            });
             const auto delAct = menu.addAction(
                         QIcon::fromTheme(QStringLiteral("edit-delete")),
                         tr("删除特效"));

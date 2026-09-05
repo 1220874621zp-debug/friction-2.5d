@@ -33,26 +33,29 @@
 
 #include "themesupport.h"
 
-#include <QCoreApplication>
 #include <QFontDatabase>
+#include <QFutureWatcher>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPainter>
 #include <QPaintEvent>
+#include <QPointer>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QSharedPointer>
 #include <QSlider>
 #include <QSpinBox>
 #include <QSvgRenderer>
+#include <QtConcurrent/QtConcurrentMap>
 #include "widgets/flowlayout.h"
 #include <QTimer>
 #include <QVBoxLayout>
 
-// preview bake parameters
+// preview sampling parameters
 namespace {
 constexpr qreal gPreviewFps = 24.;
-constexpr int gMaxFrames = 72;
+constexpr int gMaxFrames = 48;
 constexpr int gMinFrames = 8;
 
 // preview frame numbers for one loop of a preset
@@ -131,6 +134,57 @@ void configureSampleRect(RectangleBox* const box,
         fill->setPaintType(PaintType::FLATPAINT);
         fill->setCurrentColor(QColor(235, 235, 235), false);
     }
+}
+
+// worker-thread render input: pure data, no widget pointers
+struct RenderParams {
+    const TextAnimPreset* tp = nullptr;
+    const LayerAnimPreset* lp = nullptr;
+    qreal scale = 1.0;
+    QString cjkFamily;
+    QImage mascot;
+};
+
+// runs on a QtConcurrent worker thread: sceneless sample box +
+// effect evaluation + skia rasterization only, no gui objects
+QList<QImage> renderPresetPreview(const RenderParams& rp)
+{
+    try {
+        if (rp.tp) {
+            const auto box = enve::make_shared<TextBox>();
+            configureSampleBox(box.get(), QStringLiteral("friction"),
+                               rp.cjkFamily, SkFontStyle(), 64);
+            TextAnimPresets::apply(box.get(), *rp.tp, 0, gPreviewFps,
+                                   rp.scale);
+            return TextAnimPresets::renderPreviewSequence(
+                        box.get(), framesForPreset(*rp.tp, rp.scale),
+                        QSize(160, 160));
+        }
+        if (rp.lp) {
+            // presets without an entrance recipe (sink) preview their
+            // exit direction instead; plain attach (no undo)
+            const bool previewOut = rp.lp->gen == nullptr;
+            const auto box = enve::make_shared<RectangleBox>();
+            configureSampleRect(box.get(), 55, 55);
+            if (previewOut) {
+                LayerAnimPresets::apply(box.get(), *rp.lp, -1, 0,
+                                        gPreviewFps, rp.scale,
+                                        400, 400, false);
+            } else {
+                LayerAnimPresets::apply(box.get(), *rp.lp, 0, -1,
+                                        gPreviewFps, rp.scale,
+                                        400, 400, false);
+            }
+            return LayerAnimPresets::renderPreviewSequence(
+                        box.get(), framesForLayerPreset(*rp.lp, rp.scale),
+                        QSize(160, 160), rp.mascot);
+        }
+    } catch (const std::exception& e) {
+        qWarning() << "textanim preview render failed:" << e.what();
+    } catch (...) {
+        qWarning() << "textanim preview render failed: unknown error";
+    }
+    return {};
 }
 }
 
@@ -247,14 +301,14 @@ TextAnimTile::TextAnimTile(const TextAnimPreset* const textPreset,
     if (isLoop) {
         addBtn(QString::fromUtf8("应用"), 0);
     } else {
-        const bool hasIn = !mLayerPreset || mLayerPreset->bake;
+        const bool hasIn = !mLayerPreset || mLayerPreset->gen;
         const bool hasOut = mTextPreset ? mTextPreset->supportsOut :
-                            mLayerPreset ? mLayerPreset->outBake != nullptr
+                            mLayerPreset ? mLayerPreset->outGen != nullptr
                                          : false;
         const bool hasAll = hasIn && hasOut;
-        if (hasIn) { addBtn(QStringLiteral("in"), 0); }
-        if (hasAll) { addBtn(QStringLiteral("all"), 2); }
-        if (hasOut) { addBtn(QStringLiteral("out"), 1); }
+        if (hasIn) { addBtn(QString::fromUtf8("入"), 0); }
+        if (hasAll) { addBtn(QString::fromUtf8("全"), 2); }
+        if (hasOut) { addBtn(QString::fromUtf8("出"), 1); }
     }
 
     // clicking the preview or the name selects the preset for the
@@ -346,25 +400,22 @@ void TextAnimTile::setPreviewSize(const int size)
 
 void TextAnimTile::setFrames(const QList<QImage>& frames)
 {
-    mFrames = frames;
-    mFrame = 0;
-    paintFrame();
+    // the preview widget owns the frame list; the tile keeps no copy
+    if (mPreviewArea) { mPreviewArea->setFrames(frames); }
+}
+
+void TextAnimTile::setLoading()
+{
+    if (mPreviewArea) {
+        mPreviewArea->setPlaceholder(QString::fromUtf8("渲染中…"));
+    }
 }
 
 void TextAnimTile::advance()
 {
-    if (mFrames.count() > 1) {
-        mFrame = (mFrame + 1) % mFrames.count();
-        paintFrame();
-    }
-}
-
-void TextAnimTile::paintFrame()
-{
-    if (!mPreviewArea) { return; }
-    mPreviewArea->setFrames(
-                QList<QImage>() << mFrames.value(
-                    mFrames.isEmpty() ? 0 : mFrame % mFrames.count()));
+    // zero per-tick allocation: the preview widget just advances
+    // its frame index and repaints
+    if (mPreviewArea) { mPreviewArea->advance(); }
 }
 
 // ---------------------------------------------------------------- panel
@@ -488,24 +539,44 @@ TextAnimPresetPanel::TextAnimPresetPanel(Document& doc,
         }
     });
 
+    // duration-scale changes re-render every tile (debounced - the
+    // preview must show the same timing the next Apply will bake,
+    // which it previously did not: previews were pinned to 100%)
+    mDurationReRenderTimer = new QTimer(this);
+    mDurationReRenderTimer->setSingleShot(true);
+    mDurationReRenderTimer->setInterval(300);
+    connect(mDurationReRenderTimer, &QTimer::timeout, this, [this]() {
+        queueRender(mTiles);
+    });
+
     connect(mDurationSlider, &QSlider::valueChanged, this, [this](const int v) {
         mDurationScale = v/100.;
+        // invalidates preview batches still rendering in the background
+        mScaleGeneration++;
         mDurationSpin->blockSignals(true);
         mDurationSpin->setValue(v);
         mDurationSpin->blockSignals(false);
+        mDurationSlider->setToolTip(
+                    QString::fromUtf8("动画时长缩放（%1%）").arg(v));
+        mDurationReRenderTimer->start();
     });
     connect(mDurationSpin, static_cast<void(QSpinBox::*)(int)>(&QSpinBox::valueChanged),
             this, [this](const int v) {
         mDurationScale = v/100.;
+        mScaleGeneration++;
         mDurationSlider->blockSignals(true);
         mDurationSlider->setValue(v);
         mDurationSlider->blockSignals(false);
+        mDurationReRenderTimer->start();
     });
 
     mPlayTimer = new QTimer(this);
     mPlayTimer->setInterval(40);
     connect(mPlayTimer, &QTimer::timeout, this, [this]() {
-        for (const auto tile : mTiles) { tile->advance(); }
+        for (const auto tile : mTiles) {
+            // skip tiles scrolled out of the viewport
+            if (!tile->visibleRegion().isEmpty()) { tile->advance(); }
+        }
     });
 
     // build the default-open section lazily on first show
@@ -520,7 +591,7 @@ void TextAnimPresetPanel::buildSection(Section& section, const int kind)
 void TextAnimPresetPanel::fillGridFromKind(const int kind,
                                            FlowLayout* flow)
 {
-    int rendered = 0;
+    QList<TextAnimTile*> added;
     const auto addTile = [&](const TextAnimPreset* const tp,
                              const LayerAnimPreset* const lp) {
         const auto tile = new TextAnimTile(tp, lp, this);
@@ -533,8 +604,7 @@ void TextAnimPresetPanel::fillGridFromKind(const int kind,
         tile->setPreviewSize(mTileSize);
         flow->addWidget(tile);
         mTiles << tile;
-        ensureTileFrames(tile);
-        if (++rendered % 4 == 0) { QCoreApplication::processEvents(); }
+        added << tile;
     };
     if (kind == 0) {
         for (const auto& p : TextAnimPresets::all()) {
@@ -552,33 +622,54 @@ void TextAnimPresetPanel::fillGridFromKind(const int kind,
             if (p.category == 2) { addTile(nullptr, &p); }
         }
     }
+    queueRender(added);
 }
 
-void TextAnimPresetPanel::ensureTileFrames(TextAnimTile* const tile)
+void TextAnimPresetPanel::queueRender(const QList<TextAnimTile*>& tiles)
 {
-    if (!tile) { return; }
-    if (const auto preset = tile->textPreset()) {
-        const auto box = enve::make_shared<TextBox>();
-        configureSampleBox(box.get(), QStringLiteral("friction"),
-                           defaultCjkFamily(), SkFontStyle(), 64);
-        TextAnimPresets::apply(box.get(), *preset, 0, gPreviewFps, 1.0);
-        const auto frames = framesForPreset(*preset, 1.0);
-        const auto imgs = TextAnimPresets::renderPreviewSequence(
-                    box.get(), frames, QSize(160, 160));
-        tile->setFrames(imgs);
-    } else if (const auto preset = tile->layerPreset()) {
-        // presets without an entrance recipe (sink) preview their
-        // exit direction instead
-        const bool previewOut = preset->bake == nullptr;
-        const auto box = enve::make_shared<RectangleBox>();
-        configureSampleRect(box.get(), 55, 55);
-        LayerAnimPresets::apply(box.get(), *preset, 0, gPreviewFps,
-                                1.0, 400, 400, previewOut);
-        const auto frames = framesForLayerPreset(*preset, 1.0);
-        const auto imgs = LayerAnimPresets::renderPreviewSequence(
-                    box.get(), frames, QSize(160, 160), mascotImage());
-        tile->setFrames(imgs);
+    if (tiles.isEmpty()) { return; }
+    // hidden panel: defer all rendering to the next showEvent
+    if (!isVisible()) { mRenderAllOnShow = true; return; }
+
+    QVector<RenderParams> params;
+    QVector<QPointer<TextAnimTile>> targets;
+    params.reserve(tiles.size());
+    targets.reserve(tiles.size());
+    for (const auto tile : tiles) {
+        if (!tile) { continue; }
+        RenderParams rp;
+        rp.tp = tile->textPreset();
+        rp.lp = tile->layerPreset();
+        rp.scale = mDurationScale;
+        if (rp.lp) { rp.mascot = mascotImage(); }
+        else { rp.cjkFamily = defaultCjkFamily(); }
+        params << rp;
+        targets << tile;
+        tile->setLoading();
     }
+    if (params.isEmpty()) { return; }
+
+    // plain function pointer: this Qt5's mapped() result deduction
+    // needs result_type, which lambdas do not provide
+    const int gen = mScaleGeneration;
+    const auto targetsPtr =
+            QSharedPointer<QVector<QPointer<TextAnimTile>>>::create(targets);
+    const auto watcher = new QFutureWatcher<QList<QImage>>(this);
+    connect(watcher, &QFutureWatcher<QList<QImage>>::finished,
+            this, [this, watcher, targetsPtr, gen]() {
+        watcher->deleteLater();
+        // the duration scale changed while rendering: the frames
+        // no longer match what the next Apply would bake - drop them
+        if (gen != mScaleGeneration) { return; }
+        const auto results = watcher->future().results();
+        const int n = qMin(results.size(), targetsPtr->size());
+        for (int i = 0; i < n; i++) {
+            if (const auto tile = targetsPtr->at(i)) {
+                tile->setFrames(results.at(i));
+            }
+        }
+    });
+    watcher->setFuture(QtConcurrent::mapped(params, &renderPresetPreview));
 }
 
 void TextAnimPresetPanel::selectTile(TextAnimTile* const tile)
@@ -608,15 +699,20 @@ void TextAnimPresetPanel::applyPreset(TextAnimTile* const tile,
         }
         const qreal cw = scene->getCanvasWidth();
         const qreal ch = scene->getCanvasHeight();
-        if (dir == 1 && !preset->outBake) {
+        if (dir == 1 && !preset->outGen) {
             mStatusLabel->setText(QString::fromUtf8("该预设不支持出点。"));
             return;
         }
-        if (dir == 0 && !preset->bake) {
+        if (dir == 0 && !preset->gen) {
             mStatusLabel->setText(QString::fromUtf8("该预设不支持入点。"));
             return;
         }
+        // one undo block for the whole batch: the stack closes the
+        // set at actionFinished, extra pushes mid-loop are no-ops
+        selected.first()->prp_pushUndoRedoName(
+                    QString::fromUtf8("应用预设「%1」").arg(preset->name));
         int applied = 0;
+        bool exitClamped = false;
         for (const auto& box : selected) {
             // anchor to the layer's own in/out points instead of the
             // playhead; full-length layers fall back to the scene range
@@ -627,18 +723,20 @@ void TextAnimPresetPanel::applyPreset(TextAnimTile* const tile,
                                         : scene->getMaxFrame();
             const int durF = qMax(2, qRound(preset->duration*
                                             mDurationScale*fps));
-            if (dir == 0 || dir == 2) {
-                LayerAnimPresets::apply(box, *preset, inF,
-                                        fps, mDurationScale, cw, ch,
-                                        false);
+            // one combined expression per animator: entrance owns
+            // [inF, outStart), the exit window takes over from there
+            const int inStart = (dir == 0 || dir == 2) ? inF : -1;
+            int outStart = -1;
+            if ((dir == 1 || dir == 2) && preset->outGen) {
+                // exit finishes exactly at the layer's end; never let
+                // it start before the in-point on very short layers
+                // (a negative start would anchor expressions to
+                // invalid frames)
+                outStart = qMax(inF, outEndF - durF);
+                if (outEndF - durF < inF) { exitClamped = true; }
             }
-            if (dir == 1 || dir == 2) {
-                // exit finishes exactly at the layer's end
-                const int outStart = outEndF - durF;
-                LayerAnimPresets::apply(box, *preset, outStart,
-                                        fps, mDurationScale, cw, ch,
-                                        true);
-            }
+            LayerAnimPresets::apply(box, *preset, inStart, outStart,
+                                    fps, mDurationScale, cw, ch);
             applied++;
         }
         const QString dirText = dir == 0 ? QString::fromUtf8("（入点）") :
@@ -646,7 +744,12 @@ void TextAnimPresetPanel::applyPreset(TextAnimTile* const tile,
                            QString::fromUtf8("（入+出）");
         mStatusLabel->setText(
                     QString::fromUtf8("已应用「%1%2」到 %3 个图层。")
-                    .arg(preset->name).arg(dirText).arg(applied));
+                    .arg(preset->name).arg(dirText).arg(applied)
+                + (exitClamped ? QString::fromUtf8(
+                       "有图层短于预设时长，出点已前移到入点。")
+                               : QString()));
+        Document::sInstance->actionFinished();
+        scene->updateAllBoxes(UpdateReason::userChange);
         return;
     }
 
@@ -661,7 +764,11 @@ void TextAnimPresetPanel::applyPreset(TextAnimTile* const tile,
         mStatusLabel->setText(QString::fromUtf8("请先选择文字图层。"));
         return;
     }
+    // one undo block for the whole batch (see the layer path above)
+    targets.first()->prp_pushUndoRedoName(
+                QString::fromUtf8("应用文字预设「%1」").arg(preset->name));
     int applied = 0;
+    bool exitClamped = false;
     for (const auto tb : targets) {
         const auto durRect = tb->getDurationRectangle();
         const int inF = durRect ? durRect->getMinAbsFrame()
@@ -676,24 +783,32 @@ void TextAnimPresetPanel::applyPreset(TextAnimTile* const tile,
                                         fps, mDurationScale, false);
         }
         if (ok && (dir == 1 || dir == 2)) {
-            // exit finishes exactly at the layer's end
-            const int outStart = outEndF - durF;
+            // exit finishes exactly at the layer's end; never let it
+            // start before the in-point on very short layers
+            const int outStart = qMax(inF, outEndF - durF);
+            if (outEndF - durF < inF) { exitClamped = true; }
             ok = TextAnimPresets::apply(tb, *preset, outStart,
                                         fps, mDurationScale, true);
         }
         if (ok) { applied++; }
     }
     if (applied == 0) {
-        mStatusLabel->setText(QString::fromUtf8(
-            "数字滚动需要文本包含数字（如“进度 42%”）。"));
+        mStatusLabel->setText(preset->id == QLatin1String("number-roll")
+            ? QString::fromUtf8("数字滚动需要文本包含数字（如“进度 42%”）。")
+            : QString::fromUtf8("预设应用失败。"));
     } else {
         const QString dirText = dir == 0 ? QString() :
                 dir == 1 ? QString::fromUtf8("（出点）") :
                            QString::fromUtf8("（入+出）");
         mStatusLabel->setText(
                     QString::fromUtf8("已应用「%1%2」到 %3 个文字层。")
-                    .arg(preset->name).arg(dirText).arg(applied));
+                    .arg(preset->name).arg(dirText).arg(applied)
+                + (exitClamped ? QString::fromUtf8(
+                       "有图层短于预设时长，出点已前移到入点。")
+                               : QString()));
     }
+    Document::sInstance->actionFinished();
+    scene->updateAllBoxes(UpdateReason::userChange);
 }
 
 QList<BoundingBox*> TextAnimPresetPanel::selectedBoxes() const
@@ -711,12 +826,6 @@ QList<TextBox*> TextAnimPresetPanel::selectedTextBoxes() const
         if (tb) { result << tb; }
     }
     return result;
-}
-
-TextBox* TextAnimPresetPanel::selectedTextBox() const
-{
-    const auto list = selectedTextBoxes();
-    return list.isEmpty() ? nullptr : list.first();
 }
 
 const QImage& TextAnimPresetPanel::mascotImage()
@@ -768,6 +877,10 @@ void TextAnimPresetPanel::showEvent(QShowEvent* const e)
     if (mTextSection.expanded && !mTextSection.built) {
         buildSection(mTextSection, 0);
         if (!mTiles.isEmpty()) { selectTile(mTiles.first()); }
+    } else if (mRenderAllOnShow) {
+        // renders requested while the panel was hidden
+        mRenderAllOnShow = false;
+        queueRender(mTiles);
     }
     mPlayTimer->start();
 }

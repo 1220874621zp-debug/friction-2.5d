@@ -881,6 +881,9 @@ public:
     void addBoneLayerAction();
     void addAdjustmentLayerAction();
     void addSolidLayerAction();
+    // empty layer-type container for vector shapes; entering it makes
+    // subsequent shape draws land inside (AE shape layer)
+    void addVectorLayerAction();
     // empty group flagged as a switch group, ready to receive layers
     void addSwitchGroupAction();
 
@@ -1118,6 +1121,11 @@ protected:
     qptr<BoundingBox> mCurrentBox;
     qptr<Circle> mCurrentCircle;
     qptr<RectangleBox> mCurrentRectangle;
+    // rect mask drag: the 4 live corner nodes (TL/TR/BR/BL) of the
+    // mask path being dragged; empty when no rect-mask drag is active
+    QList<stdptr<SmartNodePoint>> mCurrentMaskRectNodes;
+    qptr<SmartVectorPath> mCurrentMaskRectPath;
+    QPointF mMaskRectAnchor;
     qptr<TextBox> mCurrentTextBox;
     qptr<ContainerBox> mCurrentContainer;
 
@@ -1195,6 +1203,25 @@ protected:
     void handleAddSmartPointMousePress(const eMouseEvent &e);
     void handleAddSmartPointMouseMove(const eMouseEvent &e);
     void handleAddSmartPointMouseRelease(const eMouseEvent &e);
+
+    // AE-style masks (pen + rect tool): resolveMaskTarget is pure
+    // hit/selection resolution (no tree mutation); ensureMaskHost
+    // wraps the target layer on first use or joins the existing mask
+    // group; nullptr + warning when the press resolves to no layer
+    BoundingBox *resolveMaskTarget(const eMouseEvent &e);
+    ContainerBox *ensureMaskHost(BoundingBox * const target);
+    ContainerBox *resolveMaskHost(const eMouseEvent &e);
+    // bitmap auto-detect: bitmap layer / existing mask / mask-hosting
+    // layer group → the plain pen and rect tools draw masks
+    bool isMaskIntentTarget(BoundingBox * const target);
+    // common mask-path factory (DstIn Add mode, flat fill, no stroke,
+    // 0-radius blur as the feather slot)
+    qsptr<SmartVectorPath> createMaskPath(BoundingBox * const nameSource);
+    // rect tool on a bitmap layer (or existing mask) drags a rect
+    // mask instead of a shape
+    bool startMaskRectDrag(BoundingBox * const target, const eMouseEvent &e);
+    void updateMaskRectDrag(const eMouseEvent &e);
+    void finishMaskRectDrag(const eMouseEvent &e);
 
     void updateTransformation(const eKeyEvent &e);
     QPointF getMoveByValueForEvent(const eMouseEvent &e);

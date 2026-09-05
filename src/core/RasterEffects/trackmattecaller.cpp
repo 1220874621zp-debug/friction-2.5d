@@ -120,17 +120,8 @@ void TrackMatteCaller::processGpu(QGL33* const gl,
 
 void TrackMatteCaller::processCpu(CpuRenderTools& renderTools,
                                   const CpuRenderData& data) {
-    if(!mMatte) return;
-    const auto& img = mMatte->fRenderedImage;
-    if(!img) return;
-    const auto raster = img->makeRasterImage();
-    if(!raster) return;
-    SkPixmap mattePix;
-    if(!raster->peekPixels(&mattePix)) return;
-
-    // the dst tile starts as uninitialized memory - copy the source
-    // tile in first, the kDstIn below multiplies THIS content
-    {
+    const bool inverted = (mMode == Mode::alphaInv || mMode == Mode::lumaInv);
+    auto copySrcTile = [&renderTools, &data]() {
         SkBitmap srcTile;
         if(renderTools.fSrcBtmp.extractSubset(&srcTile, data.fTexTile)) {
             SkPixmap srcTilePix;
@@ -138,7 +129,34 @@ void TrackMatteCaller::processCpu(CpuRenderTools& renderTools,
                 renderTools.fDstBtmp.writePixels(srcTilePix, 0, 0);
             }
         }
+    };
+    // no sample at all (preserve-alpha with nothing below) or an
+    // empty/degenerate matte (e.g. a zero-area shape): AE hides the
+    // target entirely, inverted modes show everything - never a
+    // silent no-op
+    if(!mMatte || !mMatte->fRenderedImage) {
+        copySrcTile();
+        if(!inverted) {
+            SkCanvas clear(renderTools.fDstBtmp);
+            SkPaint p;
+            p.setBlendMode(SkBlendMode::kDstOut);
+            p.setColor(SK_ColorWHITE); // a = 1 - dst.a
+            clear.drawPaint(p);
+        }
+        return;
     }
+    const auto& img = mMatte->fRenderedImage;
+    const auto raster = img->makeRasterImage();
+    // every exit past this point must leave the dst tile initialized:
+    // it starts as uninitialized memory, so fall back to the unmasked
+    // source tile whenever the matte pixels cannot be read
+    if(!raster) { copySrcTile(); return; }
+    SkPixmap mattePix;
+    if(!raster->peekPixels(&mattePix)) { copySrcTile(); return; }
+
+    // the dst tile starts as uninitialized memory - copy the source
+    // tile in first, the kDstIn below multiplies THIS content
+    copySrcTile();
 
     // matte origin in this layer's image coordinates
     const QPoint imgOff = mMatte->fGlobalRect.topLeft() - data.fPos;
@@ -147,7 +165,6 @@ void TrackMatteCaller::processCpu(CpuRenderTools& renderTools,
     // fully masked out (AE semantics)
     SkIRect ov = SkIRect::MakeXYWH(imgOff.x(), imgOff.y(),
                                    mattePix.width(), mattePix.height());
-    const bool inverted = (mMode == Mode::alphaInv || mMode == Mode::lumaInv);
     if(!ov.intersect(tile)) {
         if(!inverted) {
             // no matte pixels here: clear the tile's alpha completely

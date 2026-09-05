@@ -33,7 +33,7 @@
 #include "simplemath.h"
 
 ParentEffect::ParentEffect()
-    : FollowObjectEffectBase("parent",
+    : FollowObjectEffectBase(QObject::tr("Parent"),
                              TransformEffectType::parent)
 {
     prp_enabledDrawingOnCanvas();

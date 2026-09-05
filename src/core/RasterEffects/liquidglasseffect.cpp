@@ -168,7 +168,7 @@ void sampleBilinear(const SkBitmap& src, const int w, const int h,
 } // namespace
 
 LiquidGlassEffect::LiquidGlassEffect() :
-    RasterEffect("liquid-glass",
+    RasterEffect(QObject::tr("Liquid Glass"),
                  AppSupport::getRasterEffectHardwareSupport("LiquidGlass",
                                                             HardwareSupport::gpuPreffered),
                  true,

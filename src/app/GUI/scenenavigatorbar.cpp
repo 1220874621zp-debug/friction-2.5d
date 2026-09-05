@@ -121,8 +121,6 @@ QList<Canvas*> SceneNavigatorBar::linkedScenes(Canvas* const scene) {
 
 void SceneNavigatorBar::onActiveScene(Canvas* const scene) {
     prunePath(sPath, mDocument);
-    qWarning() << "NAV: activeScene"
-               << (scene ? scene->prp_getName() : QString("null"));
     if (scene) {
         if (sPath.isEmpty() || sPath.last() != scene) {
             // entering a scene nested in the current one extends the
@@ -255,7 +253,6 @@ void SceneNavigatorBar::rebuild() {
     // next level: the current scene's children appended after the
     // chain end with a separator (【parent】 > [child] [child]);
     // clicking one drills deeper and extends the chain
-    int chipsBuilt = 0;
     if (!children.isEmpty()) {
         addSep();
         for (const auto& linked : children) {
@@ -271,13 +268,9 @@ void SceneNavigatorBar::rebuild() {
             mRowLayout->addWidget(chip);
             mCrumbBtns << chip;
             mChipScenes << linked;
-            chipsBuilt++;
         }
     }
     updateOverflow();
-    qWarning() << "NAV: rebuild chain=" << sPath.count()
-               << "chips=" << chipsBuilt
-               << "w=" << width() << "visible=" << isVisible();
 }
 
 void SceneNavigatorBar::updateOverflow() {

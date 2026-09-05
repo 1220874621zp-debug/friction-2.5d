@@ -25,6 +25,9 @@
 
 #include "exceptions.h"
 #include <QMessageBox>
+#include <QCoreApplication>
+#include <QPointer>
+#include <QThread>
 
 std::string operator+(const std::string& c, const QString& k) {
     return c + k.toStdString();
@@ -91,9 +94,30 @@ QString gAllTextFromException(const std::exception &e,
 }
 
 void gPrintException(const bool fatal, const QString &allText) {
+    qCritical() << (fatal ? "Fatal" : "Critical") << "Error" << allText;
+    // A failing task queue reports one exception per finished task; each
+    // modal exec() runs a nested event loop that immediately processes the
+    // next failure, so a burst of failures recursed until the stack
+    // overflowed. Show a single non-modal box, append further errors to it
+    // (capped) and never spawn dialogs from worker threads.
+    if(!QCoreApplication::instance()) return;
+    if(QThread::currentThread() != QCoreApplication::instance()->thread()) return;
+    static QPointer<QMessageBox> errorDialog;
+    if(errorDialog) {
+        const auto txt = errorDialog->text();
+        if(txt.length() < 8000) {
+            errorDialog->setText(txt + "\n\n" + allText);
+        } else if(!txt.endsWith("…")) {
+            errorDialog->setText(txt + "\n\n…");
+        }
+        return;
+    }
     const QString txt = fatal ? "Fatal" : "Critical";
     const auto icon = fatal ? QMessageBox::Critical : QMessageBox::Warning;
-    QMessageBox(icon, txt + " Error", allText).exec();
+    errorDialog = new QMessageBox(icon, txt + " Error", allText);
+    errorDialog->setAttribute(Qt::WA_DeleteOnClose);
+    errorDialog->setModal(false);
+    errorDialog->show();
 }
 
 void gPrintException(const QString &allText) {

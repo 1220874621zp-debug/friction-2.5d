@@ -32,7 +32,7 @@
 #include <QtMath>
 
 DropShadowEffect::DropShadowEffect() :
-    RasterEffect("drop shadow",
+    RasterEffect(QObject::tr("Drop Shadow"),
                  AppSupport::getRasterEffectHardwareSupport("Drop Shadow",
                                                             HardwareSupport::gpuPreffered),
                  true,

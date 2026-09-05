@@ -27,21 +27,24 @@
 #include <QWidget>
 #include <QList>
 #include <QStringList>
+#include <QVector>
+#include <QPainterPath>
 #include <functional>
 
 class QGridLayout;
 class KeysView;
 
 // Self-painting button that renders an easing curve preview.
+// The curve is sampled from the preset's own JS expression
+// (the same definitions+script the bake pipeline executes),
+// so the preview always matches the applied result.
 // Emits applyRequested(presetId) when clicked.
 class EasingCurveButton : public QWidget {
     Q_OBJECT
 public:
-    typedef qreal (*EasingFunc)(const qreal t);
-
     EasingCurveButton(const QString &presetId,
                       const QString &title,
-                      const EasingFunc func,
+                      const QVector<qreal> &samples,
                       QWidget * const parent = nullptr);
 
     void setChecked(const bool checked);
@@ -54,15 +57,16 @@ protected:
     void paintEvent(QPaintEvent * const e);
     void enterEvent(QEvent * const e);
     void leaveEvent(QEvent * const e);
-    void mousePressEvent(QMouseEvent * const e);
+    void mouseReleaseEvent(QMouseEvent * const e);
 private:
-    void sampleRange();
+    void buildPath();
 
     QString mPresetId;
     QString mTitle;
-    EasingFunc mFunc = nullptr;
-    qreal mMinY = 0.;
-    qreal mMaxY = 1.;
+    QVector<qreal> mSamples;
+    QPainterPath mPath;
+    QPointF mStartMarker;
+    QPointF mEndMarker;
     bool mHover = false;
     bool mChecked = false;
 };

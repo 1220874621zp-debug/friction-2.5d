@@ -132,7 +132,7 @@ private:
     // and must be re-fed immediately
     int mLastDiscardCount = 0;
     QTimer *mBacklogTimer = nullptr;
-    RenderInstanceSettings *mCurrentRenderSettings = nullptr;
+    qptr<RenderInstanceSettings> mCurrentRenderSettings;
 
     int mCurrentPreviewFrame;
     int mMaxPreviewFrame;
@@ -165,6 +165,9 @@ private:
 
     int mSavedCurrentFrame = 0;
     qreal mSavedResolutionFraction = 100;
+    // wall clock for the current output render; powers the summary log
+    // line in finishEncoding (frames / seconds / average fps)
+    QElapsedTimer mOutputRenderClock;
 };
 
 #endif // RENDERHANDLER_H

@@ -697,7 +697,11 @@ static double ComputeMaxError(Point2* const d,
     Point2	P;			/*  Point on curve		*/
     Vector2	v;			/*  Vector from point to curve	*/
 
-    *splitPoint = (last - first + 1)/2;
+    // callers expect an absolute point index; the previous relative
+    // offset survived whenever no dist beat maxDist (e.g. NaN input),
+    // making recursive FitCubic(first > splitPoint) compute a negative
+    // nPts and throw std::length_error from A.resize(nPts*2)
+    *splitPoint = first + (last - first + 1)/2;
     maxDist = 0.0;
     for (i = first + 1; i < last; i++) {
         P = BezierII(3, bezCurve, u[i-first]);

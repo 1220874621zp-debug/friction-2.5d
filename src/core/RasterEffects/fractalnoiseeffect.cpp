@@ -16,7 +16,7 @@
 #include "appsupport.h"
 
 FractalNoiseEffect::FractalNoiseEffect() :
-    RasterEffect("fractalNoise",
+    RasterEffect(QObject::tr("Fractal Noise"),
                  AppSupport::getRasterEffectHardwareSupport("FractalNoise",
                                                             HardwareSupport::gpuPreffered),
                  true,

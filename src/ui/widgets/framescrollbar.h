@@ -109,6 +109,9 @@ protected:
 signals:
     void triggeredFrameRangeChange(FrameRange);
     void frameRangeChange(FrameRange);
+    // user-facing hint (e.g. refused in/out edits), shown on the
+    // status bar by the parent timeline widget
+    void statusMessage(const QString &message);
 private:
     void emitChange();
     void emitTriggeredChange();
@@ -134,12 +137,20 @@ private:
 
     FrameRange mCanvasRange{0, 200};
 
-    qreal mFps;
+    qreal mFps = 0;
     qreal mLastMousePressFrame;
 
     QFontMetrics mFm;
 
     InteractiveMarker mGrabbedMarker;
+
+    // coalesced undo state for marker/in/out drags: the drag moves are
+    // undo-blocked and the whole gesture is committed as ONE undo step
+    // on mouse release (instead of one undo entry per mouse move)
+    bool mDragUndoValid = false;
+    QPair<bool, int> mDragOldIn{false, 0};
+    QPair<bool, int> mDragOldOut{false, 0};
+    int mDragOldMarkerFrame = 0;
 
     QColor mHandleColor = ThemeSupport::getThemeButtonBorderColor();
     qptr<Canvas> mCurrentCanvas;

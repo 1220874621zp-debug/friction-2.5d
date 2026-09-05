@@ -30,7 +30,7 @@
 #include <QtMath>
 
 GlitchEffect::GlitchEffect() :
-    RasterEffect("glitch",
+    RasterEffect(QObject::tr("Glitch"),
                  AppSupport::getRasterEffectHardwareSupport("Glitch",
                                                             HardwareSupport::gpuPreffered),
                  true,

@@ -839,6 +839,28 @@ void VideoEncoder::process() {
             const auto contRange = cacheCont->getRange()*_mRenderRange;
             const int nFrames = contRange.span();
             const sk_sp<SkImage> image = cacheCont->getImage();
+            if(!image) {
+                // The rendered frame was evicted from memory (memory
+                // pressure) while waiting to be encoded. Reload it from
+                // the tmp file and resume encoding when it lands instead
+                // of failing - one throw per frame used to bury the app
+                // under a storm of error dialogs at the end of a render.
+                const auto loadTask = cacheCont->scheduleLoadFromTmpFile();
+                if(loadTask) {
+                    mWaitingForFrameLoad = true;
+                    // the failure branch must also re-queue: dropping the
+                    // encode here left the queue render frozen forever -
+                    // re-running process() either finds the image or
+                    // fails the encode with a visible error
+                    const auto resume = [this]() {
+                        mWaitingForFrameLoad = false;
+                        queTask();
+                    };
+                    loadTask->addDependent({resume, resume});
+                    return;
+                }
+                RuntimeThrow("Missing scene frame image data");
+            }
             try {
                 writeVideoFrame(mFormatContext, &mVideoStream,
                                 image, &hasVideo);
@@ -892,8 +914,9 @@ void VideoEncoder::beforeProcessing(const Hardware) {
 }
 
 void VideoEncoder::afterProcessing() {
+    // the target canvas may already be gone (project closed mid-render)
     const auto currCanvas = mRenderInstanceSettings->getTargetCanvas();
-    if(_mCurrentContainerId != 0) {
+    if(currCanvas && _mCurrentContainerId != 0) {
         const auto lastEncoded = _mContainers.at(_mCurrentContainerId - 1);
         currCanvas->setSceneFrame(lastEncoded);
         currCanvas->setMinFrameUseRange(lastEncoded->getRange().fMax + 1);
@@ -913,7 +936,7 @@ void VideoEncoder::afterProcessing() {
         mRenderInstanceSettings->setCurrentState(RenderState::error, "Error");
         finishEncodingNow();
         mEmitter.encodingFailed();
-    } else if(mEncodingFinished) finishEncodingSuccess();
+    } else if(mEncodingFinished && !mWaitingForFrameLoad) finishEncodingSuccess();
     else if(!mNextContainers.isEmpty()) queTask();
 }
 

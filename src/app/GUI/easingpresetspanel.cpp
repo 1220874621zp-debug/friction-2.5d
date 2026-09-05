@@ -25,175 +25,59 @@
 #include "keysview.h"
 #include "themesupport.h"
 #include "Private/esettings.h"
+#include "Expressions/expression.h"
 
 #include <QPainter>
-#include <QPainterPath>
 #include <QPaintEvent>
 #include <QMouseEvent>
 #include <QGridLayout>
 #include <QVBoxLayout>
 #include <QLabel>
 #include <QScrollArea>
-#include <cmath>
+#include <QJSEngine>
+#include <QJSValue>
+#include <QDebug>
 
-// Robert Penner easing equations, normalized to t in [0, 1].
-// back/elastic/bounce may overshoot the [0, 1] value range.
 namespace {
 
-const qreal PI_FRICTION = 3.14159265358979323846;
-const qreal PI_HALF_FRICTION = 1.57079632679489661923;
-
-qreal easeLinear(const qreal t) { return t; }
-
-// Sine
-qreal easeInSine(const qreal t) { return 1. - std::cos(t * PI_HALF_FRICTION); }
-qreal easeOutSine(const qreal t) { return std::sin(t * PI_HALF_FRICTION); }
-qreal easeInOutSine(const qreal t) { return 0.5 * (1. - std::cos(PI_FRICTION * t)); }
-
-// Quad
-qreal easeInQuad(const qreal t) { return t * t; }
-qreal easeOutQuad(const qreal t) { return 1. - (1. - t) * (1. - t); }
-qreal easeInOutQuad(const qreal t) {
-    return t < 0.5 ? 2. * t * t : 1. - std::pow(-2. * t + 2., 2.) / 2.;
-}
-
-// Cubic
-qreal easeInCubic(const qreal t) { return t * t * t; }
-qreal easeOutCubic(const qreal t) { return 1. - std::pow(1. - t, 3.); }
-qreal easeInOutCubic(const qreal t) {
-    return t < 0.5 ? 4. * t * t * t : 1. - std::pow(-2. * t + 2., 3.) / 2.;
-}
-
-// Quart
-qreal easeInQuart(const qreal t) { return t * t * t * t; }
-qreal easeOutQuart(const qreal t) { return 1. - std::pow(1. - t, 4.); }
-qreal easeInOutQuart(const qreal t) {
-    return t < 0.5 ? 8. * t * t * t * t : 1. - std::pow(-2. * t + 2., 4.) / 2.;
-}
-
-// Quint
-qreal easeInQuint(const qreal t) { return t * t * t * t * t; }
-qreal easeOutQuint(const qreal t) { return 1. - std::pow(1. - t, 5.); }
-qreal easeInOutQuint(const qreal t) {
-    return t < 0.5 ? 16. * t * t * t * t * t : 1. - std::pow(-2. * t + 2., 5.) / 2.;
-}
-
-// Expo
-qreal easeInExpo(const qreal t) {
-    return t == 0. ? 0. : std::pow(2., 10. * t - 10.);
-}
-qreal easeOutExpo(const qreal t) {
-    return t == 1. ? 1. : 1. - std::pow(2., -10. * t);
-}
-qreal easeInOutExpo(const qreal t) {
-    if (t == 0.) { return 0.; }
-    if (t == 1.) { return 1.; }
-    return t < 0.5 ? std::pow(2., 20. * t - 10.) / 2.
-                   : (2. - std::pow(2., -20. * t + 10.)) / 2.;
-}
-
-// Circ
-qreal easeInCirc(const qreal t) { return 1. - std::sqrt(1. - t * t); }
-qreal easeOutCirc(const qreal t) { return std::sqrt(1. - std::pow(t - 1., 2.)); }
-qreal easeInOutCirc(const qreal t) {
-    return t < 0.5 ? (1. - std::sqrt(1. - std::pow(2. * t, 2.))) / 2.
-                   : (std::sqrt(1. - std::pow(-2. * t + 2., 2.)) + 1.) / 2.;
-}
-
-// Back
-const qreal BACK_C1 = 1.70158;
-const qreal BACK_C2 = BACK_C1 * 1.525;
-const qreal BACK_C3 = BACK_C1 + 1.;
-qreal easeInBack(const qreal t) { return BACK_C3 * t * t * t - BACK_C1 * t * t; }
-qreal easeOutBack(const qreal t) {
-    return 1. + BACK_C3 * std::pow(t - 1., 3.) + BACK_C1 * std::pow(t - 1., 2.);
-}
-qreal easeInOutBack(const qreal t) {
-    return t < 0.5
-        ? (std::pow(2. * t, 2.) * ((BACK_C2 + 1.) * 2. * t - BACK_C2)) / 2.
-        : (std::pow(2. * t - 2., 2.) * ((BACK_C2 + 1.) * (2. * t - 2.) + BACK_C2) + 2.) / 2.;
-}
-
-// Elastic
-const qreal ELASTIC_C4 = (2. * PI_FRICTION) / 3.;
-const qreal ELASTIC_C5 = (2. * PI_FRICTION) / 4.5;
-qreal easeInElastic(const qreal t) {
-    if (t == 0. || t == 1.) { return t; }
-    return -std::pow(2., 10. * t - 10.) * std::sin((10. * t - 10.75) * ELASTIC_C4);
-}
-qreal easeOutElastic(const qreal t) {
-    if (t == 0. || t == 1.) { return t; }
-    return std::pow(2., -10. * t) * std::sin((10. * t - 0.75) * ELASTIC_C4) + 1.;
-}
-qreal easeInOutElastic(const qreal t) {
-    if (t == 0. || t == 1.) { return t; }
-    return t < 0.5
-        ? -(std::pow(2., 20. * t - 10.) * std::sin((20. * t - 11.125) * ELASTIC_C5)) / 2.
-        : (std::pow(2., -20. * t + 10.) * std::sin((20. * t - 11.125) * ELASTIC_C5)) / 2. + 1.;
-}
-
-// Bounce
-qreal easeOutBounce(const qreal t) {
-    const qreal n1 = 7.5625;
-    const qreal d1 = 2.75;
-    if (t < 1. / d1) { return n1 * t * t; }
-    if (t < 2. / d1) { const qreal u = t - 1.5 / d1; return n1 * u * u + 0.75; }
-    if (t < 2.5 / d1) { const qreal u = t - 2.25 / d1; return n1 * u * u + 0.9375; }
-    const qreal u = t - 2.625 / d1;
-    return n1 * u * u + 0.984375;
-}
-qreal easeInBounce(const qreal t) { return 1. - easeOutBounce(1. - t); }
-qreal easeInOutBounce(const qreal t) {
-    return t < 0.5 ? (1. - easeOutBounce(1. - 2. * t)) / 2.
-                   : (1. + easeOutBounce(2. * t - 1.)) / 2.;
-}
-
-struct EasingDef {
-    const char *id;
-    EasingCurveButton::EasingFunc func;
-};
-
-const QList<EasingDef> &easingDefs() {
-    static const QList<EasingDef> defs = {
-        {"easeInSine", &easeInSine},
-        {"easeOutSine", &easeOutSine},
-        {"easeInOutSine", &easeInOutSine},
-        {"easeInQuad", &easeInQuad},
-        {"easeOutQuad", &easeOutQuad},
-        {"easeInOutQuad", &easeInOutQuad},
-        {"easeInCubic", &easeInCubic},
-        {"easeOutCubic", &easeOutCubic},
-        {"easeInOutCubic", &easeInOutCubic},
-        {"easeInQuart", &easeInQuart},
-        {"easeOutQuart", &easeOutQuart},
-        {"easeInOutQuart", &easeInOutQuart},
-        {"easeInQuint", &easeInQuint},
-        {"easeOutQuint", &easeOutQuint},
-        {"easeInOutQuint", &easeInOutQuint},
-        {"easeInExpo", &easeInExpo},
-        {"easeOutExpo", &easeOutExpo},
-        {"easeInOutExpo", &easeInOutExpo},
-        {"easeInCirc", &easeInCirc},
-        {"easeOutCirc", &easeOutCirc},
-        {"easeInOutCirc", &easeInOutCirc},
-        {"easeInBack", &easeInBack},
-        {"easeOutBack", &easeOutBack},
-        {"easeInOutBack", &easeInOutBack},
-        {"easeInElastic", &easeInElastic},
-        {"easeOutElastic", &easeOutElastic},
-        {"easeInOutElastic", &easeInOutElastic},
-        {"easeInBounce", &easeInBounce},
-        {"easeOutBounce", &easeOutBounce},
-        {"easeInOutBounce", &easeInOutBounce}
-    };
-    return defs;
-}
-
-EasingCurveButton::EasingFunc findEasingFunc(const QString &presetId) {
-    for (const auto &def : easingDefs()) {
-        if (presetId.endsWith(QLatin1String(def.id))) { return def.func; }
+// Samples the preset's own JS expression over a normalized 0-100 frame
+// range (value domain 0 -> 1), i.e. the exact definitions+script the
+// bake pipeline executes, so the preview can never diverge from the
+// applied result. Returns an empty vector on failure.
+QVector<qreal> sampleEasingPreset(
+        QJSEngine &engine,
+        const Friction::Core::ExpressionPresets::Expr &preset,
+        const int samples)
+{
+    QVector<qreal> values;
+    try {
+        Expression::sAddDefinitionsTo(preset.definitions, engine);
+        QString script = preset.script;
+        script.replace("__START_VALUE__", QStringLiteral("0"));
+        script.replace("__END_VALUE__", QStringLiteral("1"));
+        script.replace("__START_FRAME__", QStringLiteral("0"));
+        script.replace("__END_FRAME__", QStringLiteral("100"));
+        // wrap in a function so the script's top-level return works;
+        // easing presets read the current frame from "current"
+        auto func = engine.evaluate( // call() is non-const
+            QStringLiteral("(function(current){%1\n})").arg(script));
+        if (!func.isCallable()) {
+            throw std::runtime_error("script is not a function");
+        }
+        values.reserve(samples + 1);
+        for (int i = 0; i <= samples; i++) {
+            const auto v = func.call({QJSValue(qreal(i)/samples*100)});
+            if (!v.isNumber()) {
+                throw std::runtime_error("script returned a non-number");
+            }
+            values.append(v.toNumber());
+        }
+    } catch (const std::exception &e) {
+        qWarning() << "easing preset preview failed"
+                   << preset.id << e.what();
+        values.clear();
     }
-    return &easeLinear;
+    return values;
 }
 
 // Group index from the preset id (0 = In, 1 = Out, 2 = In/Out).
@@ -208,35 +92,53 @@ int easingGroupIndex(const QString &presetId) {
 
 EasingCurveButton::EasingCurveButton(const QString &presetId,
                                      const QString &title,
-                                     const EasingFunc func,
+                                     const QVector<qreal> &samples,
                                      QWidget * const parent)
     : QWidget(parent)
     , mPresetId(presetId)
     , mTitle(title)
-    , mFunc(func)
+    , mSamples(samples)
 {
     setFixedSize(QSize(56, 56));
     setCursor(Qt::PointingHandCursor);
     setToolTip(title);
-    sampleRange();
+    if (mSamples.count() < 2) {
+        // sampling failed; fall back to a linear diagonal
+        mSamples = {0., 1.};
+    }
+    buildPath();
 }
 
-void EasingCurveButton::sampleRange() {
-    if (!mFunc) { return; }
+void EasingCurveButton::buildPath() {
     qreal minY = 0.;
     qreal maxY = 1.;
-    const int samples = 33;
-    for (int i = 0; i <= samples; i++) {
-        const qreal t = qreal(i) / samples;
-        const qreal v = mFunc(t);
+    for (const auto v : mSamples) {
         minY = qMin(minY, v);
         maxY = qMax(maxY, v);
     }
     // keep some breathing room for overshooting curves
     if (minY < 0.) { minY -= 0.08 * (maxY - minY); }
     if (maxY > 1.) { maxY += 0.08 * (maxY - minY); }
-    mMinY = minY;
-    mMaxY = maxY;
+
+    const QRectF r = QRectF(QPointF(0, 0), QSizeF(size())).adjusted(0.5, 0.5, -0.5, -0.5);
+    const qreal margin = 7.;
+    const qreal w = r.width() - 2. * margin;
+    const qreal h = r.height() - 2. * margin;
+    // guard against a zero value span (degenerate constant curve)
+    const qreal ySpan = qMax(maxY - minY, 1e-6);
+    const auto mapY = [&r, margin, h, ySpan, minY](const qreal v) {
+        return r.bottom() - margin - (v - minY) / ySpan * h;
+    };
+
+    const int n = mSamples.count();
+    for (int i = 0; i < n; i++) {
+        const qreal x = r.left() + margin + qreal(i) / (n - 1) * w;
+        const qreal y = mapY(mSamples.at(i));
+        if (i == 0) { mPath.moveTo(x, y); }
+        else { mPath.lineTo(x, y); }
+    }
+    mStartMarker = QPointF(r.left() + margin, mapY(mSamples.first()));
+    mEndMarker = QPointF(r.right() - margin, mapY(mSamples.last()));
 }
 
 void EasingCurveButton::setChecked(const bool checked) {
@@ -271,38 +173,20 @@ void EasingCurveButton::paintEvent(QPaintEvent * const e) {
     p.drawLine(QPointF(r.left() + 2, cy), QPointF(r.right() - 2, cy));
     p.drawLine(QPointF(cx, r.top() + 2), QPointF(cx, r.bottom() - 2));
 
-    if (!mFunc) { return; }
+    if (mPath.isEmpty()) { return; }
 
-    // curve
-    const qreal margin = 7.;
-    const qreal w = r.width() - 2. * margin;
-    const qreal h = r.height() - 2. * margin;
-    const qreal ySpan = mMaxY - mMinY;
-    auto mapY = [this, &r, margin, h, ySpan](const qreal v) {
-        return r.bottom() - margin - (v - mMinY) / ySpan * h;
-    };
-
+    // curve (cached path, only the pen color changes per state)
     QColor curveColor = ThemeSupport::getThemeColorBlue();
     if (mChecked) { curveColor = ThemeSupport::getThemeColorGreen(); }
     p.setPen(QPen(curveColor, 2.));
     p.setBrush(Qt::NoBrush);
-
-    const int samples = 48;
-    QPainterPath path;
-    for (int i = 0; i <= samples; i++) {
-        const qreal t = qreal(i) / samples;
-        const qreal x = r.left() + margin + t * w;
-        const qreal y = mapY(mFunc(t));
-        if (i == 0) { path.moveTo(x, y); }
-        else { path.lineTo(x, y); }
-    }
-    p.drawPath(path);
+    p.drawPath(mPath);
 
     // end markers
     p.setBrush(curveColor);
     p.setPen(Qt::NoPen);
-    p.drawEllipse(QPointF(r.left() + margin, mapY(0.)), 2., 2.);
-    p.drawEllipse(QPointF(r.right() - margin, mapY(1.)), 2., 2.);
+    p.drawEllipse(mStartMarker, 2., 2.);
+    p.drawEllipse(mEndMarker, 2., 2.);
 }
 
 void EasingCurveButton::enterEvent(QEvent * const e) {
@@ -317,11 +201,13 @@ void EasingCurveButton::leaveEvent(QEvent * const e) {
     update();
 }
 
-void EasingCurveButton::mousePressEvent(QMouseEvent * const e) {
-    if (e->button() == Qt::LeftButton) {
+void EasingCurveButton::mouseReleaseEvent(QMouseEvent * const e) {
+    // apply on release inside the button, matching normal button
+    // semantics (press + drag away cancels); baking is expensive
+    if (e->button() == Qt::LeftButton && rect().contains(e->pos())) {
         emit applyRequested(mPresetId);
     }
-    QWidget::mousePressEvent(e);
+    QWidget::mouseReleaseEvent(e);
 }
 
 EasingPresetsWidget::EasingPresetsWidget(QWidget * const parent)
@@ -369,14 +255,16 @@ EasingPresetsWidget::EasingPresetsWidget(QWidget * const parent)
     setAutoFillBackground(true);
 
     // populate from core easing presets (same source as the
-    // animation toolbar easing menu)
+    // animation toolbar easing menu); a single shared engine is
+    // enough - preset definition names are unique
+    QJSEngine engine;
     const auto presets = eSettings::sInstance->fExpressions.getCore(QStringLiteral("Easing"));
     for (const auto &preset : presets) {
         const int group = easingGroupIndex(preset.id);
         if (group < 0) { continue; }
+        const auto samples = sampleEasingPreset(engine, preset, 48);
         const auto button = new EasingCurveButton(preset.id, preset.title,
-                                                  findEasingFunc(preset.id),
-                                                  content);
+                                                  samples, content);
         connect(button, &EasingCurveButton::applyRequested,
                 this, &EasingPresetsWidget::applyPreset);
         const int idx = mGrids.at(group)->count();
@@ -392,11 +280,12 @@ void EasingPresetsWidget::setKeysViewGetter(const KeysViewGetter &getter)
 
 void EasingPresetsWidget::applyPreset(const QString &presetId)
 {
-    // keep a single checked button (last applied)
+    const auto keysView = mKeysViewGetter ? mKeysViewGetter() : nullptr;
+    if (!keysView) { return; }
+    // highlight the button only when the preset was actually applied,
+    // so the check mark always reflects real state
+    if (!keysView->graphEasingAction(presetId)) { return; }
     for (const auto button : mButtons) {
         button->setChecked(button->presetId() == presetId);
     }
-    const auto keysView = mKeysViewGetter ? mKeysViewGetter() : nullptr;
-    if (!keysView) { return; }
-    keysView->graphEasingAction(presetId);
 }

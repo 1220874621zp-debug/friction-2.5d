@@ -106,6 +106,14 @@ void TaskScheduler::queHddTask(const stdsptr<eTask>& task) {
 
 void TaskScheduler::queCpuTask(const stdsptr<eTask>& task) {
     mQuedCGTasks.addTask(task);
+    // nested que during the scene-assembly iteration (queScheduled-
+    // CpuTasks runs between beginQue/endQue): addTask appends to the
+    // CURRENT que which is safe, but processing from here would
+    // recurse into processNextTasks -> underflow -> updateScenes ->
+    // queTasks and re-enter the queue structures mid-iteration
+    // (0xC0000005 in QList detach). Defer to the outer loop's
+    // endQue + processNextTasks
+    if(mCpuQueing) return;
     if(task->readyToBeProcessed()) {
         if(task->hardwareSupport() == HardwareSupport::cpuOnly ||
            !processNextQuedGpuTask()) {
@@ -153,12 +161,24 @@ void TaskScheduler::queTasks() {
     processNextQuedHddTask();
 }
 
+void TaskScheduler::sSetOutputRenderScene(Canvas * const scene) {
+    sInstance->mOutputRenderScene = scene;
+}
+
+bool TaskScheduler::sOutputRenderActive() {
+    return sInstance && !sInstance->mOutputRenderScene.isNull();
+}
+
 void TaskScheduler::queScheduledCpuTasks() {
     if(!mAlwaysQue && !shouldQueMoreCpuTasks()) return;
     mCpuQueing = true;
     mQuedCGTasks.beginQue();
     for(const auto& it : Document::sInstance->fVisibleScenes) {
         const auto scene = it.first;
+        // NOTE: do NOT filter to the output target scene here - linked
+        // scenes refresh their render data through their own queTasks,
+        // and starving them froze link content mid-render (output video
+        // showed stale frames while the preview animated fine)
         scene->queTasks();
     }
     mQuedCGTasks.endQue();
@@ -194,8 +214,12 @@ void TaskScheduler::processNextQuedHddTask() {
 }
 
 void TaskScheduler::processNextTasks() {
-    if(mCriticalMemoryState) return;
+    // memory relief must keep flowing even in critical state: tmp saves
+    // are the escape route out of memory pressure and reloads unblock the
+    // encoder - blocking HDD dispatch here deadlocked output rendering
+    // once memory filled up (render frozen at full RAM, zero disk I/O)
     processNextQuedHddTask();
+    if(mCriticalMemoryState) return;
     processNextQuedGpuTask();
     processNextQuedCpuTask();
     if(mTaskUnderflowFunc) {

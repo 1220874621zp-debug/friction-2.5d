@@ -81,6 +81,7 @@ class ScrollArea;
 class ScriptManager;
 class ProjectPanel;
 class EffectsPresetsPanel;
+class TopViewWindow;
 class QuickEffectSearchDialog;
 
 namespace Friction {
@@ -102,6 +103,8 @@ public:
     ~MainWindow();
 
     static MainWindow *sGetInstance();
+
+    void toggleTopViewWindow();
 
     void setupDocument();
     void setupImporters();
@@ -413,6 +416,13 @@ private:
     QAction *mTimelineWindowAct;
     void openTimelineWindow();
     void closedTimelineWindow();
+
+    // AE-style orthographic top view (X/Z) in a floating window
+    QAction *mViewTopViewAct = nullptr;
+    Window *mTopViewWindow = nullptr;
+    TopViewWindow *mTopViewWidget = nullptr;
+    void openTopViewWindow();
+    void closedTopViewWindow();
 
     QAction *mViewFillStrokeAct;
 

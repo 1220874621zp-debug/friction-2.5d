@@ -9,16 +9,6 @@
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-#
-# See 'README.md' for more information.
-#
 */
 
 #include "layeranimpresets.h"
@@ -27,6 +17,8 @@
 #include "Boxes/pathbox.h"
 #include "Animators/transformanimator.h"
 #include "Animators/qpointfanimator.h"
+#include "Animators/qrealanimator.h"
+#include "Expressions/expression.h"
 
 #include "skia/skqtconversions.h"
 #include "skia/skiaincludes.h"
@@ -36,302 +28,273 @@
 
 namespace {
 
-void key(QrealAnimator* const a, const int f, const qreal v)
+// shared JS helpers embedded as the definitions section of every
+// preset-generated expression (kept ASCII so it is stable to edit)
+const char* const kDefs =
+        "function pSat(t){return t<0?0:(t>1?1:t);}\n"
+        "function pSmooth(t){t=pSat(t);return t*t*(3-2*t);}\n"
+        "function pSeg(f,a,b){return b<=a?1:pSat((f-a)/(b-a));}\n"
+        "function pPh(f,f0,p){var u=(f-f0)/p;u=u-Math.floor(u);return u;}\n"
+        "function pPw(x,p){if(x<=p[0][0])return p[0][1];"
+        "for(var i=1;i<p.length;i++){if(x<=p[i][0]){var a=p[i-1],b=p[i];"
+        "return a[1]+(b[1]-a[1])*pSmooth((x-a[0])/(b[0]-a[0]));}}"
+        "return p[p.length-1][1];}\n";
+
+QString N(const qreal v)
 {
-    if (a) { a->saveValueToKey(f, v); }
+    return QString::number(v, 'g', 12);
 }
 
-void keyPt(QPointFAnimator* const a, const int f,
-           const qreal x, const qreal y)
+// --------------------------------------------------- script generators
+// each body references `f` (the frame) and clamps before / after its
+// window; loops additionally freeze on the rest state before F0
+
+void genFadeIn(const LayerExprParams& P, LayerExprScripts& S)
 {
-    if (!a) { return; }
-    if (a->getXAnimator()) { a->getXAnimator()->saveValueToKey(f, x); }
-    if (a->getYAnimator()) { a->getYAnimator()->saveValueToKey(f, y); }
+    S.op = QStringLiteral(
+                "// 淡入：从 %1 起 %2 帧内显现\n"
+                "return %3 * pSmooth(pSeg(f, %1, %1 + %2));")
+            .arg(N(P.winF0()), N(P.D), N(P.op));
 }
 
-// ---------------------------------------------------------- bake recipes
-
-void bakeFadeIn(AdvancedTransformAnimator* const t, const int F0,
-                const int durF, const qreal, const qreal,
-                const qreal, const qreal)
+void genFadeOut(const LayerExprParams& P, LayerExprScripts& S)
 {
-    const auto op = t->getOpacityAnimator();
-    const qreal end = op ? op->getCurrentBaseValue() : 100.;
-    key(op, F0, 0);
-    key(op, F0 + durF, end);
+    S.op = QStringLiteral(
+                "// 淡出：从 %1 起 %2 帧内消失\n"
+                "return %3 * (1 - pSmooth(pSeg(f, %1, %1 + %2)));")
+            .arg(N(P.winF0()), N(P.D), N(P.op));
 }
 
-void bakeFadeOut(AdvancedTransformAnimator* const t, const int F0,
-                 const int durF, const qreal, const qreal,
-                 const qreal, const qreal)
+void genSlideInLeft(const LayerExprParams& P, LayerExprScripts& S)
 {
-    const auto op = t->getOpacityAnimator();
-    const qreal start = op ? op->getCurrentBaseValue() : 100.;
-    key(op, F0, start);
-    key(op, F0 + durF, 0);
+    S.posX = QStringLiteral(
+                "// 左侧划入：从画布左外滑回原位\n"
+                "return %1 - %2 * (1 - pSmooth(pSeg(f, %3, %3 + %4)));")
+            .arg(N(P.px), N(P.cw/2 + P.bw), N(P.winF0()), N(P.D));
 }
 
-void bakeSlideInLeft(AdvancedTransformAnimator* const t, const int F0,
-                     const int durF, const qreal cw, const qreal,
-                     const qreal bw, const qreal)
+void genSlideInRight(const LayerExprParams& P, LayerExprScripts& S)
 {
-    const auto pos = t->getPosAnimator();
-    const QPointF cur = pos ? pos->getBaseValue() : QPointF();
-    keyPt(pos, F0, cur.x() - cw/2 - bw, cur.y());
-    keyPt(pos, F0 + durF, cur.x(), cur.y());
+    S.posX = QStringLiteral(
+                "// 右侧划入：从画布右外滑回原位\n"
+                "return %1 + %2 * (1 - pSmooth(pSeg(f, %3, %3 + %4)));")
+            .arg(N(P.px), N(P.cw/2 + P.bw), N(P.winF0()), N(P.D));
 }
 
-void bakeSlideInRight(AdvancedTransformAnimator* const t, const int F0,
-                      const int durF, const qreal cw, const qreal,
-                      const qreal bw, const qreal)
+void genSlideOutLeft(const LayerExprParams& P, LayerExprScripts& S)
 {
-    const auto pos = t->getPosAnimator();
-    const QPointF cur = pos ? pos->getBaseValue() : QPointF();
-    keyPt(pos, F0, cur.x() + cw/2 + bw, cur.y());
-    keyPt(pos, F0 + durF, cur.x(), cur.y());
+    S.posX = QStringLiteral(
+                "// 左侧划出：滑出画布左侧\n"
+                "return %1 - %2 * pSmooth(pSeg(f, %3, %3 + %4));")
+            .arg(N(P.px), N(P.cw/2 + P.bw), N(P.winF0()), N(P.D));
 }
 
-void bakeSlideInTop(AdvancedTransformAnimator* const t, const int F0,
-                    const int durF, const qreal, const qreal ch,
-                    const qreal, const qreal bh)
+void genSlideOutRight(const LayerExprParams& P, LayerExprScripts& S)
 {
-    const auto pos = t->getPosAnimator();
-    const QPointF cur = pos ? pos->getBaseValue() : QPointF();
-    keyPt(pos, F0, cur.x(), cur.y() - ch/2 - bh);
-    keyPt(pos, F0 + durF, cur.x(), cur.y());
+    S.posX = QStringLiteral(
+                "// 右侧划出：滑出画布右侧\n"
+                "return %1 + %2 * pSmooth(pSeg(f, %3, %3 + %4));")
+            .arg(N(P.px), N(P.cw/2 + P.bw), N(P.winF0()), N(P.D));
 }
 
-void bakeSlideInBottom(AdvancedTransformAnimator* const t, const int F0,
-                       const int durF, const qreal, const qreal ch,
-                       const qreal, const qreal bh)
+void genZoomIn(const LayerExprParams& P, LayerExprScripts& S)
 {
-    const auto pos = t->getPosAnimator();
-    const QPointF cur = pos ? pos->getBaseValue() : QPointF();
-    keyPt(pos, F0, cur.x(), cur.y() + ch/2 + bh);
-    keyPt(pos, F0 + durF, cur.x(), cur.y());
+    const auto f0 = N(P.winF0());
+    const auto d = N(P.D);
+    S.scaleX = QStringLiteral(
+                "// 弹性缩放进入：放大弹出回弹落定（横轴）\n"
+                "return %1 * pPw((f - %2) / %3,"
+                " [[0, 0.001], [1, 1.12], [1.3, 0.94],"
+                " [1.6, 1.04], [1.8, 1]]);")
+            .arg(N(P.sx), f0, d);
+    S.scaleY = QStringLiteral(
+                "// 弹性缩放进入：放大弹出回弹落定（纵轴）\n"
+                "return %1 * pPw((f - %2) / %3,"
+                " [[0, 0.001], [1, 1.12], [1.3, 0.94],"
+                " [1.6, 1.04], [1.8, 1]]);")
+            .arg(N(P.sy), f0, d);
+    S.op = QStringLiteral(
+                "return %1 * pSmooth(pSeg(f, %2, %2 + %3));")
+            .arg(N(P.op), f0, N(qMax(1., P.D/3.)));
 }
 
-void bakeSlideOutLeft(AdvancedTransformAnimator* const t, const int F0,
-                      const int durF, const qreal cw, const qreal,
-                      const qreal bw, const qreal)
+void genZoomOut(const LayerExprParams& P, LayerExprScripts& S)
 {
-    const auto pos = t->getPosAnimator();
-    const QPointF cur = pos ? pos->getBaseValue() : QPointF();
-    keyPt(pos, F0, cur.x(), cur.y());
-    keyPt(pos, F0 + durF, cur.x() - cw/2 - bw, cur.y());
+    const auto f0 = N(P.winF0());
+    const auto d = N(P.D);
+    S.scaleX = QStringLiteral(
+                "// 缩小退场（横轴）\n"
+                "return %1 * (1 - pSmooth(pSeg(f, %2, %2 + %3)));")
+            .arg(N(P.sx), f0, d);
+    S.scaleY = QStringLiteral(
+                "// 缩小退场（纵轴）\n"
+                "return %1 * (1 - pSmooth(pSeg(f, %2, %2 + %3)));")
+            .arg(N(P.sy), f0, d);
+    S.op = QStringLiteral(
+                "return %1 * (1 - pSmooth(pSeg(f, %2 + %3, %2 + %4)));")
+            .arg(N(P.op), f0, N(0.7*P.D), d);
 }
 
-void bakeSlideOutRight(AdvancedTransformAnimator* const t, const int F0,
-                       const int durF, const qreal cw, const qreal,
-                       const qreal bw, const qreal)
+void genSpinIn(const LayerExprParams& P, LayerExprScripts& S)
 {
-    const auto pos = t->getPosAnimator();
-    const QPointF cur = pos ? pos->getBaseValue() : QPointF();
-    keyPt(pos, F0, cur.x(), cur.y());
-    keyPt(pos, F0 + durF, cur.x() + cw/2 + bw, cur.y());
+    const auto f0 = N(P.winF0());
+    const auto d = N(P.D);
+    S.rot = QStringLiteral(
+                "// 旋转进入：转半圈落定\n"
+                "return %1 + 180 * (1 - pSmooth(pSeg(f, %2, %2 + %3)));")
+            .arg(N(P.rot), f0, d);
+    S.op = QStringLiteral(
+                "return %1 * pSmooth(pSeg(f, %2, %2 + %3));")
+            .arg(N(P.op), f0, N(qMax(1., P.D/2.)));
 }
 
-void bakeZoomIn(AdvancedTransformAnimator* const t, const int F0,
-                const int durF, const qreal, const qreal,
-                const qreal, const qreal)
+void genSpinOut(const LayerExprParams& P, LayerExprScripts& S)
 {
-    const auto scale = t->getScaleAnimator();
-    const QPointF s = scale ? scale->getBaseValue() : QPointF(1, 1);
-    const auto op = t->getOpacityAnimator();
-    keyPt(scale, F0, 0.001, 0.001);
-    keyPt(scale, F0 + durF, s.x()*1.12, s.y()*1.12);
-    keyPt(scale, F0 + durF + durF*0.3, s.x()*0.94, s.y()*0.94);
-    keyPt(scale, F0 + durF + durF*0.6, s.x()*1.04, s.y()*1.04);
-    keyPt(scale, F0 + durF + durF*0.8, s.x(), s.y());
-    key(op, F0, 0);
-    key(op, F0 + qMax(1, durF/3), 100);
+    const auto f0 = N(P.winF0());
+    const auto d = N(P.D);
+    S.rot = QStringLiteral(
+                "// 旋转退场\n"
+                "return %1 - 180 * pSmooth(pSeg(f, %2, %2 + %3));")
+            .arg(N(P.rot), f0, d);
+    S.op = QStringLiteral(
+                "return %1 * (1 - pSmooth(pSeg(f, %2 + %3, %2 + %4)));")
+            .arg(N(P.op), f0, N(0.6*P.D), d);
 }
 
-void bakeZoomOut(AdvancedTransformAnimator* const t, const int F0,
-                 const int durF, const qreal, const qreal,
-                 const qreal, const qreal)
+void genPopIn(const LayerExprParams& P, LayerExprScripts& S)
 {
-    const auto scale = t->getScaleAnimator();
-    const auto op = t->getOpacityAnimator();
-    const QPointF s = scale ? scale->getBaseValue() : QPointF(1, 1);
-    keyPt(scale, F0, s.x(), s.y());
-    keyPt(scale, F0 + durF, 0.001, 0.001);
-    key(op, F0 + durF*0.7, 100);
-    key(op, F0 + durF, 0);
+    const auto f0 = N(P.winF0());
+    const auto d = N(P.D);
+    S.scaleX = QStringLiteral(
+                "// 弹出：快速弹出并轻微回弹（横轴）\n"
+                "return %1 * pPw((f - %2) / %3,"
+                " [[0, 0.001], [1, 1.18], [1.35, 0.94], [1.6, 1]]);")
+            .arg(N(P.sx), f0, d);
+    S.scaleY = QStringLiteral(
+                "// 弹出：快速弹出并轻微回弹（纵轴）\n"
+                "return %1 * pPw((f - %2) / %3,"
+                " [[0, 0.001], [1, 1.18], [1.35, 0.94], [1.6, 1]]);")
+            .arg(N(P.sy), f0, d);
 }
 
-void bakeSpinIn(AdvancedTransformAnimator* const t, const int F0,
-                const int durF, const qreal, const qreal,
-                const qreal, const qreal)
+void genDropBounce(const LayerExprParams& P, LayerExprScripts& S)
 {
-    const auto rot = t->getRotAnimator();
-    const auto op = t->getOpacityAnimator();
-    const qreal cur = rot ? rot->getCurrentBaseValue() : 0.;
-    key(rot, F0, cur + 180);
-    key(rot, F0 + durF, cur);
-    key(op, F0, 0);
-    key(op, F0 + durF/2, 100);
+    S.posY = QStringLiteral(
+                "// 落下弹跳：从上方落下触地弹两下\n"
+                "return %1 + pPw((f - %2) / %3,"
+                " [[0, %4], [1, %5], [1.3, %6], [1.6, 0]]);")
+            .arg(N(P.py), N(P.winF0()), N(P.D),
+                 N(-(P.ch/2 + P.bh)), N(P.bh*0.15), N(-P.bh*0.08));
+    S.op = QStringLiteral(
+                "return %1 * pSmooth(pSeg(f, %2, %2 + %3));")
+            .arg(N(P.op), N(P.winF0()), N(qMax(1., P.D/4.)));
 }
 
-void bakeSpinOut(AdvancedTransformAnimator* const t, const int F0,
-                const int durF, const qreal, const qreal,
-                const qreal, const qreal)
+void genSinkOut(const LayerExprParams& P, LayerExprScripts& S)
 {
-    const auto rot = t->getRotAnimator();
-    const auto op = t->getOpacityAnimator();
-    const qreal cur = rot ? rot->getCurrentBaseValue() : 0.;
-    key(rot, F0, cur);
-    key(rot, F0 + durF, cur - 180);
-    key(op, F0 + durF*0.6, 100);
-    key(op, F0 + durF, 0);
+    S.posY = QStringLiteral(
+                "// 下沉：下沉并淡出\n"
+                "return %1 + %2 * pSmooth(pSeg(f, %3, %3 + %4));")
+            .arg(N(P.py), N(P.bh + 40.), N(P.winF0()), N(P.D));
+    S.op = QStringLiteral(
+                "return %1 * (1 - pSmooth(pSeg(f, %2 + %3, %2 + %4)));")
+            .arg(N(P.op), N(P.winF0()), N(0.8*P.D), N(P.D));
 }
 
-void bakePopIn(AdvancedTransformAnimator* const t, const int F0,
-               const int durF, const qreal, const qreal,
-               const qreal, const qreal)
+void genShake(const LayerExprParams& P, LayerExprScripts& S)
 {
-    const auto scale = t->getScaleAnimator();
-    const QPointF s = scale ? scale->getBaseValue() : QPointF(1, 1);
-    keyPt(scale, F0, 0.001, 0.001);
-    keyPt(scale, F0 + durF, s.x()*1.18, s.y()*1.18);
-    keyPt(scale, F0 + durF + durF*0.35, s.x()*0.94, s.y()*0.94);
-    keyPt(scale, F0 + durF + durF*0.6, s.x(), s.y());
+    const auto f0 = N(P.winF0());
+    const auto step = N(qMax(1., P.D/8.));
+    S.posX = QStringLiteral(
+                "// 抖动：左右小幅交替（无限循环）\n"
+                "if (f < %1) { return %2; }\n"
+                "var k = Math.floor((f - %1) / %3) %% 2;\n"
+                "return %2 + (k === 0 ? -3 : 3);")
+            .arg(f0, N(P.px), step);
+    S.posY = QStringLiteral(
+                "if (f < %1) { return %2; }\n"
+                "var k = Math.floor((f - %1) / %3) %% 2;\n"
+                "return %2 + (k === 0 ? 1 : -2);")
+            .arg(f0, N(P.py), step);
 }
 
-void bakeDropBounce(AdvancedTransformAnimator* const t, const int F0,
-                    const int durF, const qreal, const qreal ch,
-                    const qreal, const qreal bh)
+void genSway(const LayerExprParams& P, LayerExprScripts& S)
 {
-    const auto pos = t->getPosAnimator();
-    const QPointF cur = pos ? pos->getBaseValue() : QPointF();
-    const auto op = t->getOpacityAnimator();
-    keyPt(pos, F0, cur.x(), cur.y() - ch/2 - bh);
-    keyPt(pos, F0 + durF, cur.x(), cur.y() + bh*0.15);
-    keyPt(pos, F0 + durF + durF*0.3, cur.x(), cur.y() - bh*0.08);
-    keyPt(pos, F0 + durF + durF*0.6, cur.x(), cur.y());
-    key(op, F0, 0);
-    key(op, F0 + qMax(1, durF/4), 100);
+    S.rot = QStringLiteral(
+                "// 摇摆：钟摆式正弦摆动（无限循环）\n"
+                "if (f < %1) { return %2; }\n"
+                "return %2 + 6 * Math.sin(2 * Math.PI * pPh(f, %1, %3));")
+            .arg(N(P.winF0()), N(P.rot), N(P.D));
 }
 
-void bakeSinkOut(AdvancedTransformAnimator* const t, const int F0,
-                 const int durF, const qreal, const qreal,
-                 const qreal, const qreal bh)
+void genHop(const LayerExprParams& P, LayerExprScripts& S)
 {
-    const auto pos = t->getPosAnimator();
-    const QPointF cur = pos ? pos->getBaseValue() : QPointF();
-    const auto op = t->getOpacityAnimator();
-    keyPt(pos, F0, cur.x(), cur.y());
-    keyPt(pos, F0 + durF, cur.x(), cur.y() + bh + 40);
-    key(op, F0 + durF*0.8, 100);
-    key(op, F0 + durF, 0);
+    const auto f0 = N(P.winF0());
+    const auto d = N(P.D);
+    const auto hop = N(qMax(P.bh*0.6, 30.));
+    S.posY = QStringLiteral(
+                "// 蹦跳：原地起跳两次、落地压扁（无限循环）\n"
+                "if (f < %1) { return %2; }\n"
+                "return %2 - %3 * Math.abs(Math.sin(2 * Math.PI * pPh(f, %1, %4)));")
+            .arg(f0, N(P.py), hop, d);
+    S.scaleX = QStringLiteral(
+                "if (f < %1) { return %2; }\n"
+                "return %2 * (1 + 0.12 * Math.cos(4 * Math.PI * pPh(f, %1, %3)));")
+            .arg(f0, N(P.sx), d);
+    S.scaleY = QStringLiteral(
+                "if (f < %1) { return %2; }\n"
+                "return %2 * (1 - 0.12 * Math.cos(4 * Math.PI * pPh(f, %1, %3)));")
+            .arg(f0, N(P.sy), d);
 }
 
-void bakeShake(AdvancedTransformAnimator* const t, const int F0,
-               const int durF, const qreal, const qreal,
-               const qreal, const qreal)
+void genSquashStretch(const LayerExprParams& P, LayerExprScripts& S)
 {
-    const auto pos = t->getPosAnimator();
-    const QPointF cur = pos ? pos->getBaseValue() : QPointF();
-    const int step = qMax(1, durF/8);
-    for (int i = 0; i <= 8; i++) {
-        const int f = F0 + i*step;
-        if (i % 2 == 0) { keyPt(pos, f, cur.x() - 3, cur.y() + 1); }
-        else { keyPt(pos, f, cur.x() + 3, cur.y() - 2); }
-    }
-    keyPt(pos, F0 + 8*step, cur.x(), cur.y());
+    const auto f0 = N(P.winF0());
+    const auto d = N(P.D);
+    const auto lift = N(qMax(P.bh*0.3, 14.));
+    S.scaleX = QStringLiteral(
+                "// 弹性拉伸蹦跶：压扁拉伸交替（无限循环）\n"
+                "if (f < %1) { return %2; }\n"
+                "return %2 * (1 - 0.2 * Math.cos(2 * Math.PI * pPh(f, %1, %3)));")
+            .arg(f0, N(P.sx), d);
+    S.scaleY = QStringLiteral(
+                "if (f < %1) { return %2; }\n"
+                "return %2 * (1 + 0.25 * Math.cos(2 * Math.PI * pPh(f, %1, %3)));")
+            .arg(f0, N(P.sy), d);
+    S.posY = QStringLiteral(
+                "if (f < %1) { return %2; }\n"
+                "return %2 - %3 * Math.max(0, -Math.cos(2 * Math.PI * pPh(f, %1, %4)));")
+            .arg(f0, N(P.py), lift, d);
 }
 
-void bakeSway(AdvancedTransformAnimator* const t, const int F0,
-              const int durF, const qreal, const qreal,
-              const qreal, const qreal)
+void genBreathe(const LayerExprParams& P, LayerExprScripts& S)
 {
-    const auto rot = t->getRotAnimator();
-    const qreal cur = rot ? rot->getCurrentBaseValue() : 0.;
-    const int step = qMax(1, durF/8);
-    for (int i = 0; i <= 8; i++) {
-        const int f = F0 + i*step;
-        key(rot, f, cur + (i % 2 == 0 ? -6. : 6.));
-    }
-    key(rot, F0 + 8*step, cur);
+    const auto f0 = N(P.winF0());
+    const auto d = N(P.D);
+    S.scaleX = QStringLiteral(
+                "// 呼吸：缓慢缩放起伏（无限循环）\n"
+                "if (f < %1) { return %2; }\n"
+                "return %2 * (1 + 0.05 * (0.5 - 0.5 * Math.cos(2 * Math.PI * pPh(f, %1, %3))));")
+            .arg(f0, N(P.sx), d);
+    S.scaleY = QStringLiteral(
+                "if (f < %1) { return %2; }\n"
+                "return %2 * (1 + 0.05 * (0.5 - 0.5 * Math.cos(2 * Math.PI * pPh(f, %1, %3))));")
+            .arg(f0, N(P.sy), d);
 }
 
-void bakeHop(AdvancedTransformAnimator* const t, const int F0,
-             const int durF, const qreal, const qreal,
-             const qreal, const qreal bh)
+void genWobble(const LayerExprParams& P, LayerExprScripts& S)
 {
-    const auto pos = t->getPosAnimator();
-    const QPointF cur = pos ? pos->getBaseValue() : QPointF();
-    const auto scale = t->getScaleAnimator();
-    const QPointF s = scale ? scale->getBaseValue() : QPointF(1, 1);
-    const qreal hopH = qMax(bh*0.6, 30.);
-    const int half = qMax(2, durF/2);   // one hop
-    for (int h = 0; h < 2; h++) {
-        const int b = F0 + h*half;      // ground contact
-        // squash at contact, stretch mid-air
-        keyPt(scale, b, s.x()*1.15, s.y()*0.85);
-        keyPt(scale, b + half/2, s.x()*0.95, s.y()*1.06);
-        keyPt(pos, b + half/8, cur.x(), cur.y());
-        keyPt(pos, b + half/2, cur.x(), cur.y() - hopH);
-        keyPt(pos, b + half*7/8, cur.x(), cur.y());
-    }
-    keyPt(scale, F0 + durF, s.x(), s.y());
-    keyPt(pos, F0 + durF, cur.x(), cur.y());
-}
-
-void bakeSquashStretch(AdvancedTransformAnimator* const t, const int F0,
-                       const int durF, const qreal, const qreal,
-                       const qreal, const qreal bh)
-{
-    const auto scale = t->getScaleAnimator();
-    const auto pos = t->getPosAnimator();
-    const QPointF s = scale ? scale->getBaseValue() : QPointF(1, 1);
-    const QPointF cur = pos ? pos->getBaseValue() : QPointF();
-    const int quarter = qMax(2, durF/4);
-    for (int i = 0; i <= 4; i++) {
-        const int f = F0 + i*quarter;
-        if (i % 2 == 0) {
-            keyPt(scale, f, s.x()*0.8, s.y()*1.25);
-            keyPt(pos, f, cur.x(), cur.y());
-        } else {
-            keyPt(scale, f, s.x()*1.2, s.y()*0.85);
-            keyPt(pos, f, cur.x(), cur.y() - qMax(bh*0.3, 14.));
-        }
-    }
-    keyPt(scale, F0 + durF, s.x(), s.y());
-    keyPt(pos, F0 + durF, cur.x(), cur.y());
-}
-
-void bakeBreathe(AdvancedTransformAnimator* const t, const int F0,
-                 const int durF, const qreal, const qreal,
-                 const qreal, const qreal)
-{
-    const auto scale = t->getScaleAnimator();
-    const QPointF s = scale ? scale->getBaseValue() : QPointF(1, 1);
-    const int half = qMax(2, durF/2);
-    for (int c = 0; c <= 4; c++) {
-        const int f = F0 + c*half;
-        if (c % 2 == 0) { keyPt(scale, f, s.x(), s.y()); }
-        else { keyPt(scale, f, s.x()*1.05, s.y()*1.05); }
-    }
-}
-
-void bakeWobble(AdvancedTransformAnimator* const t, const int F0,
-                const int durF, const qreal, const qreal,
-                const qreal, const qreal)
-{
-    const auto rot = t->getRotAnimator();
-    const auto pos = t->getPosAnimator();
-    const qreal r = rot ? rot->getCurrentBaseValue() : 0.;
-    const QPointF cur = pos ? pos->getBaseValue() : QPointF();
-    const int quarter = qMax(2, durF/8);
-    for (int i = 0; i <= 8; i++) {
-        const int f = F0 + i*quarter;
-        const qreal sign = i % 2 == 0 ? -1. : 1.;
-        key(rot, f, r + 4.*sign);
-        keyPt(pos, f, cur.x() + 6.*sign, cur.y());
-    }
-    key(rot, F0 + 8*quarter, r);
-    keyPt(pos, F0 + 8*quarter, cur.x(), cur.y());
+    const auto f0 = N(P.winF0());
+    const auto d = N(P.D);
+    S.posX = QStringLiteral(
+                "// 晃动：平移加轻微旋转（无限循环）\n"
+                "if (f < %1) { return %2; }\n"
+                "return %2 + 6 * Math.sin(2 * Math.PI * pPh(f, %1, %3));")
+            .arg(f0, N(P.px), d);
+    S.rot = QStringLiteral(
+                "if (f < %1) { return %2; }\n"
+                "return %2 + 4 * Math.sin(2 * Math.PI * pPh(f, %1, %3));")
+            .arg(f0, N(P.rot), d);
 }
 
 struct LayerPresetBuilder {
@@ -340,14 +303,12 @@ struct LayerPresetBuilder {
     LayerPresetBuilder& out() { p.category = 1; return *this; }
     LayerPresetBuilder& loop() { p.category = 2; return *this; }
     LayerPresetBuilder& dur(const qreal d) { p.duration = d; return *this; }
-    LayerPresetBuilder& outRecipe(
-            void (*ob)(AdvancedTransformAnimator*, int, int,
-                       qreal, qreal, qreal, qreal))
-    { p.outBake = ob; return *this; }
-    LayerPresetBuilder& recipe(
-            void (*bake)(AdvancedTransformAnimator*, int, int,
-                         qreal, qreal, qreal, qreal))
-    { p.bake = bake; return *this; }
+    LayerPresetBuilder& outGen(
+            void (*og)(const LayerExprParams&, LayerExprScripts&))
+    { p.outGen = og; return *this; }
+    LayerPresetBuilder& genExpr(
+            void (*g)(const LayerExprParams&, LayerExprScripts&))
+    { p.gen = g; return *this; }
 };
 
 void addPreset(QList<LayerAnimPreset>& list, const LayerAnimPreset& p)
@@ -372,54 +333,54 @@ void ensurePresets()
     // ---- one-shot (in / out) ----
     addPreset(gPresets, B("l-fade", QString::fromUtf8("淡入淡出"),
                           QString::fromUtf8("入：渐渐显现；出：渐渐消失"))
-              .in().dur(0.8).recipe(&bakeFadeIn)
-              .outRecipe(&bakeFadeOut).p);
+              .in().dur(0.8).genExpr(&genFadeIn)
+              .outGen(&genFadeOut).p);
     addPreset(gPresets, B("l-slide-l", QString::fromUtf8("左侧划动"),
                           QString::fromUtf8("入：从画布左外滑入；出：滑出画布左侧"))
-              .in().dur(0.8).recipe(&bakeSlideInLeft)
-              .outRecipe(&bakeSlideOutLeft).p);
+              .in().dur(0.8).genExpr(&genSlideInLeft)
+              .outGen(&genSlideOutLeft).p);
     addPreset(gPresets, B("l-slide-r", QString::fromUtf8("右侧划动"),
                           QString::fromUtf8("入：从画布右外滑入；出：滑出画布右侧"))
-              .in().dur(0.8).recipe(&bakeSlideInRight)
-              .outRecipe(&bakeSlideOutRight).p);
+              .in().dur(0.8).genExpr(&genSlideInRight)
+              .outGen(&genSlideOutRight).p);
     addPreset(gPresets, B("l-zoom", QString::fromUtf8("弹性缩放"),
                           QString::fromUtf8("入：放大弹出回弹稳定；出：缩小淡出"))
-              .in().dur(0.7).recipe(&bakeZoomIn)
-              .outRecipe(&bakeZoomOut).p);
+              .in().dur(0.7).genExpr(&genZoomIn)
+              .outGen(&genZoomOut).p);
     addPreset(gPresets, B("l-spin", QString::fromUtf8("旋转"),
                           QString::fromUtf8("入：旋转半圈淡入落定；出：旋转缩小消失"))
-              .in().dur(0.9).recipe(&bakeSpinIn)
-              .outRecipe(&bakeSpinOut).p);
+              .in().dur(0.9).genExpr(&genSpinIn)
+              .outGen(&genSpinOut).p);
     addPreset(gPresets, B("l-pop", QString::fromUtf8("弹出"),
                           QString::fromUtf8("快速弹出并轻微回弹（仅入点）"))
-              .in().dur(0.5).recipe(&bakePopIn).p);
+              .in().dur(0.5).genExpr(&genPopIn).p);
     addPreset(gPresets, B("l-drop", QString::fromUtf8("落下弹跳"),
                           QString::fromUtf8("从上方落下触地弹两下（仅入点）"))
-              .in().dur(1.0).recipe(&bakeDropBounce).p);
+              .in().dur(1.0).genExpr(&genDropBounce).p);
     addPreset(gPresets, B("l-sink", QString::fromUtf8("下沉"),
                           QString::fromUtf8("下沉并淡出（仅出点）"))
-              .in().dur(0.9).recipe(nullptr)
-              .outRecipe(&bakeSinkOut).p);
+              .in().dur(0.9).outGen(&genSinkOut).p);
 
-    // ---- loops ----
+    // ---- loops (infinite: the expression keeps evaluating for any
+    // frame past the window start) ----
     addPreset(gPresets, B("l-shake", QString::fromUtf8("抖动"),
                           QString::fromUtf8("高频左右小幅抖动"))
-              .loop().dur(0.5).recipe(&bakeShake).p);
+              .loop().dur(0.5).genExpr(&genShake).p);
     addPreset(gPresets, B("l-sway", QString::fromUtf8("摇摆"),
                           QString::fromUtf8("像钟摆一样左右摇摆"))
-              .loop().dur(1.2).recipe(&bakeSway).p);
+              .loop().dur(1.2).genExpr(&genSway).p);
     addPreset(gPresets, B("l-hop", QString::fromUtf8("蹦跳"),
                           QString::fromUtf8("原地起跳两次，落地压扁"))
-              .loop().dur(1.2).recipe(&bakeHop).p);
+              .loop().dur(1.2).genExpr(&genHop).p);
     addPreset(gPresets, B("l-squash", QString::fromUtf8("弹性拉伸蹦跶"),
                           QString::fromUtf8("原地压扁拉伸交替小幅蹦跶"))
-              .loop().dur(0.9).recipe(&bakeSquashStretch).p);
+              .loop().dur(0.9).genExpr(&genSquashStretch).p);
     addPreset(gPresets, B("l-breathe", QString::fromUtf8("呼吸"),
                           QString::fromUtf8("缓慢缩放呼吸起伏"))
-              .loop().dur(1.6).recipe(&bakeBreathe).p);
+              .loop().dur(1.6).genExpr(&genBreathe).p);
     addPreset(gPresets, B("l-wobble", QString::fromUtf8("晃动"),
                           QString::fromUtf8("左右平移加轻微旋转晃动"))
-              .loop().dur(1.0).recipe(&bakeWobble).p);
+              .loop().dur(1.0).genExpr(&genWobble).p);
 }
 }
 
@@ -447,25 +408,119 @@ const LayerAnimPreset* byId(const QString& id)
 
 void apply(BoundingBox* const box,
            const LayerAnimPreset& preset,
-           const int startFrame,
+           const int inStartFrame,
+           const int outStartFrame,
            const qreal fps,
            const qreal durationScale,
            const qreal canvasW,
            const qreal canvasH,
-           const bool out)
+           const bool action)
 {
-    const auto bake = out ? preset.outBake : preset.bake;
-    if (!box || !bake) { return; }
+    const auto gen = preset.gen;
+    if (!box || !gen) { return; }
     // box transform animators are AdvancedTransformAnimator-based
-    // (BoxTransformAnimator); bake needs the opacity animator too
+    // (BoxTransformAnimator); expressions go on the qreal
+    // sub-animators (pos/scale x/y, rotation, opacity)
     const auto t = dynamic_cast<AdvancedTransformAnimator*>(
                 box->getTransformAnimator());
     if (!t) { return; }
     const int durF = qMax(2, qRound(preset.duration*durationScale*fps));
     const QRectF rel = box->getRelBoundingRect();
-    bake(t, startFrame, durF,
-         qMax(canvasW, 2.), qMax(canvasH, 2.),
-         qMax(rel.width(), 2.), qMax(rel.height(), 2.));
+
+    LayerExprParams P;
+    P.D = durF;
+    P.cw = qMax(canvasW, 2.);
+    P.ch = qMax(canvasH, 2.);
+    P.bw = qMax(rel.width(), 2.);
+    P.bh = qMax(rel.height(), 2.);
+    const auto pos = t->getPosAnimator();
+    const auto scale = t->getScaleAnimator();
+    const auto rotA = t->getRotAnimator();
+    const auto opA = t->getOpacityAnimator();
+    const QPointF p0 = pos ? pos->getBaseValue() : QPointF();
+    const QPointF s0 = scale ? scale->getBaseValue() : QPointF(1, 1);
+    P.px = p0.x();
+    P.py = p0.y();
+    P.sx = s0.x();
+    P.sy = s0.y();
+    P.rot = rotA ? rotA->getCurrentBaseValue() : 0.;
+    P.op = opA ? opA->getCurrentBaseValue() : 100.;
+
+    LayerExprScripts inS, outS;
+    if (inStartFrame >= 0) {
+        P.inF0 = t->prp_absFrameToRelFrameF(inStartFrame);
+        gen(P, inS);
+    }
+    if (outStartFrame >= 0 && preset.outGen) {
+        // generators read the active window via winF0(); hide the
+        // entrance window while generating the exit scripts
+        const qreal savedInF0 = P.inF0;
+        P.inF0 = -1;
+        P.outF0 = t->prp_absFrameToRelFrameF(outStartFrame);
+        preset.outGen(P, outS);
+        P.inF0 = savedInF0;
+    }
+
+    struct T { QrealAnimator* anim; const QString* inSc; const QString* outSc; };
+    QList<T> targets;
+    targets << T{ pos ? pos->getXAnimator() : nullptr,
+                  &inS.posX, &outS.posX }
+            << T{ pos ? pos->getYAnimator() : nullptr,
+                  &inS.posY, &outS.posY }
+            << T{ scale ? scale->getXAnimator() : nullptr,
+                  &inS.scaleX, &outS.scaleX }
+            << T{ scale ? scale->getYAnimator() : nullptr,
+                  &inS.scaleY, &outS.scaleY }
+            << T{ rotA, &inS.rot, &outS.rot }
+            << T{ opA, &inS.op, &outS.op };
+    for (const auto& tgt : targets) {
+        if (!tgt.anim) { continue; }
+        const bool hasIn = tgt.inSc && !tgt.inSc->isEmpty();
+        const bool hasOut = tgt.outSc && !tgt.outSc->isEmpty();
+        if (!hasIn && !hasOut) {
+            // clear any expression a previously applied preset left on
+            // this animator - presets must not stack (A then B used to
+            // leave A's motion driving the channels B does not touch)
+            if (tgt.anim->hasExpression()) {
+                if (action) { tgt.anim->setExpressionAction(nullptr); }
+                else { tgt.anim->setExpression(nullptr); }
+            }
+            continue;
+        }
+        QString script;
+        if (hasIn && hasOut) {
+            // one expression per animator: the exit window takes over
+            // from its start frame on (before it, outSeg already
+            // evaluates to the rest state anyway)
+            script = QStringLiteral(
+                        "var f = frame;\n"
+                        "function dIn() { %1 }\n"
+                        "function dOut() { %2 }\n"
+                        "// 出场窗口（%3 帧起）开始后由出场接管\n"
+                        "if (f >= %3) { return dOut(); }\n"
+                        "return dIn();")
+                    .arg(*tgt.inSc, *tgt.outSc, N(P.outF0));
+        } else {
+            script = QStringLiteral("var f = frame;\n%1")
+                    .arg(hasIn ? *tgt.inSc : *tgt.outSc);
+        }
+        try {
+            // $frame is required: its per-frame signal is the only
+            // thing re-evaluating the current-frame cache on playback
+            auto expr = Expression::sCreate(
+                        QStringLiteral("frame = $frame;"),
+                        QString::fromUtf8(kDefs), script, tgt.anim,
+                        Expression::sQrealAnimatorTester);
+            if (action) { tgt.anim->setExpressionAction(expr); }
+            else { tgt.anim->setExpression(expr); }
+        } catch (const std::exception& e) {
+            qWarning() << "[layer-preset] expression failed for"
+                       << tgt.anim->prp_getName() << ":" << e.what();
+        } catch (...) {
+            qWarning() << "[layer-preset] expression failed for"
+                       << tgt.anim->prp_getName();
+        }
+    }
 }
 
 QList<QImage> renderPreviewSequence(BoundingBox* const box,

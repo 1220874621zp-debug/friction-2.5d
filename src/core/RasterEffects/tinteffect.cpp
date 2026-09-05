@@ -31,7 +31,7 @@
 #include "appsupport.h"
 
 TintEffect::TintEffect() :
-    RasterEffect("tint",
+    RasterEffect(QObject::tr("Tint"),
                  AppSupport::getRasterEffectHardwareSupport("Tint",
                                                             HardwareSupport::gpuPreffered),
                  true,

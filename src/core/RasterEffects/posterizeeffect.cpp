@@ -29,7 +29,7 @@
 #include "appsupport.h"
 
 PosterizeEffect::PosterizeEffect() :
-    RasterEffect("posterize",
+    RasterEffect(QObject::tr("Posterize"),
                  AppSupport::getRasterEffectHardwareSupport("Posterize",
                                                             HardwareSupport::gpuPreffered),
                  true,

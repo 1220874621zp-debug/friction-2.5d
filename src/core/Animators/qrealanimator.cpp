@@ -311,6 +311,10 @@ void QrealAnimator::applyExpressionSub(const FrameRange& relRange,
                                        const qreal accuracy) {
     if(!relRange.isValid()) return;
     const int count = qCeil(relRange.span()/qreal(sampleInc));
+    // a single sample would make FitCurves read past the points
+    if (count < 2) {
+        throw std::runtime_error("applyExpression: degenerate sample count");
+    }
     QVector<QPointF> pts;
     pts.reserve(count);
 
@@ -321,6 +325,12 @@ void QrealAnimator::applyExpressionSub(const FrameRange& relRange,
     for(int i = 0; i < count; i++) {
         const qreal relFrame = relRange.fMin + i*sampleInc;
         const qreal value = mExpression->evaluate(relFrame).toNumber();
+        // validate BEFORE removeKeys: a NaN/Inf sample crashes FitCurves
+        // (splitPoint init bug -> std::length_error) after the keys in
+        // range were already removed, silently destroying the animation
+        if (!std::isfinite(value)) {
+            throw std::runtime_error("applyExpression: non-finite sample");
+        }
         pts << QPointF{relFrame*frameMultiplier, value};
         valSum += qAbs(value);
     }
@@ -379,7 +389,6 @@ void QrealAnimator::applyExpression(const FrameRange& relRange,
                                     const bool action,
                                     const bool easing)
 {
-    qDebug() << "applyExpression" << prp_getName() << relRange.fMin << relRange.fMax << accuracy << action << easing;
     if (!hasValidExpression()) {}
     else if (!relRange.isValid()) {}
     else if (isZero4Dec(accuracy) || accuracy < 0) {}
@@ -761,7 +770,15 @@ FrameRange QrealAnimator::prp_getIdenticalRelRange(const int relFrame) const {
     const auto base = Animator::prp_getIdenticalRelRange(relFrame);
     if(mExpression) {
         const int absFrame = prp_relFrameToAbsFrame(relFrame);
-        return base * mExpression->identicalRelRange(absFrame);
+        // the expression reports its identical range in ABSOLUTE
+        // frames - convert it back to this animator's relative space
+        // before intersecting; hosts with a frame shift (grouped
+        // layers, duration boxes, links) otherwise registered scene
+        // frame containers shifted off the frames they rendered, the
+        // in-flight frames never retired and the preview warm-up
+        // never finished
+        const auto absRange = mExpression->identicalRelRange(absFrame);
+        return base * prp_absRangeToRelRange(absRange);
     }
     else return base;
 }

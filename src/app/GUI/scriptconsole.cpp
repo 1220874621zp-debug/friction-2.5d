@@ -27,19 +27,25 @@
 #include "themesupport.h"
 
 #include <QPlainTextEdit>
-#include <QLineEdit>
 #include <QPushButton>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QDateTime>
+#include <QFileDialog>
+#include <QFile>
+#include <QFileInfo>
+#include <QMessageBox>
 
-// input line with Up/Down history navigation
-class ScriptConsoleInput : public QLineEdit
+// multi-line input: Enter runs, Shift+Enter inserts a newline,
+// Ctrl+Up/Down navigates the history (Up/Down move the caret now
+// that the input spans several lines)
+class ScriptConsoleInput : public QPlainTextEdit
 {
+    Q_OBJECT
 public:
     ScriptConsoleInput(QWidget * const parent = nullptr)
-        : QLineEdit(parent)
+        : QPlainTextEdit(parent)
     {}
 
     void setHistory(QStringList * const history, int * const index)
@@ -48,36 +54,46 @@ public:
         mIndex = index;
     }
 
+signals:
+    void submitted();
+
 protected:
     void keyPressEvent(QKeyEvent * const e) override
     {
-        if (!mHistory || !mIndex) { QLineEdit::keyPressEvent(e); return; }
-        if (e->key() == Qt::Key_Up) {
-            if (mHistory->isEmpty()) { return; }
-            *mIndex = (*mIndex < 0) ? mHistory->count() - 1
-                                    : qMax(0, *mIndex - 1);
-            if (*mIndex >= 0 && *mIndex < mHistory->count()) {
-                setText(mHistory->at(*mIndex));
-            }
+        const bool isEnter = e->key() == Qt::Key_Return ||
+                             e->key() == Qt::Key_Enter;
+        if (isEnter && !(e->modifiers() & Qt::ShiftModifier)) {
+            emit submitted();
             return;
         }
-        if (e->key() == Qt::Key_Down) {
-            if (*mIndex < 0) { QLineEdit::keyPressEvent(e); return; }
-            *mIndex += 1;
-            if (*mIndex >= mHistory->count()) {
-                *mIndex = -1;
-                clear();
-            } else {
-                setText(mHistory->at(*mIndex));
+        if (mHistory && mIndex && (e->modifiers() & Qt::ControlModifier)) {
+            if (e->key() == Qt::Key_Up) {
+                if (mHistory->isEmpty()) { return; }
+                *mIndex = (*mIndex < 0) ? mHistory->count() - 1
+                                        : qMax(0, *mIndex - 1);
+                if (*mIndex >= 0 && *mIndex < mHistory->count()) {
+                    setPlainText(mHistory->at(*mIndex));
+                }
+                return;
             }
-            return;
+            if (e->key() == Qt::Key_Down) {
+                if (*mIndex < 0) { return; }
+                *mIndex += 1;
+                if (*mIndex >= mHistory->count()) {
+                    *mIndex = -1;
+                    clear();
+                } else {
+                    setPlainText(mHistory->at(*mIndex));
+                }
+                return;
+            }
         }
-        QLineEdit::keyPressEvent(e);
+        QPlainTextEdit::keyPressEvent(e);
     }
 
 private:
-    QStringList *mHistory;
-    int *mIndex;
+    QStringList *mHistory = nullptr;
+    int *mIndex = nullptr;
 };
 
 ScriptConsoleDock::ScriptConsoleDock(QWidget * const parent)
@@ -85,6 +101,7 @@ ScriptConsoleDock::ScriptConsoleDock(QWidget * const parent)
 {
     setObjectName(QStringLiteral("dockScriptConsole"));
     setWindowTitle(tr("Script Console"));
+    // closable again: the Scripts menu carries the toggle
     setFeatures(QDockWidget::DockWidgetClosable |
                 QDockWidget::DockWidgetMovable |
                 QDockWidget::DockWidgetFloatable);
@@ -104,19 +121,37 @@ ScriptConsoleDock::ScriptConsoleDock(QWidget * const parent)
 
     mInput = new ScriptConsoleInput(content);
     mInput->setPlaceholderText(
-                tr("Enter a JS expression and press Enter (Up/Down: history)"));
+                tr("Enter JS, Enter runs, Shift+Enter inserts a line "
+                   "break (Ctrl+Up/Down: history)"));
     mInput->setPalette(ThemeSupport::getDarkPalette());
+    // a single-line box cannot hold pasted scripts; give it ~4 lines
+    const int lineH = mInput->fontMetrics().lineSpacing();
+    mInput->setFixedHeight(lineH * 4 + 12);
     static_cast<ScriptConsoleInput*>(mInput)->setHistory(&mHistory,
                                                          &mHistoryIndex);
-    connect(mInput, &QLineEdit::returnPressed,
+    connect(static_cast<ScriptConsoleInput*>(mInput),
+            &ScriptConsoleInput::submitted,
             this, &ScriptConsoleDock::runInput);
 
     const auto bottomBar = new QHBoxLayout();
+    mOpenButton = new QPushButton(tr("Open Script"), content);
+    mOpenButton->setFocusPolicy(Qt::NoFocus);
+    mOpenButton->setToolTip(tr("Pick a .js file and run it in the console"));
+    connect(mOpenButton, &QPushButton::clicked,
+            this, &ScriptConsoleDock::openScript);
+    mReloadButton = new QPushButton(tr("Reload Scripts"), content);
+    mReloadButton->setFocusPolicy(Qt::NoFocus);
+    mReloadButton->setToolTip(tr("Rescan the scripts folder and reload all plugins"));
+    connect(mReloadButton, &QPushButton::clicked, this, [this]() {
+        if (mReloadCallback) { mReloadCallback(); }
+    });
     mClearButton = new QPushButton(tr("Clear"), content);
     mClearButton->setFocusPolicy(Qt::NoFocus);
     connect(mClearButton, &QPushButton::clicked,
             mOutput, &QPlainTextEdit::clear);
     bottomBar->addStretch();
+    bottomBar->addWidget(mOpenButton);
+    bottomBar->addWidget(mReloadButton);
     bottomBar->addWidget(mClearButton);
 
     layout->addWidget(mOutput, 1);
@@ -133,6 +168,34 @@ ScriptConsoleDock::ScriptConsoleDock(QWidget * const parent)
                  + QStringLiteral("\n  layer = scene.layer(1)"));
 }
 
+void ScriptConsoleDock::setReloadCallback(const std::function<void()> &callback)
+{
+    mReloadCallback = callback;
+}
+
+void ScriptConsoleDock::openScript()
+{
+    const QString path = QFileDialog::getOpenFileName(
+                this, tr("Open Script"),
+                mScriptsPath,
+                tr("JavaScript files (*.js)"));
+    if (path.isEmpty()) { return; }
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        appendError(tr("Cannot open %1").arg(path));
+        return;
+    }
+    const QString source = QString::fromUtf8(file.readAll());
+    file.close();
+    appendOutput(QStringLiteral("> ") + QFileInfo(path).fileName());
+    const QString result = mHost->evaluate(source);
+    if (result.startsWith(QStringLiteral("Uncaught"))) {
+        appendError(result);
+    } else if (!result.isEmpty()) {
+        appendOutput(result);
+    }
+}
+
 void ScriptConsoleDock::appendOutput(const QString &text)
 {
     const auto stamp = QDateTime::currentDateTime().toString(
@@ -147,7 +210,7 @@ void ScriptConsoleDock::appendError(const QString &text)
 
 void ScriptConsoleDock::runInput()
 {
-    const QString source = mInput->text().trimmed();
+    const QString source = mInput->toPlainText().trimmed();
     if (source.isEmpty()) { return; }
     mInput->clear();
 
@@ -162,3 +225,6 @@ void ScriptConsoleDock::runInput()
         appendOutput(result);
     }
 }
+
+// the input box class lives in this file with Q_OBJECT
+#include "scriptconsole.moc"

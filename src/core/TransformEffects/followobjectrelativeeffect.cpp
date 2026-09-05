@@ -30,7 +30,7 @@
 #include "Animators/qrealanimator.h"
 
 FollowObjectRelativeEffect::FollowObjectRelativeEffect() :
-    FollowObjectEffectBase("follow object relative",
+    FollowObjectEffectBase(QObject::tr("Follow Object (Relative)"),
                           TransformEffectType::followObjectRelative) {
 }
 

@@ -43,10 +43,14 @@
 #include "Animators/animator.h"
 
 #include <functional>
+#include <QScopeGuard>
 #include "RasterEffects/rastereffect.h"
 #include "RasterEffects/customrastereffectcreator.h"
+#include "RasterEffects/rastereffectcollection.h"
+#include "clipboardcontainer.h"
 #include "internallinkbox.h"
 #include "Animators/qpointfanimator.h"
+#include "Animators/qrealanimator.h"
 #include "MovablePoints/pathpointshandler.h"
 #include "typemenu.h"
 #include "patheffectsmenu.h"
@@ -67,9 +71,14 @@
 
 #include <QInputDialog>
 #include <QMessageBox>
+#include <QMutex>
 
-int BoundingBox::sNextDocumentId = 0;
+std::atomic<int> BoundingBox::sNextDocumentId{0};
 QList<BoundingBox*> BoundingBox::sDocumentBoxes;
+// Guards sDocumentBoxes: preview panels create sample boxes on
+// QtConcurrent worker threads, while the gui thread iterates the
+// list in sGetBoxByDocumentId (session restore, matte resolve).
+static QMutex sDocumentBoxesMutex;
 int BoundingBox::sNextWriteId;
 QList<const BoundingBox*> BoundingBox::sBoxesWithWriteIds;
 
@@ -82,7 +91,10 @@ BoundingBox::BoundingBox(const QString& name, const eBoxType type) :
     mTransformAnimator(enve::make_shared<BoxTransformAnimator>()),
     mRasterEffectsAnimators(enve::make_shared<RasterEffectCollection>()),
     mTrackMatteTarget(enve::make_shared<BoxTargetProperty>("track matte")) {
-    sDocumentBoxes << this;
+    {
+        QMutexLocker lock(&sDocumentBoxesMutex);
+        sDocumentBoxes << this;
+    }
 
     // live follow: whenever the matte target changes (pick, unpick,
     // file load resolving the stored id) re-arm the follow connections
@@ -123,6 +135,7 @@ BoundingBox::BoundingBox(const QString& name, const eBoxType type) :
 }
 
 BoundingBox::~BoundingBox() {
+    QMutexLocker lock(&sDocumentBoxesMutex);
     sDocumentBoxes.removeOne(this);
 }
 
@@ -263,6 +276,7 @@ QDomElement BoundingBox::prp_writePropertyXEV_impl(const XevExporter& exp) const
 }
 
 BoundingBox *BoundingBox::sGetBoxByDocumentId(const int documentId) {
+    QMutexLocker lock(&sDocumentBoxesMutex);
     for(const auto& box : sDocumentBoxes) {
         if(box->getDocumentId() == documentId) return box;
     }
@@ -577,12 +591,34 @@ void BoundingBox::setPreserveAlpha(const bool preserve) {
     }
     mPreserveAlpha = preserve;
     prp_afterWholeInfluenceRangeChanged();
+    // the implicit next-layer matte attaches at RENDER time; image
+    // layers serve cached HDD renders and never re-render on
+    // influence-range changes alone - force the invalidation
+    planUpdate(UpdateReason::userChange);
     emit preserveAlphaChanged(preserve);
+}
+
+void BoundingBox::setTrackMatteModeWithUndo(const int mode) {
+    const int clamped = qBound(0, mode, 4);
+    if(mTrackMatteMode == clamped) return;
+    {
+        prp_pushUndoRedoName(tr("Set Track Matte Mode"));
+        UndoRedo ur;
+        const auto oldValue = mTrackMatteMode;
+        const auto newValue = clamped;
+        ur.fUndo = [this, oldValue]() { setTrackMatteMode(oldValue); };
+        ur.fRedo = [this, newValue]() { setTrackMatteMode(newValue); };
+        prp_addUndoRedo(ur);
+    }
+    setTrackMatteMode(clamped);
 }
 
 SkBlendMode BoundingBox::getPaintBlendMode(const qreal relFrame) const {
     Q_UNUSED(relFrame)
-    if(mPreserveAlpha) return SkBlendMode::kSrcATop;
+    // preserve-alpha no longer paints kSrcATop against the whole
+    // backdrop: it is an implicit alpha matte sourced from the layer
+    // DIRECTLY BELOW (user rule: only the next layer counts, never
+    // the accumulated stack) - attached in setupRenderData
     return mBlendMode;
 }
 
@@ -1291,25 +1327,166 @@ void BoundingBox::finishTransform() {
     //updateTotalTransform();
 }
 
+// matte sample with an OWN cache: forced-raster external renders
+// only. The box's render cache is deliberately bypassed - preview
+// assemblies store DIRECT-DRAW items there that complete with a NULL
+// image, and a null-image sample erases the layer at composite time
+// (the TrackMatteCaller treats it as an empty matte). Keyed by
+// source+frame; content changes come through the follow connections
+// which reset the cache
+stdsptr<BoxRenderData> BoundingBox::freshMatteSample(
+        BoundingBox * const matte, const qreal relFrame) {
+    if(!matte) return nullptr;
+    if(mMatteSampleSource == matte && mMatteSampleCache &&
+            qAbs(mMatteSampleFrame - relFrame) < 0.001) {
+        const auto st = mMatteSampleCache->getState();
+        const bool fresh = mMatteSampleCache->fBoxStateId ==
+                matte->getBoxStateId();
+        if(fresh && st == eTaskState::finished) {
+            if(mMatteSampleCache->fRenderedImage) return mMatteSampleCache;
+        } else if(fresh && (st == eTaskState::qued ||
+                            st == eTaskState::processing)) {
+            return mMatteSampleCache;
+        }
+        // canceled/created/finished-without-image/STALE (the matte
+        // changed since the sample was taken): fall through and queue
+        // a fresh forced-raster render. The stateId comparison makes
+        // the follow-connections' cache resets unnecessary - a below
+        // layer drag no longer re-external-renders per move beyond
+        // the one render its own change needs
+    }
+    const auto sample = matte->queExternalRender(relFrame, true);
+    mMatteSampleSource = matte;
+    mMatteSampleCache = sample;
+    mMatteSampleFrame = relFrame;
+    return sample;
+}
+
+// the layer DIRECTLY below in the same container (mContainedBoxes
+// index 0 = top, below = the next index after ours) that actually
+// draws: hidden siblings and layers serving as a track-matte source
+// never reach the backdrop, so they must not clip this layer either
+// (AE semantics: preserve-alpha looks at the drawn pixels below)
+BoundingBox *BoundingBox::preserveBelowSourceFor(const qreal relFrame) {
+    const auto parent = getParentGroup();
+    if(!parent) return nullptr;
+    const auto& boxes = parent->getContainedBoxes();
+    const int myId = boxes.indexOf(this);
+    if(myId < 0) return nullptr;
+    const int absFrame = prp_relFrameToAbsFrame(qRound(relFrame));
+    for(int i = myId + 1; i < boxes.count(); i++) {
+        const auto below = boxes.at(i);
+        if(!below) continue;
+        const qreal belowRel = below->prp_absFrameToRelFrameF(absFrame);
+        if(!below->isFrameFVisibleAndInDurationRect(belowRel)) continue;
+        if(below->usedAsTrackMatteSource()) continue;
+        // PSD clipping chain: this layer and 'below' are both members of
+        // the same clipped stack - the base is the first NON-clipping
+        // drawable layer further down (Photoshop semantics), so fellow
+        // clipping layers never act as the base for each other
+        if(isClippingMaskLayer() && below->isClippingMaskLayer()) continue;
+        return below;
+    }
+    return nullptr;
+}
+
+// preserve-alpha follow: the below layer's changes must invalidate
+// our cached render (same-container re-assembly alone reuses our
+// stale clip) - mirrors the track-matte source follow
+void BoundingBox::setPreserveBelowSource(BoundingBox * const below) {
+    if(mPreserveBelowSource == below) return;
+    auto& conn = mPreserveBelowSource.assign(below);
+    if(below) {
+        conn << connect(below, &BoundingBox::prp_absFrameRangeChanged,
+                        this, [this](const FrameRange&) {
+            // same rationale as the track-matte follow: transform
+            // drags are invisible to the stateId check
+            mMatteSampleSource.clear();
+            mMatteSampleCache.reset();
+            planUpdate(UpdateReason::userChange);
+        });
+    }
+    // the first assignment happens DURING render assembly (inside
+    // the scheduler's queScheduledCpuTasks window) - a synchronous
+    // planUpdate there invalidates the data being assembled and
+    // re-enters the task machinery (0xC0000005 in QList detach).
+    // Defer the invalidation to the next event-loop pass
+    QMetaObject::invokeMethod(this, [this]() {
+        planUpdate(UpdateReason::userChange);
+    }, Qt::QueuedConnection);
+}
+
 void BoundingBox::setupRenderData(const qreal relFrame,
                                   const QMatrix& parentM,
                                   BoxRenderData * const data,
                                   Canvas* const scene) {
     setupWithoutRasterEffects(relFrame, parentM, data, scene);
     setupRasterEffects(relFrame, data, scene);
-    // track matte: queue the matte layer's independent render (main
-    // thread) and mask this layer's final image with it in the effects
-    // phase - matte runs LAST, after the layer's own effects/blur
-    if(mTrackMatteMode != 0 && data) {
-        const auto matte = mTrackMatteTarget ?
-                    mTrackMatteTarget->getTarget() : nullptr;
-        // cycle guard: if the matte chain leads back here the two
-        // renders would wait on each other forever (black canvas)
-        if(matte && matte != this && !matte->matteChainReaches(this)) {
-            if(const auto sample = matte->queExternalRender(relFrame, true)) {
-                sample->addDependent(data);
-                data->setTrackMatte(sample, mTrackMatteMode);
+    // track matte / preserve-alpha attach. freshMatteSample runs the
+    // source's setupRenderData SYNCHRONOUSLY (queExternalRender), so
+    // mixed cycles (A track-mattes B, B preserve-alphas against A)
+    // would recurse forever - mInMatteAttach breaks any revisit of a
+    // box whose setup is still on the call stack.
+    // diagnostics log on verdict CHANGE only (assembly runs per frame)
+    if(data && !mInMatteAttach) {
+        mInMatteAttach = true;
+        // RAII: an exception out of freshMatteSample/queExternalRender
+        // must not leave the recursion breaker stuck on - the matte
+        // would then silently never attach again for this box
+        const auto attachGuard = qScopeGuard([this]() {
+            mInMatteAttach = false;
+        });
+        const auto setVerdict = [this](const QString& why) {
+            if(mMatteDiagLastMsg == why) return;
+            mMatteDiagLastMsg = why;
+            qWarning() << "[MATTE]" << prp_getName() << why;
+        };
+        // hasActiveTrackMatte: a SAVED mode with a dead/unresolved
+        // target must NOT win over preserve-alpha (probe-verified:
+        // image layers carried a stale mode=1 forever blocking T)
+        if(hasActiveTrackMatte()) {
+            const auto matte = mTrackMatteTarget ?
+                        mTrackMatteTarget->getTarget() : nullptr;
+            if(!matte) {
+                setVerdict(QStringLiteral("轨道遮罩：模式%1但无目标层（无效果）")
+                           .arg(mTrackMatteMode));
+            } else if(matte == this) {
+                setVerdict(QStringLiteral("轨道遮罩：目标是自己（忽略）"));
+            } else if(matte->matteChainReaches(this)) {
+                setVerdict(QStringLiteral("轨道遮罩：环形依赖已降级（%1）")
+                           .arg(matte->prp_getName()));
+            } else {
+                const auto sample = freshMatteSample(matte, relFrame);
+                if(sample) {
+                    sample->addDependent(data);
+                    data->setTrackMatte(sample, mTrackMatteMode);
+                    setVerdict(QStringLiteral("轨道遮罩挂接 -> %1 模式%2")
+                               .arg(matte->prp_getName())
+                               .arg(mTrackMatteMode));
+                } else {
+                    setVerdict(QStringLiteral("轨道遮罩：采样排队失败（%1）")
+                               .arg(matte->prp_getName()));
+                }
             }
+        } else if(mPreserveAlpha) {
+            auto below = preserveBelowSourceFor(relFrame);
+            if(below && below->matteChainReaches(this)) below = nullptr;
+            setPreserveBelowSource(below);
+            const auto sample = freshMatteSample(below, relFrame);
+            data->setTrackMatte(sample, 1);
+            if(sample) sample->addDependent(data);
+            if(below) {
+                setVerdict(QStringLiteral("保留透明度 -> 正下一层 %1")
+                           .arg(below->prp_getName()));
+            } else {
+                setVerdict(QStringLiteral("保留透明度：无下一层（整层隐藏）"));
+            }
+        } else {
+            // the default verdict is not worth a log line - it fires
+            // once per box per first assembly and floods the debug log
+            // with hundreds of lines on scene switches; keep the dedup
+            // state so a later real verdict still logs
+            mMatteDiagLastMsg = QStringLiteral("蒙版未启用");
         }
     }
 }
@@ -1364,6 +1541,7 @@ void BoundingBox::setupWithoutRasterEffects(const qreal relFrame,
     data->fOpacity = getOpacity(relFrame);
     data->fBaseMargin = QMargins() + 2;
     data->fBlendMode = getPaintBlendMode(relFrame);
+    data->fIsMask = isMaskBox();
 
     {
         const auto parent = getParentGroup();
@@ -1413,7 +1591,13 @@ QPointF BoundingBox::getAbsolutePos() const {
 }
 
 void BoundingBox::updateDrawRenderContainerTransform() {
-    if(mNReasonsNotToApplyUglyTransform == 0) {
+    // matted layers never slide the stale bitmap: the clip region is
+    // fixed in place while the content moves - sliding carried the
+    // clip along and snapped back on release (felt as mask lag).
+    // Per-frame re-render gives the exact live preview; the self-drag
+    // case only re-renders this layer (matte sample stays cached)
+    if(mNReasonsNotToApplyUglyTransform == 0 &&
+            !hasActiveTrackMatte() && !mPreserveAlpha) {
         // the compensation matrix must use the same transform family the
         // stale bitmap was rasterized with (see RenderContainer): bake the
         // scene camera in for 3D layers, or dragging under a rotated camera
@@ -1609,6 +1793,120 @@ void BoundingBox::prp_setupTreeViewMenu(PropertyMenu * const menu)
             if (ask != QMessageBox::Yes) { return; }*/
             pScene->removeSelectedBoxesAndClearList();
         })->setShortcut(Qt::Key_Delete);
+
+        // AE-style effect paste onto this layer: accepts a copied
+        // effects collection or a single copied effect (appended)
+        {
+            const auto clipProp = Document::sInstance->getPropertyClipboard();
+            const auto effects = rasterEffectsCollection();
+            const bool canPasteEffects =
+                    clipProp && effects && clipProp->fitsTarget(effects);
+            menu->addPlainAction(QIcon::fromTheme("edit-paste"),
+                                 tr("粘贴特效"),
+                    [effects, clipProp]() {
+                if (clipProp && clipProp->fitsTarget(effects)) {
+                    clipProp->paste(effects);
+                    qWarning() << "[PASTE] context: effects pasted onto layer";
+                }
+            })->setEnabled(canPasteEffects);
+        }
+
+        // 图层样式 (Photoshop-style): one combined effect carries
+        // shadow/glow/stroke in the fixed PS order; entries create
+        // it on demand and toggle the matching sub-style
+        {
+            const auto findStyles = [this]() -> LayerStylesEffect* {
+                const int n = mRasterEffectsAnimators->ca_getNumberOfChildren();
+                for (int i = 0; i < n; i++) {
+                    const auto child = mRasterEffectsAnimators->getChild(i);
+                    if (const auto eff = enve_cast<LayerStylesEffect*>(child)) {
+                        return eff;
+                    }
+                }
+                return nullptr;
+            };
+            const auto stylesMenu = menu->addMenu(QIcon::fromTheme("effect"),
+                                                  tr("图层样式"));
+            const auto addStyleEntry = [this, findStyles, stylesMenu](
+                    const QString& name, const bool on,
+                    const std::function<void(LayerStylesEffect*, const bool)>& apply) {
+                stylesMenu->addCheckableAction(name, on,
+                    [this, findStyles, apply](const bool checked) {
+                    auto eff = findStyles();
+                    if (!eff) {
+                        if (!checked) return;
+                        const auto newEff = enve::make_shared<LayerStylesEffect>();
+                        addRasterEffect(newEff);
+                        eff = newEff.get();
+                    }
+                    apply(eff, checked);
+                    // the collection's cache may not see a pure bool
+                    // toggle as an influence-range change
+                    eff->prp_afterWholeInfluenceRangeChanged();
+                });
+            };
+            const auto curEff = findStyles();
+            addStyleEntry(tr("投影"),
+                          curEff && curEff->shadowEnabled()->getBoolValue(),
+                          [](LayerStylesEffect* const e, const bool on) {
+                e->shadowEnabled()->setCurrentBoolValue(on); });
+            addStyleEntry(tr("外发光"),
+                          curEff && curEff->glowEnabled()->getBoolValue(),
+                          [](LayerStylesEffect* const e, const bool on) {
+                e->glowEnabled()->setCurrentBoolValue(on); });
+            addStyleEntry(tr("描边"),
+                          curEff && curEff->strokeEnabled()->getBoolValue(),
+                          [](LayerStylesEffect* const e, const bool on) {
+                e->strokeEnabled()->setCurrentBoolValue(on); });
+        }
+
+        // remove every expression (e.g. loop expressions baked onto
+        // effect parameters) from this layer's property tree; each
+        // removal goes through the undoable set-expression path
+        {
+            const std::function<int(Property*)> countExpressions =
+                    [&](Property* const prop) {
+                int count = 0;
+                if (const auto anim = enve_cast<QrealAnimator*>(prop)) {
+                    if (anim->hasExpression()) count++;
+                }
+                if (const auto ca = enve_cast<ComplexAnimator*>(prop)) {
+                    const int n = ca->ca_getNumberOfChildren();
+                    for (int i = 0; i < n; i++) {
+                        const auto p = ca->ca_getChildAt(i);
+                        if (p) count += countExpressions(p);
+                    }
+                }
+                return count;
+            };
+            menu->addPlainAction(QIcon::fromTheme("dialog-information"),
+                                 tr("删除表达式"),
+                    [this]() {
+                int removed = 0;
+                std::function<void(Property*)> walk;
+                walk = [this, &removed, &walk](Property* const prop) {
+                    if (const auto anim = enve_cast<QrealAnimator*>(prop)) {
+                        if (anim->hasExpression()) {
+                            anim->setExpressionAction(nullptr);
+                            removed++;
+                        }
+                    }
+                    if (const auto ca = enve_cast<ComplexAnimator*>(prop)) {
+                        const int n = ca->ca_getNumberOfChildren();
+                        for (int i = 0; i < n; i++) {
+                            const auto p = ca->ca_getChildAt(i);
+                            if (p) walk(p);
+                        }
+                    }
+                };
+                walk(this);
+                qWarning() << "[EXPR] removed" << removed
+                           << "expression(s) from" << prp_getName();
+                if (removed > 0) {
+                    Document::sInstance->actionFinished();
+                }
+            })->setEnabled(countExpressions(this) > 0);
+        }
 
         // merge every selected layer into one timeline track anchored
         // at the last selected layer (UI-level grouping, not a group)
@@ -1881,17 +2179,39 @@ bool BoundingBox::SWT_dropSupport(const QMimeData * const data) {
 // cache (and the scene frame cache) is invalidated whenever the matte
 // layer moves, animates or changes shape
 void BoundingBox::setTrackMatteSource(BoundingBox * const matte) {
+    // no matte means no matte mode: heals saved projects whose target
+    // failed to resolve on load (a stale mode would block
+    // preserve-alpha, see setupRenderData)
+    if(!matte && mTrackMatteMode != 0) mTrackMatteMode = 0;
+    // AE auto-hide bookkeeping: the previous source draws again once
+    // nothing references it, the new source stops drawing (refcounted,
+    // several targets may share one source)
+    const auto prevSource = mTrackMatteSource.get();
+    if(prevSource && prevSource != matte) {
+        prevSource->matteSourceUseDelta(-1);
+    }
+    if(matte && matte != prevSource) matte->matteSourceUseDelta(1);
     auto& conn = mTrackMatteSource.assign(matte);
     // follow only when it cannot loop back: with a matte cycle the
     // change forwarding would ping-pong between the two boxes forever
     // (render cache never settles -> black canvas)
     if(matte && !matte->matteChainReaches(this)) {
         conn << connect(matte, &BoundingBox::prp_absFrameRangeChanged,
-                        this, [this, matte](const FrameRange& targetAbs) {
-            const auto relRange = matte->prp_absRangeToRelRange(targetAbs);
-            prp_afterChangedRelRange(relRange);
+                        this, [this](const FrameRange&) {
+            // image layers serve cached HDD renders and ignore
+            // influence-range changes - only a planUpdate forces the
+            // re-render. The sample cache MUST also drop: pure
+            // TRANSFORM drags never bump the source's stateId, so the
+            // stateId check alone cannot see them - the stale sample
+            // would keep the OLD fGlobalRect and the clip would stay
+            // pinned while the shape moves
+            mMatteSampleSource.clear();
+            mMatteSampleCache.reset();
+            planUpdate(UpdateReason::userChange);
         });
     }
+    // the sample cache is source-keyed and stateId-checked; switching
+    // sources misses on the source compare alone
     planUpdate(UpdateReason::userChange);
 }
 

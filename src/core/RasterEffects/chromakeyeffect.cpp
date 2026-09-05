@@ -333,7 +333,7 @@ void processPixel(const ChromaKeyEffectData& d,
 } // namespace
 
 ChromaKeyEffect::ChromaKeyEffect() :
-    RasterEffect("chroma-key",
+    RasterEffect(QObject::tr("Chroma Key"),
                  AppSupport::getRasterEffectHardwareSupport("ChromaKey",
                                                             HardwareSupport::gpuPreffered),
                  true,

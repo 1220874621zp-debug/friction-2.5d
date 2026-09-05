@@ -31,7 +31,7 @@
 #include "svgexporter.h"
 
 FollowPathEffect::FollowPathEffect() :
-    TargetTransformEffect("follow path", TransformEffectType::followPath) {
+    TargetTransformEffect(QObject::tr("Follow Path"), TransformEffectType::followPath) {
     targetProperty()->setValidator<PathBox>();
 
     mRotate = enve::make_shared<BoolProperty>("rotate");

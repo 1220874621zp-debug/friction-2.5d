@@ -359,7 +359,12 @@ Actions::Actions(Document &document) : mDocument(document) {
     { // copyAction
         const auto actionCan = [this]() {
             if(!mActiveScene) return false;
-            return !mActiveScene->isBoxSelectionEmpty();
+            // a selected property row (e.g. a single effect picked in
+            // the timeline) also enables Copy - Canvas::copyAction
+            // copies the owning effects collection so effects can
+            // travel between layers via Edit > Copy/Paste
+            return !mActiveScene->isBoxSelectionEmpty() ||
+                   !mActiveScene->getSelectedPropsList().isEmpty();
         };
         const auto actionExec = [this]() {
             mActiveScene->copyAction();

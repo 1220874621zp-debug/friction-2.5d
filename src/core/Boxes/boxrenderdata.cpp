@@ -60,7 +60,6 @@ void BoxRenderData::transformRenderCanvas(SkCanvas &canvas) const {
 }
 
 void BoxRenderData::copyFrom(BoxRenderData *src) {
-    mCopySource = src;
     fRelTransform = src->fRelTransform;
     fInheritedTransform = src->fInheritedTransform;
     fTotalTransform = src->fTotalTransform;
@@ -75,6 +74,7 @@ void BoxRenderData::copyFrom(BoxRenderData *src) {
     fAntiAlias = src->fAntiAlias;
     fUseRenderTransform = src->fUseRenderTransform;
     fBlendMode = src->fBlendMode;
+    fIsMask = src->fIsMask;
     fGlobalRect = src->fGlobalRect;
     fOpacity = src->fOpacity;
     fResolution = src->fResolution;
@@ -96,8 +96,12 @@ stdsptr<BoxRenderData> BoxRenderData::makeCopy() {
 }
 
 sk_sp<SkImage> BoxRenderData::requestImageCopy() {
-    if(mImageCopies.isEmpty()) return SkiaHelpers::makeCopy(fRenderedImage);
-    else return mImageCopies.takeLast();
+    // SkImage is immutable and ref-counted, so handing out the shared
+    // ref is enough - the old deep copy memmoved entire layer bitmaps
+    // per link per frame on the GUI thread during task assembly, which
+    // was the main queue-render bottleneck (hundreds of MB per frame)
+    // and froze the UI for the whole render
+    return fRenderedImage;
 }
 
 void BoxRenderData::drawOnParentLayer(SkCanvas * const canvas) {
@@ -222,9 +226,9 @@ void BoxRenderData::afterProcessing() {
     }
     if(fParentBox && fParentIsTarget) {
         fParentBox->renderDataFinished(this);
-    } else if(mCopySource) {
-        mCopySource->addImageCopy(std::move(fRenderedImage));
     }
+    // copies share the source image ref now, so there is nothing to
+    // recycle back into a pool here anymore
 }
 
 void BoxRenderData::afterQued() {
@@ -329,7 +333,10 @@ void BoxRenderData::setBaseGlobalRect(const QRectF& baseRectF)
 
 void BoxRenderData::setTrackMatte(stdsptr<BoxRenderData> sample,
                                   const int mode) {
-    if(!sample || mode <= 0) return;
+    if(mode <= 0) return;
+    // a null sample is valid: preserve-alpha with no drawable layer
+    // below must still attach the caller so the layer is hidden
+    // entirely (AE semantics) - TrackMatteCaller handles a null matte
     fTrackMatteSample = sample;
     fTrackMatteMode = mode;
     // appended after the layer's own effects: the matte masks the

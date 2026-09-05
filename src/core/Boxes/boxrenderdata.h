@@ -134,6 +134,12 @@ public:
     const SkFilterQuality fFilterQuality;
     bool fAntiAlias = false;
     bool fUseRenderTransform = false;
+    // AE-style mask child (SmartVectorPath in mask mode): the parent
+    // container composites consecutive mask children into one matte
+    // (Add = union, Subtract = erase) instead of applying each blend
+    // directly - sequential DstIn/DstOut alone cannot express the
+    // union of two Add masks
+    bool fIsMask = false;
 
     bool fParentIsTarget = true;
     qptr<BoundingBox> fParentBox;
@@ -166,14 +172,8 @@ protected:
     bool mDelayDataSet = false;
     bool mDataSet = false;
 private:
-    void addImageCopy(const sk_sp<SkImage>& img) {
-        mImageCopies << img;
-    }
-
     Step mStep = Step::BOX_IMAGE;
     EffectsRenderer mEffectsRenderer;
-    stdptr<BoxRenderData> mCopySource;
-    QList<sk_sp<SkImage>> mImageCopies;
 };
 
 #endif // BOXRENDERDATA_H

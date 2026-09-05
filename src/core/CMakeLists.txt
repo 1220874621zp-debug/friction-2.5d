@@ -275,6 +275,7 @@ set(
     RasterEffects/blackwhiteflasheffect.cpp
     RasterEffects/liquidglasseffect.cpp
     RasterEffects/pixelarteffect.cpp
+    RasterEffects/layerstyleseffect.cpp
     RasterEffects/wipeeffect.cpp
     ReadWrite/ereadstream.cpp
     ReadWrite/ewritestream.cpp
@@ -652,6 +653,7 @@ set(
     RasterEffects/blackwhiteflasheffect.h
     RasterEffects/liquidglasseffect.h
     RasterEffects/pixelarteffect.h
+    RasterEffects/layerstyleseffect.h
     RasterEffects/wipeeffect.h
     ReadWrite/efuturepos.h
     ReadWrite/ereadstream.h

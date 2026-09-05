@@ -29,6 +29,7 @@
 #include "optimalscrollarena/scrollwidgetvisiblepart.h"
 #include "widgets/colorsettingswidget.h"
 #include <QPointer>
+#include <QElapsedTimer>
 
 #include "Boxes/containerbox.h"
 #include "widgets/qrealanimatorvalueslider.h"
@@ -50,6 +51,7 @@
 #include "Boxes/bone.h"
 #include "Boxes/bonelayer.h"
 #include "Boxes/pathbox.h"
+#include "Boxes/smartvectorpath.h"
 #include "canvas.h"
 #include "BlendEffects/blendeffectcollection.h"
 #include "BlendEffects/blendeffectboxshadow.h"
@@ -179,15 +181,12 @@ QString translatePropertyName(const QString& name) {
           BoxSingleWidget::tr("3D Perspective") },
         // mask pen / raster effect names
         { QStringLiteral("blur"),
-          BoxSingleWidget::tr("Blur") },            // 模糊
+          BoxSingleWidget::tr("Blur") },
         { QStringLiteral("radius"),
-          BoxSingleWidget::tr("Radius") },            // 半径
+          BoxSingleWidget::tr("Radius") },
         { QStringLiteral("effects"),
-          BoxSingleWidget::tr("Effects") },            // 特效
+          BoxSingleWidget::tr("Effects") },
     };
-    if(name.startsWith(QStringLiteral("Mask: "))) {
-        return BoxSingleWidget::tr("Mask: ") + name.mid(6);
-    }
     return map.value(name, name);
 }
 
@@ -468,8 +467,32 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
         if (!mTarget) { return; }
         const auto ebs = enve_cast<eBoxOrSound*>(mTarget->getTarget());
         if (!ebs) { return; }
-        // guarded: the nested menu loop may outlive the layer
+        // guarded: the nested menu loop may outlive the layer; applies
+        // to the whole selection when this row's layer is part of a
+        // multi-selection (AE label behavior), otherwise this row only
         const QPointer<eBoxOrSound> ebsGuard = ebs;
+        const auto applyColor = [ebsGuard](const QColor& c) {
+            if(!ebsGuard) return;
+            const auto scene = ebsGuard->getParentScene();
+            bool multiApplied = false;
+            if(scene) {
+                const auto sel = scene->getSelectedBoxesList();
+                if(sel.count() > 1) {
+                    bool inSel = false;
+                    for(const auto& box : sel) {
+                        if(box == ebsGuard.data()) { inSel = true; break; }
+                    }
+                    if(inSel) {
+                        for(const auto& box : sel) {
+                            if(box) box->setLabelColor(c);
+                        }
+                        multiApplied = true;
+                    }
+                }
+            }
+            if(!multiApplied) ebsGuard->setLabelColor(c);
+            Document::sInstance->actionFinished();
+        };
         QMenu menu(this);
         const QColor colors[] = {
             QColor(232, 32, 45),    // red
@@ -494,16 +517,14 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
         for(int i = 0; i < 8; i++) {
             const QColor c = colors[i];
             menu.addAction(QIcon(*labelColorPixmap(c)), names[i],
-                           this, [ebsGuard, c]() {
-                if(ebsGuard) ebsGuard->setLabelColor(c);
-                Document::sInstance->actionFinished();
+                           this, [applyColor, c]() {
+                applyColor(c);
             });
         }
         menu.addSeparator();
         menu.addAction(tr("No Color"), // no color
-                       this, [ebsGuard]() {
-            if(ebsGuard) ebsGuard->setLabelColor(QColor());
-            Document::sInstance->actionFinished();
+                       this, [applyColor]() {
+            applyColor(QColor());
         });
         menu.exec(QCursor::pos());
     });
@@ -988,6 +1009,22 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
             this, &BoxSingleWidget::setCompositionMode);
     mBlendModeCombo->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Minimum);
 
+    // AE mask mode: on mask-path rows this dropdown replaces the blend
+    // dropdown (Add = kDstIn, Subtract = kDstOut); multi-mask rows
+    // combine Add = union / Subtract = erase, topmost-first (AE)
+    mMaskModeCombo = createCombo(this);
+    mMainLayout->addWidget(mMaskModeCombo);
+    mMaskModeCombo->setObjectName("maskModeCombo");
+    mMaskModeCombo->setToolTip(tr("\u8499\u7248\u6A21\u5F0F"));
+    mMaskModeCombo->addItem(tr("\u76F8\u52A0"));
+    mMaskModeCombo->addItem(tr("\u76F8\u51CF"));
+    mMaskModeCombo->setVisible(false);
+    connect(mMaskModeCombo, qOverload<int>(&QComboBox::activated),
+            this, &BoxSingleWidget::setMaskMode);
+    mMaskModeCombo->setSizePolicy(QSizePolicy::Maximum,
+                                  QSizePolicy::Minimum);
+    mMaskModeCombo->setFixedWidth(eSizesUI::widget*3);
+
     // parent link combo: sits behind the blend mode ("覆盖") dropdown and
     // mirrors the node-link parent of this layer; opening the popup
     // rebuilds the candidate list, picking an entry re-links
@@ -1010,9 +1047,11 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
         if(!scene || !box) return;
         BoundingBox* picked = nullptr;
         if(index > 0) {
-            const quintptr raw =
-                mParentLinkCombo->itemData(index).value<quintptr>();
-            picked = reinterpret_cast<BoundingBox*>(raw);
+            // entries carry the documentId; resolving here (instead of
+            // trusting a cached raw pointer) stays safe when the layer
+            // was deleted since the popup was built
+            picked = BoundingBox::sGetBoxByDocumentId(
+                        mParentLinkCombo->itemData(index).toInt());
         }
         if(picked == box) return;
         if(!picked && !boxHasParentLink(box)) return;
@@ -1044,18 +1083,29 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
         if(!scene || !box) return;
         BoundingBox* picked = nullptr;
         if(index > 0) {
-            const quintptr raw =
-                mTrkMatLayerCombo->itemData(index).value<quintptr>();
-            picked = reinterpret_cast<BoundingBox*>(raw);
+            // documentId resolution, same safety rationale as the
+            // parent-link combo above
+            picked = BoundingBox::sGetBoxByDocumentId(
+                        mTrkMatLayerCombo->itemData(index).toInt());
         }
         if(picked == box) return;
         box->trackMatteTarget()->setTargetAction(picked);
         if(picked && box->getTrackMatteMode() <= 0) {
-            box->setTrackMatteMode(1); // default: alpha matte
+            box->setTrackMatteModeWithUndo(1); // default: alpha matte
+        } else if(!picked) {
+            // "无" clears the mode too - a stale mode with no target
+            // would block preserve-alpha (setupRenderData gate)
+            box->setTrackMatteModeWithUndo(0);
         }
         box->prp_afterWholeInfluenceRangeChanged();
         Document::sInstance->actionFinished();
         mTrkMatModeButton->update();
+        // reflect the pick on the closed combo (rebuild only runs on
+        // the next press)
+        {
+            const QSignalBlocker blocker(mTrkMatLayerCombo);
+            mTrkMatLayerCombo->setCurrentIndex(index);
+        }
     });
     mTrkMatLayerCombo->setSizePolicy(QSizePolicy::Maximum,
                                      QSizePolicy::Minimum);
@@ -1075,8 +1125,8 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
         if(mBgLayerBuilding || !mBgTargetProp) return;
         BoundingBox* picked = nullptr;
         if(index > 0) {
-            picked = reinterpret_cast<BoundingBox*>(
-                        mBgLayerCombo->itemData(index).value<quintptr>());
+            picked = BoundingBox::sGetBoxByDocumentId(
+                        mBgLayerCombo->itemData(index).toInt());
         }
         mBgTargetProp->setTargetAction(picked);
         Document::sInstance->actionFinished();
@@ -1112,7 +1162,7 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
             return; // no matte layer picked yet - nothing to switch
         }
         const int next = box->getTrackMatteMode() % 4 + 1; // cycle 1..4
-        box->setTrackMatteMode(next);
+        box->setTrackMatteModeWithUndo(next);
         Document::sInstance->actionFinished();
         mTrkMatModeButton->update();
     });
@@ -1324,7 +1374,16 @@ void BoxSingleWidget::setTargetAbstraction(SWT_Abstraction *abs) {
     mSoloButton->setVisible(eboxOrSound);
     mShyButton->setVisible(eboxOrSound);
     mFxButton->setVisible(boundingBox);
-    mTButton->setVisible(boundingBox);
+    // no preserve-alpha switch on mask rows: masks clip their owner
+    // and are never composited against sibling layers
+    const auto tMaskPath = enve_cast<SmartVectorPath*>(boundingBox);
+    mTButton->setVisible(boundingBox &&
+                         !(tMaskPath && tMaskPath->getMaskMode()));
+    // grey out while a track matte is active: the matte wins over
+    // preserve-alpha at render time (setupRenderData gate), so a lit
+    // enabled switch would lie about having any effect
+    mTButton->setEnabled(!(boundingBox &&
+                           boundingBox->hasActiveTrackMatte()));
     mResetButton->setVisible(
                 (enve_cast<QrealAnimator*>(prop) ||
                  enve_cast<QPointFAnimator*>(prop)) &&
@@ -1386,6 +1445,7 @@ void BoxSingleWidget::setTargetAbstraction(SWT_Abstraction *abs) {
     mPathBlendModeVisible = false;
     mBlendModeVisible = false;
     mFillTypeVisible = false;
+    mMaskModeVisible = false;
     // sync highlight with the layer's current selection state (the row
     // may be (re)assigned to a layer that is already selected)
     mSelected = false;
@@ -1402,14 +1462,30 @@ void BoxSingleWidget::setTargetAbstraction(SWT_Abstraction *abs) {
     bool colorButtonVisible = false;
 
     if(boundingBox) {
-        mBlendModeVisible = true;
-        const auto blendName = SkBlendMode_Name(boundingBox->getBlendMode());
-        mBlendModeCombo->setCurrentText(blendName);
-        mBlendModeCombo->setEnabled(!boundingBox->isGroup());
-        mTargetConn << connect(boundingBox, &BoundingBox::blendModeChanged,
-                               this, [this](const SkBlendMode mode) {
-            mBlendModeCombo->setCurrentText(SkBlendMode_Name(mode));
-        });
+        // AE mask row: the generic blend dropdown becomes the mask-mode
+        // dropdown (the blend mode IS the storage: kDstIn/kDstOut)
+        const auto maskPath = enve_cast<SmartVectorPath*>(boundingBox);
+        if(maskPath && maskPath->getMaskMode()) {
+            mMaskModeVisible = true;
+            mMaskModeCombo->setCurrentIndex(
+                        boundingBox->getBlendMode() == SkBlendMode::kDstOut ?
+                            1 : 0);
+            mTargetConn << connect(boundingBox,
+                                   &BoundingBox::blendModeChanged,
+                                   this, [this](const SkBlendMode mode) {
+                mMaskModeCombo->setCurrentIndex(
+                            mode == SkBlendMode::kDstOut ? 1 : 0);
+            });
+        } else {
+            mBlendModeVisible = true;
+            const auto blendName = SkBlendMode_Name(boundingBox->getBlendMode());
+            mBlendModeCombo->setCurrentText(blendName);
+            mBlendModeCombo->setEnabled(!boundingBox->isGroup());
+            mTargetConn << connect(boundingBox, &BoundingBox::blendModeChanged,
+                                   this, [this](const SkBlendMode mode) {
+                mBlendModeCombo->setCurrentText(SkBlendMode_Name(mode));
+            });
+        }
 
         // parent-link combo: visible on every layer row; shows the
         // current node-link parent and allows switching it directly
@@ -1565,6 +1641,17 @@ void BoxSingleWidget::setTargetAbstraction(SWT_Abstraction *abs) {
                                this, [this]() { mFxButton->update(); });
         mTargetConn << connect(boundingBox, &BoundingBox::preserveAlphaChanged,
                                this, [this]() { mTButton->update(); });
+        // keep the T switch's greyed-out state in sync when the track
+        // matte target is picked/cleared (the matte overrides T)
+        if(const auto matteProp = boundingBox->trackMatteTarget()) {
+            mTargetConn << connect(matteProp, &BoxTargetProperty::targetSet,
+                                   this, [this](BoundingBox*) {
+                const auto box = mTarget ?
+                            enve_cast<BoundingBox*>(mTarget->getTarget()) :
+                            nullptr;
+                mTButton->setEnabled(!(box && box->hasActiveTrackMatte()));
+            });
+        }
     }
     if(!boundingBox && !eindependentSound) {
         mTargetConn << connect(prop, &Property::prp_selectionChanged,
@@ -1580,6 +1667,7 @@ void BoxSingleWidget::setTargetAbstraction(SWT_Abstraction *abs) {
     updateCompositionBoxVisible();
     updatePathCompositionBoxVisible();
     updateFillTypeBoxVisible();
+    updateMaskModeBoxVisible();
 }
 
 void BoxSingleWidget::loadStaticPixmaps(int iconSize)
@@ -1810,55 +1898,60 @@ void BoxSingleWidget::clearStaticPixmaps()
 {
     if (!sStaticPixmapsLoaded) { return; }
 
-    delete VISIBLE_ICON;
-    delete INVISIBLE_ICON;
-    delete BOX_CHILDREN_VISIBLE_ICON;
-    delete BOX_CHILDREN_HIDDEN_ICON;
-    delete ANIMATOR_CHILDREN_VISIBLE_ICON;
-    delete ANIMATOR_CHILDREN_HIDDEN_ICON;
-    delete LOCKED_ICON;
-    delete UNLOCKED_ICON;
-    delete MUTED_ICON;
-    delete UNMUTED_ICON;
-    delete ANIMATOR_RECORDING_ICON;
-    delete ANIMATOR_NOT_RECORDING_ICON;
-    delete ANIMATOR_DESCENDANT_RECORDING_ICON;
-    delete PROMOTE_TO_LAYER_ICON;
-    delete C_ICON;
-    delete G_ICON;
-    delete CG_ICON;
-    delete GRAPH_PROPERTY_ICON;
-    delete ICON_3D_ON;
-    delete ICON_3D_OFF;
-    delete ICON_RESET;
-    delete ICON_SOLO_ON;
-    delete ICON_SOLO_OFF;
-    delete ICON_SHY_ON;
-    delete ICON_SHY_OFF;
-    delete ICON_FX_ON;
-    delete ICON_FX_OFF;
-    delete ICON_T_ON;
-    delete ICON_T_OFF;
-    delete ICON_LINKNODE_ON;
-    delete ICON_LINKNODE_OFF;
-    delete ICON_SCALE_LINK_ON;
-    delete ICON_SCALE_LINK_OFF;
+    // every deleted pointer is nulled and the loaded flag reset:
+    // otherwise a later loadStaticPixmaps() would early-return and
+    // leave every icon pointer dangling
+    delete VISIBLE_ICON; VISIBLE_ICON = nullptr;
+    delete INVISIBLE_ICON; INVISIBLE_ICON = nullptr;
+    delete BOX_CHILDREN_VISIBLE_ICON; BOX_CHILDREN_VISIBLE_ICON = nullptr;
+    delete BOX_CHILDREN_HIDDEN_ICON; BOX_CHILDREN_HIDDEN_ICON = nullptr;
+    delete ANIMATOR_CHILDREN_VISIBLE_ICON; ANIMATOR_CHILDREN_VISIBLE_ICON = nullptr;
+    delete ANIMATOR_CHILDREN_HIDDEN_ICON; ANIMATOR_CHILDREN_HIDDEN_ICON = nullptr;
+    delete LOCKED_ICON; LOCKED_ICON = nullptr;
+    delete UNLOCKED_ICON; UNLOCKED_ICON = nullptr;
+    delete MUTED_ICON; MUTED_ICON = nullptr;
+    delete UNMUTED_ICON; UNMUTED_ICON = nullptr;
+    delete ANIMATOR_RECORDING_ICON; ANIMATOR_RECORDING_ICON = nullptr;
+    delete ANIMATOR_NOT_RECORDING_ICON; ANIMATOR_NOT_RECORDING_ICON = nullptr;
+    delete ANIMATOR_DESCENDANT_RECORDING_ICON; ANIMATOR_DESCENDANT_RECORDING_ICON = nullptr;
+    delete PROMOTE_TO_LAYER_ICON; PROMOTE_TO_LAYER_ICON = nullptr;
+    delete C_ICON; C_ICON = nullptr;
+    delete G_ICON; G_ICON = nullptr;
+    delete CG_ICON; CG_ICON = nullptr;
+    delete GRAPH_PROPERTY_ICON; GRAPH_PROPERTY_ICON = nullptr;
+    delete ICON_3D_ON; ICON_3D_ON = nullptr;
+    delete ICON_3D_OFF; ICON_3D_OFF = nullptr;
+    delete ICON_RESET; ICON_RESET = nullptr;
+    delete ICON_SOLO_ON; ICON_SOLO_ON = nullptr;
+    delete ICON_SOLO_OFF; ICON_SOLO_OFF = nullptr;
+    delete ICON_SHY_ON; ICON_SHY_ON = nullptr;
+    delete ICON_SHY_OFF; ICON_SHY_OFF = nullptr;
+    delete ICON_FX_ON; ICON_FX_ON = nullptr;
+    delete ICON_FX_OFF; ICON_FX_OFF = nullptr;
+    delete ICON_T_ON; ICON_T_ON = nullptr;
+    delete ICON_T_OFF; ICON_T_OFF = nullptr;
+    delete ICON_LINKNODE_ON; ICON_LINKNODE_ON = nullptr;
+    delete ICON_LINKNODE_OFF; ICON_LINKNODE_OFF = nullptr;
+    delete ICON_SCALE_LINK_ON; ICON_SCALE_LINK_ON = nullptr;
+    delete ICON_SCALE_LINK_OFF; ICON_SCALE_LINK_OFF = nullptr;
 
-    delete BOX_PATH;
-    delete BOX_CIRCLE;
-    delete BOX_RECT;
-    delete BOX_TEXT;
-    delete BOX_NULL;
-    delete BOX_BONE;
-    delete BOX_BONELAYER;
-    delete BOX_SOLID;
-    delete BOX_CAMERA;
-    delete BOX_IMAGE;
-    delete BOX_VIDEO;
-    delete BOX_SOUND;
-    delete BOX_GROUP;
-    delete BOX_LINK;
-    delete BOX_SEQ;
+    delete BOX_PATH; BOX_PATH = nullptr;
+    delete BOX_CIRCLE; BOX_CIRCLE = nullptr;
+    delete BOX_RECT; BOX_RECT = nullptr;
+    delete BOX_TEXT; BOX_TEXT = nullptr;
+    delete BOX_NULL; BOX_NULL = nullptr;
+    delete BOX_BONE; BOX_BONE = nullptr;
+    delete BOX_BONELAYER; BOX_BONELAYER = nullptr;
+    delete BOX_SOLID; BOX_SOLID = nullptr;
+    delete BOX_CAMERA; BOX_CAMERA = nullptr;
+    delete BOX_IMAGE; BOX_IMAGE = nullptr;
+    delete BOX_VIDEO; BOX_VIDEO = nullptr;
+    delete BOX_SOUND; BOX_SOUND = nullptr;
+    delete BOX_GROUP; BOX_GROUP = nullptr;
+    delete BOX_LINK; BOX_LINK = nullptr;
+    delete BOX_SEQ; BOX_SEQ = nullptr;
+
+    sStaticPixmapsLoaded = false;
 }
 
 void BoxSingleWidget::mousePressEvent(QMouseEvent *event) {
@@ -2095,7 +2188,13 @@ void BoxSingleWidget::mouseMoveEvent(QMouseEvent *event) {
         const auto prop = static_cast<Property*>(mTarget->getTarget());
         const QString name = translatePropertyName(prop->prp_getName());
         const int nameWidth = QApplication::fontMetrics().horizontalAdvance(name);
-        QPixmap pixmap(mFillWidget->x() + nameWidth + eSizesUI::widget, height());
+        // device-pixel size + dpr tag, otherwise the drag preview is
+        // rendered blurry on high-DPI screens
+        const qreal dpr = devicePixelRatioF();
+        QPixmap pixmap(QSize(mFillWidget->x() + nameWidth + eSizesUI::widget,
+                             height()) * dpr);
+        pixmap.setDevicePixelRatio(dpr);
+        pixmap.fill(Qt::transparent);
         render(&pixmap);
         drag->setPixmap(pixmap);
     }
@@ -2174,7 +2273,11 @@ void BoxSingleWidget::selectRowRange(BoxSingleWidget* const rowA,
         }
     }
     for (int i = qMin(iA, iB); i <= qMax(iA, iB); i++) {
-        const auto t = rows.at(i)->mTarget->getTarget();
+        const auto row = rows.at(i);
+        // findChildren also returns recycled (hidden, target-less)
+        // rows - dereferencing their mTarget would crash
+        if (row->isHidden() || !row->mTarget) { continue; }
+        const auto t = row->mTarget->getTarget();
         if (const auto bb = enve_cast<BoundingBox*>(t)) {
             if (!bb->isSelected()) { scene->addBoxToSelection(bb); }
         } else if (const auto snd = enve_cast<eIndependentSound*>(t)) {
@@ -2433,7 +2536,7 @@ void BoxSingleWidget::rebuildParentLinkCandidates() {
                 if(b->hasInParentLinkChain(box)) continue;
                 mParentLinkCombo->addItem(
                             b->prp_getName(),
-                            QVariant::fromValue(reinterpret_cast<quintptr>(b)));
+                            QVariant::fromValue(b->getDocumentId()));
                 if(b == cur) match = mParentLinkCombo->count() - 1;
                 if(const auto g = enve_cast<ContainerBox*>(b)) walk(g);
             }
@@ -2466,7 +2569,7 @@ void BoxSingleWidget::rebuildBgLayerCandidates() {
                    (owner && owner->isAncestor(b))) continue;
                 mBgLayerCombo->addItem(
                             b->prp_getName(),
-                            QVariant::fromValue(reinterpret_cast<quintptr>(b)));
+                            QVariant::fromValue(b->getDocumentId()));
                 if(b == cur) match = mBgLayerCombo->count() - 1;
                 if(const auto g = enve_cast<ContainerBox*>(b)) walk(g);
             }
@@ -2490,21 +2593,55 @@ void BoxSingleWidget::rebuildTrkMatLayerCandidates() {
     if(box && scene) {
         BoundingBox* cur = box->trackMatteTarget() ?
                     box->trackMatteTarget()->getTarget() : nullptr;
-        std::function<void(ContainerBox*)> walk =
-                [this, &walk, &match, box, &cur](ContainerBox* const cont) {
-            for(const auto b : cont->getContainedBoxes()) {
-                if(!b || b == box || box->isAncestor(b)) continue;
-                // exclude boxes whose matte chain already reaches this
-                // box - picking one would close a matte cycle
-                if(b->matteChainReaches(box)) continue;
-                mTrkMatLayerCombo->addItem(
-                            b->prp_getName(),
-                            QVariant::fromValue(reinterpret_cast<quintptr>(b)));
-                if(b == cur) match = mTrkMatLayerCombo->count() - 1;
-                if(const auto g = enve_cast<ContainerBox*>(b)) walk(g);
-            }
-        };
-        walk(scene);
+        // flat scene-wide box list, cached across rows: a timeline
+        // rebuild re-runs this once per visible row and a full tree
+        // walk per row costs O(rows*boxes) - refresh at most every
+        // 500 ms or when the scene changes; QPointer guards against
+        // boxes deleted inside the cache window
+        static QPointer<Canvas> sCacheScene;
+        static QList<QPointer<BoundingBox>> sCacheBoxes;
+        static QElapsedTimer sCacheTimer;
+        if(sCacheScene != scene || !sCacheTimer.isValid() ||
+                sCacheTimer.elapsed() > 500) {
+            sCacheScene = scene;
+            sCacheBoxes.clear();
+            std::function<void(ContainerBox*)> walk =
+                    [&walk](ContainerBox* const cont) {
+                for(const auto b : cont->getContainedBoxes()) {
+                    if(!b) continue;
+                    sCacheBoxes << b;
+                    if(const auto g = enve_cast<ContainerBox*>(b)) walk(g);
+                }
+            };
+            walk(scene);
+            sCacheTimer.restart();
+        }
+        for(const auto& bPtr : sCacheBoxes) {
+            const auto b = bPtr.data();
+            // deleted-but-alive boxes (held by the undo stack) stay
+            // valid QPointers inside the cache window - membership in
+            // the CURRENT scene tree is the real aliveness test,
+            // otherwise undo-deleted layers show up as ghost entries
+            if(!b || b->getParentScene() != scene) continue;
+            // both directions of the family tree are off-limits:
+            // isAncestor(b) excludes this box's ANCESTORS (their render
+            // would recurse through this box), b->isAncestor(box)
+            // excludes this box's own SUBTREE (matting with a child
+            // makes the child double-render, once inside, once as the
+            // matte)
+            if(b == box || box->isAncestor(b) || b->isAncestor(box)) continue;
+            // exclude boxes whose matte chain already reaches this
+            // box - picking one would close a matte cycle
+            if(b->matteChainReaches(box)) continue;
+            // entries carry the documentId; the activated handler
+            // resolves it via sGetBoxByDocumentId (storing the raw
+            // pointer here made every pick resolve to nullptr -
+            // the matte silently reset to None)
+            mTrkMatLayerCombo->addItem(
+                        b->prp_getName(),
+                        QVariant::fromValue(b->getDocumentId()));
+            if(b == cur) match = mTrkMatLayerCombo->count() - 1;
+        }
     }
     mTrkMatLayerCombo->setCurrentIndex(match);
     mTrkMatBuilding = false;
@@ -2517,32 +2654,32 @@ void BoxSingleWidget::refreshParentLinkCombo() {
     const auto combo = mParentLinkCombo;
     const auto box = currentLinkedBox();
     QString txt = tr("No Parent");
-    quintptr curRaw = 0;
+    int curId = -1; // -1 = no parent (never a valid documentId)
     if(box && mTarget) {
         if(const auto pe = findParentEffect(box)) {
             if(const auto par = enve_cast<BoundingBox*>(
                        pe->parentTargetProperty()->getTarget())) {
                 txt = par->prp_getName();
-                curRaw = reinterpret_cast<quintptr>(par);
+                curId = par->getDocumentId();
             }
         }
     }
-    // find an entry carrying the current parent pointer
+    // find an entry carrying the current parent id
     int idx = -1;
     for(int i = 0; i < combo->count(); i++) {
-        if(combo->itemData(i).value<quintptr>() == curRaw &&
-           curRaw != 0) { idx = i; break; }
+        if(curId >= 0 &&
+           combo->itemData(i).toInt() == curId) { idx = i; break; }
     }
     if(idx < 0 && !combo->itemText(0).isEmpty() &&
        combo->itemData(0).isNull()) {
         // reuse slot 0 when it is the placeholder
         combo->setItemText(0, txt);
-        combo->setItemData(0, QVariant::fromValue(curRaw));
+        combo->setItemData(0, curId >= 0 ? QVariant(curId) : QVariant());
         idx = 0;
     } else if(idx >= 0) {
         combo->setItemText(idx, txt);
     } else {
-        combo->insertItem(0, txt, QVariant::fromValue(curRaw));
+        combo->insertItem(0, txt, curId >= 0 ? QVariant(curId) : QVariant());
         idx = 0;
     }
     const QSignalBlocker blocker(combo);
@@ -2604,7 +2741,9 @@ void BoxSingleWidget::startParentLinkDrag() {
     auto mime = new QMimeData();
     QByteArray raw;
     QDataStream ds(&raw, QIODevice::WriteOnly);
-    ds << quintptr(box);
+    // carry the documentId, not the raw pointer: the layer may be
+    // deleted while the drag is still alive (undo, scripts)
+    ds << qint32(box->getDocumentId());
     mime->setData(parentLinkMimeType(), raw);
     drag->setMimeData(mime);
     QPixmap pm(24, 24);
@@ -2637,7 +2776,31 @@ void BoxSingleWidget::switchBoxVisibleAction() {
     const auto target = mTarget->getTarget();
     if(!target) return;
     if(const auto ebos = enve_cast<eBoxOrSound*>(target)) {
-        ebos->switchVisible();
+        // multi-selection: when this row's layer belongs to the
+        // selection, every selected layer follows this toggle -
+        // unified to the new state instead of individually flipped,
+        // so a mixed selection converges instead of swapping states
+        const auto scene = ebos->getParentScene();
+        bool multiApplied = false;
+        if(scene) {
+            const auto sel = scene->getSelectedBoxesList();
+            if(sel.count() > 1) {
+                bool inSel = false;
+                for(const auto& box : sel) {
+                    if(box == ebos) { inSel = true; break; }
+                }
+                if(inSel) {
+                    const bool newVis = !ebos->isVisible();
+                    for(const auto& box : sel) {
+                        if(box && box->isVisible() != newVis) {
+                            box->setVisible(newVis);
+                        }
+                    }
+                    multiApplied = true;
+                }
+            }
+        }
+        if(!multiApplied) ebos->switchVisible();
     } else if(const auto eEff = enve_cast<eEffect*>(target)) {
         eEff->switchVisible();
     } /*else if(const auto graph = enve_cast<GraphAnimator*>(target)) {
@@ -2739,10 +2902,29 @@ void BoxSingleWidget::updateFillTypeBoxVisible() {
     } else mFillTypeCombo->hide();
 }
 
+void BoxSingleWidget::updateMaskModeBoxVisible() {
+    if(!mTarget) return;
+    if(mMaskModeVisible && width() - mFillWidget->x() > 7*eSizesUI::widget) {
+        mMaskModeCombo->show();
+    } else mMaskModeCombo->hide();
+}
+
+void BoxSingleWidget::setMaskMode(const int index) {
+    if(!mTarget) return;
+    const auto box = enve_cast<BoundingBox*>(mTarget->getTarget());
+    if(!box) return;
+    const auto mode = index == 1 ? SkBlendMode::kDstOut
+                                 : SkBlendMode::kDstIn;
+    if(box->getBlendMode() == mode) return;
+    box->setBlendModeSk(mode);
+    Document::sInstance->actionFinished();
+}
+
 void BoxSingleWidget::resizeEvent(QResizeEvent *) {
     updateCompositionBoxVisible();
     updatePathCompositionBoxVisible();
     updateFillTypeBoxVisible();
+    updateMaskModeBoxVisible();
     updateValueSlidersForQPointFAnimator();
     if(mSelOverlay) mSelOverlay->setGeometry(rect());
 }

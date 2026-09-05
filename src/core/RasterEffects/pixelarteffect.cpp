@@ -15,7 +15,7 @@
 #include "appsupport.h"
 
 PixelArtEffect::PixelArtEffect() :
-    RasterEffect("pixelArt",
+    RasterEffect(QObject::tr("Pixel Art"),
                  AppSupport::getRasterEffectHardwareSupport("PixelArt",
                                                             HardwareSupport::gpuPreffered),
                  true,

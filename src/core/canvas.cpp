@@ -26,6 +26,7 @@
 #include "Boxes/adjustmentlayer.h"
 #include "Boxes/solidlayer.h"
 #include "Boxes/cameralayer.h"
+#include "RasterEffects/rastereffectcollection.h"
 #include <QPainter>
 #include <QMouseEvent>
 #include <QLineF>
@@ -1076,7 +1077,21 @@ void Canvas::renderDataFinished(BoxRenderData *renderData) {
     const int relFrame = qRound(renderData->fRelFrame);
     mLastStateId = renderData->fBoxStateId;
 
-    const auto range = prp_getIdenticalRelRange(relFrame);
+    auto range = prp_getIdenticalRelRange(relFrame);
+    if(!range.inRange(relFrame)) {
+        // identical-range computation produced a range that does not
+        // even cover the frame it was computed for (invalid/shifted
+        // intersection) - clamp to the rendered frame so the container
+        // always covers it; otherwise the preview pipeline's in-flight
+        // retirement check never matches this frame and the warm-up
+        // stalls forever. Cache granularity degrades, correctness does
+        // not: the frame's pixels are the pixels it rendered.
+        qWarning() << "renderDataFinished: identical range"
+                   << range.fMin << range.fMax
+                   << "does not cover rel frame" << relFrame
+                   << "- clamping to single frame";
+        range = {relFrame, relFrame};
+    }
     const auto cont = enve::make_shared<SceneFrameContainer>(
                 this, renderData, range,
                 currentState ? &mSceneFramesHandler : nullptr);
@@ -1342,7 +1357,36 @@ void Canvas::deleteAction()
 
 void Canvas::copyAction()
 {
-    if (mSelectedBoxes.isEmpty()) { return; }
+    if (mSelectedBoxes.isEmpty()) {
+        // AE-style: with only a property row selected (e.g. a single
+        // effect picked in the timeline/inspector) Edit > Copy used to
+        // be a silent no-op (grey menu) - copy the effects collection
+        // owning the selected property instead, so the next Paste onto
+        // a selected layer carries the effects over
+        const auto props = getSelectedPropsList();
+        if (!props.isEmpty()) {
+            const auto prop = props.last();
+            const auto collection = prop->getFirstAncestor(
+                        [](Property * const p) {
+                return enve_cast<RasterEffectCollection*>(p) != nullptr;
+            });
+            if (collection) {
+                const auto container =
+                        enve::make_shared<PropertyClipboard>(collection);
+                Document::sInstance->replaceClipboard(container);
+                qWarning() << "[PASTE] copy: effects collection"
+                           << collection->prp_getName()
+                           << "of" << prop->prp_getName();
+                return;
+            }
+            qWarning() << "[PASTE] copy: selected property"
+                       << prop->prp_getName()
+                       << "does not belong to an effects collection";
+        } else {
+            qWarning() << "[PASTE] copy: nothing selected";
+        }
+        return;
+    }
     const auto container = enve::make_shared<BoxesClipboard>(mSelectedBoxes.getList());
     Document::sInstance->replaceClipboard(container);
 }
@@ -1350,7 +1394,33 @@ void Canvas::copyAction()
 void Canvas::pasteAction()
 {
     const auto container = Document::sInstance->getBoxesClipboard();
-    if (!container) { return; }
+    if (!container) {
+        // AE-style: no layers in the clipboard - a copied effects
+        // collection pastes onto the selected layers (appended); this
+        // used to silently return with no feedback at all
+        const auto property = Document::sInstance->getPropertyClipboard();
+        if (property) {
+            int pastedCount = 0;
+            for (const auto& box : mSelectedBoxes.getList()) {
+                const auto effects = box->rasterEffectsCollection();
+                if (effects && property->fitsTarget(effects)) {
+                    property->paste(effects);
+                    pastedCount++;
+                }
+            }
+            if (pastedCount > 0) {
+                qWarning() << "[PASTE] effects pasted onto"
+                           << pastedCount << "layer(s)";
+                return;
+            }
+            qWarning() << "[PASTE] paste: clipboard holds a property but"
+                          " no layer is selected (or it does not fit)";
+        } else {
+            qWarning() << "[PASTE] paste: clipboard is empty or holds"
+                          " keys/paths - nothing to paste as layer/effects";
+        }
+        return;
+    }
     clearBoxesSelection();
     container->pasteTo(mCurrentContainer);
 }
@@ -1468,8 +1538,12 @@ void Canvas::invertSelectionAction()
 
 void Canvas::anim_setAbsFrame(const int frame)
 {
-    if (frame == anim_getCurrentAbsFrame()) { return; }
-    ContainerBox::anim_setAbsFrame(frame);
+    // the timeline starts at frame 0: the playhead never sits on a
+    // negative frame, no matter which path tries to put it there
+    // (ruler scrub, keys view, frame spinbox, keyboard, scripts, render)
+    const int clamped = qMax(0, frame);
+    if (clamped == anim_getCurrentAbsFrame()) { return; }
+    ContainerBox::anim_setAbsFrame(clamped);
     const int newRelFrame = anim_getCurrentRelFrame();
 
     const auto cont = safeSceneFrame(mSceneFramesHandler, newRelFrame);
@@ -1485,10 +1559,10 @@ void Canvas::anim_setAbsFrame(const int frame)
         planUpdate(UpdateReason::frameChange);
     }
 
-    mUndoRedoStack->setFrame(frame);
+    mUndoRedoStack->setFrame(clamped);
 
     //if (mCurrentMode == CanvasMode::paint) { mPaintTarget.setupOnionSkin(); }
-    emit currentFrameChanged(frame);
+    emit currentFrameChanged(clamped);
 
     schedulePivotUpdate();
 }
@@ -1785,7 +1859,6 @@ void Canvas::addUndoRedo(const QString& name,
 
 void Canvas::pushUndoRedoName(const QString& name) const
 {
-    qDebug() << "pushUndoRedoName" << name;
     mUndoRedoStack->pushName(name);
 }
 
@@ -2104,6 +2177,21 @@ void Canvas::addSolidLayerAction() {
     mCurrentContainer ? mCurrentContainer->addContained(solid) :
                         addContained(solid);
     solid->planUpdate(UpdateReason::userChange);
+    if(Document::sInstance) Document::sInstance->actionFinished();
+}
+
+// AE shape/vector layer: an empty layer-type container collecting the
+// shapes drawn afterwards; creating it enters the layer (like AE's new
+// shape layer being the active shape target), double-click empty
+// canvas to leave it
+void Canvas::addVectorLayerAction() {
+    const auto layer = enve::make_shared<ContainerBox>(
+                QObject::tr("矢量图层"), eBoxType::layer);
+    ContainerBox* const parent = mCurrentContainer ? mCurrentContainer.data()
+                                                   : this;
+    parent->addContained(layer);
+    setCurrentBoxesGroup(layer.get());
+    layer->planUpdate(UpdateReason::userChange);
     if(Document::sInstance) Document::sInstance->actionFinished();
 }
 

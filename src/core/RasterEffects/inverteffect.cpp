@@ -29,7 +29,7 @@
 #include "appsupport.h"
 
 InvertEffect::InvertEffect() :
-    RasterEffect("invert",
+    RasterEffect(QObject::tr("Invert"),
                  AppSupport::getRasterEffectHardwareSupport("Invert",
                                                             HardwareSupport::gpuPreffered),
                  true,

@@ -83,6 +83,7 @@ public:
 
     // mask pen: while active the path tool draws DstIn mask shapes
     // inserted right above the layer under the first drawn point
+    // (bitmaps auto-detect masks without this switch)
     bool fMaskPenActive = false;
 
     bool fGizmoPositionVisibility = AppSupport::getSettings("gizmos",

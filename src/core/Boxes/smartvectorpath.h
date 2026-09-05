@@ -57,10 +57,18 @@ public:
     // scene links (the linked scene's boxes keep a stale current frame)
     bool allSubPathsClosed(const qreal relFrame) const;
     SkBlendMode getPaintBlendMode(const qreal relFrame) const override;
+    bool isMaskBox() const override { return mMaskMode; }
 
     void setupRenderData(const qreal relFrame, const QMatrix& parentM,
                          BoxRenderData * const data,
                          Canvas* const scene) override;
+
+    // AE-style mask mode (Add/Subtract) lives in the blend mode:
+    // kDstIn = Add, kDstOut = Subtract; the timeline mask row shows
+    // a dedicated dropdown (BoxSingleWidget)
+
+    void writeBoundingBox(eWriteStream& dst) const override;
+    void readBoundingBox(eReadStream& src) override;
 
     bool differenceInEditPathBetweenFrames(const int frame1,
                                            const int frame2) const;

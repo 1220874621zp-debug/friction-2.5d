@@ -213,6 +213,7 @@ set(
     GUI/canvasbasewrappernode.cpp
     GUI/canvaswindowevents.cpp
     GUI/canvaswrappernode.cpp
+    GUI/topviewwindow.cpp
     GUI/ekeyfilter.cpp
     GUI/ewidgetsimpl.cpp
     GUI/layouthandler.cpp
@@ -292,6 +293,7 @@ set(
     GUI/textanimpresetpanel.h
     GUI/timelinebasewrappernode.h
     GUI/timelinedockwidget.h
+    GUI/topviewwindow.h
     GUI/timelinehighlightwidget.h
     GUI/timelinewidget.h
     GUI/timelinewrappernode.h

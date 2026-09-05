@@ -30,7 +30,7 @@
 #include <QtMath>
 
 WaveWarpEffect::WaveWarpEffect() :
-    RasterEffect("wave warp",
+    RasterEffect(QObject::tr("Wave Warp"),
                  AppSupport::getRasterEffectHardwareSupport("WaveWarp",
                                                             HardwareSupport::gpuPreffered),
                  true,

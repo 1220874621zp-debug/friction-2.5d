@@ -122,6 +122,13 @@ OutputSettingsDialog::OutputSettingsDialog(const OutputSettings &settings,
     mMainLayout = new QVBoxLayout(this);
     setLayout(mMainLayout);
 
+    mPresetLayout = new QHBoxLayout();
+    mPresetLabel = new QLabel(tr("预设"), this);
+    mPresetComboBox = new QComboBox(this);
+    mPresetComboBox->setToolTip(tr("按用途快速选择输出组合，选好后仍可在下方微调各项参数"));
+    mPresetLayout->addWidget(mPresetLabel);
+    mPresetLayout->addWidget(mPresetComboBox);
+
     mOutputFormatsLayout = new QHBoxLayout();
     mOutputFormatsLabel = new QLabel(tr("Format"), this);
     mOutputFormatsComboBox = new QComboBox(this);
@@ -213,6 +220,8 @@ OutputSettingsDialog::OutputSettingsDialog(const OutputSettings &settings,
     mButtonsLayout->addWidget(mCancelButton, Qt::AlignLeft);
     mButtonsLayout->addWidget(mOkButton, Qt::AlignRight);
 
+    mMainLayout->addLayout(mPresetLayout);
+    eSizesUI::widget.addSpacing(mMainLayout);
     mMainLayout->addLayout(mOutputFormatsLayout);
     eSizesUI::widget.addSpacing(mMainLayout);
     mVideoGroupBox->setLayout(mVideoSettingsLayout);
@@ -242,16 +251,47 @@ OutputSettingsDialog::OutputSettingsDialog(const OutputSettings &settings,
     });
 
     updateAvailableOutputFormats();
+    setupPresets();
     restoreInitialSettings();
 
     updateAvailableCodecs();
+
+    connect(mPresetComboBox, QOverload<int>::of(&QComboBox::activated),
+            this, &OutputSettingsDialog::applyPreset);
+    connect(mOutputFormatsComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &OutputSettingsDialog::markPresetCustom);
+    connect(mVideoCodecsComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &OutputSettingsDialog::markPresetCustom);
+    connect(mPixelFormatsComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &OutputSettingsDialog::markPresetCustom);
+    connect(mVideoProfileComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &OutputSettingsDialog::markPresetCustom);
+    connect(mAudioCodecsComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &OutputSettingsDialog::markPresetCustom);
+    connect(mSampleFormatsComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &OutputSettingsDialog::markPresetCustom);
+    connect(mSampleRateComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &OutputSettingsDialog::markPresetCustom);
+    connect(mAudioBitrateComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &OutputSettingsDialog::markPresetCustom);
+    connect(mAudioChannelLayoutsComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &OutputSettingsDialog::markPresetCustom);
+    connect(mBitrateSpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+            this, &OutputSettingsDialog::markPresetCustom);
+    connect(mVideoGroupBox, &QGroupBox::toggled,
+            this, &OutputSettingsDialog::markPresetCustom);
+    connect(mAudioGroupBox, &QGroupBox::toggled,
+            this, &OutputSettingsDialog::markPresetCustom);
+    connect(mShowAllFormatsAndCodecsCheckBox, &QCheckBox::toggled,
+            this, &OutputSettingsDialog::markPresetCustom);
 }
 
 OutputSettings OutputSettingsDialog::getSettings() {
     OutputSettings settings = mInitialSettings;
 
     const AVOutputFormat *currentOutputFormat = nullptr;
-    if(mVideoCodecsComboBox->count() > 0) {
+    if(mVideoCodecsComboBox->count() > 0 ||
+       mAudioCodecsComboBox->count() > 0) {
         int formatId = mOutputFormatsComboBox->currentIndex();
         currentOutputFormat = mOutputFormatsList.at(formatId);
     }
@@ -837,8 +877,8 @@ void OutputSettingsDialog::updateAvailableSampleRates() {
         if(set) mSampleRateComboBox->setCurrentIndex(lastSetId);
     }
     if(!set) {
-        const int i441 = mAudioBitrateComboBox->findData(44100);
-        if(i441 != -1) mAudioBitrateComboBox->setCurrentIndex(i441);
+        const int i441 = mSampleRateComboBox->findData(44100);
+        if(i441 != -1) mSampleRateComboBox->setCurrentIndex(i441);
     }
 }
 
@@ -876,6 +916,17 @@ void OutputSettingsDialog::updateAvailableAudioChannelLayouts() {
 }
 
 void OutputSettingsDialog::restoreInitialSettings() {
+    // 全新渲染实例（设置为空）时直接落到推荐预设，
+    // 避免默认选中第 0 项"图像序列"让新用户无从下手
+    if(!mInitialSettings.fOutputFormat &&
+       !mInitialSettings.fVideoCodec &&
+       !mInitialSettings.fAudioCodec &&
+       mDefaultPresetIndex > 0) {
+        applyPreset(mDefaultPresetIndex);
+        const QSignalBlocker blockPreset(mPresetComboBox);
+        mPresetComboBox->setCurrentIndex(mDefaultPresetIndex);
+        return;
+    }
     const auto currentOutputFormat = mInitialSettings.fOutputFormat;
     if(!currentOutputFormat) {
         mOutputFormatsComboBox->setCurrentIndex(0);
@@ -887,7 +938,7 @@ void OutputSettingsDialog::restoreInitialSettings() {
     if(!currentVideoCodec) {
         mVideoCodecsComboBox->setCurrentIndex(0);
     } else {
-        QString currentCodecName = QString(currentVideoCodec->long_name);
+        QString currentCodecName = AppSupport::filterFormatsName(QString(currentVideoCodec->long_name));
         mVideoCodecsComboBox->setCurrentText(currentCodecName);
     }
     AVPixelFormat currentFormat = mInitialSettings.fVideoPixelFormat;
@@ -914,7 +965,7 @@ void OutputSettingsDialog::restoreInitialSettings() {
     if(!currentAudioCodec) {
         mAudioCodecsComboBox->setCurrentIndex(0);
     } else {
-        QString currentCodecName = QString(currentAudioCodec->long_name);
+        QString currentCodecName = AppSupport::filterFormatsName(QString(currentAudioCodec->long_name));
         mAudioCodecsComboBox->setCurrentText(currentCodecName);
     }
 
@@ -990,6 +1041,200 @@ void OutputSettingsDialog::restoreVideoProfileSettings()
             break;
         }
     }
+}
+
+void OutputSettingsDialog::setupPresets()
+{
+    mPresets.clear();
+    mPresetComboBox->clear();
+    mDefaultPresetIndex = 0;
+
+    // 可用性探测：格式存在 + 编码器存在且目标容器收留
+    auto codecOk = [](const char *format, const AVCodecID codecId) {
+        const AVOutputFormat * const fmt = av_guess_format(format, nullptr, nullptr);
+        if (!fmt) { return false; }
+        const AVCodec * const encoder = avcodec_find_encoder(codecId);
+        if (!encoder) { return false; }
+        if (encoder->capabilities & AV_CODEC_CAP_EXPERIMENTAL) { return false; }
+        return avformat_query_codec(fmt, codecId, COMPLIANCE) != 0;
+    };
+
+    QList<PresetData> allPresets;
+    // —— 流媒体视频 ——
+    allPresets << PresetData { tr("流媒体 · MP4（H.264 标准画质）"),
+        tr("兼容性最好，适合B站/抖音/YouTube 等几乎全部平台"),
+        "mp4", true, AV_CODEC_ID_H264, AV_PIX_FMT_YUV420P, 8,
+        true, AV_CODEC_ID_AAC, 44100, 192 };
+    allPresets << PresetData { tr("流媒体 · MP4（H.264 高画质）"),
+        tr("高码率成片交付，适合 1080P 及以上"),
+        "mp4", true, AV_CODEC_ID_H264, AV_PIX_FMT_YUV420P, 16,
+        true, AV_CODEC_ID_AAC, 44100, 320 };
+    allPresets << PresetData { tr("流媒体 · MP4（H.265 高压缩）"),
+        tr("同画质体积约小一半；部分旧设备或平台不支持"),
+        "mp4", true, AV_CODEC_ID_HEVC, AV_PIX_FMT_YUV420P, 10,
+        true, AV_CODEC_ID_AAC, 44100, 256 };
+    allPresets << PresetData { tr("流媒体 · WebM（VP9）"),
+        tr("开源编码组合，YouTube 与网页场景常用"),
+        "webm", true, AV_CODEC_ID_VP9, AV_PIX_FMT_YUV420P, 8,
+        true, AV_CODEC_ID_OPUS, 48000, 192 };
+    allPresets << PresetData { tr("流媒体 · WebM（AV1）"),
+        tr("压缩率最高，编码较慢；需本机带有 AV1 编码器"),
+        "webm", true, AV_CODEC_ID_AV1, AV_PIX_FMT_YUV420P, 6,
+        true, AV_CODEC_ID_OPUS, 48000, 192 };
+    // —— 制作与素材 ——
+    allPresets << PresetData { tr("制作 · MOV（ProRes 422）"),
+        tr("高质量中间格式，导入 Premiere/达芬奇等剪辑软件"),
+        "mov", true, AV_CODEC_ID_PRORES, AV_PIX_FMT_YUV422P10LE, 30,
+        true, AV_CODEC_ID_PCM_S16LE, 48000, 384 };
+    allPresets << PresetData { tr("序列帧 · PNG（无损透明）"),
+        tr("逐帧无损输出并保留透明通道，供后期合成"),
+        "png", true, AV_CODEC_ID_PNG, AV_PIX_FMT_RGBA, 8,
+        false, AV_CODEC_ID_NONE, 0, 0 };
+    allPresets << PresetData { tr("动图 · GIF（循环动画）"),
+        tr("网页/聊天动图，无声音且颜色数有限"),
+        "gif", true, AV_CODEC_ID_GIF, AV_PIX_FMT_PAL8, 1,
+        false, AV_CODEC_ID_NONE, 0, 0 };
+    // —— 纯音频 ——
+    allPresets << PresetData { tr("音频 · WAV（PCM 16bit）"),
+        tr("无压缩标准音频，通用性最好"),
+        "wav", false, AV_CODEC_ID_NONE, AV_PIX_FMT_NONE, 0,
+        true, AV_CODEC_ID_PCM_S16LE, 44100, 384 };
+    allPresets << PresetData { tr("音频 · WAV（PCM 24bit）"),
+        tr("后期混音与母版处理常用"),
+        "wav", false, AV_CODEC_ID_NONE, AV_PIX_FMT_NONE, 0,
+        true, AV_CODEC_ID_PCM_S24LE, 48000, 384 };
+    allPresets << PresetData { tr("音频 · MP3（320kbps）"),
+        tr("通用有损音频，适合分发"),
+        "mp3", false, AV_CODEC_ID_NONE, AV_PIX_FMT_NONE, 0,
+        true, AV_CODEC_ID_MP3, 44100, 320 };
+    allPresets << PresetData { tr("音频 · FLAC（无损压缩）"),
+        tr("无损压缩，体积约为 WAV 的一半"),
+        "flac", false, AV_CODEC_ID_NONE, AV_PIX_FMT_NONE, 0,
+        true, AV_CODEC_ID_FLAC, 48000, 384 };
+
+    mPresetComboBox->addItem(tr("自定义"));
+    mPresetComboBox->setCurrentIndex(0);
+    for (const PresetData &preset : qAsConst(allPresets)) {
+        // 视频与音频编码器在本机都可用才列出（未启用的项跳过检查）
+        const bool videoAvailable = !preset.fVideoEnabled ||
+                codecOk(preset.fFormat, preset.fVideoCodecId);
+        const bool audioAvailable = !preset.fAudioEnabled ||
+                codecOk(preset.fFormat, preset.fAudioCodecId);
+        if (!videoAvailable || !audioAvailable) { continue; }
+        mPresets << preset;
+        mPresetComboBox->addItem(preset.fName);
+        mPresetComboBox->setItemData(mPresetComboBox->count() - 1,
+                                     preset.fTooltip, Qt::ToolTipRole);
+    }
+    // 组合框下标 i+1 对应 mPresets[i]；首个可用预设作为默认
+    if (!mPresets.isEmpty()) { mDefaultPresetIndex = 1; }
+}
+
+void OutputSettingsDialog::applyPreset(const int index)
+{
+    if (index < 1 || index > mPresets.count()) { return; }
+    const PresetData &preset = mPresets.at(index - 1);
+    mApplyingPreset = true;
+
+    // 预设基于精选列表；若当前处于"显示全部"模式先切回
+    if (mShowAllFormatsAndCodecs) {
+        const QSignalBlocker blockShow(mShowAllFormatsAndCodecsCheckBox);
+        mShowAllFormatsAndCodecsCheckBox->setChecked(false);
+        setShowAllFormatsAndCodecs(false);
+    }
+
+    // 输出格式
+    const AVOutputFormat * const targetFormat =
+            av_guess_format(preset.fFormat, nullptr, nullptr);
+    int formatIndex = -1;
+    for (int i = 0; i < mOutputFormatsList.count(); i++) {
+        if (mOutputFormatsList.at(i) == targetFormat) {
+            formatIndex = i;
+            break;
+        }
+    }
+    if (formatIndex < 0) { mApplyingPreset = false; return; }
+    mOutputFormatsComboBox->setCurrentIndex(formatIndex);
+    updateAvailableCodecs();
+
+    // 视频
+    if (preset.fVideoEnabled && preset.fVideoCodecId != AV_CODEC_ID_NONE) {
+        int codecIndex = -1;
+        for (int i = 0; i < mVideoCodecsList.count(); i++) {
+            if (mVideoCodecsList.at(i)->id == preset.fVideoCodecId) {
+                codecIndex = i;
+                break;
+            }
+        }
+        if (codecIndex >= 0) {
+            mVideoCodecsComboBox->setCurrentIndex(codecIndex);
+            updateAvailablePixelFormats();
+            updateAvailableVideoProfiles();
+            int pixIndex = -1;
+            for (int i = 0; i < mPixelFormatsList.count(); i++) {
+                if (mPixelFormatsList.at(i) == preset.fPixelFormat) {
+                    pixIndex = i;
+                    break;
+                }
+            }
+            if (pixIndex >= 0) { mPixelFormatsComboBox->setCurrentIndex(pixIndex); }
+            if (preset.fVideoBitrateMbs > 0) {
+                mBitrateSpinBox->setValue(preset.fVideoBitrateMbs);
+            }
+            mVideoGroupBox->setChecked(true);
+        }
+    } else {
+        mVideoGroupBox->setChecked(false);
+    }
+
+    // 音频
+    if (preset.fAudioEnabled && preset.fAudioCodecId != AV_CODEC_ID_NONE) {
+        int codecIndex = -1;
+        for (int i = 0; i < mAudioCodecsList.count(); i++) {
+            if (mAudioCodecsList.at(i)->id == preset.fAudioCodecId) {
+                codecIndex = i;
+                break;
+            }
+        }
+        if (codecIndex >= 0) {
+            mAudioCodecsComboBox->setCurrentIndex(codecIndex);
+            updateAvailableSampleFormats();
+            updateAvailableSampleRates();
+            updateAvailableAudioBitrates();
+            updateAvailableAudioChannelLayouts();
+            // 采样格式取编码器首选（PCM 每种位深是独立编码器，天然唯一）
+            if (preset.fSampleRate > 0) {
+                const int iRate = mSampleRateComboBox->findData(preset.fSampleRate);
+                if (iRate != -1) { mSampleRateComboBox->setCurrentIndex(iRate); }
+            }
+            if (preset.fAudioBitrateKbs > 0) {
+                const int iBR = mAudioBitrateComboBox->findData(
+                            preset.fAudioBitrateKbs * 1000);
+                if (iBR != -1) { mAudioBitrateComboBox->setCurrentIndex(iBR); }
+            }
+            int chIndex = -1;
+            for (int i = 0; i < mAudioChannelLayoutsList.count(); i++) {
+                if (mAudioChannelLayoutsList.at(i) == AV_CH_LAYOUT_STEREO) {
+                    chIndex = i;
+                    break;
+                }
+            }
+            if (chIndex >= 0) { mAudioChannelLayoutsComboBox->setCurrentIndex(chIndex); }
+            mAudioGroupBox->setChecked(true);
+        }
+    } else {
+        mAudioGroupBox->setChecked(false);
+    }
+
+    mApplyingPreset = false;
+}
+
+void OutputSettingsDialog::markPresetCustom()
+{
+    if (mApplyingPreset) { return; }
+    if (mPresetComboBox->currentIndex() == 0) { return; }
+    const QSignalBlocker blockPreset(mPresetComboBox);
+    mPresetComboBox->setCurrentIndex(0);
 }
 
 

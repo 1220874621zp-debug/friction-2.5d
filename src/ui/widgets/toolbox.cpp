@@ -472,6 +472,11 @@ void ToolBox::setupMainActions()
         });
     }
 
+    // rect mask: no dedicated button - the plain rectangle tool
+    // auto-detects masks on bitmap layers (and over existing masks);
+    // the mask pen button stays as the forced-intent escape hatch for
+    // non-bitmap layers
+
     mMain->addActions(mGroupMain->actions());
     if (mMaskPen) { mMain->addAction(mMaskPen); }
 }

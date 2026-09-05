@@ -99,6 +99,398 @@ QString readUnicodeString(QDataStream &s, qint64 blockEnd)
     return result;
 }
 
+// ---- AMT descriptor reader (lfxp layer effects) ----
+// Minimal read-only walker for Photoshop's layer-styles block: it
+// covers every value type Photoshop is known to write there so the
+// stream can be walked past uninteresting keys; anything exotic
+// aborts the whole block and styles fall back to their defaults.
+
+namespace {
+
+struct DescError {
+    DescError(const char *why) : reason(why) {}
+    const char *reason = "";
+};
+
+struct DescValue {
+    QByteArray tag;      // OSType, e.g. "doub", "enum"
+    bool boolV = false;
+    double doubleV = 0;
+    QString textV;
+    QByteArray enumV;
+    QHash<QByteArray, DescValue> objV; // Objc/GlbO: key -> value
+    QVector<DescValue> listV;          // VlLs items ('*Multi' lists)
+};
+
+class DescReader {
+public:
+    DescReader(QDataStream &s, const qint64 end) : mS(s), mEnd(end) {}
+
+    DescValue readDescriptorBody() {
+        DescValue v;
+        v.tag = QByteArrayLiteral("Objc");
+        // unicode name: int32 char count, 0 = no name
+        qint32 nameChars = 0;
+        mS >> nameChars;
+        if (nameChars > 0) {
+            const qint64 maxChars = qMax<qint64>(0, (mEnd - mS.device()->pos()) / 2);
+            const qint32 lim = qint32(qMin<qint64>(nameChars, maxChars));
+            for (qint32 i = 0; i < lim; i++) { quint16 ch = 0; mS >> ch; }
+        }
+        readId(); // class ID, unused
+        qint32 count = 0;
+        mS >> count;
+        check();
+        if (count < 0 || count > 8192) {
+            qWarning() << "PSD lfx2: bad descriptor count" << count;
+            throw DescError("desccount");
+        }
+        for (qint32 i = 0; i < count; i++) {
+            const QByteArray key = readId();
+            v.objV.insert(key, readValue());
+        }
+        return v;
+    }
+private:
+    QDataStream &mS;
+    const qint64 mEnd;
+
+    void check() {
+        if (mS.status() != QDataStream::Ok) {
+            qWarning() << "PSD lfx2: stream status bad";
+            throw DescError("stream");
+        }
+        if (mS.device()->pos() > mEnd) {
+            qWarning() << "PSD lfx2: bounds exceeded pos"
+                       << mS.device()->pos() << "end" << mEnd;
+            throw DescError("bounds");
+        }
+    }
+
+    double readDouble() {
+        // the shared stream is in SinglePrecision mode (channel data),
+        // operator>>(double&) would consume only 4 bytes; descriptor
+        // doubles are always 8-byte big-endian
+        char buf[8];
+        if (mS.readRawData(buf, 8) != 8) {
+            qWarning() << "PSD lfx2: short read on double";
+            throw DescError("dbl");
+        }
+        quint64 bits = 0;
+        for (int i = 0; i < 8; i++) { bits = (bits << 8) | quint8(buf[i]); }
+        double d = 0;
+        std::memcpy(&d, &bits, sizeof(d));
+        return d;
+    }
+
+    QByteArray readFourCCRaw() {
+        char buf[4];
+        if (mS.readRawData(buf, 4) != 4) {
+            qWarning() << "PSD lfx2: short read on 4cc at" << mS.device()->pos();
+            throw DescError("4cc");
+        }
+        return QByteArray(buf, 4);
+    }
+
+    QByteArray readId() {
+        qint32 len = 0;
+        mS >> len;
+        check();
+        if (len == 0) { len = 4; }
+        else if (len < 0 || len > 8192) {
+            qWarning() << "PSD lfx2: bad id length" << len;
+            throw DescError("idlen");
+        }
+        QByteArray bytes(len, Qt::Uninitialized);
+        if (mS.readRawData(bytes.data(), len) != len) {
+            qWarning() << "PSD lfx2: short read on id" << len;
+            throw DescError("idread");
+        }
+        return bytes;
+    }
+
+    QString readUnicode() {
+        qint32 chars = 0;
+        mS >> chars;
+        check();
+        QString out;
+        if (chars <= 0) { return out; }
+        if (chars > (1 << 20)) {
+            qWarning() << "PSD lfx2: bad text length" << chars;
+            throw DescError("textlen");
+        }
+        out.reserve(chars);
+        for (qint32 i = 0; i < chars; i++) {
+            quint16 ch = 0;
+            mS >> ch;
+            if (ch) { out.append(QChar(ch)); }
+        }
+        return out;
+    }
+
+    void skipBytes(const qint64 n) {
+        qint64 skip = n;
+        while (skip > 0 && mS.status() == QDataStream::Ok) {
+            const int chunk = int(qMin<qint64>(skip, 1 << 24));
+            if (mS.skipRawData(chunk) < 0) { break; }
+            skip -= chunk;
+        }
+        check();
+    }
+
+    void readReference() {
+        qint32 count = 0;
+        mS >> count;
+        check();
+        if (count < 0 || count > 4096) {
+            qWarning() << "PSD lfx2: bad reference count" << count;
+            throw DescError("refcount");
+        }
+        for (qint32 i = 0; i < count; i++) {
+            const QByteArray form = readFourCCRaw();
+            readId(); // class ID
+            if (form == "prop") { readId(); }
+            else if (form == "Enmr") { readId(); readId(); }
+            else if (form == "rele" || form == "Idnt" || form == "indx") {
+                qint32 dummy = 0;
+                mS >> dummy;
+            } else if (form == "name") { readUnicode(); }
+            // "Clss" carries nothing beyond the class ID
+            check();
+        }
+    }
+
+    DescValue readValue() {
+        const QByteArray tag = readFourCCRaw();
+        DescValue v;
+        v.tag = tag;
+        if (tag == "obj ") {
+            readReference();
+        } else if (tag == "Objc" || tag == "GlbO") {
+            return readDescriptorBody();
+        } else if (tag == "VlLs") {
+            qint32 count = 0;
+            mS >> count;
+            check();
+            if (count < 0) { count = 0; }
+            if (count > 65536) {
+                qWarning() << "PSD lfx2: bad list count" << count;
+                throw DescError("listcount");
+            }
+            for (qint32 i = 0; i < count; i++) {
+                v.listV.append(readValue());
+            }
+        } else if (tag == "doub") {
+            v.doubleV = readDouble();
+        } else if (tag == "UntF") {
+            readFourCCRaw(); // unit, e.g. "#Prc"
+            v.doubleV = readDouble();
+        } else if (tag == "TEXT") {
+            v.textV = readUnicode();
+        } else if (tag == "enum") {
+            readId(); // enum type
+            v.enumV = readId();
+        } else if (tag == "long") {
+            qint32 i = 0;
+            mS >> i;
+            v.doubleV = i;
+        } else if (tag == "bool") {
+            quint8 b = 0;
+            mS >> b;
+            v.boolV = b;
+        } else if (tag == "type" || tag == "GlbC") {
+            readId();
+        } else if (tag == "tdta") {
+            qint32 len = 0;
+            mS >> len;
+            check();
+            if (len < 0) {
+                qWarning() << "PSD lfx2: bad tdta length" << len;
+                throw DescError("tdta");
+            }
+            skipBytes((qint64(len) + 3) & ~qint64(3));
+        } else {
+            qWarning() << "PSD lfx2: unhandled type" << tag
+                       << "at" << mS.device()->pos();
+            throw DescError("type");
+        }
+        check();
+        return v;
+    }
+};
+
+const DescValue* objChild(const DescValue &obj, const QByteArray &key)
+{
+    const auto it = obj.objV.constFind(key);
+    if (it == obj.objV.constEnd()) { return nullptr; }
+    return &it.value();
+}
+
+bool styleEnabled(const DescValue &obj)
+{
+    const auto e = objChild(obj, QByteArrayLiteral("enab"));
+    return e ? e->boolV : true;
+}
+
+double styleNum(const DescValue &obj, const QByteArray &key, const double def)
+{
+    const auto v = objChild(obj, key);
+    return v ? v->doubleV : def;
+}
+
+bool styleColor(const DescValue &obj, const QByteArray &key,
+                quint8 &r, quint8 &g, quint8 &b)
+{
+    const auto c = objChild(obj, key);
+    if (!c) { return false; }
+    const auto rd = objChild(*c, QByteArrayLiteral("Rd  "));
+    const auto gr = objChild(*c, QByteArrayLiteral("Grn "));
+    const auto bl = objChild(*c, QByteArrayLiteral("Bl  "));
+    if (!rd || !gr || !bl) { return false; }
+    // PS6-era lfx2 stores color channels in 0..255, the CS2+ lfxp
+    // in 0..1: scale per component (> 1 means already 8-bit).
+    // User-verified against a real file: shadow #3d1b05 reads 61/27/4.5
+    const auto to8 = [](const double v) {
+        return quint8(qBound(0.0, v > 1.0 ? v : v * 255.0, 255.0));
+    };
+    r = to8(rd->doubleV);
+    g = to8(gr->doubleV);
+    b = to8(bl->doubleV);
+    return true;
+}
+
+void fillShadow(psd::LayerStyles &st, const DescValue &obj)
+{
+    st.hasAny = true;
+    st.shadowEnabled = true;
+    st.shadowOpacity = styleNum(obj, QByteArrayLiteral("Opct"), st.shadowOpacity);
+    st.shadowAngle = styleNum(obj, QByteArrayLiteral("lagl"), st.shadowAngle);
+    st.shadowDistance = styleNum(obj, QByteArrayLiteral("Dstn"), st.shadowDistance);
+    // lfxp stores choke as #Prc percent; some lfx2 writers emit #Pxl
+    // - clamp either way, percent semantics
+    st.shadowSpread = qBound(0.0, styleNum(obj, QByteArrayLiteral("Ckmt"),
+                                            st.shadowSpread), 100.0);
+    st.shadowSize = styleNum(obj, QByteArrayLiteral("blur"), st.shadowSize);
+    styleColor(obj, QByteArrayLiteral("Clr "),
+               st.shadowR, st.shadowG, st.shadowB);
+}
+
+void fillGlow(psd::LayerStyles &st, const DescValue &obj)
+{
+    st.hasAny = true;
+    st.glowEnabled = true;
+    st.glowOpacity = styleNum(obj, QByteArrayLiteral("Opct"), st.glowOpacity);
+    st.glowSpread = qBound(0.0, styleNum(obj, QByteArrayLiteral("Ckmt"),
+                                          st.glowSpread), 100.0);
+    st.glowSize = styleNum(obj, QByteArrayLiteral("blur"), st.glowSize);
+    styleColor(obj, QByteArrayLiteral("Clr "),
+               st.glowR, st.glowG, st.glowB);
+}
+
+void fillStroke(psd::LayerStyles &st, const DescValue &obj)
+{
+    st.hasAny = true;
+    st.strokeEnabled = true;
+    st.strokeOpacity = styleNum(obj, QByteArrayLiteral("Opct"), st.strokeOpacity);
+    st.strokeSize = styleNum(obj, QByteArrayLiteral("Sz  "), st.strokeSize);
+    const auto styl = objChild(obj, QByteArrayLiteral("Styl"));
+    if (styl) {
+        if (styl->enumV == QByteArrayLiteral("FStF")) { st.strokePos = 1; }
+        else if (styl->enumV == QByteArrayLiteral("InsF")) { st.strokePos = 2; }
+        else { st.strokePos = 0; } // "OutF"
+    }
+    styleColor(obj, QByteArrayLiteral("Clr "),
+               st.strokeR, st.strokeG, st.strokeB);
+}
+
+void applyLfxpStyles(const DescValue &root, psd::LayerRecord &rec,
+                     const bool isLmfx)
+{
+    // 'lfxp' (CS2+) and 'lfx2' (PS 6) use different effect key
+    // spellings; PS 2015+ stores additional instances of a type in
+    // '<effect>Multi' lists (dropShadowMulti etc), with the single
+    // legacy key holding the first instance
+    QVector<const DescValue*> shadows, glows, strokes;
+    const auto collect = [&root](const QByteArray& singleA,
+                                 const QByteArray& singleB,
+                                 const QByteArray& multi,
+                                 QVector<const DescValue*>& out) {
+        const DescValue* single = objChild(root, singleA);
+        if (!single) { single = objChild(root, singleB); }
+        if (single && styleEnabled(*single)) { out.append(single); }
+        const auto m = objChild(root, multi);
+        if (m) {
+            for (const auto& e : m->listV) {
+                if (e.tag == QByteArrayLiteral("Objc") && styleEnabled(e)) {
+                    out.append(&e);
+                }
+            }
+        }
+    };
+    collect(QByteArrayLiteral("dropShadow"), QByteArrayLiteral("DrSh"),
+            QByteArrayLiteral("dropShadowMulti"), shadows);
+    collect(QByteArrayLiteral("outerGlow"), QByteArrayLiteral("OrGl"),
+            QByteArrayLiteral("outerGlowMulti"), glows);
+    collect(QByteArrayLiteral("frameFX"), QByteArrayLiteral("FrFX"),
+            QByteArrayLiteral("frameFXMulti"), strokes);
+    if (shadows.isEmpty() && glows.isEmpty() && strokes.isEmpty()) { return; }
+
+    // a layer can carry both the lfxp/lfx2 mirror and an lmfx block
+    // (and rarely more than one of each): whatever holds instances
+    // last wins, and an lmfx block wins outright via stylesFromLmfx
+    rec.stylesList.clear();
+
+    // first instance of each type merges into one effect; every
+    // additional instance becomes its own entry (stacked effects)
+    psd::LayerStyles main;
+    if (!shadows.isEmpty()) { fillShadow(main, *shadows.first()); }
+    if (!glows.isEmpty()) { fillGlow(main, *glows.first()); }
+    if (!strokes.isEmpty()) { fillStroke(main, *strokes.first()); }
+    for (int i = 1; i < shadows.size(); i++) {
+        rec.stylesList.append(psd::LayerStyles());
+        fillShadow(rec.stylesList.last(), *shadows.at(i));
+    }
+    for (int i = 1; i < glows.size(); i++) {
+        rec.stylesList.append(psd::LayerStyles());
+        fillGlow(rec.stylesList.last(), *glows.at(i));
+    }
+    for (int i = 1; i < strokes.size(); i++) {
+        rec.stylesList.append(psd::LayerStyles());
+        fillStroke(rec.stylesList.last(), *strokes.at(i));
+    }
+    rec.stylesList.prepend(main);
+    if (isLmfx) { rec.stylesFromLmfx = true; }
+
+    qWarning() << "PSD layer styles:" << rec.stylesList.size()
+               << "effect(s): shadow x" << shadows.size()
+               << "glow x" << glows.size()
+               << "stroke x" << strokes.size();
+}
+
+} // namespace
+
+void readLfxpStyles(QDataStream &s, const qint64 blockEnd,
+                   psd::LayerRecord &rec, const bool isLmfx)
+{
+    // the lfxp/lfx2 mirror of a layer whose lmfx block was already
+    // parsed would duplicate the styles - lmfx is the authority
+    if (!isLmfx && rec.stylesFromLmfx) { return; }
+    try {
+        // version (0 or 2), descriptor version (16), then descriptor
+        qint32 version = 0;
+        qint32 descVersion = 0;
+        s >> version >> descVersion;
+        DescReader reader(s, blockEnd);
+        const DescValue root = reader.readDescriptorBody();
+        applyLfxpStyles(root, rec, isLmfx);
+    } catch (...) {
+        // malformed or unexpected descriptor: keep defaults, the
+        // caller skips the rest of the block regardless
+        qWarning() << "PSD layer styles: descriptor parse failed,"
+                      " keeping defaults";
+    }
+}
+
 // PackBits decompression straight into the destination buffer.
 // Returns the number of bytes written (< dstSize on truncation).
 int uncompressRLETo(const char *srcPtr, const int srcSize,
@@ -394,9 +786,9 @@ bool PsdFile::readLayerRecords(QDataStream &s, qint64 layerInfoEnd,
         rec.blendKey = readFourCC(s);
         quint8 opacity = 0, clipping = 0, flags = 0, filler = 0;
         s >> opacity >> clipping >> flags >> filler;
-        Q_UNUSED(clipping)
         Q_UNUSED(filler)
         rec.opacity = int(opacity);
+        rec.clipping = (clipping != 0);
         rec.visible = !(flags & 2);
 
         // ---- extra data ----
@@ -458,6 +850,18 @@ bool PsdFile::readLayerRecords(QDataStream &s, qint64 layerInfoEnd,
                 quint32 id = 0;
                 s >> id;
                 rec.layerId = qint32(id);
+            } else if (key == QLatin1String("lfxp")
+                       || key == QLatin1String("lfx2")
+                       || key == QLatin1String("lmfx")) {
+                // Photoshop layer styles (descriptor-based); 'lfxp' is
+                // the CS2+ spelling, 'lfx2' the Photoshop 6-era one with
+                // short effect keys (DrSh/OrGl/FrFX), 'lmfx' (layer
+                // multi fx) is where current Photoshop stores styles
+                // when a type has multiple instances - the legacy
+                // 'lrFX' block only mirrors the first instance and is
+                // skipped. All three share the same body layout.
+                readLfxpStyles(s, blockEnd, rec,
+                               key == QLatin1String("lmfx"));
             } else if (key == QLatin1String("lsct")
                        || key == QLatin1String("lsdk")) {
                 quint32 dividerType = 0;

@@ -182,10 +182,16 @@ protected:
     bool mBlendModeVisible = false;
     bool mPathBlendModeVisible = false;
     bool mFillTypeVisible = false;
+    // AE mask rows replace the blend dropdown with the mask-mode
+    // dropdown (Add/Subtract), same underlying storage
+    bool mMaskModeVisible = false;
 
     void updatePathCompositionBoxVisible();
     void updateCompositionBoxVisible();
     void updateFillTypeBoxVisible();
+    void updateMaskModeBoxVisible();
+
+    void setMaskMode(const int index);
 
     void clearAndHideValueAnimators();
     void updateValueSlidersForQPointFAnimator();
@@ -263,6 +269,8 @@ private:
     PixmapActionButton *mPromoteToLayerButton;
     eComboBox *mPropertyComboBox;
     eComboBox *mBlendModeCombo;
+    // AE mask mode (Add/Subtract) shown on mask-path rows
+    eComboBox *mMaskModeCombo;
     eComboBox *mPathBlendModeCombo;
     eComboBox *mFillTypeCombo;
     // shows and switches the node-link parent of this layer

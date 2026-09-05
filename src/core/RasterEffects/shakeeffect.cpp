@@ -30,7 +30,7 @@
 #include <QtMath>
 
 ShakeEffect::ShakeEffect() :
-    RasterEffect("shake",
+    RasterEffect(QObject::tr("Shake"),
                  AppSupport::getRasterEffectHardwareSupport("Shake",
                                                             HardwareSupport::gpuPreffered),
                  true,

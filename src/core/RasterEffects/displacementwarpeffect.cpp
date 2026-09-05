@@ -16,7 +16,7 @@
 #include <QtMath>
 
 DisplacementWarpEffect::DisplacementWarpEffect() :
-    RasterEffect("displacementWarp",
+    RasterEffect(QObject::tr("Displacement Warp"),
                  AppSupport::getRasterEffectHardwareSupport("DisplacementWarp",
                                                             HardwareSupport::gpuPreffered),
                  true,

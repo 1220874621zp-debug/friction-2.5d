@@ -44,6 +44,7 @@
 #include <QToolButton>
 #include <QProgressBar>
 #include <QTimer>
+#include <QPointer>
 
 #include "smartPointers/ememory.h"
 #include "framerange.h"
@@ -80,6 +81,9 @@ public:
     QSize sizeHint() const override { return QSize(600, 300); }
 
     bool processKeyPress(QKeyEvent *event);
+    // keeps the checkable top-view toolbar button in sync with the
+    // floating window open/closed state (called by MainWindow)
+    void setTopViewButtonChecked(const bool checked);
     void previewFinished();
     void previewBeingPlayed();
     void previewBeingRendered();
@@ -160,6 +164,7 @@ private:
     QAction *mLoopButton;
     QAction *mSnapshotButton = nullptr;
     QAction *mSafeFramesButton = nullptr;
+    QAction *mTopViewButton = nullptr;
     QAction *mClipCanvasButton = nullptr;
     QAction *mRulersButton = nullptr;
     QAction *mTransparencyGridButton = nullptr;
@@ -191,6 +196,12 @@ private:
     //AnimationDockWidget *mAnimationDockWidget;
 
     QPair<bool,int> mPausedPreviewState;
+
+    // the scene this dock's per-scene connections are attached to;
+    // switching scenes must disconnect it, otherwise a stale scene's
+    // frame/range changes still drive the dock (and revisiting a
+    // scene would stack duplicate connections)
+    QPointer<Canvas> mConnectedCanvas;
 };
 
 #endif // BOXESLISTANIMATIONDOCKWIDGET_H

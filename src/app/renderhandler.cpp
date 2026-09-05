@@ -123,7 +123,11 @@ void RenderHandler::renderFromSettings(RenderInstanceSettings * const settings) 
                                                       mCurrentRenderFrame});
         mCurrentScene->anim_setAbsFrame(mCurrentRenderFrame);
         mCurrentScene->setOutputRendering(true);
+        mOutputRenderClock.start();
         TaskScheduler::instance()->setAlwaysQue(true);
+        // feed only the target scene while output rendering - tasks from
+        // other visible scenes just steal thread-pool slots
+        TaskScheduler::sSetOutputRenderScene(mCurrentScene);
         // frame landings drive backlog draining and re-feeding
         connect(mCurrentScene, &Canvas::sceneFrameCached,
                 this, &RenderHandler::onSceneFrameCached,
@@ -131,7 +135,13 @@ void RenderHandler::renderFromSettings(RenderInstanceSettings * const settings) 
         mBacklogTimer->start(100);
         //fitSceneToSize();
         if(!isZero6Dec(mSavedResolutionFraction - resolutionFraction)) {
-            mCurrentScene->setResolution(resolutionFraction);
+            {
+                // exporting at another resolution is not a user edit -
+                // keep it off the undo stack so rendering a queue does
+                // not mark the document dirty
+                const auto block = mCurrentScene->blockUndoRedo();
+                mCurrentScene->setResolution(resolutionFraction);
+            }
             mDocument.actionFinished();
         } else {
             nextCurrentRenderFrame();
@@ -348,8 +358,17 @@ void RenderHandler::interruptPreviewRendering() {
 }
 
 void RenderHandler::interruptOutputRendering() {
-    if(mCurrentScene) mCurrentScene->setOutputRendering(false);
+    if(mCurrentScene) {
+        // drop the frame-landing hook together with the settings: late
+        // sceneFrameCached events (queued signals, user edits after
+        // Stop) used to drive nextSaveOutputFrame with a stale state
+        disconnect(mCurrentScene, &Canvas::sceneFrameCached,
+                   this, &RenderHandler::onSceneFrameCached);
+        mCurrentScene->setOutputRendering(false);
+    }
+    mCurrentRenderSettings = nullptr;
     TaskScheduler::instance()->setAlwaysQue(false);
+    TaskScheduler::sSetOutputRenderScene(nullptr);
     TaskScheduler::sClearAllFinishedFuncs();
     mBacklogTimer->stop();
     stopPreview();
@@ -544,23 +563,40 @@ void RenderHandler::nextPreviewFrame() {
 }
 
 void RenderHandler::finishEncoding() {
+    // summary first: lets the debug log answer "how long did the render
+    // take and how fast was it" without counting frame timestamps
+    const qint64 elapsedMs = mOutputRenderClock.elapsed();
+    const int nFrames = mMaxRenderFrame - mMinRenderFrame + 1;
+    qWarning() << "[RENDER] output render finished:" << nFrames << "frames in"
+               << QString::number(elapsedMs/1000.0, 'f', 1) << "s, avg"
+               << QString::number(elapsedMs > 0 ? nFrames*1000.0/elapsedMs : 0,
+                                  'f', 2)
+               << "fps";
     TaskScheduler::sClearAllFinishedFuncs();
     mBacklogTimer->stop();
     mCurrentRenderSettings = nullptr;
-    mCurrentScene->setOutputRendering(false);
     TaskScheduler::instance()->setAlwaysQue(false);
-    setFrameAction(mSavedCurrentFrame);
-    if(!isZero4Dec(mSavedResolutionFraction - mCurrentScene->getResolution())) {
-        mCurrentScene->setResolution(mSavedResolutionFraction);
+    TaskScheduler::sSetOutputRenderScene(nullptr);
+    if(mCurrentScene) {
+        disconnect(mCurrentScene, &Canvas::sceneFrameCached,
+                   this, &RenderHandler::onSceneFrameCached);
+        mCurrentScene->setOutputRendering(false);
+        setFrameAction(mSavedCurrentFrame);
+        if(!isZero4Dec(mSavedResolutionFraction - mCurrentScene->getResolution())) {
+            // restore without an undo step (mirrors renderFromSettings)
+            const auto block = mCurrentScene->blockUndoRedo();
+            mCurrentScene->setResolution(mSavedResolutionFraction);
+        }
+        // actually release the rendered frames: without this they stay in
+        // RAM until the next memory-pressure pass, so a second render of
+        // the same scene starts with the previous run's whole output
+        // still resident (second render then hits CRITICAL memory state
+        // and deadlocks)
+        mCurrentScene->getSceneFramesHandler().clearUseRange();
+        mCurrentScene->getSceneFramesHandler().clear();
     }
-    mCurrentSoundComposition->clearUseRange();
+    if(mCurrentSoundComposition) mCurrentSoundComposition->clearUseRange();
     VideoEncoder::sFinishEncoding();
-    // actually release the rendered frames: without this they stay in RAM
-    // until the next memory-pressure pass, so a second render of the same
-    // scene starts with the previous run's whole output still resident
-    // (second render then hits CRITICAL memory state and deadlocks)
-    mCurrentScene->getSceneFramesHandler().clearUseRange();
-    mCurrentScene->getSceneFramesHandler().clear();
     mDocument.actionFinished();
 }
 
@@ -596,34 +632,42 @@ void RenderHandler::onSceneFrameCached() {
 
 void RenderHandler::nextSaveOutputFrame() {
     if(!mCurrentRenderSettings || !mCurrentScene) return;
-    const auto& sCacheHandler = mCurrentSoundComposition->getCacheHandler();
-    const qreal fps = mCurrentScene->getFps();
-    const int sampleRate = eSoundSettings::sSampleRate();
-    while(mCurrentEncodeSoundSecond <= mMaxSoundSec) {
-        const auto cont = sCacheHandler.atFrame(mCurrentEncodeSoundSecond);
-        if(!cont) break;
-        const auto sCont = cont->ref<SoundCacheContainer>();
-        const auto samples = sCont->getSamples();
-        if(mCurrentEncodeSoundSecond == mFirstEncodeSoundSecond) {
-            const int minSample = qRound(mMinRenderFrame*sampleRate/fps);
-            const int max = samples->fSampleRange.fMax;
-            VideoEncoder::sAddCacheContainerToEncoder(
-                        samples->mid({minSample, max}));
-        } else {
-            VideoEncoder::sAddCacheContainerToEncoder(
-                        enve::make_shared<Samples>(samples));
+    if(mCurrentSoundComposition) {
+        const auto& sCacheHandler = mCurrentSoundComposition->getCacheHandler();
+        const qreal fps = mCurrentScene->getFps();
+        const int sampleRate = eSoundSettings::sSampleRate();
+        while(mCurrentEncodeSoundSecond <= mMaxSoundSec) {
+            const auto cont = sCacheHandler.atFrame(mCurrentEncodeSoundSecond);
+            if(!cont) break;
+            const auto sCont = cont->ref<SoundCacheContainer>();
+            const auto samples = sCont->getSamples();
+            if(mCurrentEncodeSoundSecond == mFirstEncodeSoundSecond) {
+                const int minSample = qRound(mMinRenderFrame*sampleRate/fps);
+                const int max = samples->fSampleRange.fMax;
+                VideoEncoder::sAddCacheContainerToEncoder(
+                            samples->mid({minSample, max}));
+            } else {
+                VideoEncoder::sAddCacheContainerToEncoder(
+                            enve::make_shared<Samples>(samples));
+            }
+            mCurrentEncodeSoundSecond++;
         }
-        mCurrentEncodeSoundSecond++;
+        if(mCurrentEncodeSoundSecond > mMaxSoundSec) VideoEncoder::sAllAudioProvided();
     }
-    if(mCurrentEncodeSoundSecond > mMaxSoundSec) VideoEncoder::sAllAudioProvided();
 
     const auto& cacheHandler = mCurrentScene->getSceneFramesHandler();
+    const int prevEncodeFrame = mCurrentEncodeFrame;
     while(mCurrentEncodeFrame <= mMaxRenderFrame) {
         const auto cont = cacheHandler.atFrame(mCurrentEncodeFrame);
         if(!cont) break;
         VideoEncoder::sAddCacheContainerToEncoder(cont->ref<SceneFrameContainer>());
         mCurrentEncodeFrame = cont->getRangeMax() + 1;
     }
+    // progress follows frames that actually landed in the cache, not the
+    // feed cursor - the feeder runs ahead on slow frames and the bar used
+    // to sit at 100% while rendering was still ongoing
+    if(mCurrentEncodeFrame != prevEncodeFrame)
+        mCurrentRenderSettings->setCurrentRenderFrame(mCurrentEncodeFrame - 1);
 
     //mCurrentScene->renderCurrentFrameToOutput(*mCurrentRenderSettings);
     if(mCurrentRenderFrame >= mMaxRenderFrame) {
@@ -656,7 +700,6 @@ void RenderHandler::nextSaveOutputFrame() {
             const int backlog = mCurrentRenderFrame - encodedUpTo;
             if(backlog >= maxBacklogFrames()) return; // encoder drains, timer re-invokes
             if(mCurrentRenderFrame >= mMaxRenderFrame) break;
-            mCurrentRenderSettings->setCurrentRenderFrame(mCurrentRenderFrame);
             nextCurrentRenderFrame();
             // pool busy with at least two frames in flight: enough
             // lookahead for this pass, landing events will re-feed

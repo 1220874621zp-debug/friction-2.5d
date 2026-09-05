@@ -62,7 +62,9 @@ qsptr<BoundingBox> ePsdImporter::import(const QFileInfo &fileInfo, Canvas * cons
                 QObject::tr("Importing PSD ..."),
                 QString(), 0, 1);
     progress.setWindowModality(Qt::WindowModal);
-    progress.setMinimumDuration(300);
+    // show early: most imports finish in under a second and the old
+    // 300ms delay meant the dialog barely flashed
+    progress.setMinimumDuration(120);
     const auto result = ImportPSD::loadPSDFile(
                 fileInfo.absoluteFilePath(),
                 [&progress](const int cur, const int total) {

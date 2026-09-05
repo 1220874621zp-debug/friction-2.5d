@@ -27,7 +27,7 @@
 #include "Animators/intanimator.h"
 
 SubdividePathEffect::SubdividePathEffect() :
-    PathEffect("subdivide effect", PathEffectType::SUBDIVIDE) {
+    PathEffect(QObject::tr("Subdivide"), PathEffectType::SUBDIVIDE) {
     mCount = enve::make_shared<IntAnimator>(1, 0, 9, 1, "count");
     ca_addChild(mCount);
 }

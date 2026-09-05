@@ -44,6 +44,155 @@ void Canvas::setCurrentSmartEndPoint(SmartNodePoint * const point) {
 #include "Animators/SmartPath/smartpathcollection.h"
 #include "Animators/transformanimator.h"
 
+namespace {
+bool isMaskPathBox(BoundingBox * const box) {
+    const auto path = enve_cast<SmartVectorPath*>(box);
+    return path && path->getMaskMode();
+}
+
+bool isBitmapBox(BoundingBox * const box) {
+    // raster images (+PSD) and frame-based media (video/sequences)
+    return enve_cast<ImageBox*>(box) ||
+           enve_cast<AnimationBox*>(box);
+}
+
+bool hostsMaskPaths(ContainerBox * const group) {
+    for(const auto& child : group->getContainedBoxes()) {
+        if(isMaskPathBox(child)) return true;
+    }
+    return false;
+}
+
+// nearest layer-type ancestor: masks placed there clip that whole
+// layer (AE semantics), unwrapped boxes get wrapped on first use.
+// the Canvas itself also reports isLayer() (it promotes for render
+// purposes) but must NEVER host masks - a mask at scene root erases
+// every layer below it
+ContainerBox *layerAncestorOrSelf(BoundingBox * const box) {
+    auto parent = box->getParentGroup();
+    while(parent) {
+        if(parent->isLayer() && !enve_cast<Canvas*>(parent)) {
+            return parent;
+        }
+        parent = parent->getParentGroup();
+    }
+    return nullptr;
+}
+}
+
+// bitmap auto-detect rule: on a bitmap layer (or over an existing
+// mask / mask-hosting group) the pen and rectangle tools draw MASKS
+// instead of shapes; everything else keeps drawing shapes
+bool Canvas::isMaskIntentTarget(BoundingBox * const target) {
+    if(!target) return false;
+    if(isBitmapBox(target)) return true;
+    if(const auto group = enve_cast<ContainerBox*>(target)) {
+        if(group->isLayer() && !enve_cast<Canvas*>(group)) {
+            return hostsMaskPaths(group);
+        }
+    }
+    return false;
+}
+
+BoundingBox *Canvas::resolveMaskTarget(const eMouseEvent &e) {
+    // pure resolution, no tree mutation: the layer under the press
+    // point; with no hit, a single selected layer (AE semantics -
+    // drawing commonly starts outside the layer bounds)
+    BoundingBox *target = getBoxAtFromAllDescendents(e.fPos);
+    if(isMaskPathBox(target)) {
+        // drawing over an existing mask stacks another mask onto the
+        // same layer (multi-mask Add/Subtract composition)
+        return target->getParentGroup();
+    }
+    if(!target) {
+        const auto selList = getSelectedBoxesList();
+        if(selList.count() == 1) {
+            const auto sel = selList.first();
+            if(isMaskPathBox(sel)) return sel->getParentGroup();
+            const auto selGroup = enve_cast<ContainerBox*>(sel);
+            if(selGroup && sel->isLayer() &&
+                    !enve_cast<Canvas*>(selGroup)) {
+                return selGroup;
+            }
+            target = sel;
+        }
+    }
+    return target;
+}
+
+ContainerBox *Canvas::ensureMaskHost(BoundingBox * const target) {
+    if(!target) {
+        qWarning().noquote() << QStringLiteral(
+            "\u8499\u7248\uFF1A\u8D77\u7B14\u70B9\u672A\u547D\u4E2D"
+            "\u56FE\u5C42\uFF0C\u4E14\u6CA1\u6709\u5355\u4E00\u9009\u4E2D"
+            "\u56FE\u5C42\uFF0C\u8BF7\u5728\u8981\u88C1\u526A\u7684"
+            "\u56FE\u5C42\u4E0A\u8D77\u7B14\uFF08\u6216\u5148\u9009\u4E2D"
+            "\u5B83\uFF09");
+        return nullptr;
+    }
+    // a selected layer-type group hosts the mask itself
+    if(const auto group = enve_cast<ContainerBox*>(target)) {
+        if(group->isLayer() && !enve_cast<Canvas*>(group)) {
+            return group;
+        }
+    }
+    if(const auto host = layerAncestorOrSelf(target)) return host;
+    // mask: wrap the target layer into its own layer box and add
+    // the mask right above it, so the mask clips ONLY that layer
+    // (Friction masks affect their container)
+    const auto parentGroup = target->getParentGroup();
+    if(!parentGroup) {
+        qWarning().noquote() << QStringLiteral(
+            "\u8499\u7248\uFF1A\u76EE\u6807\u56FE\u5C42\u4E0D\u5728"
+            "\u4EFB\u4F55\u5BB9\u5668\u5185\uFF0C\u5DF2\u53D6\u6D88"
+            "\u7ED8\u5236");
+        return nullptr;
+    }
+    const auto& contained = parentGroup->getContained();
+    const int tId = contained.indexOf(target->ref<eBoxOrSound>());
+    if(tId < 0) {
+        qWarning().noquote() << QStringLiteral(
+            "\u8499\u7248\uFF1A\u76EE\u6807\u56FE\u5C42\u4E0D\u5728"
+            "\u4EFB\u4F55\u5BB9\u5668\u5185\uFF0C\u5DF2\u53D6\u6D88"
+            "\u7ED8\u5236");
+        return nullptr;
+    }
+    const auto group = enve::make_shared<ContainerBox>(eBoxType::layer);
+    group->setRevealRowsOnce();
+    // insert FIRST, name AFTER: insertContained runs
+    // makeNameUniqueForDescendants which overwrites the box name
+    const QString targetName = target->prp_getName();
+    parentGroup->insertContained(tId, group);
+    group->addContained(target->ref<eBoxOrSound>());
+    group->prp_setName(targetName);
+    return group.get();
+}
+
+ContainerBox *Canvas::resolveMaskHost(const eMouseEvent &e) {
+    return ensureMaskHost(resolveMaskTarget(e));
+}
+
+qsptr<SmartVectorPath> Canvas::createMaskPath(
+        BoundingBox * const nameSource) {
+    const auto newPath = enve::make_shared<SmartVectorPath>();
+    newPath->planCenterPivotPosition();
+    // Add mode by default (kDstIn); switch to Subtract (kDstOut) from
+    // the mask row context menu - multiple masks on one layer combine
+    // Add = union / Subtract = erase, applied topmost-first (AE)
+    newPath->setBlendModeSk(SkBlendMode::kDstIn);
+    newPath->setMaskMode(true);
+    newPath->prp_setName(QStringLiteral("\u8499\u7248\uFF1A%1").arg(
+                nameSource ? nameSource->prp_getName() :
+                             QStringLiteral("\u56FE\u5C42")));
+    newPath->getFillSettings()->setPaintType(PaintType::FLATPAINT);
+    newPath->getStrokeSettings()->setPaintType(PaintType::NOPAINT);
+    // feather slot: hard edge by default, animate its radius to feather
+    const auto blur = enve::make_shared<BlurEffect>();
+    blur->setRadius(0);
+    newPath->addRasterEffect(blur);
+    return newPath;
+}
+
 void Canvas::handleAddSmartPointMousePress(const eMouseEvent &e) {
     if(mLastEndPoint ? mLastEndPoint->isHidden(mCurrentMode) : false) {
         clearCurrentSmartEndPoint();
@@ -57,71 +206,38 @@ void Canvas::handleAddSmartPointMousePress(const eMouseEvent &e) {
     if(nodePointUnderMouse == mLastEndPoint &&
             nodePointUnderMouse) return;
     if(!mLastEndPoint && !nodePointUnderMouse) {
-        // mask pen: resolve the target BEFORE creating anything. An
-        // unresolved target must never fall through to a raw DstIn path
-        // in the current container - once closed it would erase every
-        // layer below it on the whole canvas
-        BoundingBox* maskTarget = nullptr;
+        // mask session: forced via the mask pen button, or
+        // auto-detected - on a bitmap layer (or over an existing
+        // mask / mask-hosting group) the plain pen draws a mask too;
+        // an unresolved forced target must never fall through to a
+        // raw DstIn path in the current container - once closed it
+        // would erase every layer below it on the whole canvas
+        BoundingBox *maskTarget = nullptr;
         if(mDocument.fMaskPenActive) {
-            maskTarget = getBoxAtFromAllDescendents(e.fPos);
-            if(!maskTarget) {
-                const auto selList = getSelectedBoxesList();
-                if(selList.count() == 1) {
-                    // AE semantics: with a single selected layer the mask
-                    // targets it no matter where the drawing starts
-                    // (drawing commonly starts outside the layer bounds)
-                    const auto selPath = enve_cast<SmartVectorPath*>(
-                                selList.first());
-                    if(!selPath || !selPath->getMaskMode()) {
-                        maskTarget = selList.first();
-                    }
-                }
-            }
-            if(!maskTarget) {
-                qWarning() << "蒙版钢笔：起笔点未命中图层，且没有单一选中图层，请在要裁剪的图层上起笔（或先选中它）";
-                return;
-            }
+            maskTarget = resolveMaskTarget(e);
+        } else {
+            const auto autoTarget = resolveMaskTarget(e);
+            if(isMaskIntentTarget(autoTarget)) maskTarget = autoTarget;
+        }
+        if(maskTarget) {
+            const auto host = ensureMaskHost(maskTarget);
+            if(!host) return;
+            const auto maskPath = createMaskPath(host);
+            host->setRevealRowsOnce();
+            host->addContained(maskPath->ref<eBoxOrSound>());
+            clearBoxesSelection();
+            addBoxToSelection(maskPath.get());
+            const QPointF snappedPos = snapEventPos(e, false);
+            const auto relPos = maskPath->mapAbsPosToRel(snappedPos);
+            maskPath->getBoxTransformAnimator()->setPosition(relPos.x(), relPos.y());
+            const auto newHandler = maskPath->getPathAnimator();
+            const auto node = newHandler->createNewSubPathAtRelPos({0, 0});
+            setCurrentSmartEndPoint(node);
+            return;
         }
         const auto newPath = enve::make_shared<SmartVectorPath>();
         newPath->planCenterPivotPosition();
-        // mask pen: wrap the target layer into its own layer box and add
-        // a DstIn mask right above it, so the mask clips ONLY that layer
-        // (Friction masks affect their container); the attached Blur
-        // effect is the mask feather (animate its radius)
-        if(mDocument.fMaskPenActive) {
-            const auto parentGroup = maskTarget->getParentGroup();
-            if(!parentGroup) {
-                qWarning() << "蒙版钢笔：目标图层不在任何容器内，已取消绘制";
-                return;
-            }
-            const auto& contained = parentGroup->getContained();
-            const int tId = contained.indexOf(
-                        maskTarget->ref<eBoxOrSound>());
-            if(tId < 0) {
-                qWarning() << "蒙版钢笔：目标图层不在任何容器内，已取消绘制";
-                return;
-            }
-            const auto group = enve::make_shared<ContainerBox>(
-                        eBoxType::layer);
-            group->setRevealRowsOnce();
-            group->prp_setName(maskTarget->prp_getName());
-            parentGroup->insertContained(tId, group);
-            group->addContained(maskTarget->ref<eBoxOrSound>());
-
-            newPath->setBlendModeSk(SkBlendMode::kDstIn);
-            newPath->setMaskMode(true);
-            newPath->prp_setName(
-                        QStringLiteral("Mask: %1")
-                        .arg(maskTarget->prp_getName()));
-            newPath->getFillSettings()->setPaintType(
-                        PaintType::FLATPAINT);
-            newPath->getStrokeSettings()->setPaintType(
-                        PaintType::NOPAINT);
-            const auto blur = enve::make_shared<BlurEffect>();
-            blur->setRadius(0); // feather, hard edge by default
-            newPath->addRasterEffect(blur);
-            group->addContained(newPath);
-        } else if(!newPath->getParentGroup()) {
+        if(!newPath->getParentGroup()) {
             mCurrentContainer->addContained(newPath);
         }
         clearBoxesSelection();

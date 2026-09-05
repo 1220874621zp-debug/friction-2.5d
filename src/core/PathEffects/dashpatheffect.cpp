@@ -27,7 +27,7 @@
 #include "Animators/qrealanimator.h"
 
 DashPathEffect::DashPathEffect() :
-    PathEffect("dash effect", PathEffectType::DASH) {
+    PathEffect(QObject::tr("Dash"), PathEffectType::DASH) {
     mSize = enve::make_shared<QrealAnimator>("size");
     mSize->setValueRange(0.1, 9999.999);
     mSize->setCurrentBaseValue(5);

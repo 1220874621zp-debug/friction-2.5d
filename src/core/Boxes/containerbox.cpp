@@ -1107,6 +1107,13 @@ static bool linkRendersAsLayer(BoundingBox * const box) {
     return linkBox && linkBox->rendersAsTargetLayer();
 }
 
+static bool hostsMaskBoxes(const ContainerBox * const box) {
+    for(const auto& child : box->getContainedBoxes()) {
+        if(child->isMaskBox()) return true;
+    }
+    return false;
+}
+
 void ContainerBox::drawPixmapSk(SkCanvas * const canvas,
                                 const SkFilterQuality filter, int& drawId,
                                 QList<BlendEffect::Delayed> &delayed) const {
@@ -1116,6 +1123,17 @@ void ContainerBox::drawPixmapSk(SkCanvas * const canvas,
     }
     if(mIsDescendantCurrentGroup || linkRendersAsLayer(
                 const_cast<ContainerBox*>(this))) {
+        // a mask-hosting group entered for editing must composite
+        // through the render-data path: the direct child draws below
+        // apply DstIn/DstOut sequentially (Add+Add = intersection,
+        // Subtract = hole), while the render path builds AE-style
+        // Add/Subtract mask runs - routing through the cached render
+        // keeps both views identical
+        if(mIsDescendantCurrentGroup && hostsMaskBoxes(this) &&
+                drawRenderContainer().getSrcRenderData()) {
+            BoundingBox::drawPixmapSk(canvas, filter, drawId, delayed);
+            return;
+        }
         SkPaint paint;
         const int intAlpha = qRound(mTransformAnimator->getOpacity()*2.55);
         paint.setAlpha(static_cast<U8CPU>(intAlpha));
@@ -1212,6 +1230,9 @@ void processChildData(BoundingBox * const child,
                       QList<ChildRenderData>& delayed,
                       const bool soloActive) {
     if(!child->isFrameFVisibleAndInDurationRect(childRelFrame)) return;
+    // AE track matte: the matte source layer stops drawing itself
+    // while referenced (its pixels only live inside the matte)
+    if(child->usedAsTrackMatteSource()) return;
     if(soloActive && !child->soloAffectsDraw()) return;
     if(child->isGroup() && !linkRendersAsLayer(child)) {
         const auto childGroup = static_cast<ContainerBox*>(child);

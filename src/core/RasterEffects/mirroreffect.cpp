@@ -29,7 +29,7 @@
 #include "appsupport.h"
 
 MirrorEffect::MirrorEffect() :
-    RasterEffect("mirror",
+    RasterEffect(QObject::tr("Mirror"),
                  AppSupport::getRasterEffectHardwareSupport("Mirror",
                                                             HardwareSupport::gpuPreffered),
                  true,

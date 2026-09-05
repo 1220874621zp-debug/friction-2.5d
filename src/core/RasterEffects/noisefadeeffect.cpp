@@ -32,7 +32,7 @@
 #include "appsupport.h"
 
 NoiseFadeEffect::NoiseFadeEffect() :
-    RasterEffect("noise fade",
+    RasterEffect(QObject::tr("Noise Fade"),
                  AppSupport::getRasterEffectHardwareSupport("NoiseFade",
                                                             HardwareSupport::gpuPreffered),
                  false,

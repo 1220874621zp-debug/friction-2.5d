@@ -33,6 +33,35 @@
 #include "Animators/qpointfanimator.h"
 #include "Animators/transformanimator.h"
 #include "MovablePoints/animatedpoint.h"
+#include "Expressions/expression.h"
+
+namespace {
+// shared JS helpers for the preset-generated expressions
+const char* const kPresetDefs =
+        "function pSat(t){return t<0?0:(t>1?1:t);}\n"
+        "function pSmooth(t){t=pSat(t);return t*t*(3-2*t);}\n"
+        "function pSeg(f,a,b){return b<=a?1:pSat((f-a)/(b-a));}\n"
+        "function pLin(a,b,t){return a+(b-a)*t;}\n";
+
+// attaches a preset-generated expression; non-undoable on purpose -
+// the owning TextEffect is added/removed as a whole (one undo step)
+void attachPresetExpr(QrealAnimator* const anim, const QString& script)
+{
+    if (!anim) { return; }
+    try {
+        // $frame is required so playback re-evaluates every frame
+        auto expr = Expression::sCreate(
+                    QStringLiteral("frame = $frame;"),
+                    QString::fromUtf8(kPresetDefs), script, anim,
+                    Expression::sQrealAnimatorTester);
+        anim->setExpression(expr);
+    } catch (const std::exception& e) {
+        qWarning() << "[text-preset] expression failed:" << e.what();
+    } catch (...) {
+        qWarning() << "[text-preset] expression failed";
+    }
+}
+}
 
 class TextEffectPoint : public AnimatedPoint {
 public:
@@ -542,6 +571,17 @@ void TextEffect::setupFromPreset(const TextAnimPreset &preset,
                                  const int startFrame,
                                  const qreal fps,
                                  const qreal durationScale) {
+    // clear expressions left by a previously applied preset so presets
+    // never stack - sweep after wave used to keep the wave phase
+    // driver running underneath the new sweep
+    const auto clearExpr = [](QrealAnimator* const anim) {
+        if (anim && anim->hasExpression()) { anim->setExpression(nullptr); }
+    };
+    if (mP2Anim) { clearExpr(mP2Anim->getXAnimator()); }
+    if (mP3Anim) { clearExpr(mP3Anim->getXAnimator()); }
+    clearExpr(mPeriodicShift.get());
+    clearExpr(mInfluence.get());
+
     mTarget->setCurrentValue(preset.fragment);
     mStaggerBy->setCurrentValue(preset.byIndex ? 1 : 0);
 
@@ -563,21 +603,22 @@ void TextEffect::setupFromPreset(const TextAnimPreset &preset,
     const qreal left = -0.15*W;
     const qreal right = 1.15*W;
 
-    // keys the (x, y) of a guide control point: (x0, y0) at F0,
-    // interpolating to (x1, y1) at F1
-    const auto keyPoint = [F0, F1](QPointFAnimator * const anim,
-                                   const qreal x0, const qreal x1,
-                                   const qreal y0, const qreal y1) {
-        const auto xAnim = anim->getXAnimator();
+    // drives the (x) of a guide control point with an expression:
+    // smooth travel from x0 at F0 to x1 at F1; y stays constant
+    const auto frontExpr = [F0, F1](QPointFAnimator * const anim,
+                                    const qreal x0, const qreal x1,
+                                    const qreal y) {
+        if(!anim) return;
         const auto yAnim = anim->getYAnimator();
-        if(xAnim) {
-            xAnim->saveValueToKey(F0, x0);
-            xAnim->saveValueToKey(F1, x1);
-        }
-        if(yAnim) {
-            yAnim->saveValueToKey(F0, y0);
-            yAnim->saveValueToKey(F1, y1);
-        }
+        if(yAnim) yAnim->setCurrentBaseValue(y);
+        const QString script = QStringLiteral(
+                    "// 扫掠前沿：从 %1 平滑移动到 %2（帧 %3 → %4）\n"
+                    "var f = frame;\n"
+                    "return pLin(%1, %2, pSmooth(pSeg(f, %3, %4)));")
+                .arg(QString::number(x0, 'f', 1),
+                     QString::number(x1, 'f', 1),
+                     QString::number(F0), QString::number(F1));
+        attachPresetExpr(anim->getXAnimator(), script);
     };
 
     switch(preset.kind) {
@@ -603,11 +644,11 @@ void TextEffect::setupFromPreset(const TextAnimPreset &preset,
         // outside the text on one side, at F1 fully past it on the
         // other, so the first/last frame is a clean rest state
         if(ltr) {
-            keyPoint(mP2Anim.get(), left - soft, right, yLeft, yLeft);
-            keyPoint(mP3Anim.get(), left, right + soft, yRight, yRight);
+            frontExpr(mP2Anim.get(), left - soft, right, yLeft);
+            frontExpr(mP3Anim.get(), left, right + soft, yRight);
         } else {
-            keyPoint(mP2Anim.get(), right, left - soft, yLeft, yLeft);
-            keyPoint(mP3Anim.get(), right + soft, left, yRight, yRight);
+            frontExpr(mP2Anim.get(), right, left - soft, yLeft);
+            frontExpr(mP3Anim.get(), right + soft, left, yRight);
         }
     } break;
     case TextAnim::wave: {
@@ -616,10 +657,17 @@ void TextEffect::setupFromPreset(const TextAnimPreset &preset,
         const qreal period = qMax(W/qMax(1, preset.waveCycles), 1.);
         mPeriod->setCurrentBaseValue(period);
         mPeriodicSmoothness->setCurrentBaseValue(0.5);
-        // one full period of shift travel per waveTime: seamless loop
+        // one full period of shift travel per waveTime; the phase
+        // keeps advancing forever (the old two-key bake froze the
+        // wave after its first period)
         const int waveF = qMax(1, qRound(preset.waveTime*fps));
-        mPeriodicShift->saveValueToKey(F0, 0);
-        mPeriodicShift->saveValueToKey(F0 + waveF, period);
+        attachPresetExpr(mPeriodicShift.get(), QStringLiteral(
+                    "// 波浪相位：每 %1 帧推进一个周期（无限循环）\n"
+                    "var f = frame;\n"
+                    "return %2 * (f - %3) / %1;")
+                .arg(QString::number(waveF),
+                     QString::number(period, 'f', 1),
+                     QString::number(F0)));
     } break;
     case TextAnim::pulse: {
         mDiminishInfluence->setCurrentBaseValue(1);
@@ -631,9 +679,13 @@ void TextEffect::setupFromPreset(const TextAnimPreset &preset,
         mP3Anim->setBaseValue(right - 0.01*W, 1);
         mP4Anim->setBaseValue(right, 1);
         const qreal peak = qBound(0., preset.pulsePeak, 1.);
-        mInfluence->saveValueToKey(F0, 0);
-        mInfluence->saveValueToKey(F1, peak);
-        mInfluence->saveValueToKey(F1 + durF, 0);
+        attachPresetExpr(mInfluence.get(), QStringLiteral(
+                    "// 脉冲：0 → 峰值 → 0 循环（周期 %1 帧，无限循环）\n"
+                    "var f = frame;\n"
+                    "return %2 * (0.5 - 0.5 * Math.cos(Math.PI * (f - %3) / %1));")
+                .arg(QString::number(2*durF),
+                     QString::number(peak),
+                     QString::number(F0)));
     } break;
     }
 }

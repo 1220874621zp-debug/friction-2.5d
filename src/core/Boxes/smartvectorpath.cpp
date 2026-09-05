@@ -57,12 +57,22 @@ bool SmartVectorPath::differenceInEditPathBetweenFrames(
 }
 
 SkBlendMode SmartVectorPath::getPaintBlendMode(const qreal relFrame) const {
-    // while any sub-path is open the mask shape draws normally
-    // (SrcOver) instead of clipping the layers below with DstIn;
-    // evaluate at the frame being rendered, never the global current
-    // frame (stale inside scene links)
-    if(mMaskMode && !allSubPathsClosed(relFrame)) {
-        return SkBlendMode::kSrcOver;
+    if(mMaskMode) {
+        // a mask only clips its owner layer - creation always wraps a
+        // host layer, but the timeline lets the user drag a mask to
+        // the scene root, where a DstIn/DstOut blend would erase every
+        // layer below it; disable clipping there
+        const auto parent = getParentGroup();
+        if(!parent || enve_cast<Canvas*>(parent)) {
+            return SkBlendMode::kSrcOver;
+        }
+        // while any sub-path is open the mask shape draws normally
+        // (SrcOver) instead of clipping the layers below with DstIn;
+        // evaluate at the frame being rendered, never the global current
+        // frame (stale inside scene links)
+        if(!allSubPathsClosed(relFrame)) {
+            return SkBlendMode::kSrcOver;
+        }
     }
     return PathBox::getPaintBlendMode(relFrame);
 }
@@ -182,6 +192,7 @@ SmartPathCollection *SmartVectorPath::getPathAnimator() {
 }
 
 #include "typemenu.h"
+#include "ReadWrite/evformat.h"
 void SmartVectorPath::setupCanvasMenu(PropertyMenu * const menu)
 {
     if (menu->hasActionsForType<SmartVectorPath>()) { return; }
@@ -192,6 +203,20 @@ void SmartVectorPath::setupCanvasMenu(PropertyMenu * const menu)
     };
     menu->addSeparator();
     menu->addPlainAction(QIcon::fromTheme("loop2"), tr("Apply Transformation"), op);
+}
+
+void SmartVectorPath::writeBoundingBox(eWriteStream& dst) const
+{
+    PathBox::writeBoundingBox(dst);
+    dst << mMaskMode;
+}
+
+void SmartVectorPath::readBoundingBox(eReadStream& src)
+{
+    PathBox::readBoundingBox(src);
+    if (src.evFileVersion() >= EvFormat::maskPathMode) {
+        src >> mMaskMode;
+    }
 }
 
 void SmartVectorPath::applyCurrentTransform()

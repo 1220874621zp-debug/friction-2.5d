@@ -55,6 +55,7 @@ public:
                  QWidget* const parent = nullptr);
 
     void setFrames(const QList<QImage>& frames);
+    void setLoading();
     void advance();
     void setChecked(const bool checked)
     { mChecked = checked; update(); }
@@ -73,7 +74,6 @@ protected:
 
 private:
     void repositionButtons();
-    void paintFrame();
 
     enum class Dir { in = 0, out = 1, all = 2 };
 
@@ -88,8 +88,6 @@ private:
     class TextAnimPreview* mPreviewArea = nullptr;
     QLabel* mNameLabel = nullptr;
     QList<QPushButton*> mApplyButtons;
-    QList<QImage> mFrames;
-    int mFrame = 0;
     bool mChecked = false;
     bool mHover = false;
 };
@@ -143,10 +141,11 @@ private:
 
     void buildSection(Section& section, const int kind);
     void fillGridFromKind(const int kind, FlowLayout* flow);
-    void ensureTileFrames(TextAnimTile* const tile);
+    // render preview frames for the given tiles on worker threads;
+    // results are dropped if the duration scale changed mid-flight
+    void queueRender(const QList<TextAnimTile*>& tiles);
     void selectTile(TextAnimTile* const tile);
     void applyPreset(TextAnimTile* const tile, const int dir);
-    TextBox* selectedTextBox() const;
     QList<TextBox*> selectedTextBoxes() const;
     QList<class BoundingBox*> selectedBoxes() const;
     const QImage& mascotImage();
@@ -168,6 +167,13 @@ private:
 
     QList<TextAnimTile*> mTiles;
     qreal mDurationScale = 1.0;
+    // debounced tile re-render when the duration scale changes
+    QTimer* mDurationReRenderTimer = nullptr;
+    // bumped on every duration-scale change; render batches that
+    // started with an older generation discard their results
+    int mScaleGeneration = 0;
+    // renders requested while the panel was hidden
+    bool mRenderAllOnShow = false;
     QImage mMascot;
     bool mMascotTried = false;
     QString mDefaultCjkFamily;

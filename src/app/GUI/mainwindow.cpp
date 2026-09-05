@@ -26,6 +26,7 @@
 #include "mainwindow.h"
 #include "AI/mcpserver.h"
 #include "GUI/Expressions/expressiondialog.h"
+#include "GUI/topviewwindow.h"
 #include "canvas.h"
 #include <QKeyEvent>
 #include <QApplication>
@@ -518,6 +519,54 @@ void MainWindow::closedTimelineWindow()
         mTimelineDock->show();
         mTimeline->show();
         if (mViewTimelineAct) { mViewTimelineAct->setChecked(true); }
+    }
+}
+
+void MainWindow::openTopViewWindow()
+{
+    if (!mTopViewWindow) {
+        if (!mTopViewWidget) {
+            mTopViewWidget = new TopViewWindow(mDocument, this);
+        }
+        mTopViewWindow = new Window(this,
+                                     mTopViewWidget,
+                                     tr("Top View"),
+                                     QString("TopViewWindow"),
+                                     true,
+                                     true,
+                                     false);
+        mTopViewWindow->setMinimumSize(360, 300);
+        connect(mTopViewWindow, &Window::closed,
+                this, [this]() { closedTopViewWindow(); });
+        if (mViewTopViewAct) { mViewTopViewAct->setChecked(true); }
+        if (mTimeline) { mTimeline->setTopViewButtonChecked(true); }
+    }
+    mTopViewWindow->focusWindow();
+}
+
+void MainWindow::closedTopViewWindow()
+{
+    if (mShutdown) { return; }
+    // cheap to rebuild - drop the window AND the GL widget so no
+    // context lingers (the widget dies as the window's child); finish
+    // any in-progress drag here while Document is guaranteed alive
+    // (the destructor alone would skip the actionFinished epilogue)
+    if (mTopViewWidget) { mTopViewWidget->finishDrags(); }
+    if (mTopViewWindow) {
+        mTopViewWindow->deleteLater();
+        mTopViewWindow = nullptr;
+    }
+    mTopViewWidget = nullptr;
+    if (mViewTopViewAct) { mViewTopViewAct->setChecked(false); }
+    if (mTimeline) { mTimeline->setTopViewButtonChecked(false); }
+}
+
+void MainWindow::toggleTopViewWindow()
+{
+    if (mTopViewWindow) {
+        mTopViewWindow->close();
+    } else {
+        openTopViewWindow();
     }
 }
 
@@ -1415,9 +1464,8 @@ void MainWindow::rebuildWorkspaceMenu()
     if (mSwitchPanelDock) {
         panelsMenu->addAction(mSwitchPanelDock->toggleViewAction());
     }
-    if (mScriptManager && mScriptManager->console()) {
-        panelsMenu->addAction(mScriptManager->console()->toggleViewAction());
-    }
+    // the script console toggle lives in the Scripts menu only;
+    // listing it here too showed the same entry twice
 
     // external AI roto bridge (Mocha-style: launch + file hand-off)
     mWorkspaceMenu->addSeparator();

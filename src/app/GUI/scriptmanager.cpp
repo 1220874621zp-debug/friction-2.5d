@@ -50,10 +50,14 @@ ScriptManager::ScriptManager(MainWindow * const parent)
     , mMainWindow(parent)
 {
     mConsole = new ScriptConsoleDock(parent);
+    mConsole->setReloadCallback([this]() { reload(); });
+    mConsole->setScriptsPath(AppSupport::getAppScriptsPath());
 
     mScriptsMenu = new QMenu(tr("Scripts"), parent);
 
-    const auto consoleAct = mScriptsMenu->addAction(
+    // the console toggle lives here only; the Workspace > Panels
+    // menu deliberately does not repeat it
+    mScriptsMenu->addAction(
                 QIcon::fromTheme("cmd"),
                 tr("Script Console"),
                 this, [this]() {
@@ -81,8 +85,6 @@ ScriptManager::ScriptManager(MainWindow * const parent)
 
     loadScripts();
     rebuildMenu();
-
-    Q_UNUSED(consoleAct)
 }
 
 void ScriptManager::reload()
@@ -329,6 +331,10 @@ void ScriptManager::rebuildMenu()
         return;
     }
     for (auto it = mCommands.constBegin(); it != mCommands.constEnd(); ++it) {
+        // scripts with a panel expose their actions on the panel
+        // itself; listing their commands here too showed the same
+        // feature twice in the menu
+        if (it.value()->panelDesc().valid) { continue; }
         const QString label = it.key();
         mScriptsMenu->addAction(label, this, [this, label]() {
             runCommand(label);

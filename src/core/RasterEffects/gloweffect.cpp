@@ -31,7 +31,7 @@
 #include "appsupport.h"
 
 GlowEffect::GlowEffect() :
-    RasterEffect("glow",
+    RasterEffect(QObject::tr("Glow"),
                  AppSupport::getRasterEffectHardwareSupport("Glow",
                                                             HardwareSupport::gpuPreffered),
                  true,

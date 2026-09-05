@@ -34,6 +34,7 @@
 #include "Boxes/imagebox.h"
 
 class CORE_EXPORT PsdImageBox : public ImageBox {
+    Q_OBJECT
     e_OBJECT
     e_DECLARE_TYPE(PsdImageBox)
 protected:
@@ -59,6 +60,15 @@ public:
     void setPsdSource(const QString &sourcePackage,
                       const QString &sourceLayerKey);
 
+    // PSD clipping-mask membership (independent of the preserve-alpha
+    // switch: the flag says "this layer belongs to a clipped stack",
+    // the switch says "the clip is enabled"). Fellow clipping layers
+    // are skipped by the preserve-alpha source search so the whole
+    // stack clips to the one shared base below it.
+    void setClippingMask(const bool clip);
+    bool isClippingMaskLayer() const override
+    { return mClippingMask; }
+
     // Re-extract this single layer from the source PSD, replace its
     // pixels inside the package and the pixel cache, then reload the
     // texture. Keeps all animation data.
@@ -79,6 +89,7 @@ public:
 private:
     QString mSourcePackage;
     QString mSourceLayerKey;
+    bool mClippingMask = false;
 };
 
 #endif // PSDIMAGEBOX_H

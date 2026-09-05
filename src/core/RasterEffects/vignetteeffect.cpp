@@ -31,7 +31,7 @@
 #include "appsupport.h"
 
 VignetteEffect::VignetteEffect() :
-    RasterEffect("vignette",
+    RasterEffect(QObject::tr("Vignette"),
                  AppSupport::getRasterEffectHardwareSupport("Vignette",
                                                             HardwareSupport::gpuPreffered),
                  true,

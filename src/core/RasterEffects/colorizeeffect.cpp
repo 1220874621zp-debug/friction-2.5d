@@ -35,7 +35,7 @@
 #include "appsupport.h"
 
 ColorizeEffect::ColorizeEffect() :
-    RasterEffect("colorize",
+    RasterEffect(QObject::tr("Colorize"),
                  AppSupport::getRasterEffectHardwareSupport("Colorize",
                                                             HardwareSupport::gpuPreffered),
                  true,

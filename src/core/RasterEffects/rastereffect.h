@@ -117,7 +117,10 @@ enum class RasterEffectType : short {
     DISPLACEMENT_WARP,
     FILM_GRAIN,
     BLACK_WHITE_FLASH,
-    PIXEL_ART
+    PIXEL_ART,
+    // Photoshop-style layer styles container (shadow/glow/stroke);
+    // appended last, never reorder - serialized ids must stay stable
+    LAYER_STYLES
 };
 
 struct BoxRenderData;

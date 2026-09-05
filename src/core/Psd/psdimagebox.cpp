@@ -42,6 +42,7 @@
 
 #include "Animators/transformanimator.h"
 #include "Boxes/containerbox.h"
+#include "ReadWrite/evformat.h"
 #include "canvas.h"
 #include "exceptions.h"
 #include "Private/document.h"
@@ -127,11 +128,29 @@ void PsdImageBox::setPsdSource(const QString &sourcePackage,
     mSourceLayerKey = sourceLayerKey;
 }
 
+void PsdImageBox::setClippingMask(const bool clip)
+{
+    if (mClippingMask == clip) { return; }
+    mClippingMask = clip;
+    // siblings ABOVE resolve their preserve-alpha source through the
+    // stack: whether this layer is skipped changes their clip target,
+    // so every sibling's cached render must re-resolve (import/sync
+    // paths only - never called from inside render assembly)
+    const auto parent = getParentGroup();
+    if (parent) {
+        for (auto *b : parent->getContainedBoxes()) {
+            if (b) { b->planUpdate(UpdateReason::userChange); }
+        }
+    }
+    planUpdate(UpdateReason::userChange);
+}
+
 void PsdImageBox::writeBoundingBox(eWriteStream &dst) const
 {
     ImageBox::writeBoundingBox(dst);
     dst.writeFilePath(mSourcePackage);
     dst << mSourceLayerKey;
+    dst << mClippingMask;
 }
 
 void PsdImageBox::readBoundingBox(eReadStream &src)
@@ -141,6 +160,9 @@ void PsdImageBox::readBoundingBox(eReadStream &src)
     // save/load cycles (readFilePath may return a mixed '/'+'\' path)
     mSourcePackage = QDir::cleanPath(src.readFilePath());
     src >> mSourceLayerKey;
+    if (src.evFileVersion() >= EvFormat::psdClippingMask) {
+        src >> mClippingMask;
+    }
     ensureCachedFile();
 }
 
@@ -149,6 +171,9 @@ QDomElement PsdImageBox::prp_writePropertyXEV_impl(const XevExporter &exp) const
     auto result = ImageBox::prp_writePropertyXEV_impl(exp);
     result.setAttribute(QStringLiteral("psdSourcePackage"), mSourcePackage);
     result.setAttribute(QStringLiteral("psdSourceLayer"), mSourceLayerKey);
+    if (mClippingMask) {
+        result.setAttribute(QStringLiteral("psdClippingMask"), true);
+    }
     return result;
 }
 
@@ -158,6 +183,8 @@ void PsdImageBox::prp_readPropertyXEV_impl(const QDomElement &ele,
     ImageBox::prp_readPropertyXEV_impl(ele, imp);
     mSourcePackage = ele.attribute(QStringLiteral("psdSourcePackage"));
     mSourceLayerKey = ele.attribute(QStringLiteral("psdSourceLayer"));
+    mClippingMask = ele.attribute(QStringLiteral("psdClippingMask")) ==
+                    QStringLiteral("true");
     ensureCachedFile();
 }
 

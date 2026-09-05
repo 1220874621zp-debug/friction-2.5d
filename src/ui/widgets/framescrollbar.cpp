@@ -27,6 +27,7 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QMenu>
+#include <QPointer>
 
 #include "GUI/global.h"
 #include "colorhelpers.h"
@@ -56,9 +57,13 @@ FrameScrollBar::FrameScrollBar(const int minSpan,
 }
 
 qreal FrameScrollBar::posToFrame(int xPos) {
+    const qreal spanPx = qreal(width()) - 2*eSizesUI::widget;
+    // a zero/negative span (degenerate width during layout) would
+    // divide by zero and yield inf frames downstream
+    if (spanPx <= 0) { return mFrameRange.fMin; }
     return (xPos - eSizesUI::widget/2)*
             (mFrameRange.fMax - mFrameRange.fMin + (mRange ? 0 : 1) ) /
-            (qreal(width()) - 2*eSizesUI::widget) + mFrameRange.fMin;
+            spanPx + mFrameRange.fMin;
 }
 
 void FrameScrollBar::setCurrentCanvas(Canvas * const canvas)
@@ -76,7 +81,9 @@ void FrameScrollBar::paintEvent(QPaintEvent *) {
     const int dFrame = mFrameRange.fMax - mFrameRange.fMin + (mRange ? 0 : 1);
     if (dFrame <= 0) { return; }
     const qreal pixPerFrame = (width() - 2.*eSizesUI::widget)/dFrame;
-    if (pixPerFrame < 0) { return; }
+    // pixPerFrame == 0 is NOT guarded by "< 0": the label-step loop
+    // below (while iInc*pixPerFrame < ...) would spin forever
+    if (pixPerFrame < 0.001) { return; }
 
     const int f0 = -qCeil(0.5*eSizesUI::widget/pixPerFrame);
     const int minFrame = mFrameRange.fMin + f0;
@@ -109,6 +116,15 @@ void FrameScrollBar::paintEvent(QPaintEvent *) {
     const int minMod = minFrame%mDrawFrameInc;
     qreal xL = (-minMod + (mRange ? 0. : 0.5))*pixPerFrame + x0;
     int currentFrame = minFrame - minMod;
+    if (currentFrame < 0) {
+        // the timeline starts at frame 0: advance the first label to 0
+        // instead of drawing negative frame numbers (minFrame carries a
+        // left overdraw margin, and older sessions can restore viewed
+        // ranges that dip below zero)
+        const int advance = -currentFrame;
+        currentFrame += advance;
+        xL += advance*pixPerFrame;
+    }
     const qreal threeFourthsHeight = height()*0.75;
     const qreal maxX = width() + eSizesUI::widget;
 
@@ -179,9 +195,9 @@ void FrameScrollBar::paintEvent(QPaintEvent *) {
             p.drawText(rect, Qt::AlignCenter, drawValue);
         }
 
-        // draw minor
+        // draw minor (never below frame 0: no negative ruler marks)
         p.setPen(QPen(Qt::darkGray, 2));
-        for (int i = mMinFrame; i <= mMaxFrame; i += iInc) {
+        for (int i = qMax(0, mMinFrame); i <= mMaxFrame; i += iInc) {
             const qreal xTT = xT + (i - mFrameRange.fMin + 1)*pixPerFrame;
             p.drawLine(QPointF(xTT, threeFourthsHeight + 6), QPointF(xTT, height()));
         }
@@ -393,7 +409,12 @@ void FrameScrollBar::mousePressEvent(QMouseEvent *event)
                 if (mCurrentCanvas) {
                     const auto frame = mCurrentCanvas->getCurrentFrame();
                     if (mCurrentCanvas->getFrameOut().enabled) {
-                        if (frame >= mCurrentCanvas->getFrameOut().frame) { return; }
+                        if (frame >= mCurrentCanvas->getFrameOut().frame) {
+                            // refused edits must be visible, not silent
+                            emit statusMessage(tr(
+                                    "In point must be before the Out point"));
+                            return;
+                        }
                     }
                     bool apply = frame == 0 ? true : (mCurrentCanvas->getFrameIn().frame != frame);
                     mCurrentCanvas->setFrameIn(apply, frame);
@@ -402,7 +423,11 @@ void FrameScrollBar::mousePressEvent(QMouseEvent *event)
                 if (mCurrentCanvas) {
                     const auto frame = mCurrentCanvas->getCurrentFrame();
                     if (mCurrentCanvas->getFrameIn().enabled) {
-                        if (frame <= mCurrentCanvas->getFrameIn().frame) { return; }
+                        if (frame <= mCurrentCanvas->getFrameIn().frame) {
+                            emit statusMessage(tr(
+                                    "Out point must be after the In point"));
+                            return;
+                        }
                     }
                     bool apply = (mCurrentCanvas->getFrameOut().frame != frame);
                     mCurrentCanvas->setFrameOut(apply, frame);
@@ -438,6 +463,12 @@ void FrameScrollBar::mousePressEvent(QMouseEvent *event)
         mGrabbedMarker.in = hasMarkerIn;
         mGrabbedMarker.out = hasMarkerOut;
         mGrabbedMarker.frame = mLastMousePressFrame;
+        // snapshot the pre-drag state: the drag moves are undo-blocked
+        // and committed as a single undo step on mouse release
+        mDragOldIn = getFrameIn();
+        mDragOldOut = getFrameOut();
+        mDragOldMarkerFrame = qRound(mLastMousePressFrame);
+        mDragUndoValid = true;
         return;
     }
     if (mLastMousePressFrame < mFirstViewedFrame ||
@@ -479,6 +510,42 @@ void FrameScrollBar::mouseReleaseEvent(QMouseEvent *)
 {
     mPressed = false;
     if (mGrabbedMarker.enabled) { // release grabbed marker
+        // commit the whole drag as ONE undo step (moves were blocked)
+        if (mCurrentCanvas && mDragUndoValid) {
+            const QPointer<Canvas> canvasQ = mCurrentCanvas.data();
+            if (mGrabbedMarker.in) {
+                const auto oldIn = mDragOldIn;
+                const auto newIn = getFrameIn();
+                if (oldIn != newIn) {
+                    canvasQ->addUndoRedo(tr("Frame In Changed"),
+                        [canvasQ, oldIn]() {
+                            if (canvasQ) canvasQ->setFrameIn(oldIn.first, oldIn.second); },
+                        [canvasQ, newIn]() {
+                            if (canvasQ) canvasQ->setFrameIn(newIn.first, newIn.second); });
+                }
+            } else if (mGrabbedMarker.out) {
+                const auto oldOut = mDragOldOut;
+                const auto newOut = getFrameOut();
+                if (oldOut != newOut) {
+                    canvasQ->addUndoRedo(tr("Frame Out Changed"),
+                        [canvasQ, oldOut]() {
+                            if (canvasQ) canvasQ->setFrameOut(oldOut.first, oldOut.second); },
+                        [canvasQ, newOut]() {
+                            if (canvasQ) canvasQ->setFrameOut(newOut.first, newOut.second); });
+                }
+            } else {
+                const int oldFrame = mDragOldMarkerFrame;
+                const int newFrame = mGrabbedMarker.frame;
+                if (oldFrame != newFrame) {
+                    canvasQ->addUndoRedo(tr("Moved Marker"),
+                        [canvasQ, oldFrame, newFrame]() {
+                            if (canvasQ) canvasQ->moveMarkerFrame(newFrame, oldFrame); },
+                        [canvasQ, oldFrame, newFrame]() {
+                            if (canvasQ) canvasQ->moveMarkerFrame(oldFrame, newFrame); });
+                }
+            }
+        }
+        mDragUndoValid = false;
         mGrabbedMarker.enabled = false;
         mGrabbedMarker.in = false;
         mGrabbedMarker.out = false;
@@ -555,13 +622,17 @@ void FrameScrollBar::zoomViewedRange(const int &span,
     const qreal newSpan = mViewedFramesSpan;
 
     if (oldSpan == 0) {
-        mFirstViewedFrame = static_cast<int>(qRound(frame - newSpan / 2.0));
+        setFirstViewedFrame(static_cast<int>(qRound(frame - newSpan / 2.0)));
         return;
     }
 
     qreal hoverRatio = (frame - oldStartFrame) / oldSpan;
     qreal newStartFrame = frame - (hoverRatio * newSpan);
-    mFirstViewedFrame = static_cast<int>(qRound(newStartFrame));
+    // route through setFirstViewedFrame instead of assigning directly:
+    // the direct write bypassed the clamp and let the window wander off
+    // the displayed range (e.g. zooming out around a playhead near the
+    // range start pushed it below frame 0)
+    setFirstViewedFrame(static_cast<int>(qRound(newStartFrame)));
 }
 
 #ifdef Q_OS_MAC

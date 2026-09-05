@@ -27,7 +27,7 @@
 #include "Animators/qrealanimator.h"
 
 ZigZagPathEffect::ZigZagPathEffect() :
-    PathEffect("zigzag effect", PathEffectType::ZIGZAG) {
+    PathEffect(QObject::tr("ZigZag"), PathEffectType::ZIGZAG) {
     mAngle = enve::make_shared<QrealAnimator>(0, -9999, 9999, 1, "angle");
     mDistance = enve::make_shared<QrealAnimator>(10, 1, 9999, 1, "distance");
 

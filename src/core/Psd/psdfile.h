@@ -33,6 +33,8 @@
 #include <QVector>
 #include <QByteArray>
 
+#include "core_global.h"
+
 class QIODevice;
 class QDataStream;
 
@@ -58,12 +60,41 @@ namespace psd {
         qint64 dataOffset = 0;// absolute file offset of channel data
     };
 
+    // Photoshop layer styles ('lfxp') actually consumed by the
+    // importer; anything missing keeps the Photoshop defaults
+    struct LayerStyles {
+        bool hasAny = false;
+
+        bool shadowEnabled = false;
+        double shadowAngle = 120.0;    // light angle, degrees CCW
+        double shadowDistance = 5.0;   // px
+        double shadowSpread = 0.0;     // %
+        double shadowSize = 5.0;       // px (blur extent)
+        double shadowOpacity = 75.0;   // %
+        quint8 shadowR = 0, shadowG = 0, shadowB = 0;
+
+        bool glowEnabled = false;
+        double glowSpread = 0.0;       // %
+        double glowSize = 10.0;        // px
+        double glowOpacity = 75.0;     // %
+        quint8 glowR = 255, glowG = 255, glowB = 190;
+
+        bool strokeEnabled = false;
+        int strokePos = 0;             // 0 outside, 1 center, 2 inside
+        double strokeSize = 3.0;       // px
+        double strokeOpacity = 100.0;  // %
+        quint8 strokeR = 255, strokeG = 0, strokeB = 0;
+    };
+
     struct LayerRecord {
         QRect rect;
         QVector<ChannelInfo> channels;
         QString blendKey = QStringLiteral("norm");
         int opacity = 255;
         bool visible = true;
+        // Photoshop clipping flag: true = non-base layer, clipped to
+        // the base layer directly below it (PS "Create/Release Clipping Mask")
+        bool clipping = false;
         QString name;
         Divider divider = Divider::None;
         QRect maskRect;
@@ -72,9 +103,20 @@ namespace psd {
         // Photoshop native layer id ('lyid' additional layer info).
         // Stable across rename / reorder / regroup; 0 when absent.
         qint32 layerId = 0;
+        // Photoshop layer styles ('lfxp'/'lfx2'), one entry per
+        // effect instance: the first shadow/glow/stroke merge into a
+        // single entry, every additional instance (PS 2015+ allows
+        // multiple per type, stored in '*Multi' lists) becomes its
+        // own entry rendered as a stacked effect
+        QVector<LayerStyles> stylesList;
+        // lmfx (multi-instance store) is authoritative: once seen,
+        // the lfxp/lfx2 mirror of the same layer is skipped
+        bool stylesFromLmfx = false;
     };
 
-    class PsdFile {
+    // CORE_EXPORT for the effects unit-test exe (module-internal
+    // users don't need it)
+    class CORE_EXPORT PsdFile {
     public:
         // Load the layer tree (records + channel offsets).
         bool load(const QString &path, QString *error = nullptr);

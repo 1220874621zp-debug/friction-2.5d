@@ -67,7 +67,7 @@ private:
 };
 
 MotionBlurEffect::MotionBlurEffect() :
-    RasterEffect("motion blur",
+    RasterEffect(QObject::tr("Motion Blur"),
                  AppSupport::getRasterEffectHardwareSupport("MotionBlur",
                                                             HardwareSupport::gpuPreffered),
                  false,

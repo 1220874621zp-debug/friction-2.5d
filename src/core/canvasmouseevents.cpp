@@ -165,16 +165,20 @@ void Canvas::mouseMoveEvent(const eMouseEvent &e)
                 mCurrentCircle->moveRadiusesByAbs(delta);
             }
         } else if (mCurrentMode == CanvasMode::rectCreate) {
-            const QPointF anchor = mHasCreationPressPos ? mCreationPressPos : snapPosToGrid(e.fLastPressPos,
-                                                                                            e.fModifiers,
-                                                                                            false);
-            const QPointF current = snapEventPos(e, false);
-            const QPointF trans = current - anchor;
-            if (e.shiftMod()) {
-                const qreal valF = qMax(trans.x(), trans.y());
-                mCurrentRectangle->moveSizePointByAbs({valF, valF});
-            } else {
-                mCurrentRectangle->moveSizePointByAbs(trans);
+            if (!mCurrentMaskRectNodes.isEmpty()) {
+                updateMaskRectDrag(e);
+            } else if (mCurrentRectangle) {
+                const QPointF anchor = mHasCreationPressPos ? mCreationPressPos : snapPosToGrid(e.fLastPressPos,
+                                                                                                e.fModifiers,
+                                                                                                false);
+                const QPointF current = snapEventPos(e, false);
+                const QPointF trans = current - anchor;
+                if (e.shiftMod()) {
+                    const qreal valF = qMax(trans.x(), trans.y());
+                    mCurrentRectangle->moveSizePointByAbs({valF, valF});
+                } else {
+                    mCurrentRectangle->moveSizePointByAbs(trans);
+                }
             }
         }
     }
@@ -199,6 +203,15 @@ void Canvas::mouseReleaseEvent(const eMouseEvent &e)
         case CanvasMode::circleCreate:
         case CanvasMode::rectCreate:
         case CanvasMode::boneCreate:
+            // a right-click aborts an in-progress rect-mask drag
+            // without dropping the half-drawn mask on the layer
+            if (!mCurrentMaskRectNodes.isEmpty()) {
+                if (mCurrentMaskRectPath) {
+                    mCurrentMaskRectPath->removeFromParent_k();
+                }
+                mCurrentMaskRectNodes.clear();
+                mCurrentMaskRectPath.clear();
+            }
             clearSelectionAction();
             mDraftBone = nullptr;
             mChainTail = nullptr; // right-click ends the chain

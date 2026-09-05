@@ -15,7 +15,7 @@
 #include "appsupport.h"
 
 FilmGrainEffect::FilmGrainEffect() :
-    RasterEffect("filmGrain",
+    RasterEffect(QObject::tr("Film Grain"),
                  AppSupport::getRasterEffectHardwareSupport("FilmGrain",
                                                             HardwareSupport::gpuPreffered),
                  true,

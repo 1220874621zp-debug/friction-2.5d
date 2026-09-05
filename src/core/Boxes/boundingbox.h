@@ -38,6 +38,7 @@
 #include "BlendEffects/blendeffect.h"
 #include "TransformEffects/transformeffect.h"
 #include "Tasks/domeletask.h"
+#include <atomic>
 
 class Canvas;
 class BoxTargetProperty;
@@ -134,7 +135,7 @@ public:
     template <typename B, typename T>
     static void sWriteReadMember(const B* const from, B* const to, const T member);
 private:
-    static int sNextDocumentId;
+    static std::atomic<int> sNextDocumentId;
     static QList<BoundingBox*> sDocumentBoxes;
 
     static int sNextWriteId;
@@ -262,6 +263,30 @@ public:
         prp_afterWholeInfluenceRangeChanged();
     }
 
+    // AE-style mask child: SmartVectorPath in mask mode overrides to
+    // true; the parent container accumulates such children into one
+    // matte (Add = union / Subtract = erase) at composite time
+    virtual bool isMaskBox() const { return false; }
+
+    // resolved track matte (mode set AND a live target) - the render
+    // side skips the drag-time stale-bitmap transform for such layers:
+    // sliding an already-matted bitmap moves the clip region along
+    // with the content until the re-render snaps it back
+    bool hasActiveTrackMatte() const
+    { return mTrackMatteMode != 0 && mTrackMatteTarget &&
+               mTrackMatteTarget->getTarget() != nullptr; }
+
+    // matte-sample cache (track matte + preserve-alpha): holds the
+    // forced-raster external render keyed by source+frame; NEVER the
+    // box's own render cache - a preview/direct-draw item completes
+    // with a NULL image and would erase the layer at composite time.
+    // Content changes are handled by the follow connections clearing
+    // the cache (see setTrackMatteSource/setPreserveBelowSource).
+    stdsptr<BoxRenderData> freshMatteSample(BoundingBox * const matte,
+                                            const qreal relFrame);
+    BoundingBox *preserveBelowSourceFor(const qreal relFrame);
+    void setPreserveBelowSource(BoundingBox * const below);
+
     // AE-style solo: true when this box participates in drawing
     // while any sibling in the same container is soloed
     // (ContainerBox overrides to include soloed descendants)
@@ -279,6 +304,14 @@ public:
     void setPreserveAlpha(const bool preserve);
     void switchPreserveAlpha() { setPreserveAlpha(!mPreserveAlpha); }
     bool getPreserveAlpha() const { return mPreserveAlpha; }
+    // PSD clipping-mask member (PsdImageBox overrides): preserve-alpha
+    // source search skips fellow clipping layers so the whole clipped
+    // stack resolves to the single shared base below it (Photoshop
+    // semantics) instead of chaining clip-into-clip
+    virtual bool isClippingMaskLayer() const { return false; }
+    // content generation of this box; matte samplers compare it
+    // against the sample's fBoxStateId to detect staleness
+    int getBoxStateId() const { return mStateId; }
     virtual SkBlendMode getPaintBlendMode(const qreal relFrame) const;
 
     virtual qreal getOpacity(const qreal relFrame) const;
@@ -454,12 +487,21 @@ public:
     // another layer (mode 0 = off, 1 alpha, 2 alphaInv, 3 luma, 4 lumaInv)
     int getTrackMatteMode() const { return mTrackMatteMode; }
     void setTrackMatteMode(const int mode) {
-        if(mTrackMatteMode == mode) return;
-        mTrackMatteMode = mode;
+        const int clamped = qBound(0, mode, 4);
+        if(mTrackMatteMode == clamped) return;
+        mTrackMatteMode = clamped;
         prp_afterWholeInfluenceRangeChanged();
+        // image layers serve cached HDD renders and do not re-render
+        // on influence-range changes alone - force the invalidation
+        // so the new mode's caller attaches (UI-click context)
+        planUpdate(UpdateReason::userChange);
     }
     BoxTargetProperty* trackMatteTarget() const
     { return mTrackMatteTarget.get(); }
+    // UI entry point: same as setTrackMatteMode but undoable - the
+    // plain setter stays undo-free for internal healing paths (file
+    // load, dead-target cleanup) that must not pollute the undo stack
+    void setTrackMatteModeWithUndo(const int mode);
     // re-arm the live-follow connections for a new matte layer
     void setTrackMatteSource(BoundingBox * const matte);
     // whether walking the track-matte chain from this box reaches
@@ -577,7 +619,38 @@ protected:
     // target), otherwise the canvas shows a stale matte until something
     // else triggers a re-render of this layer
     ConnContextQPtr<BoundingBox> mTrackMatteSource;
+    // preserve-alpha (T): implicit alpha-matte source = the sibling
+    // directly below; kept for change-following
+    ConnContextQPtr<BoundingBox> mPreserveBelowSource;
+    // own matte-sample cache (see freshMatteSample)
+    qptr<BoundingBox> mMatteSampleSource;
+    stdsptr<BoxRenderData> mMatteSampleCache;
+    qreal mMatteSampleFrame = 0.;
+    // recursion breaker for mixed matte cycles (A track-mattes B
+    // while B preserve-alphas against A): queExternalRender runs the
+    // source's setupRenderData SYNCHRONOUSLY, a cycle would nest
+    // forever - a re-visit of a box whose setup is still on the stack
+    // skips the matte attach for that render
+    bool mInMatteAttach = false;
+    // diagnostics: last logged matte-attach message (logs on change)
+    QString mMatteDiagLastMsg;
     int mTrackMatteMode = 0; // 0 none, 1 alpha, 2 alphaInv, 3 luma, 4 lumaInv
+    // AE semantics: a layer referenced as a matte source stops drawing
+    // itself (its pixels only live inside the matte); refcounted so
+    // several targets can share one source
+    int mMatteSourceUseCount = 0;
+
+public:
+    bool usedAsTrackMatteSource() const
+    { return mMatteSourceUseCount > 0; }
+protected:
+    void matteSourceUseDelta(const int delta) {
+        const bool was = mMatteSourceUseCount > 0;
+        mMatteSourceUseCount = qMax(0, mMatteSourceUseCount + delta);
+        if((mMatteSourceUseCount > 0) != was) {
+            planUpdate(UpdateReason::userChange);
+        }
+    }
 
     // AE-style layer switches
     bool mEffectsEnabled = true;

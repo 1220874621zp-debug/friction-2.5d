@@ -30,7 +30,7 @@
 #include <QtMath>
 
 ChannelBlurEffect::ChannelBlurEffect() :
-    RasterEffect("channel blur",
+    RasterEffect(QObject::tr("Channel Blur"),
                  AppSupport::getRasterEffectHardwareSupport("Channel Blur",
                                                             HardwareSupport::gpuPreffered),
                  true,

@@ -30,7 +30,7 @@
 #include <QtMath>
 
 ColorGradingEffect::ColorGradingEffect() :
-    RasterEffect("color grading",
+    RasterEffect(QObject::tr("Color Grading"),
                  AppSupport::getRasterEffectHardwareSupport("Color Grading",
                                                             HardwareSupport::gpuPreffered),
                  true,

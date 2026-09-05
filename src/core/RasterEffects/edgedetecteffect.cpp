@@ -31,7 +31,7 @@
 #include "appsupport.h"
 
 EdgeDetectEffect::EdgeDetectEffect() :
-    RasterEffect("edge detect",
+    RasterEffect(QObject::tr("Edge Detect"),
                  AppSupport::getRasterEffectHardwareSupport("EdgeDetect",
                                                             HardwareSupport::gpuPreffered),
                  true,

@@ -29,7 +29,7 @@
 #include "appsupport.h"
 
 PixelateEffect::PixelateEffect() :
-    RasterEffect("pixelate",
+    RasterEffect(QObject::tr("Pixelate"),
                  AppSupport::getRasterEffectHardwareSupport("Pixelate",
                                                             HardwareSupport::gpuPreffered),
                  true,

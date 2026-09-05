@@ -32,7 +32,7 @@
 #include "appsupport.h"
 
 WipeEffect::WipeEffect() :
-    RasterEffect("wipe",
+    RasterEffect(QObject::tr("Wipe"),
                  AppSupport::getRasterEffectHardwareSupport("Wipe",
                                                             HardwareSupport::gpuPreffered),
                  true,

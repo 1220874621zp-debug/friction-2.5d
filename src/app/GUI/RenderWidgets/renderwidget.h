@@ -31,6 +31,7 @@
 #include <QVBoxLayout>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QPointer>
 #include "renderinstancesettings.h"
 
 class ScrollArea;
@@ -71,9 +72,17 @@ private:
     QVBoxLayout *mContLayout;
     ScrollArea *mScrollArea;
     QList<RenderInstanceWidget*> mRenderInstanceWidgets;
-    RenderInstanceSettings *mCurrentRenderedSettings;
+    // guarded: the settings are a value member of the queue widget, so
+    // deleting the widget (queue clear, right-click remove) must not
+    // leave a dereferenceable pointer behind
+    QPointer<RenderInstanceSettings> mCurrentRenderedSettings;
     QList<RenderInstanceWidget*> mAwaitingSettings;
     RenderState mState;
+    // progress bar shows 0..span instead of fMinFrame..fMaxFrame so a
+    // single-frame range does not switch QProgressBar to busy mode
+    int mProgressBase = 0;
+
+    void releaseCurrentRenderedSettings();
 
     void handleRenderState(const RenderState &state);
     void handleRenderStarted();

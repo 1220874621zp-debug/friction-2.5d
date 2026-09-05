@@ -26,7 +26,7 @@
 #include <QToolButton>
 #include <QSvgRenderer>
 #include <QStackedLayout>
-#include <QDesktopWidget>
+#include <QScreen>
 #include <QStatusBar>
 
 #include "timelinewidget.h"
@@ -274,6 +274,16 @@ TimelineWidget::TimelineWidget(Document &document,
                 scene->addSolidLayerAction();
             }
         });
+        // AE shape layer: empty vector layer that collects the shapes
+        // drawn after creating it (creating enters the layer)
+        layerMenu->addAction(tr("矢量图层"), this, [this]() {
+            const auto scroller = mBoxesListWidget ?
+                        mBoxesListWidget->getBoxScroller() : nullptr;
+            if(const auto scene = scroller ?
+                        scroller->currentScene() : nullptr) {
+                scene->addVectorLayerAction();
+            }
+        });
         layerMenu->addAction(tr("Camera"), this, [this]() {
             const auto scroller = mBoxesListWidget ?
                         mBoxesListWidget->getBoxScroller() : nullptr;
@@ -373,8 +383,11 @@ TimelineWidget::TimelineWidget(Document &document,
     mFrameScrollBar->setSizePolicy(QSizePolicy::Minimum,
                                    QSizePolicy::Preferred);
 
-    const qreal dpi = QApplication::desktop()->logicalDpiX() / 96.0;
-    mFrameScrollBar->setFixedHeight(40 * dpi);
+    // QApplication::desktop() is deprecated; the primary screen gives
+    // the same logical DPI
+    const auto screen = QApplication::primaryScreen();
+    const qreal dpi = (screen ? screen->logicalDotsPerInchX() : 96.) / 96.0;
+    mFrameScrollBar->setFixedHeight(qRound(40 * dpi));
 
 //    connect(MemoryHandler::sGetInstance(), &MemoryHandler::memoryFreed,
 //            frameScrollBar,
@@ -384,6 +397,14 @@ TimelineWidget::TimelineWidget(Document &document,
         const auto scene = mSceneChooser->getCurrentScene();
         if(scene) scene->anim_setAbsFrame(range.fMin);
         Document::sInstance->actionFinished();
+    });
+    // refused-edit hints from the ruler (e.g. in/out crossing) go to
+    // the status bar instead of failing silently
+    connect(mFrameScrollBar, &FrameScrollBar::statusMessage,
+            this, [](const QString &message) {
+        if (MainWindow::sGetInstance()->statusBar()) {
+            MainWindow::sGetInstance()->statusBar()->showMessage(message, 5000);
+        }
     });
     mMainLayout->addWidget(mFrameScrollBar, 0, 1);
 
@@ -443,7 +464,10 @@ void TimelineWidget::setCurrentScene(Canvas * const scene) {
         mFrameScrollBar->setFirstViewedFrame(scene->getCurrentFrame());
         mFrameRangeScrollBar->setFirstViewedFrame(scene->getCurrentFrame());
         const int padding = 2;
-        const FrameRange newRange = {range.fMin - padding, range.fMax + padding};
+        // pad the left edge only down to frame 0: padding below zero
+        // puts negative ruler labels next to a scene that starts at 0
+        const FrameRange newRange = {qMax(0, range.fMin - padding),
+                                     range.fMax + padding};
         setViewedFrameRange(newRange);
 
         connect(scene, &Canvas::currentFrameChanged,
@@ -689,9 +713,18 @@ void TimelineWidget::setSearchText(const QString &text) {
 }
 
 void TimelineWidget::setViewedFrameRange(const FrameRange& range) {
-    mFrameRangeScrollBar->setViewedFrameRange(range);
-    mFrameScrollBar->setDisplayedFrameRange(range);
-    mKeysView->setFramesRange(range);
+    // the timeline starts at frame 0: never let the viewed window cross
+    // into negative frames. Every navigation path funnels through here
+    // (zoom slider, wheel, overview drags, session restore), and zooming
+    // out around a playhead near 0 otherwise pushes the start negative
+    FrameRange view = range;
+    if (view.fMin < 0) {
+        view.fMax = qMax(0, view.fMax - view.fMin);
+        view.fMin = 0;
+    }
+    mFrameRangeScrollBar->setViewedFrameRange(view);
+    mFrameScrollBar->setDisplayedFrameRange(view);
+    mKeysView->setFramesRange(view);
 }
 
 void TimelineWidget::setTimelineZoomSpan(const int span) {

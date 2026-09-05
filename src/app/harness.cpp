@@ -180,6 +180,349 @@ static LONG WINAPI writeHarnessDump(EXCEPTION_POINTERS* const pep) {
     return EXCEPTION_CONTINUE_SEARCH;
 }
 
+// load a real user project and render every scene - the [MATTE]
+// diagnostics print the actual attach/skip verdicts for the saved
+// track-matte / preserve-alpha state
+static bool loadProject(Document& document, TaskScheduler& tasks,
+                        const QString& path);
+static int runLoadRender(Document& document, TaskScheduler& tasks,
+                         const QString& path) {
+    Q_UNUSED(tasks)
+    if(eSettings::sInstance) eSettings::sInstance->fPathGpuAcc = false;
+    if(!loadProject(document, tasks, path)) return 30;
+    fprintf(stderr, "[harness] LOADRENDER: loaded %d scenes\n",
+            document.fScenes.count());
+    fflush(stderr);
+    for(int i = 0; i < 40; i++) {
+        for(int j = 0; j < 25; j++) QApplication::processEvents();
+    }
+    for(int round = 0; round < 4; round++) {
+        document.updateScenes();
+        for(int i = 0; i < 300; i++) QApplication::processEvents();
+    }
+    for(const auto& scene : document.fScenes) {
+        if(!scene) continue;
+        fprintf(stderr, "[harness] LOADRENDER: scene '%s' boxes=%d\n",
+                scene->prp_getName().toLocal8Bit().constData(),
+                scene->getContainedBoxesCount());
+        fflush(stderr);
+    }
+    fprintf(stderr, "[harness] LOADRENDER done\n");
+    fflush(stderr);
+    return 0;
+}
+
+// track matte differential test: a 300x300 target rectangle matted by
+// a 100x100 rectangle must lose ~8/9 of its alpha coverage; verifies
+// the whole chain headlessly (combo-level model state -> render data
+// effect attach -> TrackMatteCaller tiles -> final image)
+static int runTrackMatteTest(Document& document, TaskScheduler& tasks) {
+    Q_UNUSED(tasks)
+    // headless: no GL context exists, GPU-preferred render tasks would
+    // park forever - force the CPU rasterization paths
+    if(eSettings::sInstance) eSettings::sInstance->fPathGpuAcc = false;
+    auto pump = []() {
+        for(int j = 0; j < 30; j++) QApplication::processEvents();
+    };
+    const auto alphaCoverage = [](const stdsptr<BoxRenderData>& rd) {
+        if(!rd || !rd->fRenderedImage) return -1;
+        const auto raster = rd->fRenderedImage->makeRasterImage();
+        if(!raster) return -1;
+        SkPixmap pm;
+        if(!raster->peekPixels(&pm)) return -1;
+        int count = 0;
+        const int n = qMin(pm.width()*pm.height(), 4 << 20);
+        const auto px = static_cast<const uint32_t*>(pm.addr32());
+        for(int i = 0; i < n; i++) {
+            if((px[i] >> 24) > 128) count++;
+        }
+        return count;
+    };
+    const auto renderAndWait = [&](BoundingBox* const box) {
+        const auto rd = box->queExternalRender(0, true);
+        for(int w = 0; w < 200; w++) {
+            pump();
+            if(rd && rd->finished()) break;
+        }
+        return rd;
+    };
+
+    const auto scene = document.createNewScene(false);
+    const auto target = enve::make_shared<RectangleBox>();
+    target->setTopLeftPos(QPointF(0, 0));
+    target->setBottomRightPos(QPointF(300, 300));
+    scene->addContained(target);
+    const auto matte = enve::make_shared<RectangleBox>();
+    matte->setTopLeftPos(QPointF(0, 0));
+    matte->setBottomRightPos(QPointF(100, 100));
+    scene->addContained(matte);
+    pump();
+
+    // GUI-order reproduction: the canvas previews the scene FIRST -
+    // both layers get DIRECT-DRAW render items (no raster image) in
+    // their handlers. Sampling those as mattes must not erase the
+    // target (the 22:38 canvas-blank regression)
+    {
+        const auto sceneRd = scene->queExternalRender(0, false);
+        for(int w = 0; w < 200; w++) {
+            pump();
+            if(sceneRd && sceneRd->finished()) break;
+        }
+        const auto cont = enve::shared(
+                    static_cast<ContainerBoxRenderData*>(sceneRd.get()));
+        fprintf(stderr, "[harness] trkmat: preview-first children=%d "
+                "finished=%d\n",
+                cont ? cont->fChildrenRenderData.count() : -1,
+                int(sceneRd && sceneRd->finished()));
+        fflush(stderr);
+    }
+
+    const auto matteRd = renderAndWait(matte.get());
+    const int matteCov = alphaCoverage(matteRd);
+    fprintf(stderr, "[harness] trkmat: matte coverage=%d finished=%d\n",
+            matteCov, int(matteRd && matteRd->finished()));
+    fflush(stderr);
+
+    const auto before = renderAndWait(target.get());
+    const int cov0 = alphaCoverage(before);
+    fprintf(stderr, "[harness] trkmat: target before coverage=%d "
+            "finished=%d img=%dx%d\n", cov0,
+            int(before && before->finished()),
+            before && before->fRenderedImage ?
+                before->fRenderedImage->width() : -1,
+            before && before->fRenderedImage ?
+                before->fRenderedImage->height() : -1);
+    fflush(stderr);
+
+    // same calls the timeline TrkMat combo makes
+    target->trackMatteTarget()->setTargetAction(matte.get());
+    target->setTrackMatteMode(1); // alpha matte
+    pump();
+
+    // AE auto-hide: the matte source must drop out of container
+    // compositing while referenced (scene render assembles only the
+    // target then)
+    {
+        const auto sceneRd = scene->queExternalRender(0, false);
+        for(int w = 0; w < 200; w++) {
+            pump();
+            if(sceneRd && sceneRd->finished()) break;
+        }
+        const auto cont = enve::shared(
+                    static_cast<ContainerBoxRenderData*>(sceneRd.get()));
+        const int nChildren = cont ?
+                    cont->fChildrenRenderData.count() : -1;
+        const bool hidden = matte->usedAsTrackMatteSource();
+        fprintf(stderr, "[harness] trkmat: auto-hide source=%d "
+                "sceneChildren=%d\n", int(hidden), nChildren);
+        fflush(stderr);
+        if(!hidden || nChildren != 1) {
+            fprintf(stderr, "[harness] TRKMAT FAIL (auto-hide)\n");
+            fflush(stderr);
+            return 21;
+        }
+    }
+
+    const auto after = renderAndWait(target.get());
+    const int cov1 = alphaCoverage(after);
+    fprintf(stderr, "[harness] trkmat: target after coverage=%d "
+            "finished=%d mode=%d\n", cov1,
+            int(after && after->finished()),
+            target->getTrackMatteMode());
+    fflush(stderr);
+
+    // z-order independence: flip the matte BELOW the target - the
+    // clip must stay identical wherever the layers sit in the stack
+    scene->moveContainedInList(matte.get(), 1);
+    pump();
+    const auto flipped = renderAndWait(target.get());
+    const int cov2 = alphaCoverage(flipped);
+    fprintf(stderr, "[harness] trkmat: z-flip coverage=%d\n", cov2);
+    fflush(stderr);
+
+    // playback simulation: render consecutive frames the way the
+    // preview pipeline does (fresh render data per frame, short pump
+    // windows so late/canceled tasks show up as missing layers)
+    for(int f = 0; f <= 12; f++) {
+        const auto rdF = target->queExternalRender(f, true);
+        const int fx = rdF ? rdF->fEffectCallers.count() : -1;
+        for(int j = 0; j < 8; j++) QApplication::processEvents();
+        const int covEarly = alphaCoverage(rdF);
+        for(int j = 0; j < 3000; j++) QApplication::processEvents();
+        const int covF = alphaCoverage(rdF);
+        fprintf(stderr, "[harness] trkmat: play f=%d fx=%d covEarly=%d "
+                "cov=%d finished=%d img=%d\n", f, fx, covEarly, covF,
+                int(rdF && rdF->finished()),
+                int(rdF && rdF->fRenderedImage != nullptr));
+        fflush(stderr);
+        if(covF <= 0) {
+            fprintf(stderr, "[harness] TRKMAT FAIL (playback drop at "
+                    "frame %d)\n", f);
+            fflush(stderr);
+            return 22;
+        }
+    }
+
+    // GUI-path render: enter the scheduler's queing window the way
+    // actionFinished does (updateScenes -> queScheduledCpuTasks ->
+    // beginQue ... scene assembly with the nested matte que ... endQue
+    // -> deferred processing). The direct queExternalRender calls above
+    // bypass this path entirely (mCpuQueing false) - a blind spot that
+    // hid the deferral regressions
+    {
+        document.updateScenes();
+        for(int w = 0; w < 3000; w++) QApplication::processEvents();
+        const auto guiRd = target->getCurrentRenderData(0);
+        const int guiCov = alphaCoverage(guiRd);
+        fprintf(stderr, "[harness] trkmat: gui-path cov=%d finished=%d\n",
+                guiCov, int(guiRd && guiRd->finished()));
+        fflush(stderr);
+        if(guiCov <= 0 || guiCov > cov0/2) {
+            fprintf(stderr, "[harness] TRKMAT FAIL (gui-path deferral "
+                    "cov=%d)\n", guiCov);
+            fflush(stderr);
+            return 24;
+        }
+    }
+
+    // the matte and target images render at their own global-rect
+    // resolutions, so compare in ratios: the matted target must keep
+    // a positive but much smaller coverage (100/300 area + AA edges)
+    const bool ok = matteCov > 0 && cov0 > 1000 &&
+                    cov1 > 0 && cov1 < cov0/2 &&
+                    cov2 > 0 && qAbs(cov2 - cov1) < qMax(4, cov1/4);
+    fprintf(stderr, "[harness] TRKMAT %s (cov0=%d cov1=%d matte=%d "
+            "ratio=%.2f zflip=%d)\n",
+            ok ? "PASS" : "FAIL", cov0, cov1, matteCov,
+            cov0 > 0 ? double(cov1)/double(cov0) : -1., cov2);
+    fflush(stderr);
+    if(!ok) return 20;
+
+    // preserve-alpha (T): clips ONLY against the sibling directly
+    // below, never the accumulated stack. Arrangement top->bottom:
+    // [pT (preserve), below (150x150 bottom-right quadrant), bottom
+    // (150x150 top-left quadrant)] - next-layer rule clips to ~1/4 of
+    // the target, the old SrcATop rule would have taken ~1/2.
+    // Preview-first again (direct-draw items) to match the GUI flow.
+    {
+        const auto pT = enve::make_shared<RectangleBox>();
+        pT->setTopLeftPos(QPointF(0, 0));
+        pT->setBottomRightPos(QPointF(300, 300));
+        const auto below = enve::make_shared<RectangleBox>();
+        below->setTopLeftPos(QPointF(150, 150));
+        below->setBottomRightPos(QPointF(300, 300));
+        const auto bottom = enve::make_shared<RectangleBox>();
+        bottom->setTopLeftPos(QPointF(0, 0));
+        bottom->setBottomRightPos(QPointF(150, 150));
+        scene->addContained(bottom);
+        scene->addContained(below);
+        scene->addContained(pT);
+        pump();
+        {
+            const auto sceneRd = scene->queExternalRender(0, false);
+            for(int w = 0; w < 200; w++) {
+                pump();
+                if(sceneRd && sceneRd->finished()) break;
+            }
+        }
+        const auto plain = renderAndWait(pT.get());
+        const int full = alphaCoverage(plain);
+        pT->setPreserveAlpha(true);
+        pump();
+        const auto prd = renderAndWait(pT.get());
+        const int pcov = alphaCoverage(prd);
+        const double pratio = full > 0 ? double(pcov)/double(full) : -1.;
+        fprintf(stderr, "[harness] trkmat: preserve full=%d clipped=%d "
+                "ratio=%.2f\n", full, pcov, pratio);
+        fflush(stderr);
+        if(!(pcov > 0 && pratio > 0.10 && pratio < 0.38)) {
+            fprintf(stderr, "[harness] TRKMAT FAIL (preserve-next-layer "
+                    "ratio=%.2f)\n", pratio);
+            fflush(stderr);
+            return 23;
+        }
+    }
+
+    // mixed matte cycle: A (top, preserve-alpha, next-below = B) while
+    // B track-mattes back to A - queExternalRender recursion must be
+    // broken by mInMatteAttach instead of overflowing the stack (the
+    // crash-on-T-click regression)
+    {
+        const auto cycA = enve::make_shared<RectangleBox>();
+        cycA->setTopLeftPos(QPointF(0, 0));
+        cycA->setBottomRightPos(QPointF(200, 200));
+        const auto cycB = enve::make_shared<RectangleBox>();
+        cycB->setTopLeftPos(QPointF(0, 0));
+        cycB->setBottomRightPos(QPointF(100, 100));
+        scene->addContained(cycB);
+        scene->addContained(cycA);
+        pump();
+        cycA->setPreserveAlpha(true);        // A clips against B (below)
+        cycB->trackMatteTarget()->setTargetAction(cycA.get()); // B matted by A
+        cycB->setTrackMatteMode(1);
+        pump();
+        // both direct renders and a scene assembly must survive
+        renderAndWait(cycA.get());
+        renderAndWait(cycB.get());
+        {
+            const auto sceneRd = scene->queExternalRender(0, false);
+            for(int w = 0; w < 200; w++) {
+                pump();
+                if(sceneRd && sceneRd->finished()) break;
+            }
+        }
+        fprintf(stderr, "[harness] trkmat: mixed-cycle survived\n");
+        fflush(stderr);
+    }
+
+    // synthetic "遮罩.friction": mirror the user's saved project shape -
+    // image inside a mask-host layer group, rect matte, preserve-alpha
+    // toggles, visibility flips, GUI-path renders - and check the
+    // matte attach verdicts and outcomes
+    {
+        const auto simImg = enve::make_shared<RectangleBox>();
+        simImg->setTopLeftPos(QPointF(0, 0));
+        simImg->setBottomRightPos(QPointF(280, 280));
+        scene->addContained(simImg);
+        const auto simRect = enve::make_shared<RectangleBox>();
+        simRect->setTopLeftPos(QPointF(40, 40));
+        simRect->setBottomRightPos(QPointF(200, 200));
+        scene->addContained(simRect);
+        pump();
+        // trkmat: the RECT is matted by the image (mask blend shape
+        // mimics saved mask layers living in the stack)
+        simImg->setBlendModeSk(SkBlendMode::kDstIn);
+        simImg->prp_setName(QStringLiteral("蒙版层sim"));
+        pump();
+        // trkmat: the RECT is matted by the (masked) image
+        simRect->trackMatteTarget()->setTargetAction(simImg.get());
+        simRect->setTrackMatteMode(1);
+        pump();
+        // user-like cycles: DIRECT scene assembly (updateScenes is a
+        // no-op headless - fVisibleScenes stays empty without the
+        // layout machinery, queScheduledCpuTasks gates on it) + eye
+        // toggles
+        for(int round = 0; round < 2; round++) {
+            scene->queTasks();
+            for(int i = 0; i < 300; i++) QApplication::processEvents();
+        }
+        simRect->switchVisible(); pump();
+        scene->queTasks();
+        for(int i = 0; i < 300; i++) QApplication::processEvents();
+        simRect->switchVisible(); pump();
+        // preserve on the rect: below is now... the mask-run content
+        simRect->setPreserveAlpha(true);
+        scene->queTasks();
+        for(int i = 0; i < 300; i++) QApplication::processEvents();
+        fprintf(stderr, "[harness] trkmat: maskproj simulation done\n");
+        fflush(stderr);
+    }
+
+    fprintf(stderr, "[harness] TRKMAT PASS2\n");
+    fflush(stderr);
+    return 0;
+}
+
 // core part of MainWindow::loadEVFile minus dialogs/layout/render widget
 static bool loadProject(Document& document, TaskScheduler& tasks,
                         const QString& path) {
@@ -536,6 +879,31 @@ int main(int argc, char *argv[]) {
         MemoryHandler memoryHandler;
         eFilterSettings filterSettings;
         return runBindTest(document, taskScheduler);
+    }
+    if(!args.isEmpty() && args.first() == "--trkmat") {
+        eSettings settings(HardwareInfo::sCpuThreads(),
+                           HardwareInfo::sRamKB());
+        ImportHandler importHandler;
+        TaskScheduler taskScheduler;
+        Document document(taskScheduler);
+        FilesHandler filesHandler;
+        MemoryHandler memoryHandler;
+        eFilterSettings filterSettings;
+        // Canvas::queTasks dereferences Actions::sInstance
+        Actions actions(document);
+        return runTrackMatteTest(document, taskScheduler);
+    }
+    if(!args.isEmpty() && args.first() == "--loadrender") {
+        eSettings settings(HardwareInfo::sCpuThreads(),
+                           HardwareInfo::sRamKB());
+        ImportHandler importHandler;
+        TaskScheduler taskScheduler;
+        Document document(taskScheduler);
+        FilesHandler filesHandler;
+        MemoryHandler memoryHandler;
+        eFilterSettings filterSettings;
+        return runLoadRender(document, taskScheduler,
+                             args.count() > 1 ? args.at(1) : QString());
     }
     if(!args.isEmpty() && args.first() == "--aidepth") {
         eSettings settings(HardwareInfo::sCpuThreads(),

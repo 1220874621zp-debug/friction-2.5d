@@ -492,6 +492,7 @@ QByteArray metaToJson(const Meta &meta)
         o.insert(QStringLiteral("hash"), l.hash);
         o.insert(QStringLiteral("opacity"), l.opacity);
         o.insert(QStringLiteral("visible"), l.visible);
+        o.insert(QStringLiteral("clipping"), l.clipping);
         o.insert(QStringLiteral("blendKey"), l.blendKey);
         layers.append(o);
     }
@@ -524,6 +525,8 @@ bool metaFromJson(const QByteArray &json, Meta *meta)
         l.hash = o.value(QStringLiteral("hash")).toString();
         l.opacity = o.value(QStringLiteral("opacity")).toInt();
         l.visible = o.value(QStringLiteral("visible")).toBool();
+        // packages written before the clipping import lack the field
+        l.clipping = o.value(QStringLiteral("clipping")).toBool(false);
         l.blendKey = o.value(QStringLiteral("blendKey")).toString();
         meta->layers.append(l);
     }

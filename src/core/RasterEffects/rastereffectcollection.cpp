@@ -239,6 +239,8 @@ qsptr<RasterEffect> createRasterEffectForNonCustomType(const RasterEffectType ty
             return enve::make_shared<LiquidGlassEffect>();
         case(RasterEffectType::PIXEL_ART):
             return enve::make_shared<PixelArtEffect>();
+        case(RasterEffectType::LAYER_STYLES):
+            return enve::make_shared<LayerStylesEffect>();
         case(RasterEffectType::CHROMA_KEY):
             return enve::make_shared<ChromaKeyEffect>();
         default: return nullptr;

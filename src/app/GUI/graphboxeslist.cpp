@@ -52,11 +52,11 @@ bool KeysView::graphIsSelected(GraphAnimator * const anim) {
     return false;
 }
 
-void KeysView::graphEasingAction(const QString &easing)
+bool KeysView::graphEasingAction(const QString &easing)
 {
     if (mSelectedKeysAnimators.isEmpty() && mGraphAnimators.isEmpty()) {
         emit statusMessage(tr("Select at least two keyframes to apply easing"));
-        return;
+        return false;
     }
     bool applied = false;
     if (mGraphViewed) {
@@ -105,7 +105,14 @@ void KeysView::graphEasingAction(const QString &easing)
     }
     if (!applied) {
         emit statusMessage(tr("Select at least two keyframes to apply easing"));
+        return false;
     }
+    // a single undo collection for the whole click: baking position
+    // touches both the X and Y animators (and multi-selection touches
+    // even more), so finishing the action per-animator used to scatter
+    // one click across several undo steps
+    Document::sInstance->actionFinished();
+    return true;
 }
 
 void KeysView::graphEasingApply(QrealAnimator *anim,
@@ -127,15 +134,16 @@ bool KeysView::graphEasingApplyExpression(QrealAnimator *anim,
                                           const QString &easing)
 {
     if (!anim || easing.isEmpty()) { return false; }
-    qDebug() << "graphEasingApplyExpression" << anim->prp_getName() << range.fMin << range.fMax << easing;
 
     const auto preset = eSettings::sInstance->fExpressions.getExpr(easing);
     if (!preset.valid || !preset.enabled) { return false; }
     QString script = preset.script;
+    // 'g'/17 keeps full double precision; the default 6 significant
+    // digits truncated large coordinates baked into the script
     script.replace("__START_VALUE__",
-                   QString::number(anim->getBaseValue(range.fMin)));
+                   QString::number(anim->getBaseValue(range.fMin), 'g', 17));
     script.replace("__END_VALUE__",
-                   QString::number(anim->getBaseValue(range.fMax)));
+                   QString::number(anim->getBaseValue(range.fMax), 'g', 17));
     script.replace("__START_FRAME__",
                    QString::number(range.fMin));
     script.replace("__END_FRAME__",
@@ -143,17 +151,26 @@ bool KeysView::graphEasingApplyExpression(QrealAnimator *anim,
 
     PropertyBindingMap bindings;
     try { bindings = PropertyBindingParser::parseBindings(preset.bindings, nullptr, anim); }
-    catch (const std::exception& e) { return false; }
+    catch (const std::exception& e) {
+        qWarning() << "easing bindings parse failed" << easing << e.what();
+        return false;
+    }
 
     auto engine = std::make_unique<QJSEngine>();
     try { Expression::sAddDefinitionsTo(preset.definitions, *engine); }
-    catch (const std::exception& e) { return false; }
+    catch (const std::exception& e) {
+        qWarning() << "easing definitions invalid" << easing << e.what();
+        return false;
+    }
 
     QJSValue eEvaluate;
     try {
         Expression::sAddScriptTo(script, bindings, *engine, eEvaluate,
                                  Expression::sQrealAnimatorTester);
-    } catch(const std::exception& e) { return false; }
+    } catch(const std::exception& e) {
+        qWarning() << "easing script invalid" << easing << e.what();
+        return false;
+    }
 
     // snapshot before the bake: if the scene cache is still fresh, the
     // bake is the only unaccounted edit and only its frames need to be
@@ -200,8 +217,16 @@ bool KeysView::graphEasingApplyExpression(QrealAnimator *anim,
             scene->getSceneFramesHandler().remove(absDirty);
             scene->setCacheGen(scene->effectiveContentGen());
         }
-        Document::sInstance->actionFinished();
-    } catch (const std::exception& e) { return false; }
+        // note: the action is finished once per click by
+        // graphEasingAction, not here, so all baked animators
+        // of one click share a single undo collection
+    } catch (const std::exception& e) {
+        qWarning() << "easing bake failed" << anim->prp_getName() << e.what();
+        // detach the temporary sampling expression so a failure can
+        // never leave the animator silently driven by it
+        anim->setExpressionEasingAction(nullptr, dirtyRange);
+        return false;
+    }
 
     return true;
 }

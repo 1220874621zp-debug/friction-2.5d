@@ -48,6 +48,7 @@
 #include "exceptions.h"
 #include "Boxes/containerbox.h"
 #include "Boxes/imagebox.h"
+#include "RasterEffects/layerstyleseffect.h"
 #include "Animators/transformanimator.h"
 
 namespace {
@@ -124,6 +125,7 @@ QString resolvePackagePath(const QFileInfo &psdInfo)
 // lambdas do not provide - function pointers map cleanly)
 struct PsdDecodedLayer {
     Fpsd::LayerMeta lm;
+    QVector<psd::LayerStyles> stylesList;
     QByteArray png;
     bool ok = false;
 };
@@ -150,7 +152,9 @@ PsdDecodedLayer decodeLayerTask(const PsdDecodeCtx &ctx)
     out.lm.hash = ctx.psd->rawLayerHash(rec);
     out.lm.opacity = rec.opacity;
     out.lm.visible = rec.visible;
+    out.lm.clipping = rec.clipping;
     out.lm.blendKey = rec.blendKey;
+    out.stylesList = rec.stylesList;
     const QByteArray rgba = ctx.psd->extractLayerRGBA(rec);
     if (!rgba.isEmpty()) {
         out.png = Fpsd::rgbaToPng(rgba, out.lm.w, out.lm.h);
@@ -225,10 +229,26 @@ QString layerKeyForRecord(const psd::LayerRecord &rec)
     return QStringLiteral("fb%1").arg(rec.index);
 }
 
+// Photoshop layer styles from 'lfxp': one combined effect per layer,
+// applied at box creation (styles are import-time facts, later syncs
+// never touch them)
+void applyLayerStyles(BoundingBox * const box, const psd::LayerStyles &st)
+{
+    if (!box || !st.hasAny) { return; }
+    const auto eff = enve::make_shared<LayerStylesEffect>();
+    eff->setShadow(st.shadowEnabled, st.shadowAngle, st.shadowDistance,
+                   st.shadowSpread, st.shadowSize, st.shadowOpacity,
+                   QColor(st.shadowR, st.shadowG, st.shadowB));
+    eff->setGlow(st.glowEnabled, st.glowSpread, st.glowSize, st.glowOpacity,
+                 QColor(st.glowR, st.glowG, st.glowB));
+    eff->setStroke(st.strokeEnabled, st.strokePos, st.strokeSize,
+                   st.strokeOpacity, QColor(st.strokeR, st.strokeG, st.strokeB));
+    box->addRasterEffect(eff);
+}
+
 qsptr<PsdImageBox> createLayerBox(const QString &packagePath,
                                   const QString &cachePath,
-                                  const Fpsd::LayerMeta &lm)
-{
+                                  const Fpsd::LayerMeta &lm){
     const auto box = enve::make_shared<PsdImageBox>(cachePath,
                                                     packagePath, lm.key);
     if (!lm.name.isEmpty()) { box->prp_setName(lm.name); }
@@ -237,6 +257,13 @@ qsptr<PsdImageBox> createLayerBox(const QString &packagePath,
     trans->setOpacity(qBound(0., lm.opacity / 2.55, 100.));
     box->setBlendModeSk(psdBlendToSk(lm.blendKey));
     if (!lm.visible) { box->hide(); }
+    // psd clipping layer sits directly above its base in the stacking
+    // order (file order is preserved by loadPSDFile), which is exactly
+    // the "layer directly below" the preserve-transparency switch samples
+    if (lm.clipping) {
+        box->setClippingMask(true);
+        box->setPreserveAlpha(true);
+    }
     box->planCenterPivotPosition();
     trans->translate(lm.x, lm.y);
     return box;
@@ -300,7 +327,10 @@ int updateLayerPixels(const psd::PsdFile &psd,
             if (!rec->name.isEmpty()) { lm->name = rec->name; }
             lm->opacity = rec->opacity;
             lm->visible = rec->visible;
+            lm->clipping = rec->clipping;
             lm->blendKey = rec->blendKey;
+            box->setClippingMask(rec->clipping);
+            box->setPreserveAlpha(rec->clipping);
         }
         return 0;
     }
@@ -338,7 +368,10 @@ int updateLayerPixels(const psd::PsdFile &psd,
             if (!rec->name.isEmpty()) { lm->name = rec->name; }
             lm->opacity = rec->opacity;
             lm->visible = rec->visible;
+            lm->clipping = rec->clipping;
             lm->blendKey = rec->blendKey;
+            box->setClippingMask(rec->clipping);
+            box->setPreserveAlpha(rec->clipping);
         }
     } else {
         Fpsd::LayerMeta nlm;
@@ -352,6 +385,7 @@ int updateLayerPixels(const psd::PsdFile &psd,
         nlm.hash = rawHash;
         nlm.opacity = rec ? rec->opacity : 255;
         nlm.visible = rec ? rec->visible : true;
+        nlm.clipping = rec ? rec->clipping : false;
         nlm.blendKey = rec ? rec->blendKey : QStringLiteral("norm");
         meta.layers.append(nlm);
     }
@@ -448,6 +482,9 @@ qsptr<BoundingBox> loadPSDFile(
 
         const auto imgBox = PsdSync::createLayerBox(packagePath,
                                                     cachePath, out.lm);
+        for (const auto& st : out.stylesList) {
+            PsdSync::applyLayerStyles(imgBox.get(), st);
+        }
         imagesCreated++;
         root->addContained(imgBox);
         // apply the name AFTER addContained: insertContained() runs the
