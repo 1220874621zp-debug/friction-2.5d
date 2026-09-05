@@ -40,6 +40,7 @@
 #include <QTimer>
 #include <QSvgRenderer>
 #include <QFile>
+#include <QApplication>
 
 #include <functional>
 
@@ -112,6 +113,32 @@ QIcon svgLoopIcon(const QString& qrcPath)
         result.addPixmap(pm);
     }
     return result;
+}
+
+// qrc SVG toolbar icon rendered AT the device pixel ratio: a plain
+// 64x64 dpr=1 pixmap is upscaled 2x on 200% displays and looks blurry,
+// so render 64*dpr physical px and tag the pixmap with the dpr.
+// NOTE: QPainter on a QPixmap always works in PHYSICAL pixels
+// (setDevicePixelRatio does not rescale the painter), so the render
+// rect must be multiplied by dpr or the glyph lands in the top-left
+// quarter only
+QPixmap svgToolbarPixmap(const QString& qrcPath, const int inset = 4)
+{
+    const int base = 64;
+    const qreal dpr = qApp ? qApp->devicePixelRatio() : 1.;
+    QPixmap pm(QSize(base, base) * dpr);
+    pm.fill(Qt::transparent);
+    QSvgRenderer renderer(qrcPath);
+    if (renderer.isValid()) {
+        QPainter p(&pm);
+        p.setRenderHint(QPainter::Antialiasing);
+        const qreal o = inset * dpr;
+        const qreal s = (base - 2 * inset) * dpr;
+        renderer.render(&p, QRectF(o, o, s, s));
+        p.end();
+    }
+    pm.setDevicePixelRatio(dpr);
+    return pm;
 }
 }
 
@@ -226,15 +253,10 @@ TimelineDockWidget::TimelineDockWidget(Document& document,
 
     // snapshot: quick PNG export of the current canvas frame
     {
-        QPixmap pm(64, 64);
-        pm.fill(Qt::transparent);
-        QPainter g(&pm);
-        g.setRenderHint(QPainter::Antialiasing);
-        QSvgRenderer renderer(
-                    QStringLiteral(":/icons/camera_tool.svg"));
-        renderer.render(&g, QRectF(0, 0, 64, 64));
-        g.end();
-        // white version (toolbar icon convention)
+        QPixmap pm = svgToolbarPixmap(
+                    QStringLiteral(":/icons/camera_tool.svg"), 0);
+        // white version (toolbar icon convention); painter on a
+        // pixmap works in physical px so pm.rect() is correct here
         QPainter w(&pm);
         w.setCompositionMode(QPainter::CompositionMode_SourceIn);
         w.fillRect(pm.rect(), Qt::white);
@@ -279,17 +301,13 @@ TimelineDockWidget::TimelineDockWidget(Document& document,
         // scene camera) - user-supplied SVG icon, next to the
         // safe-frames toggle
         {
-            QPixmap tpv(64, 64);
-            tpv.fill(Qt::transparent);
-            QSvgRenderer renderer(QStringLiteral(":/icons/top_view.svg"));
-            if (renderer.isValid()) {
-                QPainter tp(&tpv);
-                tp.setRenderHint(QPainter::Antialiasing);
-                renderer.render(&tp, QRectF(4, 4, 56, 56));
-                tp.end();
-            }
-            mTopViewButton = new QAction(tpv, tr("顶视图"), this);
+            mTopViewButton = new QAction(
+                        svgToolbarPixmap(QStringLiteral(":/icons/top_view.svg")),
+                        tr("顶视图"), this);
         }
+        // checkable so the toolbar reflects the window open/closed
+        // state (kept in sync by MainWindow::open/closedTopViewWindow)
+        mTopViewButton->setCheckable(true);
         mTopViewButton->setToolTip(tr(
                 "打开/关闭顶视图窗口：X/Z 正交视图，显示摄像机位置与视野，"
                 "可直接拖动 3D 图层调整深度（同视图菜单 Top View Window）"));
@@ -302,16 +320,9 @@ TimelineDockWidget::TimelineDockWidget(Document& document,
         // view menu "Clip to Scene" (shortcut C), surfaced as a button
         // next to the safe-frames toggle (user-supplied SVG icon)
         {
-            QSvgRenderer renderer(
-                        QStringLiteral(":/icons/clip_canvas.svg"));
-            QPixmap cm(64, 64);
-            cm.fill(Qt::transparent);
-            if (renderer.isValid()) {
-                QPainter cp(&cm);
-                renderer.render(&cp, QRectF(4, 4, 56, 56));
-                cp.end();
-            }
-            mClipCanvasButton = new QAction(cm, tr("遮蔽画布外"), this);
+            mClipCanvasButton = new QAction(
+                        svgToolbarPixmap(QStringLiteral(":/icons/clip_canvas.svg")),
+                        tr("遮蔽画布外"), this);
         }
         mClipCanvasButton->setCheckable(true);
         mClipCanvasButton->setToolTip(tr(
@@ -323,17 +334,10 @@ TimelineDockWidget::TimelineDockWidget(Document& document,
         });
 
         // canvas rulers toggle (viewport overlay strips), user SVG icon
-        QPixmap rl(64, 64);
-        rl.fill(Qt::transparent);
-        {
-            QSvgRenderer rr(QStringLiteral(":/icons/canvas_rulers.svg"));
-            if (rr.isValid()) {
-                QPainter rp(&rl);
-                rr.render(&rp, QRectF(6, 6, 52, 52));
-                rp.end();
-            }
-        }
-        mRulersButton = new QAction(rl, tr("画布标尺"), this);
+        mRulersButton = new QAction(
+                    svgToolbarPixmap(QStringLiteral(":/icons/canvas_rulers.svg"),
+                                     6),
+                    tr("画布标尺"), this);
         mRulersButton->setCheckable(true);
         mRulersButton->setChecked(AppSupport::getSettings(
                     QStringLiteral("view"), QStringLiteral("rulers"),
@@ -1003,6 +1007,13 @@ void TimelineDockWidget::spaceToggle()
                    << "activeScene="
                    << (*mDocument.fActiveScene ? "yes" : "null");
     }
+}
+
+void TimelineDockWidget::setTopViewButtonChecked(const bool checked)
+{
+    // setChecked does not emit triggered, so no feedback loop with
+    // the toggle slot
+    if (mTopViewButton) { mTopViewButton->setChecked(checked); }
 }
 
 bool TimelineDockWidget::processKeyPress(QKeyEvent *event)

@@ -537,6 +537,7 @@ void MainWindow::openTopViewWindow()
         connect(mTopViewWindow, &Window::closed,
                 this, [this]() { closedTopViewWindow(); });
         if (mViewTopViewAct) { mViewTopViewAct->setChecked(true); }
+        if (mTimeline) { mTimeline->setTopViewButtonChecked(true); }
     }
     mTopViewWindow->focusWindow();
 }
@@ -545,13 +546,17 @@ void MainWindow::closedTopViewWindow()
 {
     if (mShutdown) { return; }
     // cheap to rebuild - drop the window AND the GL widget so no
-    // context lingers (the widget dies as the window's child)
+    // context lingers (the widget dies as the window's child); finish
+    // any in-progress drag here while Document is guaranteed alive
+    // (the destructor alone would skip the actionFinished epilogue)
+    if (mTopViewWidget) { mTopViewWidget->finishDrags(); }
     if (mTopViewWindow) {
         mTopViewWindow->deleteLater();
         mTopViewWindow = nullptr;
     }
     mTopViewWidget = nullptr;
     if (mViewTopViewAct) { mViewTopViewAct->setChecked(false); }
+    if (mTimeline) { mTimeline->setTopViewButtonChecked(false); }
 }
 
 void MainWindow::toggleTopViewWindow()

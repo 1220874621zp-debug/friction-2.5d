@@ -81,6 +81,9 @@ public:
     QSize sizeHint() const override { return QSize(600, 300); }
 
     bool processKeyPress(QKeyEvent *event);
+    // keeps the checkable top-view toolbar button in sync with the
+    // floating window open/closed state (called by MainWindow)
+    void setTopViewButtonChecked(const bool checked);
     void previewFinished();
     void previewBeingPlayed();
     void previewBeingRendered();

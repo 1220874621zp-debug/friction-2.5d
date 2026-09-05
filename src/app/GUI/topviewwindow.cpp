@@ -1,5 +1,7 @@
 #include "topviewwindow.h"
 
+#include <cmath>
+
 #include <QMatrix>
 #include <QMouseEvent>
 #include <QWheelEvent>
@@ -34,6 +36,13 @@ constexpr SkColor kTextMain     = SkColorSetARGB(255, 205, 205, 205);
 constexpr SkColor kTextDim      = SkColorSetARGB(165, 150, 150, 155);
 constexpr SkColor kTextHint     = SkColorSetARGB(120, 140, 140, 148);
 constexpr SkColor kCenterDot    = SkColorSetARGB(230, 210, 210, 215);
+
+// view transform survives a window close/reopen cycle (the widget is
+// rebuilt each time, but the user's pan/zoom should persist while the
+// same scene is active)
+QMatrix sSavedViewXform;
+QPointer<Canvas> sSavedViewScene;
+bool sHasSavedView = false;
 }
 
 TopViewWindow::TopViewWindow(Document& document,
@@ -49,22 +58,57 @@ TopViewWindow::TopViewWindow(Document& document,
 
     connect(&mDocument, &Document::activeSceneSet,
             this, [this](Canvas* const scene) { setScene(scene); });
-    setScene(*mDocument.fActiveScene);
+    Canvas* const scene = *mDocument.fActiveScene;
+    setScene(scene);
+    // restore the previous instance's view if the scene is unchanged
+    if (scene && sHasSavedView && sSavedViewScene == scene) {
+        mViewTransform = sSavedViewXform;
+        mNeedsFit = false;
+    }
+}
+
+TopViewWindow::~TopViewWindow()
+{
+    // never leave an open transform session behind (undo stack
+    // corruption) if the widget dies mid-drag; sessions-only because
+    // during global shutdown Document::sInstance may dangle, so the
+    // finishDrags() epilogue is unsafe here - MainWindow calls
+    // finishDrags() explicitly on the normal window-close path
+    finishDragSessions();
+    if (mScene) {
+        sSavedViewXform = mViewTransform;
+        sSavedViewScene = static_cast<Canvas*>(mScene);
+        sHasSavedView = true;
+    }
 }
 
 void TopViewWindow::setScene(Canvas* const scene)
 {
     if (mScene == scene) { return; }
+    // a drag in progress belongs to the OLD scene - close its
+    // transform session before dropping the scene pointer, otherwise
+    // the animators stay in prp_startTransform state forever
+    finishDrags();
     auto& conn = mScene.assign(scene);
     if (mScene) {
         conn << connect(mScene, &Canvas::requestUpdate,
                         this, qOverload<>(&TopViewWindow::update));
         conn << connect(mScene, &Canvas::destroyed,
-                        this, [this]() { setScene(nullptr); });
+                        this, [this]() {
+            // QObject::destroyed fires AFTER the Canvas/animator
+            // members are gone - no transform session can be finished
+            // anymore, just drop the local drag state; setScene then
+            // sees DragType::none and skips the finish epilogue
+            mDragType = DragType::none;
+            mDragBox.clear();
+            setScene(nullptr);
+        });
     }
     mNeedsFit = true;
-    mDragType = DragType::none;
-    mDragBox.clear();
+    // drop cached hit-test data of the previous scene
+    mFootprints.clear();
+    mPose = CamPose();
+    mHoverIndex = -1;
     update();
 }
 
@@ -91,12 +135,15 @@ void TopViewWindow::fitToContent()
         x1 = qMax(x1, fp.fXMax + W * 0.02);
         z1 = qMax(z1, fp.fZ + H * 0.35);
     }
-    const qreal w = x1 - x0;
-    const qreal h = z1 - z0;
+    const qreal w = qMax(1., x1 - x0);
+    const qreal h = qMax(1., z1 - z0);
     const qreal pr = devicePixelRatioF();
-    const qreal sw = width() * pr;
-    const qreal sh = height() * pr;
+    const qreal sw = qMax(1., width() * pr);
+    const qreal sh = qMax(1., height() * pr);
     const qreal s = qMin(sw / w, sh / h) * 0.88;
+    // a zero-size scene or widget would poison the view matrix with
+    // inf/NaN - keep the old transform instead of breaking painting
+    if (!std::isfinite(s) || s <= 0.) { return; }
     // the screen-down axis is NEGATIVE z (viewer/camera side at the
     // bottom, depth at the top), like looking at the scene from
     // behind the camera: layers above, camera below, view up
@@ -239,7 +286,9 @@ QPointF TopViewWindow::toDevice(const QPointF& logical) const
 
 QPointF TopViewWindow::mapToTopWorld(const QPointF& device) const
 {
-    return mViewTransform.inverted().map(device);
+    bool invertible = false;
+    const QMatrix inv = mViewTransform.inverted(&invertible);
+    return invertible ? inv.map(device) : QPointF();
 }
 
 QPointF TopViewWindow::mapToDevice(const QPointF& topWorld) const
@@ -253,7 +302,7 @@ int TopViewWindow::hitLayer(const QPointF& device) const
     const qreal tol = 8. * pr;
     for (int i = mFootprints.count() - 1; i >= 0; i--) {
         const auto& fp = mFootprints.at(i);
-        if (!fp.fIs3D) { continue; }
+        if (!fp.fIs3D || !fp.fBox) { continue; }
         const QPointF a = mapToDevice(QPointF(fp.fXMin, fp.fZ));
         const QPointF b = mapToDevice(QPointF(fp.fXMax, fp.fZ));
         const QPointF ab = b - a;
@@ -322,7 +371,7 @@ void TopViewWindow::startLayerDrag(const Footprint& fp)
     adv->start3DZTransform();
 }
 
-void TopViewWindow::finishDrags()
+void TopViewWindow::finishDragSessions()
 {
     if (mDragType == DragType::layer) {
         auto* const box = mDragBox.data();
@@ -346,6 +395,13 @@ void TopViewWindow::finishDrags()
     }
     mDragType = DragType::none;
     mDragBox.clear();
+}
+
+void TopViewWindow::finishDrags()
+{
+    // no-op unless a drag actually opened a transform session
+    if (mDragType == DragType::none) { return; }
+    finishDragSessions();
     setCursor(Qt::ArrowCursor);
     if (Document::sInstance) { Document::sInstance->actionFinished(); }
     update();
@@ -353,11 +409,13 @@ void TopViewWindow::finishDrags()
 
 SkFont TopViewWindow::hudFont(const qreal size) const
 {
-    SkFont font;
     // CJK-capable face so layer/scene names render (skia's default
-    // typeface has no Chinese glyphs on Windows)
-    font.setTypeface(SkTypeface::MakeFromName(
-                         "Microsoft YaHei", SkFontStyle::Normal()));
+    // typeface has no Chinese glyphs on Windows); cached - creating a
+    // typeface per call would cost several lookups per frame
+    static const sk_sp<SkTypeface> sFace = SkTypeface::MakeFromName(
+                "Microsoft YaHei", SkFontStyle::Normal());
+    SkFont font;
+    font.setTypeface(sFace);
     font.setSize(SkScalar(size * devicePixelRatioF()));
     return font;
 }
@@ -374,7 +432,8 @@ void TopViewWindow::renderSk(SkCanvas* const canvas)
 
     if (!mScene) {
         const auto font = hudFont(12);
-        const auto txt = QString::fromUtf8("无活动场景").toStdString();
+        const auto txt = QStringLiteral(
+                    "\u65E0\u6D3B\u52A8\u573A\u666F").toStdString();
         SkPaint tp;
         tp.setColor(kTextDim);
         const auto tw = font.measureText(txt.c_str(), txt.size(),
@@ -453,7 +512,7 @@ void TopViewWindow::renderSk(SkCanvas* const canvas)
             if (k == 0) { continue; }
             const SkScalar y = devY(k * ch);
             canvas->drawLine(0, y, W, y, dl);
-            const auto lab = QString::fromUtf8("z=%1%2")
+            const auto lab = QStringLiteral("z=%1%2")
                     .arg(k > 0 ? QStringLiteral("+") : QString())
                     .arg(qRound(k * ch));
             canvas->drawString(lab.toStdString().c_str(),
@@ -485,7 +544,7 @@ void TopViewWindow::renderSk(SkCanvas* const canvas)
 
     // ---- canvas plane caption + orientation hint ----
     {
-        const auto cLab = QString::fromUtf8("画布 %1×%2").arg(cw).arg(ch);
+        const auto cLab = QStringLiteral("\u753B\u5E03 %1\u00D7%2").arg(cw).arg(ch);
         const auto s = cLab.toStdString();
         const auto tw = labelFont.measureText(s.c_str(), s.size(),
                                               SkTextEncoding::kUTF8);
@@ -494,7 +553,7 @@ void TopViewWindow::renderSk(SkCanvas* const canvas)
                            devY(0) + SkScalar(14 * pr), labelFont, labelP);
         // orientation hint: depth is up, the viewer/camera side is
         // down - the camera sits below the canvas line looking up
-        const auto orient = QString::fromUtf8("↑ 深处 (z+)　·　↓ 观众侧 / 摄像机 (z−)")
+        const auto orient = QStringLiteral("\u2191 \u6DF1\u5904 (z+)\u3000\u00B7\u3000\u2193 \u89C2\u4F17\u4FA7 / \u6444\u50CF\u673A (z\u2212)")
                 .toStdString();
         canvas->drawString(orient.c_str(), SkScalar(8 * pr),
                            devY(0) - SkScalar(8 * pr), labelFont, labelP);
@@ -539,7 +598,7 @@ void TopViewWindow::renderSk(SkCanvas* const canvas)
             tp.setColor(sel || hot ?
                         SkColorSetARGB(255, 240, 235, 228) : kTextMain);
             const auto name = fp.fBox->prp_getName().toStdString();
-            const auto zLab = QString::fromUtf8("z=%1")
+            const auto zLab = QStringLiteral("z=%1")
                     .arg(fp.fZ, 0, 'f', 1).toStdString();
             canvas->drawString(name.c_str(),
                                devX((fp.fXMin + fp.fXMax) * 0.5),
@@ -624,8 +683,7 @@ void TopViewWindow::renderSk(SkCanvas* const canvas)
         hd.setColor(kSelectOrange);
         canvas->drawCircle(handle.x(), handle.y(),
                            SkScalar(3.5 * pr), hd);
-        const auto camLab = QString::fromUtf8(
-                    "%1 · 位移x %2 缩放 %3 · 倾斜(%4°, %5°) 旋转 %6°")
+        const auto camLab = QStringLiteral("%1 \u00B7 \u4F4D\u79FBx %2 \u7F29\u653E %3 \u00B7 \u503E\u659C(%4\u00B0, %5\u00B0) \u65CB\u8F6C %6\u00B0")
                 .arg(cam->prp_getName())
                 .arg(mPose.fPanX, 0, 'f', 0)
                 .arg(mPose.fZoom, 0, 'f', 2)
@@ -639,8 +697,7 @@ void TopViewWindow::renderSk(SkCanvas* const canvas)
                            cDev.x() + SkScalar(20 * pr),
                            cDev.y() + SkScalar(4 * pr), nameFont, cp);
     } else {
-        const auto hint = QString::fromUtf8(
-                    "无摄像机 — 摄像机工具（C 键）首次使用会自动创建").toStdString();
+        const auto hint = QStringLiteral("\u65E0\u6444\u50CF\u673A \u2014 \u6444\u50CF\u673A\u5DE5\u5177\uFF08C \u952E\uFF09\u9996\u6B21\u4F7F\u7528\u4F1A\u81EA\u52A8\u521B\u5EFA").toStdString();
         SkPaint hp;
         hp.setColor(kTextHint);
         canvas->drawString(hint.c_str(), SkScalar(8 * pr),
@@ -650,8 +707,7 @@ void TopViewWindow::renderSk(SkCanvas* const canvas)
     // ---- HUD ----
     {
         // always-on operation hint
-        const auto tip = QString::fromUtf8(
-                    "拖摄像机 = 平移/推拉 · 拖环手柄 = 旋转 · 拖线段 = 图层 x/z")
+        const auto tip = QStringLiteral("\u62D6\u6444\u50CF\u673A = \u5E73\u79FB/\u63A8\u62C9 \u00B7 \u62D6\u73AF\u624B\u67C4 = \u65CB\u8F6C \u00B7 \u62D6\u7EBF\u6BB5 = \u56FE\u5C42 x/z")
                 .toStdString();
         SkPaint tipP;
         tipP.setColor(kTextHint);
@@ -660,7 +716,7 @@ void TopViewWindow::renderSk(SkCanvas* const canvas)
         const auto hudFontV = hudFont(10);
         SkPaint hp;
         hp.setColor(kTextMain);
-        const auto hud = QString::fromUtf8("顶视图 (X/Z) · %1 · 帧 %2")
+        const auto hud = QStringLiteral("\u9876\u89C6\u56FE (X/Z) \u00B7 %1 \u00B7 \u5E27 %2")
                 .arg(mScene->prp_getName())
                 .arg(mScene->getCurrentFrame())
                 .toStdString();
@@ -669,15 +725,15 @@ void TopViewWindow::renderSk(SkCanvas* const canvas)
         QString dragLab;
         if (mDragType == DragType::layer) {
             const QPointF world = mapToTopWorld(mLastDevicePos);
-            dragLab = QString::fromUtf8("x=%1  z=%2")
+            dragLab = QStringLiteral("x=%1  z=%2")
                     .arg(world.x(), 0, 'f', 1)
                     .arg(world.y(), 0, 'f', 1);
         } else if (mDragType == DragType::camera && cam) {
-            dragLab = QString::fromUtf8("位移 x=%1 · 缩放 %2")
+            dragLab = QStringLiteral("\u4F4D\u79FB x=%1 \u00B7 \u7F29\u653E %2")
                     .arg(cam->panXAnimator()->getCurrentBaseValue(), 0, 'f', 1)
                     .arg(cam->zoomAnimator()->getCurrentBaseValue(), 0, 'f', 2);
         } else if (mDragType == DragType::cameraRot && cam) {
-            dragLab = QString::fromUtf8("旋转 %1°")
+            dragLab = QStringLiteral("\u65CB\u8F6C %1\u00B0")
                     .arg(cam->rotZAnimator()->getCurrentBaseValue(), 0, 'f', 1);
         }
         if (!dragLab.isEmpty()) {
@@ -756,7 +812,7 @@ void TopViewWindow::mouseMoveEvent(QMouseEvent* e)
     }
     if (mDragType == DragType::layer) {
         auto* const box = mDragBox.data();
-        if (!box) { mDragType = DragType::none; return; }
+        if (!box) { finishDrags(); return; }
         const auto adv = dynamic_cast<AdvancedTransformAnimator*>(
                     box->getTransformAnimator());
         if (adv) {
@@ -773,7 +829,7 @@ void TopViewWindow::mouseMoveEvent(QMouseEvent* e)
     }
     if (mDragType == DragType::camera) {
         const auto cam = mScene ? mScene->getCameraLayer() : nullptr;
-        if (!cam) { mDragType = DragType::none; return; }
+        if (!cam) { finishDrags(); return; }
         const QPointF world = mapToTopWorld(dev);
         const QPointF dWorld = world - mPressTopWorld;
         // horizontal drag = camera x position: panX tracks the icon
@@ -799,7 +855,7 @@ void TopViewWindow::mouseMoveEvent(QMouseEvent* e)
     }
     if (mDragType == DragType::cameraRot) {
         const auto cam = mScene ? mScene->getCameraLayer() : nullptr;
-        if (!cam) { mDragType = DragType::none; return; }
+        if (!cam) { finishDrags(); return; }
         qreal d = ringAngleAt(dev) - mPressRingAngle;
         while (d > 180.) { d -= 360.; }
         while (d < -180.) { d += 360.; }
@@ -829,12 +885,17 @@ void TopViewWindow::mouseReleaseEvent(QMouseEvent* e)
 
 void TopViewWindow::mouseDoubleClickEvent(QMouseEvent* e)
 {
-    Q_UNUSED(e)
-    fitToContent();
+    // left button only - a right/middle double-click must not reset
+    // the user's carefully panned view
+    if (e->button() == Qt::LeftButton) { fitToContent(); }
 }
 
 void TopViewWindow::wheelEvent(QWheelEvent* e)
 {
+    // zooming mid-drag would rebase the view transform while the drag
+    // anchor was computed with the old one -> the dragged layer/camera
+    // would jump; ignore the wheel until the drag is over
+    if (mDragType != DragType::none) { return; }
     const QPointF dev = toDevice(e->position());
     const qreal by = e->angleDelta().y() > 0 ? 1.15 : 1. / 1.15;
     const qreal next = mViewTransform.m11() * by;

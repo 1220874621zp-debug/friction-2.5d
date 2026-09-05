@@ -21,9 +21,14 @@ class TopViewWindow : public GLWindow {
     Q_OBJECT
 public:
     TopViewWindow(Document& document, QWidget* const parent = nullptr);
+    ~TopViewWindow() override;
 
     void setScene(Canvas* const scene);
     void fitToContent();
+    // finishes any in-progress drag (transform sessions + epilogue);
+    // called by MainWindow before the widget is deleted on window
+    // close while the app keeps running
+    void finishDrags();
 protected:
     void renderSk(SkCanvas* const canvas) override;
 
@@ -71,7 +76,10 @@ private:
     bool hitCameraRing(const QPointF& device) const;
     qreal ringAngleAt(const QPointF& device) const;
     void startLayerDrag(const Footprint& fp);
-    void finishDrags();
+    // closes only the animator transform sessions (no cursor /
+    // actionFinished / update epilogue) - safe to call from the
+    // destructor even during global shutdown when Document is gone
+    void finishDragSessions();
     SkFont hudFont(const qreal size) const;
 
     Document& mDocument;
