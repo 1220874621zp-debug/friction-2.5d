@@ -175,10 +175,10 @@ void TaskScheduler::queScheduledCpuTasks() {
     mQuedCGTasks.beginQue();
     for(const auto& it : Document::sInstance->fVisibleScenes) {
         const auto scene = it.first;
-        // during output rendering only the target scene is fed - other
-        // visible scenes would compete for the pool without their frames
-        // ever being encoded
-        if(mOutputRenderScene && scene != mOutputRenderScene) continue;
+        // NOTE: do NOT filter to the output target scene here - linked
+        // scenes refresh their render data through their own queTasks,
+        // and starving them froze link content mid-render (output video
+        // showed stale frames while the preview animated fine)
         scene->queTasks();
     }
     mQuedCGTasks.endQue();
