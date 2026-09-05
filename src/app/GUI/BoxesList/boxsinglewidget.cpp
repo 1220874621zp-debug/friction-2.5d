@@ -2621,7 +2621,18 @@ void BoxSingleWidget::rebuildTrkMatLayerCandidates() {
         }
         for(const auto& bPtr : sCacheBoxes) {
             const auto b = bPtr.data();
-            if(!b || b == box || box->isAncestor(b)) continue;
+            // deleted-but-alive boxes (held by the undo stack) stay
+            // valid QPointers inside the cache window - membership in
+            // the CURRENT scene tree is the real aliveness test,
+            // otherwise undo-deleted layers show up as ghost entries
+            if(!b || b->getParentScene() != scene) continue;
+            // both directions of the family tree are off-limits:
+            // isAncestor(b) excludes this box's ANCESTORS (their render
+            // would recurse through this box), b->isAncestor(box)
+            // excludes this box's own SUBTREE (matting with a child
+            // makes the child double-render, once inside, once as the
+            // matte)
+            if(b == box || box->isAncestor(b) || b->isAncestor(box)) continue;
             // exclude boxes whose matte chain already reaches this
             // box - picking one would close a matte cycle
             if(b->matteChainReaches(box)) continue;
