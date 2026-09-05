@@ -740,12 +740,26 @@ void BoundingBox::updateCurrentPreviewDataFromRenderData(
 }
 
 void BoundingBox::planUpdate(const UpdateReason reason) {
-    if(mUpdatePlanned && mPlannedReason == UpdateReason::userChange) return;
-    if(!isVisibleAndInVisibleDurationRect()) return;
+    // matte-involved layers log every early-out: an eaten invalidation
+    // here means the layer never re-renders and the matte never
+    // attaches ("没有效果")
+    const bool matteDbg = mPreserveAlpha || mTrackMatteMode != 0;
+    if(mUpdatePlanned && mPlannedReason == UpdateReason::userChange) {
+        if(matteDbg) qWarning() << "[MATTE]" << prp_getName()
+                                << "planUpdate早退：已有计划";
+        return;
+    }
+    if(!isVisibleAndInVisibleDurationRect()) {
+        if(matteDbg) qWarning() << "[MATTE]" << prp_getName()
+                                << "planUpdate早退：不可见/超出时长";
+        return;
+    }
     const auto parent = getParentGroup();
     if(parent) parent->planUpdate(reason);
     else if(!enve_cast<Canvas*>(this)) return;
     if(reason == UpdateReason::userChange) {
+        if(matteDbg) qWarning() << "[MATTE]" << prp_getName()
+                                << "planUpdate生效（stateId已提升）";
         mStateId++;
         mRenderDataHandler.clear();
 #ifdef Q_OS_MAC
@@ -795,11 +809,26 @@ stdsptr<BoxRenderData> BoundingBox::queRender(
 }
 
 void BoundingBox::queTasks() {
-    if(!mUpdatePlanned) return;
+    const bool matteDbg = mPreserveAlpha || mTrackMatteMode != 0;
+    if(!mUpdatePlanned) {
+        if(matteDbg) qWarning() << "[MATTE]" << prp_getName()
+                                << "queTasks早退：未计划";
+        return;
+    }
     mUpdatePlanned = false;
-    if(!shouldScheduleUpdate()) return;
+    if(!shouldScheduleUpdate()) {
+        if(matteDbg) qWarning() << "[MATTE]" << prp_getName()
+                                << "queTasks早退：不应更新";
+        return;
+    }
     const int relFrame = anim_getCurrentRelFrame();
-    if(hasCurrentRenderData(relFrame)) return;
+    if(hasCurrentRenderData(relFrame)) {
+        if(matteDbg) qWarning() << "[MATTE]" << prp_getName()
+                                << "queTasks早退：缓存命中（stale clip）";
+        return;
+    }
+    if(matteDbg) qWarning() << "[MATTE]" << prp_getName()
+                            << "queTasks排队重渲";
     const auto parentM = getInheritedTransformAtFrame(relFrame);
     queRender(relFrame, parentM);
 }
