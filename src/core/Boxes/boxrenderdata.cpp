@@ -330,7 +330,10 @@ void BoxRenderData::setBaseGlobalRect(const QRectF& baseRectF)
 
 void BoxRenderData::setTrackMatte(stdsptr<BoxRenderData> sample,
                                   const int mode) {
-    if(!sample || mode <= 0) return;
+    if(mode <= 0) return;
+    // a null sample is valid: preserve-alpha with no drawable layer
+    // below must still attach the caller so the layer is hidden
+    // entirely (AE semantics) - TrackMatteCaller handles a null matte
     fTrackMatteSample = sample;
     fTrackMatteMode = mode;
     // appended after the layer's own effects: the matte masks the

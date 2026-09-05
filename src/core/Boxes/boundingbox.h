@@ -278,7 +278,7 @@ public:
     // the cache (see setTrackMatteSource/setPreserveBelowSource).
     stdsptr<BoxRenderData> freshMatteSample(BoundingBox * const matte,
                                             const qreal relFrame);
-    BoundingBox *preserveBelowSourceFor();
+    BoundingBox *preserveBelowSourceFor(const qreal relFrame);
     void setPreserveBelowSource(BoundingBox * const below);
 
     // AE-style solo: true when this box participates in drawing
@@ -476,8 +476,9 @@ public:
     // another layer (mode 0 = off, 1 alpha, 2 alphaInv, 3 luma, 4 lumaInv)
     int getTrackMatteMode() const { return mTrackMatteMode; }
     void setTrackMatteMode(const int mode) {
-        if(mTrackMatteMode == mode) return;
-        mTrackMatteMode = mode;
+        const int clamped = qBound(0, mode, 4);
+        if(mTrackMatteMode == clamped) return;
+        mTrackMatteMode = clamped;
         prp_afterWholeInfluenceRangeChanged();
         // image layers serve cached HDD renders and do not re-render
         // on influence-range changes alone - force the invalidation
@@ -486,6 +487,10 @@ public:
     }
     BoxTargetProperty* trackMatteTarget() const
     { return mTrackMatteTarget.get(); }
+    // UI entry point: same as setTrackMatteMode but undoable - the
+    // plain setter stays undo-free for internal healing paths (file
+    // load, dead-target cleanup) that must not pollute the undo stack
+    void setTrackMatteModeWithUndo(const int mode);
     // re-arm the live-follow connections for a new matte layer
     void setTrackMatteSource(BoundingBox * const matte);
     // whether walking the track-matte chain from this box reaches

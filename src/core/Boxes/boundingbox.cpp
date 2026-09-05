@@ -43,6 +43,7 @@
 #include "Animators/animator.h"
 
 #include <functional>
+#include <QScopeGuard>
 #include "RasterEffects/rastereffect.h"
 #include "RasterEffects/customrastereffectcreator.h"
 #include "RasterEffects/rastereffectcollection.h"
@@ -578,8 +579,6 @@ void BoundingBox::setEffectsEnabled(const bool enable) {
 
 void BoundingBox::setPreserveAlpha(const bool preserve) {
     if(mPreserveAlpha == preserve) return;
-    qWarning() << "[MATTE] 保留透明度" << (preserve ? "开" : "关")
-               << prp_getName();
     {
         prp_pushUndoRedoName(preserve ? tr("Preserve Underlying Transparency")
                                       : tr("Stop Preserving Underlying Transparency"));
@@ -597,6 +596,21 @@ void BoundingBox::setPreserveAlpha(const bool preserve) {
     // influence-range changes alone - force the invalidation
     planUpdate(UpdateReason::userChange);
     emit preserveAlphaChanged(preserve);
+}
+
+void BoundingBox::setTrackMatteModeWithUndo(const int mode) {
+    const int clamped = qBound(0, mode, 4);
+    if(mTrackMatteMode == clamped) return;
+    {
+        prp_pushUndoRedoName(tr("Set Track Matte Mode"));
+        UndoRedo ur;
+        const auto oldValue = mTrackMatteMode;
+        const auto newValue = clamped;
+        ur.fUndo = [this, oldValue]() { setTrackMatteMode(oldValue); };
+        ur.fRedo = [this, newValue]() { setTrackMatteMode(newValue); };
+        prp_addUndoRedo(ur);
+    }
+    setTrackMatteMode(clamped);
 }
 
 SkBlendMode BoundingBox::getPaintBlendMode(const qreal relFrame) const {
@@ -1349,15 +1363,24 @@ stdsptr<BoxRenderData> BoundingBox::freshMatteSample(
 }
 
 // the layer DIRECTLY below in the same container (mContainedBoxes
-// index 0 = top, below = the next index after ours)
-BoundingBox *BoundingBox::preserveBelowSourceFor() {
+// index 0 = top, below = the next index after ours) that actually
+// draws: hidden siblings and layers serving as a track-matte source
+// never reach the backdrop, so they must not clip this layer either
+// (AE semantics: preserve-alpha looks at the drawn pixels below)
+BoundingBox *BoundingBox::preserveBelowSourceFor(const qreal relFrame) {
     const auto parent = getParentGroup();
     if(!parent) return nullptr;
     const auto& boxes = parent->getContainedBoxes();
     const int myId = boxes.indexOf(this);
     if(myId < 0) return nullptr;
+    const int absFrame = prp_relFrameToAbsFrame(qRound(relFrame));
     for(int i = myId + 1; i < boxes.count(); i++) {
-        if(boxes.at(i)) return boxes.at(i);
+        const auto below = boxes.at(i);
+        if(!below) continue;
+        const qreal belowRel = below->prp_absFrameToRelFrameF(absFrame);
+        if(!below->isFrameFVisibleAndInDurationRect(belowRel)) continue;
+        if(below->usedAsTrackMatteSource()) continue;
+        return below;
     }
     return nullptr;
 }
@@ -1402,6 +1425,12 @@ void BoundingBox::setupRenderData(const qreal relFrame,
     // diagnostics log on verdict CHANGE only (assembly runs per frame)
     if(data && !mInMatteAttach) {
         mInMatteAttach = true;
+        // RAII: an exception out of freshMatteSample/queExternalRender
+        // must not leave the recursion breaker stuck on - the matte
+        // would then silently never attach again for this box
+        const auto attachGuard = qScopeGuard([this]() {
+            mInMatteAttach = false;
+        });
         const auto setVerdict = [this](const QString& why) {
             if(mMatteDiagLastMsg == why) return;
             mMatteDiagLastMsg = why;
@@ -1435,7 +1464,7 @@ void BoundingBox::setupRenderData(const qreal relFrame,
                 }
             }
         } else if(mPreserveAlpha) {
-            auto below = preserveBelowSourceFor();
+            auto below = preserveBelowSourceFor(relFrame);
             if(below && below->matteChainReaches(this)) below = nullptr;
             setPreserveBelowSource(below);
             const auto sample = freshMatteSample(below, relFrame);
@@ -1450,7 +1479,6 @@ void BoundingBox::setupRenderData(const qreal relFrame,
         } else {
             setVerdict(QStringLiteral("蒙版未启用"));
         }
-        mInMatteAttach = false;
     }
 }
 
