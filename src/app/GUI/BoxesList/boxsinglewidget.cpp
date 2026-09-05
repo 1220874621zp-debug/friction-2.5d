@@ -29,6 +29,7 @@
 #include "optimalscrollarena/scrollwidgetvisiblepart.h"
 #include "widgets/colorsettingswidget.h"
 #include <QPointer>
+#include <QElapsedTimer>
 
 #include "Boxes/containerbox.h"
 #include "widgets/qrealanimatorvalueslider.h"
@@ -1091,15 +1092,13 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
                         mTrkMatLayerCombo->itemData(index).toInt());
         }
         if(picked == box) return;
-        qWarning() << "[MATTE] 下拉选择：" << box->prp_getName() << "->"
-                   << (picked ? picked->prp_getName() : QStringLiteral("无"));
         box->trackMatteTarget()->setTargetAction(picked);
         if(picked && box->getTrackMatteMode() <= 0) {
-            box->setTrackMatteMode(1); // default: alpha matte
+            box->setTrackMatteModeWithUndo(1); // default: alpha matte
         } else if(!picked) {
             // "无" clears the mode too - a stale mode with no target
             // would block preserve-alpha (setupRenderData gate)
-            box->setTrackMatteMode(0);
+            box->setTrackMatteModeWithUndo(0);
         }
         box->prp_afterWholeInfluenceRangeChanged();
         Document::sInstance->actionFinished();
@@ -1166,7 +1165,7 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
             return; // no matte layer picked yet - nothing to switch
         }
         const int next = box->getTrackMatteMode() % 4 + 1; // cycle 1..4
-        box->setTrackMatteMode(next);
+        box->setTrackMatteModeWithUndo(next);
         Document::sInstance->actionFinished();
         mTrkMatModeButton->update();
     });
@@ -1378,7 +1377,16 @@ void BoxSingleWidget::setTargetAbstraction(SWT_Abstraction *abs) {
     mSoloButton->setVisible(eboxOrSound);
     mShyButton->setVisible(eboxOrSound);
     mFxButton->setVisible(boundingBox);
-    mTButton->setVisible(boundingBox);
+    // no preserve-alpha switch on mask rows: masks clip their owner
+    // and are never composited against sibling layers
+    const auto tMaskPath = enve_cast<SmartVectorPath*>(boundingBox);
+    mTButton->setVisible(boundingBox &&
+                         !(tMaskPath && tMaskPath->getMaskMode()));
+    // grey out while a track matte is active: the matte wins over
+    // preserve-alpha at render time (setupRenderData gate), so a lit
+    // enabled switch would lie about having any effect
+    mTButton->setEnabled(!(boundingBox &&
+                           boundingBox->hasActiveTrackMatte()));
     mResetButton->setVisible(
                 (enve_cast<QrealAnimator*>(prop) ||
                  enve_cast<QPointFAnimator*>(prop)) &&
@@ -1636,6 +1644,17 @@ void BoxSingleWidget::setTargetAbstraction(SWT_Abstraction *abs) {
                                this, [this]() { mFxButton->update(); });
         mTargetConn << connect(boundingBox, &BoundingBox::preserveAlphaChanged,
                                this, [this]() { mTButton->update(); });
+        // keep the T switch's greyed-out state in sync when the track
+        // matte target is picked/cleared (the matte overrides T)
+        if(const auto matteProp = boundingBox->trackMatteTarget()) {
+            mTargetConn << connect(matteProp, &BoxTargetProperty::targetSet,
+                                   this, [this](BoundingBox*) {
+                const auto box = mTarget ?
+                            enve_cast<BoundingBox*>(mTarget->getTarget()) :
+                            nullptr;
+                mTButton->setEnabled(!(box && box->hasActiveTrackMatte()));
+            });
+        }
     }
     if(!boundingBox && !eindependentSound) {
         mTargetConn << connect(prop, &Property::prp_selectionChanged,
@@ -2577,25 +2596,44 @@ void BoxSingleWidget::rebuildTrkMatLayerCandidates() {
     if(box && scene) {
         BoundingBox* cur = box->trackMatteTarget() ?
                     box->trackMatteTarget()->getTarget() : nullptr;
-        std::function<void(ContainerBox*)> walk =
-                [this, &walk, &match, box, &cur](ContainerBox* const cont) {
-            for(const auto b : cont->getContainedBoxes()) {
-                if(!b || b == box || box->isAncestor(b)) continue;
-                // exclude boxes whose matte chain already reaches this
-                // box - picking one would close a matte cycle
-                if(b->matteChainReaches(box)) continue;
-                // entries carry the documentId; the activated handler
-                // resolves it via sGetBoxByDocumentId (storing the raw
-                // pointer here made every pick resolve to nullptr -
-                // the matte silently reset to None)
-                mTrkMatLayerCombo->addItem(
-                            b->prp_getName(),
-                            QVariant::fromValue(b->getDocumentId()));
-                if(b == cur) match = mTrkMatLayerCombo->count() - 1;
-                if(const auto g = enve_cast<ContainerBox*>(b)) walk(g);
-            }
-        };
-        walk(scene);
+        // flat scene-wide box list, cached across rows: a timeline
+        // rebuild re-runs this once per visible row and a full tree
+        // walk per row costs O(rows*boxes) - refresh at most every
+        // 500 ms or when the scene changes; QPointer guards against
+        // boxes deleted inside the cache window
+        static QPointer<Canvas> sCacheScene;
+        static QList<QPointer<BoundingBox>> sCacheBoxes;
+        static QElapsedTimer sCacheTimer;
+        if(sCacheScene != scene || !sCacheTimer.isValid() ||
+                sCacheTimer.elapsed() > 500) {
+            sCacheScene = scene;
+            sCacheBoxes.clear();
+            std::function<void(ContainerBox*)> walk =
+                    [&walk](ContainerBox* const cont) {
+                for(const auto b : cont->getContainedBoxes()) {
+                    if(!b) continue;
+                    sCacheBoxes << b;
+                    if(const auto g = enve_cast<ContainerBox*>(b)) walk(g);
+                }
+            };
+            walk(scene);
+            sCacheTimer.restart();
+        }
+        for(const auto& bPtr : sCacheBoxes) {
+            const auto b = bPtr.data();
+            if(!b || b == box || box->isAncestor(b)) continue;
+            // exclude boxes whose matte chain already reaches this
+            // box - picking one would close a matte cycle
+            if(b->matteChainReaches(box)) continue;
+            // entries carry the documentId; the activated handler
+            // resolves it via sGetBoxByDocumentId (storing the raw
+            // pointer here made every pick resolve to nullptr -
+            // the matte silently reset to None)
+            mTrkMatLayerCombo->addItem(
+                        b->prp_getName(),
+                        QVariant::fromValue(b->getDocumentId()));
+            if(b == cur) match = mTrkMatLayerCombo->count() - 1;
+        }
     }
     mTrkMatLayerCombo->setCurrentIndex(match);
     mTrkMatBuilding = false;
