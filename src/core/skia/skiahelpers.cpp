@@ -80,11 +80,15 @@ sk_sp<SkImage> SkiaHelpers::transferDataToSkImage(SkBitmap &bitmap) {
 void SkiaHelpers::writeImg(const sk_sp<SkImage> &img,
                            eWriteStream& dst) {
     SkPixmap pix;
-    if(!img->peekPixels(&pix)) {
-        if(!img->makeRasterImage()->peekPixels(&pix)) {
-            RuntimeThrow("Could not peek image pixels");
-        }
+    if(img->peekPixels(&pix)) {
+        writePixmap(pix, dst);
+        return;
     }
+    // keep the raster copy alive for the write - peeking the temporary
+    // directly would leave pix pointing at freed pixels
+    const auto raster = img->makeRasterImage();
+    if(!raster || !raster->peekPixels(&pix))
+        RuntimeThrow("Could not peek image pixels");
     writePixmap(pix, dst);
 }
 
@@ -95,22 +99,64 @@ sk_sp<SkImage> SkiaHelpers::readImg(eReadStream &src) {
 
 void SkiaHelpers::writePixmap(const SkPixmap &pix,
                               eWriteStream& dst) {
-    const int width = pix.width();
-    const int height = pix.height();
+    // record the pixel layout: pipeline images are often BGRA (kN32 on
+    // little-endian Windows) and raw bytes written without the color
+    // type were rebuilt as RGBA on reload, swapping R/B for every layer
+    // that survived a tmp eviction round-trip (blue goji berries bug)
+    const SkPixmap* src = &pix;
+    SkPixmap convPix;
+    SkBitmap conv;
+    const auto ct = pix.colorType();
+    if(ct != kRGBA_8888_SkColorType && ct != kBGRA_8888_SkColorType) {
+        // normalize exotic formats to premul RGBA before saving raw
+        const auto info = getPremulRGBAInfo(pix.width(), pix.height());
+        if(!conv.tryAllocPixels(info) ||
+           !pix.readPixels(info, conv.getPixels(), conv.rowBytes(), 0, 0))
+            RuntimeThrow("Could not convert pixmap for tmp save");
+        convPix = conv.pixmap();
+        src = &convPix;
+    }
+    const int width = src->width();
+    const int height = src->height();
     dst << width;
     dst << height;
-    const qint64 writeBytes = width*height*4*
-            static_cast<qint64>(sizeof(uchar));
-    dst.write(pix.addr(), writeBytes);
+    dst << static_cast<int>(src->colorType());
+    dst << static_cast<int>(src->alphaType());
+    const qint64 tightBytes = width*4*static_cast<qint64>(sizeof(uchar));
+    if(src->rowBytes() == static_cast<size_t>(tightBytes)) {
+        dst.write(src->addr(), tightBytes*height);
+    } else {
+        const auto* row = static_cast<const uchar*>(src->addr());
+        for(int y = 0; y < height; y++) {
+            dst.write(row, tightBytes);
+            row += src->rowBytes();
+        }
+    }
 }
 
 SkBitmap SkiaHelpers::readBitmap(eReadStream &src) {
-    int width, height;
+    int width, height, colorType, alphaType;
     src >> width;
     src >> height;
+    src >> colorType;
+    src >> alphaType;
+    // validate before allocating: pre-format tmp files (or corruption)
+    // must fail loudly here so the caller falls back to the source
+    // instead of allocating gigabytes from garbage dimensions
+    if(width <= 0 || height <= 0 || width > 32768 || height > 32768)
+        RuntimeThrow("Invalid image dimensions in tmp data");
+    if(colorType != kRGBA_8888_SkColorType &&
+       colorType != kBGRA_8888_SkColorType)
+        RuntimeThrow("Unsupported color type in tmp data");
+    if(alphaType < 0 || alphaType > static_cast<int>(kLastEnum_SkAlphaType))
+        RuntimeThrow("Invalid alpha type in tmp data");
     SkBitmap btmp;
-    const auto info = SkiaHelpers::getPremulRGBAInfo(width, height);
+    const auto info = SkImageInfo::Make(width, height,
+                                        static_cast<SkColorType>(colorType),
+                                        static_cast<SkAlphaType>(alphaType));
     btmp.allocPixels(info);
+    if(btmp.getPixels() == nullptr)
+        RuntimeThrow("Could not allocate image for tmp load");
     const qint64 readBytes = width*height*4*
             static_cast<qint64>(sizeof(uchar));
     src.read(btmp.getPixels(), readBytes);
