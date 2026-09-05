@@ -476,6 +476,10 @@ public:
         if(mTrackMatteMode == mode) return;
         mTrackMatteMode = mode;
         prp_afterWholeInfluenceRangeChanged();
+        // image layers serve cached HDD renders and do not re-render
+        // on influence-range changes alone - force the invalidation
+        // so the new mode's caller attaches (UI-click context)
+        planUpdate(UpdateReason::userChange);
     }
     BoxTargetProperty* trackMatteTarget() const
     { return mTrackMatteTarget.get(); }
@@ -609,8 +613,8 @@ protected:
     // forever - a re-visit of a box whose setup is still on the stack
     // skips the matte attach for that render
     bool mInMatteAttach = false;
-    // diagnostics: last logged matte-attach verdict (logs on change)
-    int mMatteDiagVerdict = -1;
+    // diagnostics: last logged matte-attach message (logs on change)
+    QString mMatteDiagLastMsg;
     int mTrackMatteMode = 0; // 0 none, 1 alpha, 2 alphaInv, 3 luma, 4 lumaInv
     // AE semantics: a layer referenced as a matte source stops drawing
     // itself (its pixels only live inside the matte); refcounted so

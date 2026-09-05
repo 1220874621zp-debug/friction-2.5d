@@ -592,6 +592,10 @@ void BoundingBox::setPreserveAlpha(const bool preserve) {
     }
     mPreserveAlpha = preserve;
     prp_afterWholeInfluenceRangeChanged();
+    // the implicit next-layer matte attaches at RENDER time; image
+    // layers serve cached HDD renders and never re-render on
+    // influence-range changes alone - force the invalidation
+    planUpdate(UpdateReason::userChange);
     emit preserveAlphaChanged(preserve);
 }
 
@@ -1393,32 +1397,32 @@ void BoundingBox::setupRenderData(const qreal relFrame,
     // diagnostics log on verdict CHANGE only (assembly runs per frame)
     if(data && !mInMatteAttach) {
         mInMatteAttach = true;
-        const auto setVerdict = [this](const int v, const QString& why) {
-            if(mMatteDiagVerdict == v) return;
-            mMatteDiagVerdict = v;
+        const auto setVerdict = [this](const QString& why) {
+            if(mMatteDiagLastMsg == why) return;
+            mMatteDiagLastMsg = why;
             qWarning() << "[MATTE]" << prp_getName() << why;
         };
         if(mTrackMatteMode != 0) {
             const auto matte = mTrackMatteTarget ?
                         mTrackMatteTarget->getTarget() : nullptr;
             if(!matte) {
-                setVerdict(2, QStringLiteral("轨道遮罩：模式%1但无目标层（无效果）")
+                setVerdict(QStringLiteral("轨道遮罩：模式%1但无目标层（无效果）")
                            .arg(mTrackMatteMode));
             } else if(matte == this) {
-                setVerdict(7, QStringLiteral("轨道遮罩：目标是自己（忽略）"));
+                setVerdict(QStringLiteral("轨道遮罩：目标是自己（忽略）"));
             } else if(matte->matteChainReaches(this)) {
-                setVerdict(3, QStringLiteral("轨道遮罩：环形依赖已降级（%1）")
+                setVerdict(QStringLiteral("轨道遮罩：环形依赖已降级（%1）")
                            .arg(matte->prp_getName()));
             } else {
                 const auto sample = freshMatteSample(matte, relFrame);
                 if(sample) {
                     sample->addDependent(data);
                     data->setTrackMatte(sample, mTrackMatteMode);
-                    setVerdict(1, QStringLiteral("轨道遮罩挂接 -> %1 模式%2")
+                    setVerdict(QStringLiteral("轨道遮罩挂接 -> %1 模式%2")
                                .arg(matte->prp_getName())
                                .arg(mTrackMatteMode));
                 } else {
-                    setVerdict(8, QStringLiteral("轨道遮罩：采样排队失败（%1）")
+                    setVerdict(QStringLiteral("轨道遮罩：采样排队失败（%1）")
                                .arg(matte->prp_getName()));
                 }
             }
@@ -1430,13 +1434,13 @@ void BoundingBox::setupRenderData(const qreal relFrame,
             data->setTrackMatte(sample, 1);
             if(sample) sample->addDependent(data);
             if(below) {
-                setVerdict(4, QStringLiteral("保留透明度 -> 正下一层 %1")
+                setVerdict(QStringLiteral("保留透明度 -> 正下一层 %1")
                            .arg(below->prp_getName()));
             } else {
-                setVerdict(5, QStringLiteral("保留透明度：无下一层（整层隐藏）"));
+                setVerdict(QStringLiteral("保留透明度：无下一层（整层隐藏）"));
             }
         } else {
-            setVerdict(0, QStringLiteral("蒙版未启用"));
+            setVerdict(QStringLiteral("蒙版未启用"));
         }
         mInMatteAttach = false;
     }
