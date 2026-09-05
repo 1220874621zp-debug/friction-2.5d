@@ -144,6 +144,7 @@ echo "Plugins = plugins" >> ${BUILD}/${FRICTION_PKG}/opt/friction/bin/qt.conf
 
 (cd ${BUILD}/${FRICTION_PKG}/opt/friction/lib ;
 for so in *.so*; do
+    [ -e "${so}" ] || continue
     patchelf --set-rpath '$ORIGIN' ${so}
 done
 )
@@ -158,6 +159,7 @@ wayland-decoration-client
 "
 for pdir in ${PLUGS}; do
     for so in ${BUILD}/${FRICTION_PKG}/opt/friction/plugins/${pdir}/*.so; do
+        [ -e "${so}" ] || continue
         patchelf --set-rpath '$ORIGIN/../../lib' ${so}
     done
 done

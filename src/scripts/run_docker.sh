@@ -39,8 +39,14 @@ DOCKER="docker run"
 DOCKER="${DOCKER} -e GLX=${GLX} -e REL=${REL} -e HEAD_REPO_URL=${HEAD_REPO_URL} -e MKJOBS=${MKJOBS} -e TAR_VERSION=${TAR_VERSION} -e SDK_REV=${SDK_REV} -e SDK_VERSION=${SDK_VERSION} -e ONLY_SDK=${ONLY_SDK} -e DOWNLOAD_SDK=${DOWNLOAD_SDK} -e BRANCH=${BRANCH} -e COMMIT=${COMMIT} -e TAG=${TAG} -e CUSTOM=${CUSTOM}"
 DOCKER="${DOCKER} -t --mount type=bind,source=${CWD}/distfiles,target=/mnt"
 DOCKER="${DOCKER} -v ${CWD}:/mnt/friction_src:ro"
+if [ -f "${CWD}/src/scripts/build_vfxplatform.sh" ]; then
+    DOCKER="${DOCKER} -v ${CWD}/src/scripts/build_vfxplatform.sh:/root/build_vfxplatform.sh:ro"
+fi
 if [ -f "${CWD}/src/scripts/build_vfxplatform_friction.sh" ]; then
     DOCKER="${DOCKER} -v ${CWD}/src/scripts/build_vfxplatform_friction.sh:/root/build_vfxplatform_friction.sh:ro"
+fi
+if [ -f "${CWD}/src/scripts/build_vfxplatform_package.sh" ]; then
+    DOCKER="${DOCKER} -v ${CWD}/src/scripts/build_vfxplatform_package.sh:/root/build_vfxplatform_package.sh:ro"
 fi
 
 if [ ! -d "${CWD}/distfiles" ]; then
