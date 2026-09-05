@@ -23,6 +23,8 @@
 #include "GUI/hangwatchdog.h"
 
 #include <iostream>
+#include <thread>
+#include <chrono>
 #include <QApplication>
 #include <QSurfaceFormat>
 
@@ -31,8 +33,6 @@
 // portable exe so the faulting stack can be analyzed afterwards
 #define NOMINMAX
 #include <windows.h>
-#include <thread>
-#include <chrono>
 #include <dbghelp.h>
 #include <psapi.h>
 #include <cstring>
@@ -66,6 +66,9 @@ static LONG WINAPI writeCrashMiniDump(EXCEPTION_POINTERS* const pep) {
     }
     return EXCEPTION_CONTINUE_SEARCH;
 }
+#endif
+#ifndef Q_OS_WIN
+#include <unistd.h>
 #endif
 #include <QDesktopWidget>
 #include <QSplashScreen>
@@ -666,7 +669,11 @@ int main(int argc, char *argv[])
         std::thread([exitCode]() {
             std::this_thread::sleep_for(std::chrono::seconds(3));
             qWarning() << "EXIT: 收尾超时（析构链挂起），强制退出进程";
+#ifdef Q_OS_WIN
             ::ExitProcess(exitCode);
+#else
+            ::_exit(exitCode);
+#endif
         }).detach();
         return exitCode;
     } catch(const std::exception& e) {

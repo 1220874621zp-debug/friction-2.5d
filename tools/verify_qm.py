@@ -4,8 +4,10 @@ import sys
 from PySide6.QtCore import QTranslator, QCoreApplication
 
 app = QCoreApplication(sys.argv)
+import os
+qm_path = os.path.join(os.path.dirname(__file__), "../src/app/translations/friction_zh_CN.qm")
 t = QTranslator()
-if not t.load(r"C:\Users\zp122\Documents\trae_projects\ceshi\friction\src\app\translations\friction_zh_CN.qm"):
+if not t.load(qm_path):
     print("FAILED to load qm"); sys.exit(1)
 
 probes = [

@@ -84,6 +84,12 @@ class EffectsPresetsPanel;
 class TopViewWindow;
 class QuickEffectSearchDialog;
 
+namespace Friction {
+    namespace AI {
+        class McpServer;
+    }
+}
+
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
@@ -273,6 +279,10 @@ private:
     // JS plugin system (Scripts menu + console dock)
     ScriptManager *mScriptManager = nullptr;
     void setupScripting();
+
+    // AI & MCP Agent Server
+    class Friction::AI::McpServer *mMcpServer = nullptr;
+    void setupAiServer();
 
     QMenu *mWorkspaceMenu = nullptr;
     void rebuildWorkspaceMenu();

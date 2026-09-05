@@ -14,6 +14,9 @@ public:
     explicit SettingsDialog(QWidget * const parent = nullptr);
     ~SettingsDialog();
 
+    void setCurrentIndex(int index);
+    int count() const;
+
 private:
     void addSettingsWidget(SettingsWidget* const widget,
                            const QString& name);

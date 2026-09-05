@@ -256,6 +256,12 @@ public:
 
     virtual SkBlendMode getBlendMode() const
     { return mBlendMode; }
+    void setBlendMode(const SkBlendMode mode)
+    {
+        if (mBlendMode == mode) { return; }
+        mBlendMode = mode;
+        prp_afterWholeInfluenceRangeChanged();
+    }
 
     // AE-style mask child: SmartVectorPath in mask mode overrides to
     // true; the parent container accumulates such children into one

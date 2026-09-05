@@ -89,12 +89,12 @@ if(WIN32)
     add_definitions(-DQSCINTILLA_DLL)
 else()
     find_library(QSCINTILLA_LIB NAMES qscintilla2_qt5 qscintilla2-qt5 qscintilla2)
-    if(QSCINTILLA_LIB)
+    if(QSCINTILLA_LIB AND EXISTS "${QSCINTILLA_LIB}")
         get_filename_component(QSCINTILLA_LIBRARIES_DIRS ${QSCINTILLA_LIB} DIRECTORY)
-        get_filename_component(QSCINTILLA_LIBRARIES ${QSCINTILLA_LIB} NAME)
+        set(QSCINTILLA_LIBRARIES "${QSCINTILLA_LIB}")
     else()
-        set(QSCINTILLA_LIBRARIES_DIRS "/usr/lib" CACHE STRING "qscintilla library path")
-        set(QSCINTILLA_LIBRARIES "qscintilla2_qt5" CACHE STRING "qscintilla library")
+        set(QSCINTILLA_LIBRARIES_DIRS "")
+        set(QSCINTILLA_LIBRARIES "")
     endif()
 
     find_path(QSCINTILLA_INCLUDE_DIRS
@@ -142,6 +142,7 @@ include_directories(
     #${QUAZIP_INCLUDE_DIRS}
     ${QSCINTILLA_INCLUDE_DIRS}
     ${FFMPEG_INCLUDE_DIRS}
+    ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/../core
     ${CMAKE_CURRENT_SOURCE_DIR}/../ui
     ${CMAKE_CURRENT_SOURCE_DIR}/../skia
@@ -257,6 +258,9 @@ set(
     GUI/extraactions.cpp
     GUI/effectactions.cpp
     GUI/menu.cpp
+    AI/mcpserver.cpp
+    AI/mcpdispatcher.cpp
+    GUI/Settings/aiagentsettingswidget.cpp
 )
 
 set(
@@ -319,6 +323,12 @@ set(
     GUI/mainwindow.h
     GUI/hangwatchdog.h
     GUI/window.h
+    AI/mcpserver.h
+    AI/mcpdispatcher.h
+    GUI/Settings/aiagentsettingswidget.h
+    Qsci/qsciscintilla.h
+    Qsci/qscilexerjavascript.h
+    Qsci/qsciapis.h
 )
 
 set(
@@ -345,7 +355,7 @@ add_executable(
     ${WINDOWS_RESOURCE_FILE}
 )
 
-add_executable(friction_effects_test effects_unittest.cpp ${RESOURCES})
+add_executable(friction_effects_test effects_unittest.cpp AI/mcpserver.cpp AI/mcpdispatcher.cpp ${RESOURCES})
 target_link_directories(
     friction_effects_test
     PRIVATE
@@ -356,6 +366,7 @@ target_link_libraries(
     friction_effects_test
     PRIVATE
     ${PROJECT_NAME}core
+    ${PROJECT_NAME}ui
     ${QT_LIBRARIES}
     ${FFMPEG_LIBRARIES}
     ${SKIA_LIBRARIES}
@@ -620,4 +631,11 @@ if(UNIX AND NOT APPLE)
         #    )
         #endif()
     endif()
+    install(
+        FILES
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/mcp/friction_markup.py
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/mcp/FRICTION_AI_CONNECT.md
+        DESTINATION
+        ${CMAKE_INSTALL_DATAROOTDIR}/friction/tools/mcp
+    )
 endif()

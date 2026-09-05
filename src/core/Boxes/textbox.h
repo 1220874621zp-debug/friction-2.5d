@@ -80,6 +80,8 @@ public:
     qreal getLetterSpacingAt(const qreal relFrame) const;
     qreal getWordSpacingAt(const qreal relFrame) const;
     qreal getLineSpacingAt(const qreal relFrame) const;
+    void setLetterSpacing(const qreal spacing);
+    void setLineSpacing(const qreal spacing);
     Qt::Alignment getTextHAlignment() const { return mHAlignment; }
     Qt::Alignment getTextVAlignment() const { return mVAlignment; }
 

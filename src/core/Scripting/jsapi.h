@@ -96,6 +96,17 @@ namespace Friction
             Q_INVOKABLE int keyFrame(const int index);
             Q_INVOKABLE void removeKeyAtFrame(const int frame);
 
+            // apply easing preset between two frames (or across all keys if frames omitted or -1)
+            Q_INVOKABLE bool setEasing(const QString &easing,
+                                       const int startFrame = -1,
+                                       const int endFrame = -1);
+            Q_INVOKABLE void setValueAtFrameWithEasing(const int frame,
+                                                       const QJSValue &v,
+                                                       const QString &easing);
+            Q_INVOKABLE void setValueAtTimeWithEasing(const qreal seconds,
+                                                      const QJSValue &v,
+                                                      const QString &easing);
+
             bool valid() const { return !mProp.isNull(); }
         private:
             qreal fps() const;
@@ -111,12 +122,16 @@ namespace Friction
             Q_PROPERTY(bool visible READ visible WRITE setVisible)
             Q_PROPERTY(bool selected READ selected WRITE setSelected)
             Q_PROPERTY(qreal opacity READ opacity WRITE setOpacity)
+            Q_PROPERTY(QString type READ type)
+            Q_PROPERTY(QString text READ text WRITE setText)
         public:
             JsLayerProxy(const QPointer<BoundingBox> &box,
                          QJSEngine * const engine,
                          QObject * const parent);
             ~JsLayerProxy();
 
+            Q_INVOKABLE QString type() const;
+            Q_INVOKABLE QString text() const;
             Q_INVOKABLE QJSValue property(const QString &name);
             // AE-style shorthand proxies
             Q_INVOKABLE QJSValue position();
@@ -127,6 +142,34 @@ namespace Friction
             Q_INVOKABLE QJSValue rotationY();
             Q_INVOKABLE QJSValue zPosition();
             Q_INVOKABLE QJSValue perspective();
+            Q_INVOKABLE QJSValue opacityProp();
+            // Styling & typography helpers
+            Q_INVOKABLE bool setFillColor(const QString &color);
+            Q_INVOKABLE bool setStrokeColor(const QString &color);
+            Q_INVOKABLE bool setStrokeWidth(const qreal width);
+            Q_INVOKABLE bool setFontSize(const qreal size);
+            Q_INVOKABLE bool setFontFamily(const QString &family);
+            Q_INVOKABLE bool setLetterSpacing(const qreal spacing);
+            Q_INVOKABLE bool setLineSpacing(const qreal spacing);
+            Q_INVOKABLE bool setText(const QString &text);
+            Q_INVOKABLE bool setTextAlignment(const QString &align);
+            Q_INVOKABLE bool setBlendMode(const QString &mode);
+            Q_INVOKABLE bool setCornerRadius(const qreal radius);
+            Q_INVOKABLE bool setRadius(const qreal radius);
+            Q_INVOKABLE bool setSize(const qreal width, const qreal height);
+            // Effects & Filter management
+            Q_INVOKABLE bool addEffect(const QString &effectType);
+            Q_INVOKABLE bool removeEffect(const int index);
+            Q_INVOKABLE QJSValue effects();
+            // Text animation presets (staggered per-character animations)
+            Q_INVOKABLE bool applyTextPreset(const QString &presetId,
+                                             const qreal startFrame = 0,
+                                             const qreal durationScale = 1.0,
+                                             const bool out = false);
+            Q_INVOKABLE QJSValue textPresets();
+            // Lock & Visibility
+            Q_INVOKABLE bool isLocked() const;
+            Q_INVOKABLE void setLocked(const bool locked);
             // 2.5D layer toggle (timeline cube button state)
             Q_INVOKABLE bool is3DEnabled();
             Q_INVOKABLE void set3DEnabled(const bool enabled);
@@ -152,6 +195,16 @@ namespace Friction
             // re-parent this layer under the given layer (group/null)
             // without changing its world position
             Q_INVOKABLE bool setParentLayer(const QJSValue &parent);
+            // layer duration trimming (AE inPoint / outPoint)
+            Q_INVOKABLE bool setInPoint(const int frame);
+            Q_INVOKABLE bool setOutPoint(const int frame);
+            Q_INVOKABLE int inPoint() const;
+            Q_INVOKABLE int outPoint() const;
+            // layer ordering in composition stack
+            Q_INVOKABLE void bringToFront();
+            Q_INVOKABLE void bringToEnd();
+            Q_INVOKABLE void moveUp();
+            Q_INVOKABLE void moveDown();
 
             QString name() const;
             void setName(const QString &name);
