@@ -91,6 +91,7 @@ public:
     // other visible scenes would just steal thread-pool slots without
     // their frames ever being consumed
     static void sSetOutputRenderScene(Canvas * const scene);
+    static bool sOutputRenderActive();
 
     void addComplexTask(const qsptr<ComplexTask>& task);
 

@@ -165,6 +165,10 @@ void TaskScheduler::sSetOutputRenderScene(Canvas * const scene) {
     sInstance->mOutputRenderScene = scene;
 }
 
+bool TaskScheduler::sOutputRenderActive() {
+    return sInstance && !sInstance->mOutputRenderScene.isNull();
+}
+
 void TaskScheduler::queScheduledCpuTasks() {
     if(!mAlwaysQue && !shouldQueMoreCpuTasks()) return;
     mCpuQueing = true;
@@ -210,8 +214,12 @@ void TaskScheduler::processNextQuedHddTask() {
 }
 
 void TaskScheduler::processNextTasks() {
-    if(mCriticalMemoryState) return;
+    // memory relief must keep flowing even in critical state: tmp saves
+    // are the escape route out of memory pressure and reloads unblock the
+    // encoder - blocking HDD dispatch here deadlocked output rendering
+    // once memory filled up (render frozen at full RAM, zero disk I/O)
     processNextQuedHddTask();
+    if(mCriticalMemoryState) return;
     processNextQuedGpuTask();
     processNextQuedCpuTask();
     if(mTaskUnderflowFunc) {

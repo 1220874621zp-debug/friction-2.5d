@@ -28,8 +28,11 @@
 #include "CacheHandlers/cachecontainer.h"
 #include "GUI/mainwindow.h"
 #include "Private/Tasks/taskscheduler.h"
+#include "appsupport.h"
 #include <QDebug>
 #include <QMetaType>
+#include <QDir>
+#include <QDateTime>
 
 #ifdef Q_OS_MAC
 #include <malloc/malloc.h>
@@ -62,6 +65,25 @@ MemoryHandler::MemoryHandler(QObject * const parent) : QObject(parent) {
             mMemoryChecker, &MemoryChecker::checkMemory);
     mTimer->start(1000);
     mMemoryChekerThread->start();
+
+    // tmp cache files are only referenced by the session that created
+    // them - after a crash they linger forever (167 orphaned files were
+    // found once), wasting disk and, worse, any format change makes
+    // them land-mines for the tmp loader. Orphans predate this process
+    // by definition, so everything older than right now can go.
+    const auto bootTime = QDateTime::currentDateTime();
+    const QDir eCacheDir(AppSupport::getAppCachePath() +
+                         QStringLiteral("/eCache"));
+    const auto orphans = eCacheDir.entryInfoList(
+                {QStringLiteral("eCache_*")}, QDir::Files);
+    int removed = 0;
+    for(const auto &fi : orphans) {
+        if(fi.lastModified() < bootTime && QFile::remove(fi.absoluteFilePath()))
+            removed++;
+    }
+    if(removed > 0)
+        qWarning() << "[MEM] removed" << removed
+                   << "orphaned tmp cache files from previous sessions";
 }
 
 MemoryHandler::~MemoryHandler() {
@@ -127,9 +149,16 @@ void MemoryHandler::freeMemory(const MemoryState newState,
     // async reload - the affected layers then show blank (dashed bounds
     // only) or stale-composited frames (visible color shifts for
     // blend-mode layers). Defer to the next poll instead.
+    // EXCEPTION: during output rendering the pool is busy BY DESIGN
+    // (multi-frame in-flight feeding), so this guard would never lift -
+    // rendered frames accumulated until critical state froze the whole
+    // pipeline (render stuck at full RAM with zero disk I/O). The
+    // encode path already waits correctly for evicted frames reloading
+    // from tmp, so eviction is safe there.
     const auto sched = TaskScheduler::instance();
     if(sched && (sched->busyCpuThreads() > 0 ||
-                 sched->busyHddThreads() > 0)) {
+                 sched->busyHddThreads() > 0) &&
+       !TaskScheduler::sOutputRenderActive()) {
         emit memoryFreed();
         return;
     }
