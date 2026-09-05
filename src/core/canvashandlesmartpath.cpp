@@ -122,7 +122,12 @@ BoundingBox *Canvas::resolveMaskTarget(const eMouseEvent &e) {
 
 ContainerBox *Canvas::ensureMaskHost(BoundingBox * const target) {
     if(!target) {
-        qWarning() << "蒙版：起笔点未命中图层，且没有单一选中图层，请在要裁剪的图层上起笔（或先选中它）";
+        qWarning().noquote() << QStringLiteral(
+            "\u8499\u7248\uFF1A\u8D77\u7B14\u70B9\u672A\u547D\u4E2D"
+            "\u56FE\u5C42\uFF0C\u4E14\u6CA1\u6709\u5355\u4E00\u9009\u4E2D"
+            "\u56FE\u5C42\uFF0C\u8BF7\u5728\u8981\u88C1\u526A\u7684"
+            "\u56FE\u5C42\u4E0A\u8D77\u7B14\uFF08\u6216\u5148\u9009\u4E2D"
+            "\u5B83\uFF09");
         return nullptr;
     }
     // a selected layer-type group hosts the mask itself
@@ -137,20 +142,29 @@ ContainerBox *Canvas::ensureMaskHost(BoundingBox * const target) {
     // (Friction masks affect their container)
     const auto parentGroup = target->getParentGroup();
     if(!parentGroup) {
-        qWarning() << "蒙版：目标图层不在任何容器内，已取消绘制";
+        qWarning().noquote() << QStringLiteral(
+            "\u8499\u7248\uFF1A\u76EE\u6807\u56FE\u5C42\u4E0D\u5728"
+            "\u4EFB\u4F55\u5BB9\u5668\u5185\uFF0C\u5DF2\u53D6\u6D88"
+            "\u7ED8\u5236");
         return nullptr;
     }
     const auto& contained = parentGroup->getContained();
     const int tId = contained.indexOf(target->ref<eBoxOrSound>());
     if(tId < 0) {
-        qWarning() << "蒙版：目标图层不在任何容器内，已取消绘制";
+        qWarning().noquote() << QStringLiteral(
+            "\u8499\u7248\uFF1A\u76EE\u6807\u56FE\u5C42\u4E0D\u5728"
+            "\u4EFB\u4F55\u5BB9\u5668\u5185\uFF0C\u5DF2\u53D6\u6D88"
+            "\u7ED8\u5236");
         return nullptr;
     }
     const auto group = enve::make_shared<ContainerBox>(eBoxType::layer);
     group->setRevealRowsOnce();
-    group->prp_setName(target->prp_getName());
+    // insert FIRST, name AFTER: insertContained runs
+    // makeNameUniqueForDescendants which overwrites the box name
+    const QString targetName = target->prp_getName();
     parentGroup->insertContained(tId, group);
     group->addContained(target->ref<eBoxOrSound>());
+    group->prp_setName(targetName);
     return group.get();
 }
 
@@ -167,9 +181,9 @@ qsptr<SmartVectorPath> Canvas::createMaskPath(
     // Add = union / Subtract = erase, applied topmost-first (AE)
     newPath->setBlendModeSk(SkBlendMode::kDstIn);
     newPath->setMaskMode(true);
-    newPath->prp_setName(QStringLiteral("蒙版：%1").arg(
+    newPath->prp_setName(QStringLiteral("\u8499\u7248\uFF1A%1").arg(
                 nameSource ? nameSource->prp_getName() :
-                             QStringLiteral("图层")));
+                             QStringLiteral("\u56FE\u5C42")));
     newPath->getFillSettings()->setPaintType(PaintType::FLATPAINT);
     newPath->getStrokeSettings()->setPaintType(PaintType::NOPAINT);
     // feather slot: hard edge by default, animate its radius to feather

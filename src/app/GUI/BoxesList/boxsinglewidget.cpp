@@ -181,15 +181,12 @@ QString translatePropertyName(const QString& name) {
           BoxSingleWidget::tr("3D Perspective") },
         // mask pen / raster effect names
         { QStringLiteral("blur"),
-          BoxSingleWidget::tr("Blur") },            // 模糊
+          BoxSingleWidget::tr("Blur") },
         { QStringLiteral("radius"),
-          BoxSingleWidget::tr("Radius") },            // 半径
+          BoxSingleWidget::tr("Radius") },
         { QStringLiteral("effects"),
-          BoxSingleWidget::tr("Effects") },            // 特效
+          BoxSingleWidget::tr("Effects") },
     };
-    if(name.startsWith(QStringLiteral("Mask: "))) {
-        return BoxSingleWidget::tr("Mask: ") + name.mid(6);
-    }
     return map.value(name, name);
 }
 
@@ -1018,9 +1015,9 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
     mMaskModeCombo = createCombo(this);
     mMainLayout->addWidget(mMaskModeCombo);
     mMaskModeCombo->setObjectName("maskModeCombo");
-    mMaskModeCombo->setToolTip(tr("蒙版模式"));
-    mMaskModeCombo->addItem(tr("相加"));
-    mMaskModeCombo->addItem(tr("相减"));
+    mMaskModeCombo->setToolTip(tr("\u8499\u7248\u6A21\u5F0F"));
+    mMaskModeCombo->addItem(tr("\u76F8\u52A0"));
+    mMaskModeCombo->addItem(tr("\u76F8\u51CF"));
     mMaskModeCombo->setVisible(false);
     connect(mMaskModeCombo, qOverload<int>(&QComboBox::activated),
             this, &BoxSingleWidget::setMaskMode);
