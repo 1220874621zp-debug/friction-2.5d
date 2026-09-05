@@ -245,6 +245,10 @@ protected:
     bool mEncodingSuccesfull = false;
     bool mEncodingFinished = false;
     bool mInterruptEncoding = false;
+    // set while an evicted scene frame is reloading from its tmp file;
+    // keeps afterProcessing from finishing the encode before that
+    // frame has been written
+    bool mWaitingForFrameLoad = false;
 
     eSoundSettingsData mInSoundSettings;
     OutputStream mVideoStream;

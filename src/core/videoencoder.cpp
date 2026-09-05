@@ -839,6 +839,25 @@ void VideoEncoder::process() {
             const auto contRange = cacheCont->getRange()*_mRenderRange;
             const int nFrames = contRange.span();
             const sk_sp<SkImage> image = cacheCont->getImage();
+            if(!image) {
+                // The rendered frame was evicted from memory (memory
+                // pressure) while waiting to be encoded. Reload it from
+                // the tmp file and resume encoding when it lands instead
+                // of failing - one throw per frame used to bury the app
+                // under a storm of error dialogs at the end of a render.
+                const auto loadTask = cacheCont->scheduleLoadFromTmpFile();
+                if(loadTask) {
+                    mWaitingForFrameLoad = true;
+                    loadTask->addDependent({[this]() {
+                        mWaitingForFrameLoad = false;
+                        queTask();
+                    }, [this]() {
+                        mWaitingForFrameLoad = false;
+                    }});
+                    return;
+                }
+                RuntimeThrow("Missing scene frame image data");
+            }
             try {
                 writeVideoFrame(mFormatContext, &mVideoStream,
                                 image, &hasVideo);
@@ -913,7 +932,7 @@ void VideoEncoder::afterProcessing() {
         mRenderInstanceSettings->setCurrentState(RenderState::error, "Error");
         finishEncodingNow();
         mEmitter.encodingFailed();
-    } else if(mEncodingFinished) finishEncodingSuccess();
+    } else if(mEncodingFinished && !mWaitingForFrameLoad) finishEncodingSuccess();
     else if(!mNextContainers.isEmpty()) queTask();
 }
 
