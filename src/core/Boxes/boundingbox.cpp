@@ -1371,6 +1371,10 @@ void BoundingBox::setPreserveBelowSource(BoundingBox * const below) {
     if(below) {
         conn << connect(below, &BoundingBox::prp_absFrameRangeChanged,
                         this, [this](const FrameRange&) {
+            // same rationale as the track-matte follow: transform
+            // drags are invisible to the stateId check
+            mMatteSampleSource.clear();
+            mMatteSampleCache.reset();
             planUpdate(UpdateReason::userChange);
         });
     }
@@ -2159,9 +2163,13 @@ void BoundingBox::setTrackMatteSource(BoundingBox * const matte) {
                         this, [this](const FrameRange&) {
             // image layers serve cached HDD renders and ignore
             // influence-range changes - only a planUpdate forces the
-            // re-render (probe-verified: dragging the matte source
-            // left the clip stale until the matte was re-picked).
-            // Repeated calls are cheap (planned early-out)
+            // re-render. The sample cache MUST also drop: pure
+            // TRANSFORM drags never bump the source's stateId, so the
+            // stateId check alone cannot see them - the stale sample
+            // would keep the OLD fGlobalRect and the clip would stay
+            // pinned while the shape moves
+            mMatteSampleSource.clear();
+            mMatteSampleCache.reset();
             planUpdate(UpdateReason::userChange);
         });
     }
