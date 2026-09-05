@@ -1554,12 +1554,13 @@ QPointF BoundingBox::getAbsolutePos() const {
 }
 
 void BoundingBox::updateDrawRenderContainerTransform() {
-    // matted layers drag like every other layer: the stale (already
-    // clipped) bitmap slides live for smooth interaction and the
-    // exact matte recomputes on release (per-frame re-rendering was
-    // tried and felt laggy on large images - see the render-time
-    // exemption history)
-    if(mNReasonsNotToApplyUglyTransform == 0) {
+    // matted layers never slide the stale bitmap: the clip region is
+    // fixed in place while the content moves - sliding carried the
+    // clip along and snapped back on release (felt as mask lag).
+    // Per-frame re-render gives the exact live preview; the self-drag
+    // case only re-renders this layer (matte sample stays cached)
+    if(mNReasonsNotToApplyUglyTransform == 0 &&
+            !hasActiveTrackMatte() && !mPreserveAlpha) {
         // the compensation matrix must use the same transform family the
         // stale bitmap was rasterized with (see RenderContainer): bake the
         // scene camera in for 3D layers, or dragging under a rotated camera
