@@ -1370,9 +1370,8 @@ void BoundingBox::setPreserveBelowSource(BoundingBox * const below) {
     auto& conn = mPreserveBelowSource.assign(below);
     if(below) {
         conn << connect(below, &BoundingBox::prp_absFrameRangeChanged,
-                        this, [this, below](const FrameRange& targetAbs) {
-            const auto relRange = below->prp_absRangeToRelRange(targetAbs);
-            prp_afterChangedRelRange(relRange);
+                        this, [this](const FrameRange&) {
+            planUpdate(UpdateReason::userChange);
         });
     }
     // the first assignment happens DURING render assembly (inside
@@ -1551,11 +1550,13 @@ QPointF BoundingBox::getAbsolutePos() const {
 }
 
 void BoundingBox::updateDrawRenderContainerTransform() {
-    // track-matted layers never slide the stale bitmap: the matte clip
-    // region is fixed in place, only the content moves - the live
-    // paint transform would carry the clip along and snap back on
-    // release. Let the normal re-render path update the preview
-    if(mNReasonsNotToApplyUglyTransform == 0 && !hasActiveTrackMatte()) {
+    // track-matted / preserve-alpha layers never slide the stale
+    // bitmap: the matte clip region is fixed in place, only the
+    // content moves - the live paint transform would carry the clip
+    // along and snap back on release (felt as drag lag + wrong
+    // preview). Let the normal re-render path update the preview
+    if(mNReasonsNotToApplyUglyTransform == 0 &&
+            !hasActiveTrackMatte() && !mPreserveAlpha) {
         // the compensation matrix must use the same transform family the
         // stale bitmap was rasterized with (see RenderContainer): bake the
         // scene camera in for 3D layers, or dragging under a rotated camera
@@ -2155,9 +2156,13 @@ void BoundingBox::setTrackMatteSource(BoundingBox * const matte) {
     // (render cache never settles -> black canvas)
     if(matte && !matte->matteChainReaches(this)) {
         conn << connect(matte, &BoundingBox::prp_absFrameRangeChanged,
-                        this, [this, matte](const FrameRange& targetAbs) {
-            const auto relRange = matte->prp_absRangeToRelRange(targetAbs);
-            prp_afterChangedRelRange(relRange);
+                        this, [this](const FrameRange&) {
+            // image layers serve cached HDD renders and ignore
+            // influence-range changes - only a planUpdate forces the
+            // re-render (probe-verified: dragging the matte source
+            // left the clip stale until the matte was re-picked).
+            // Repeated calls are cheap (planned early-out)
+            planUpdate(UpdateReason::userChange);
         });
     }
     // the sample cache is source-keyed and stateId-checked; switching
