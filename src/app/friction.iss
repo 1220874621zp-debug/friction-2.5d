@@ -40,14 +40,27 @@ Source: "frictioncore.dll"; DestDir: "{app}"; Components: friction ; Flags: igno
 Source: "frictionui.dll"; DestDir: "{app}"; Components: friction ; Flags: ignoreversion
 Source: "skia.dll"; DestDir: "{app}"; Components: friction ; Flags: ignoreversion
 
+; VC++ runtime, app-local — clean machines without the VC++ redistributable
+; cannot start the app otherwise (msvcp140/vcruntime140 are hard imports)
+Source: "msvcp140.dll"; DestDir: "{app}"; Components: friction ; Flags: ignoreversion
+Source: "msvcp140_1.dll"; DestDir: "{app}"; Components: friction ; Flags: ignoreversion
+Source: "vcruntime140.dll"; DestDir: "{app}"; Components: friction ; Flags: ignoreversion
+Source: "vcruntime140_1.dll"; DestDir: "{app}"; Components: friction ; Flags: ignoreversion
+
+; runtime-loaded (QLibrary) features: AI depth estimation + vector trace
+Source: "onnxruntime.dll"; DestDir: "{app}"; Components: friction ; Flags: ignoreversion
+Source: "vtracer.dll"; DestDir: "{app}"; Components: friction ; Flags: ignoreversion
+
 Source: "avcodec-58.dll"; DestDir: "{app}"; Components: ffmpeg ; Flags: ignoreversion
 Source: "avdevice-58.dll"; DestDir: "{app}"; Components: ffmpeg ; Flags: ignoreversion
+Source: "avfilter-7.dll"; DestDir: "{app}"; Components: ffmpeg ; Flags: ignoreversion
 Source: "avformat-58.dll"; DestDir: "{app}"; Components: ffmpeg ; Flags: ignoreversion
 Source: "avutil-56.dll"; DestDir: "{app}"; Components: ffmpeg ; Flags: ignoreversion
 Source: "swresample-3.dll"; DestDir: "{app}"; Components: ffmpeg ; Flags: ignoreversion
 Source: "swscale-5.dll"; DestDir: "{app}"; Components: ffmpeg ; Flags: ignoreversion
 
 Source: "qscintilla2_qt5.dll"; DestDir: "{app}"; Components: qt ; Flags: ignoreversion
+Source: "Qt5Concurrent.dll"; DestDir: "{app}"; Components: qt ; Flags: ignoreversion
 Source: "Qt5Core.dll"; DestDir: "{app}"; Components: qt ; Flags: ignoreversion
 Source: "Qt5Gui.dll"; DestDir: "{app}"; Components: qt ; Flags: ignoreversion
 Source: "Qt5Multimedia.dll"; DestDir: "{app}"; Components: qt ; Flags: ignoreversion
@@ -59,6 +72,7 @@ Source: "Qt5Widgets.dll"; DestDir: "{app}"; Components: qt ; Flags: ignoreversio
 Source: "Qt5Xml.dll"; DestDir: "{app}"; Components: qt ; Flags: ignoreversion
 Source: "audio\*"; DestDir: "{app}\audio"; Components: qt ; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "platforms\*"; DestDir: "{app}\platforms"; Components: qt ; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "imageformats\*"; DestDir: "{app}\imageformats"; Components: qt ; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -85,8 +99,15 @@ Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChang
 Type: files; Name: {app}\friction.exe
 Type: files; Name: {app}\frictioncore.dll
 Type: files; Name: {app}\frictionui.dll
+Type: files; Name: {app}\msvcp140.dll
+Type: files; Name: {app}\msvcp140_1.dll
+Type: files; Name: {app}\vcruntime140.dll
+Type: files; Name: {app}\vcruntime140_1.dll
+Type: files; Name: {app}\onnxruntime.dll
+Type: files; Name: {app}\vtracer.dll
 Type: files; Name: {app}\avcodec-58.dll
 Type: files; Name: {app}\avdevice-58.dll
+Type: files; Name: {app}\avfilter-7.dll
 Type: files; Name: {app}\avformat-58.dll
 Type: files; Name: {app}\avutil-56.dll
 Type: files; Name: {app}\qscintilla2_qt5.dll
@@ -98,12 +119,20 @@ Type: files; Name: {app}\Qt5Network.dll
 Type: files; Name: {app}\Qt5OpenGL.dll
 Type: files; Name: {app}\Qt5PrintSupport.dll
 Type: files; Name: {app}\Qt5Qml.dll
+Type: files; Name: {app}\Qt5Svg.dll
 Type: files; Name: {app}\Qt5Widgets.dll
 Type: files; Name: {app}\Qt5Xml.dll
 Type: files; Name: {app}\swresample-3.dll
 Type: files; Name: {app}\swscale-5.dll
 Type: files; Name: {app}\audio\qtaudio_wasapi.dll
 Type: files; Name: {app}\audio\qtaudio_windows.dll
+Type: files; Name: {app}\imageformats\qicns.dll
+Type: files; Name: {app}\imageformats\qjpeg.dll
+Type: files; Name: {app}\imageformats\qsvg.dll
+Type: files; Name: {app}\imageformats\qtga.dll
+Type: files; Name: {app}\imageformats\qtiff.dll
+Type: files; Name: {app}\imageformats\qwbmp.dll
+Type: files; Name: {app}\imageformats\qwebp.dll
 Type: files; Name: {app}\imageformats\qgif.dll
 Type: files; Name: {app}\imageformats\qicns.dll
 Type: files; Name: {app}\imageformats\qico.dll
