@@ -94,6 +94,26 @@ copy "%SDK_DIR%\bin\avutil-56.dll" "%OUTPUT_DIR%\"
 copy "%SDK_DIR%\bin\swresample-3.dll" "%OUTPUT_DIR%\"
 copy "%SDK_DIR%\bin\swscale-5.dll" "%OUTPUT_DIR%\"
 
+rem avfilter chain + Qt5Concurrent (exe import-table hard deps, never staged before)
+copy "%SDK_DIR%\bin\avfilter-7.dll" "%OUTPUT_DIR%\"
+copy "%SDK_DIR%\bin\avresample-4.dll" "%OUTPUT_DIR%\"
+copy "%SDK_DIR%\bin\postproc-55.dll" "%OUTPUT_DIR%\"
+copy "%SDK_DIR%\bin\Qt5Concurrent.dll" "%OUTPUT_DIR%\"
+
+rem vector trace (QLibrary runtime-loaded)
+copy "%SDK_DIR%\bin\vtracer.dll" "%OUTPUT_DIR%\"
+
+rem image format plugins (JPG/TIFF/WebP/SVG import)
+mkdir "%OUTPUT_DIR%\imageformats"
+copy "%SDK_DIR%\plugins\imageformats\*.dll" "%OUTPUT_DIR%\imageformats\"
+
+rem VC++ runtime app-local: clean machines without the redistributable
+rem cannot start the app; System32 always has them where a VC toolchain/redist exists
+copy "%SystemRoot%\System32\msvcp140.dll" "%OUTPUT_DIR%\"
+copy "%SystemRoot%\System32\msvcp140_1.dll" "%OUTPUT_DIR%\"
+copy "%SystemRoot%\System32\vcruntime140.dll" "%OUTPUT_DIR%\"
+copy "%SystemRoot%\System32\vcruntime140_1.dll" "%OUTPUT_DIR%\"
+
 echo "Delete this file if you want to disable portable mode" > "%OUTPUT_DIR%\portable.txt"
 
 cd "%BUILD_OUTPUT%"

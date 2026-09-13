@@ -48,8 +48,8 @@ Source: "vcruntime140.dll"; DestDir: "{app}"; Components: friction ; Flags: igno
 Source: "vcruntime140_1.dll"; DestDir: "{app}"; Components: friction ; Flags: ignoreversion
 
 ; runtime-loaded (QLibrary) features: AI depth estimation + vector trace
-Source: "onnxruntime.dll"; DestDir: "{app}"; Components: friction ; Flags: ignoreversion
-Source: "vtracer.dll"; DestDir: "{app}"; Components: friction ; Flags: ignoreversion
+Source: "onnxruntime.dll"; DestDir: "{app}"; Components: friction ; Flags: ignoreversion skipifsourcedoesntexist
+Source: "vtracer.dll"; DestDir: "{app}"; Components: friction ; Flags: ignoreversion skipifsourcedoesntexist
 
 Source: "avcodec-58.dll"; DestDir: "{app}"; Components: ffmpeg ; Flags: ignoreversion
 Source: "avdevice-58.dll"; DestDir: "{app}"; Components: ffmpeg ; Flags: ignoreversion
