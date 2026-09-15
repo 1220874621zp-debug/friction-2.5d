@@ -39,7 +39,12 @@
 #include "GUI/mainwindow.h"
 #include "GUI/canvaswindow.h"
 #include "GUI/timelinedockwidget.h"
+#include "GUI/RenderWidgets/renderwidget.h"
+#include "GUI/RenderWidgets/renderinstancewidget.h"
 #include "renderhandler.h"
+#include "themesupport.h"
+#include "outputsettings.h"
+#include "exceptions.h"
 
 #include <QBuffer>
 #include <QImage>
@@ -49,6 +54,10 @@
 #include <QJsonObject>
 #include <QDebug>
 #include <QMainWindow>
+#include <QStandardPaths>
+#include <QDir>
+#include <QFileInfo>
+#include <QRegularExpression>
 #include <QApplication>
 #include <QKeyEvent>
 #include <QProcess>
@@ -489,6 +498,10 @@ namespace Friction
                 toolRenderMarkupAsync(arguments, callback);
                 return;
             }
+            if (toolName == QStringLiteral("friction_render")) {
+                toolRenderAsync(arguments, callback);
+                return;
+            }
             callback(dispatchTool(toolName, arguments));
         }
 
@@ -605,6 +618,22 @@ namespace Friction
                 return toolClearMarkers(arguments);
             } else if (toolName == QStringLiteral("friction_list_markers")) {
                 return toolListMarkers(arguments);
+            } else if (toolName == QStringLiteral("friction_add_bone")) {
+                return toolAddBone(arguments);
+            } else if (toolName == QStringLiteral("friction_get_app_state")) {
+                return toolGetAppState(arguments);
+            } else if (toolName == QStringLiteral("friction_set_theme")) {
+                return toolSetTheme(arguments);
+            } else if (toolName == QStringLiteral("friction_set_top_view")) {
+                return toolSetTopView(arguments);
+            } else if (toolName == QStringLiteral("friction_render")) {
+                // handled asynchronously by dispatchToolAsync; landing
+                // here means a sync dispatch path called it directly
+                QJsonObject err;
+                err[QStringLiteral("error")] = QStringLiteral(
+                            "friction_render is asynchronous and must be called through the async dispatcher");
+                err[QStringLiteral("success")] = false;
+                return err;
             } else if (toolName == QStringLiteral("friction_get_api_schema")) {
                 QJsonObject res;
                 res[QStringLiteral("success")] = true;
@@ -1090,12 +1119,14 @@ namespace Friction
                 script = QStringLiteral("var l = app.activeScene.addGroup(%1);\n").arg(name);
             } else if (type == QStringLiteral("layer") || type == QStringLiteral("container") || type == QStringLiteral("panel")) {
                 script = QStringLiteral("var l = app.activeScene.addLayer(%1);\n").arg(name);
+            } else if (type == QStringLiteral("bone") || type == QStringLiteral("bonelayer") || type == QStringLiteral("rig")) {
+                script = QStringLiteral("var l = app.activeScene.addBoneLayer(%1);\n").arg(name);
             } else if (type == QStringLiteral("sound") || type == QStringLiteral("audio")) {
                 const QString path = jsStr(args.value(QStringLiteral("path")).toString(args.value(QStringLiteral("filePath")).toString()));
                 script = QStringLiteral("var l = app.activeScene.addSound(%1, %2);\n").arg(path, name);
             } else {
                 QJsonObject resp;
-                resp[QStringLiteral("error")] = QStringLiteral("Unknown layer type: %1. Valid: rect/rectangle, ellipse/circle, text, null, group, layer/container, sound/audio").arg(type);
+                resp[QStringLiteral("error")] = QStringLiteral("Unknown layer type: %1. Valid: rect/rectangle, ellipse/circle, text, null, group, layer/container, bone (bone layer for FK rigs), sound/audio").arg(type);
                 resp[QStringLiteral("success")] = false;
                 return resp;
             }
@@ -2090,6 +2121,278 @@ namespace Friction
                 resp[QStringLiteral("success")] = false;
                 callback(resp);
             }
+        }
+
+        // mirrors RenderInstanceWidget::iniGUI's lazy profile loading
+        // so the render tool can resolve profiles without the queue
+        // dock having been opened yet
+        static void ensureOutputProfilesLoaded()
+        {
+            if (OutputSettingsProfile::sOutputProfilesLoaded) { return; }
+            OutputSettingsProfile::sOutputProfilesLoaded = true;
+            QDir dirPath(AppSupport::getAppOutputProfilesPath());
+            dirPath.setSorting(QDir::SortFlag::Name);
+            for (const auto &fileInfo : dirPath.entryInfoList()) {
+                if (!fileInfo.isFile()) { continue; }
+                if (!fileInfo.completeSuffix().contains("conf")) { continue; }
+                const auto profile = enve::make_shared<OutputSettingsProfile>();
+                try {
+                    profile->load(fileInfo.absoluteFilePath());
+                } catch(const std::exception& e) {
+                    gPrintExceptionCritical(e);
+                }
+                OutputSettingsProfile::sOutputProfiles << profile;
+            }
+        }
+
+        void McpDispatcher::toolRenderAsync(const QJsonObject &args,
+                                            const std::function<void(const QJsonObject&)> &callback)
+        {
+            QJsonObject resp;
+            auto * const mw = qobject_cast<MainWindow*>(mainWindow());
+            auto scene = activeScene();
+            if (!mw || !scene || !Document::sInstance) {
+                resp[QStringLiteral("error")] = QStringLiteral("No active scene");
+                resp[QStringLiteral("success")] = false;
+                callback(resp);
+                return;
+            }
+            auto * const renderWidget = mw->renderWidget();
+            if (!renderWidget) {
+                resp[QStringLiteral("error")] = QStringLiteral("Render queue unavailable");
+                resp[QStringLiteral("success")] = false;
+                callback(resp);
+                return;
+            }
+
+            // output destination: explicit path, else Desktop/<scene>.mp4
+            QString path = args.value(QStringLiteral("path")).toString().trimmed();
+            if (path.isEmpty()) {
+                const QString desktop = QStandardPaths::writableLocation(
+                            QStandardPaths::DesktopLocation);
+                QString base = scene->prp_getName();
+                base.remove(QRegularExpression(QStringLiteral("[\\\\/:*?\"<>|]")));
+                if (base.isEmpty()) { base = QStringLiteral("render"); }
+                path = desktop + QStringLiteral("/") + base + QStringLiteral(".mp4");
+            }
+            if (!path.endsWith(QStringLiteral(".mp4"), Qt::CaseInsensitive)) {
+                // the encoder guesses the container from the extension;
+                // a missing/unknown one is the classic silent failure
+                path += QStringLiteral(".mp4");
+            }
+            const QFileInfo dstInfo(path);
+            if (!dstInfo.absoluteDir().exists()) {
+                resp[QStringLiteral("error")] = QStringLiteral("Output directory does not exist: %1")
+                            .arg(dstInfo.absolutePath());
+                resp[QStringLiteral("success")] = false;
+                callback(resp);
+                return;
+            }
+
+            // output profile: numeric hint = 1-based index into the
+            // sorted profile list, else display-name substring;
+            // fallback = first mp4 preset
+            ensureOutputProfilesLoaded();
+            QString profileHint = args.value(QStringLiteral("profile")).toString().trimmed();
+            if (profileHint.isEmpty()) { profileHint = QStringLiteral("002"); }
+            OutputSettingsProfile *profile = nullptr;
+            OutputSettingsProfile *firstMp4 = nullptr;
+            {
+                bool numeric = false;
+                const int profileIndex = profileHint.toInt(&numeric);
+                for (int i = 0; i < OutputSettingsProfile::sOutputProfiles.count(); i++) {
+                    const auto &candidate = OutputSettingsProfile::sOutputProfiles.at(i);
+                    if (!candidate) { continue; }
+                    const auto &candidateSettings = candidate->getSettings();
+                    const bool isMp4 = candidateSettings.fOutputFormat &&
+                            !std::strcmp(candidateSettings.fOutputFormat->name, "mp4");
+                    if (!firstMp4 && isMp4) { firstMp4 = candidate.get(); }
+                    if ((numeric && profileIndex == i + 1) ||
+                        candidate->getName().contains(profileHint, Qt::CaseInsensitive)) {
+                        profile = candidate.get();
+                        break;
+                    }
+                }
+            }
+            if (!profile) { profile = firstMp4; }
+            if (!profile) {
+                resp[QStringLiteral("error")] = QStringLiteral(
+                            "No output profiles found in %1").arg(
+                            AppSupport::getAppOutputProfilesPath());
+                resp[QStringLiteral("success")] = false;
+                callback(resp);
+                return;
+            }
+
+            // queue card + settings, rendered through the SAME queue
+            // the UI shows (progress bar visible to the user)
+            auto * const card = renderWidget->addCanvasRenderInstance(scene);
+            if (!card) {
+                resp[QStringLiteral("error")] = QStringLiteral("Failed to create queue entry");
+                resp[QStringLiteral("success")] = false;
+                callback(resp);
+                return;
+            }
+            auto &settings = card->getSettings();
+            settings.setOutputSettingsProfile(profile);
+            settings.setOutputDestination(path);
+
+            const bool wait = args.value(QStringLiteral("wait")).toBool(true);
+            const int timeoutMs = qBound(30, args.value(QStringLiteral("timeoutSeconds")).toInt(900), 3600) * 1000;
+
+            renderWidget->renderOnly(card);
+
+            QJsonObject started;
+            started[QStringLiteral("success")] = true;
+            started[QStringLiteral("started")] = true;
+            started[QStringLiteral("path")] = path;
+            started[QStringLiteral("profile")] = profile->getName();
+            if (!wait) {
+                callback(started);
+                return;
+            }
+
+            // wait for this card to reach a terminal state; the card
+            // may be deleted (queue clear) - guard with destroyed
+            const auto responded = std::make_shared<bool>(false);
+            const QPointer<RenderInstanceSettings> settingsAlive(&settings);
+            const auto finishWith = [this, callback, responded, path, profile,
+                                     settingsAlive](const QString &status) {
+                if (*responded) { return; }
+                *responded = true;
+                QJsonObject out;
+                out[QStringLiteral("success")] = (status == QStringLiteral("finished"));
+                out[QStringLiteral("status")] = status;
+                out[QStringLiteral("path")] = path;
+                out[QStringLiteral("profile")] = profile->getName();
+                if (settingsAlive) {
+                    out[QStringLiteral("lastRenderedFrame")] = settingsAlive->currentRenderFrame();
+                    const QString &err = settingsAlive->getRenderError();
+                    if (!err.isEmpty()) { out[QStringLiteral("error")] = err; }
+                } else {
+                    out[QStringLiteral("error")] = QStringLiteral(
+                                "Queue entry was removed before the render finished");
+                }
+                callback(out);
+            };
+
+            connect(&settings, &RenderInstanceSettings::stateChanged,
+                    this, [finishWith](const RenderState state) {
+                if (state == RenderState::finished) {
+                    finishWith(QStringLiteral("finished"));
+                } else if (state == RenderState::error) {
+                    finishWith(QStringLiteral("error"));
+                }
+            });
+            connect(card, &QObject::destroyed, this, [finishWith]() {
+                finishWith(QStringLiteral("aborted"));
+            });
+
+            auto * const timeout = new QTimer(this);
+            timeout->setSingleShot(true);
+            connect(timeout, &QTimer::timeout, this, [finishWith, settingsAlive]() {
+                if (settingsAlive &&
+                        settingsAlive->getCurrentState() == RenderState::finished) {
+                    finishWith(QStringLiteral("finished"));
+                } else {
+                    finishWith(QStringLiteral("timeout"));
+                }
+            });
+            timeout->start(timeoutMs);
+        }
+
+        QJsonObject McpDispatcher::toolAddBone(const QJsonObject &args)
+        {
+            const bool createLayer = args.value(QStringLiteral("boneLayer")).toBool(false);
+            bool ok = false;
+            const QString layerRef = layerRefExpr(args, QString(), &ok);
+            if (!ok && !createLayer) {
+                QJsonObject err;
+                err[QStringLiteral("error")] = QStringLiteral(
+                            "Must specify host layer (a bone layer via index/name, or a bone to chain onto), or pass boneLayer:true to auto-create one");
+                err[QStringLiteral("success")] = false;
+                return err;
+            }
+            const QString boneName = args.value(QStringLiteral("boneName")).toString();
+            const qreal length = args.value(QStringLiteral("length")).toDouble(100);
+            const QString createStmt = createLayer
+                    ? QStringLiteral("var __host0 = app.activeScene.addBoneLayer(%1);\n").arg(
+                          jsStr(args.value(QStringLiteral("boneLayerName")).toString(QStringLiteral("骨骼层"))))
+                    : QString();
+            const QString hostExpr = createLayer
+                    ? QStringLiteral("__host0") : layerRef;
+            const QString script = QStringLiteral(
+                "%1"
+                "var host = %2;\n"
+                "if (!host) { throw new Error('Host layer not found'); }\n"
+                "var b = host.addBone(%3, %4);\n"
+                "if (!b) { throw new Error('addBone failed: host is not a bone layer or bone'); }\n"
+                "return { name: b.name, length: b.boneLength().value, isBone: b.isBone() };"
+            ).arg(createStmt, hostExpr, jsStr(boneName), QString::number(length));
+            return evalScript(script, QStringLiteral("AI Add Bone"));
+        }
+
+        QJsonObject McpDispatcher::toolGetAppState(const QJsonObject &args)
+        {
+            QJsonObject resp;
+            const auto mw = qobject_cast<MainWindow*>(mainWindow());
+            resp[QStringLiteral("theme")] = ThemeSupport::themeId();
+            resp[QStringLiteral("availableThemes")] = QJsonArray::fromStringList(
+                        ThemeSupport::availableThemeIds());
+            resp[QStringLiteral("accentPreset")] = ThemeSupport::accentPresetId();
+            resp[QStringLiteral("language")] = AppSupport::getSettings(
+                        QStringLiteral("ui"), QStringLiteral("language")).toString();
+            resp[QStringLiteral("topViewOpen")] = (mw && mw->isTopViewVisible());
+            resp[QStringLiteral("renderQueueCount")] = (mw && mw->renderWidget())
+                    ? mw->renderWidget()->count() : 0;
+            resp[QStringLiteral("openScriptPanels")] = QJsonArray::fromStringList(
+                        AppSupport::getSettings(QStringLiteral("scripts"),
+                                                QStringLiteral("openPanels")).toStringList());
+            resp[QStringLiteral("mcpPort")] = AppSupport::getSettings(
+                        QStringLiteral("ai"), QStringLiteral("port")).toInt();
+            resp[QStringLiteral("success")] = true;
+            return resp;
+        }
+
+        QJsonObject McpDispatcher::toolSetTheme(const QJsonObject &args)
+        {
+            QJsonObject resp;
+            const QString id = args.value(QStringLiteral("themeId")).toString().trimmed();
+            if (id.isEmpty()) {
+                resp[QStringLiteral("error")] = QStringLiteral(
+                            "Must specify themeId (see friction_get_app_state availableThemes)");
+                resp[QStringLiteral("success")] = false;
+                return resp;
+            }
+            const auto available = ThemeSupport::availableThemeIds();
+            if (!available.contains(id)) {
+                resp[QStringLiteral("error")] = QStringLiteral("Unknown theme '%1'. Available: %2")
+                            .arg(id, available.join(QStringLiteral(", ")));
+                resp[QStringLiteral("success")] = false;
+                return resp;
+            }
+            ThemeSupport::setThemeFromId(id);
+            resp[QStringLiteral("theme")] = ThemeSupport::themeId();
+            resp[QStringLiteral("success")] = true;
+            return resp;
+        }
+
+        QJsonObject McpDispatcher::toolSetTopView(const QJsonObject &args)
+        {
+            QJsonObject resp;
+            auto * const mw = qobject_cast<MainWindow*>(mainWindow());
+            if (!mw) {
+                resp[QStringLiteral("error")] = QStringLiteral("MainWindow unavailable");
+                resp[QStringLiteral("success")] = false;
+                return resp;
+            }
+            const bool open = args.value(QStringLiteral("open")).toBool(true);
+            if (open != mw->isTopViewVisible()) {
+                mw->toggleTopViewWindow();
+            }
+            resp[QStringLiteral("topViewOpen")] = mw->isTopViewVisible();
+            resp[QStringLiteral("success")] = true;
+            return resp;
         }
 
         QJsonObject McpDispatcher::toolUpdateLayer(const QJsonObject &args)
@@ -3501,6 +3804,55 @@ namespace Friction
             tools.append(makeTool(QStringLiteral("friction_list_markers"),
                                   QStringLiteral("List all timeline markers currently set in the active scene with their frame and title"),
                                   QJsonObject()));
+
+            // 31. add_bone
+            {
+                QJsonObject props;
+                props[QStringLiteral("index")] = QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}, {QStringLiteral("description"), QStringLiteral("Host top-level row (a bone layer, or a bone to chain onto)")}};
+                props[QStringLiteral("name")] = QJsonObject{{QStringLiteral("type"), QStringLiteral("string")}, {QStringLiteral("description"), QStringLiteral("Host layer name (fallback)")}};
+                props[QStringLiteral("boneName")] = QJsonObject{{QStringLiteral("type"), QStringLiteral("string")}, {QStringLiteral("description"), QStringLiteral("Name for the new bone")}};
+                props[QStringLiteral("length")] = QJsonObject{{QStringLiteral("type"), QStringLiteral("number")}, {QStringLiteral("description"), QStringLiteral("Bone length in scene units along local +X (default 100)")}};
+                props[QStringLiteral("boneLayer")] = QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}, {QStringLiteral("description"), QStringLiteral("Create a fresh bone layer first and put the bone there (ignores index/name)")}};
+                props[QStringLiteral("boneLayerName")] = QJsonObject{{QStringLiteral("type"), QStringLiteral("string")}, {QStringLiteral("description"), QStringLiteral("Name for the auto-created bone layer")}};
+                tools.append(makeTool(QStringLiteral("friction_add_bone"),
+                                      QStringLiteral("Add an FK bone: onto a bone layer (root bone) or onto another bone (chains head-to-tail). Use friction_create_layer type:\"bone\" first for the rig host, or pass boneLayer:true to auto-create one. Animate via the returned bone layer's keyframes (rotation/position) and boneLength()"),
+                                      props));
+            }
+
+            // 32. render (async)
+            {
+                QJsonObject props;
+                props[QStringLiteral("path")] = QJsonObject{{QStringLiteral("type"), QStringLiteral("string")}, {QStringLiteral("description"), QStringLiteral("Output video path (default: Desktop/<scene name>.mp4); a missing .mp4 suffix is appended")}};
+                props[QStringLiteral("profile")] = QJsonObject{{QStringLiteral("type"), QStringLiteral("string")}, {QStringLiteral("description"), QStringLiteral("Output profile: 1-based index or display-name substring (default \"002\" = MP4 H.264 + MP3 audio)")}};
+                props[QStringLiteral("wait")] = QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}, {QStringLiteral("description"), QStringLiteral("Wait for the render to finish and report status (default true); false returns immediately after starting")}};
+                props[QStringLiteral("timeoutSeconds")] = QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}, {QStringLiteral("description"), QStringLiteral("Max seconds to wait when wait=true (default 900)")}};
+                tools.append(makeTool(QStringLiteral("friction_render"),
+                                      QStringLiteral("Render the active scene to a video file through the render queue (same pipeline as the queue panel; progress visible in the UI). Returns finished/error/timeout with the output path"),
+                                      props));
+            }
+
+            // 33. get_app_state
+            tools.append(makeTool(QStringLiteral("friction_get_app_state"),
+                                  QStringLiteral("Report app-level state: current theme + available themes, accent preset, language, top view window open, render queue count, open script panels, MCP port"),
+                                  QJsonObject()));
+
+            // 34. set_theme
+            {
+                QJsonObject props;
+                props[QStringLiteral("themeId")] = QJsonObject{{QStringLiteral("type"), QStringLiteral("string")}, {QStringLiteral("description"), QStringLiteral("Theme id from friction_get_app_state availableThemes (applied live)")}};
+                tools.append(makeTool(QStringLiteral("friction_set_theme"),
+                                      QStringLiteral("Switch the UI theme live (same engine as the settings dialog); enumerate ids with friction_get_app_state"),
+                                      props, QJsonArray{QStringLiteral("themeId")}));
+            }
+
+            // 35. set_top_view
+            {
+                QJsonObject props;
+                props[QStringLiteral("open")] = QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}, {QStringLiteral("description"), QStringLiteral("Open (default) or close the floating top view window")}};
+                tools.append(makeTool(QStringLiteral("friction_set_top_view"),
+                                      QStringLiteral("Open or close the AE-style orthographic top view window (X/Z plane with camera footprints)"),
+                                      props));
+            }
 
             // 26.3 get_api_schema (introspection)
             tools.append(makeTool(QStringLiteral("friction_get_api_schema"),

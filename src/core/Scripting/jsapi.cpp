@@ -37,6 +37,8 @@
 #include "Boxes/textbox.h"
 #include "Boxes/nullobject.h"
 #include "Boxes/cameralayer.h"
+#include "Boxes/bonelayer.h"
+#include "Boxes/bone.h"
 #include "Boxes/smartvectorpath.h"
 #include "Boxes/pathbox.h"
 #include "Boxes/boxwithpatheffects.h"
@@ -1624,6 +1626,58 @@ namespace Friction
             return wrapOwnedQObject(mEngine.data(), proxy);
         }
 
+        bool JsLayerProxy::isBoneLayer() const
+        {
+            if (!mBox) { return false; }
+            return mBox->getBoxType() == eBoxType::boneLayer;
+        }
+
+        bool JsLayerProxy::isBone() const
+        {
+            if (!mBox) { return false; }
+            return mBox->getBoxType() == eBoxType::bone;
+        }
+
+        QJSValue JsLayerProxy::addBone(const QString &name, const qreal length)
+        {
+            if (!mBox || !mEngine) { return QJSValue(QJSValue::NullValue); }
+            // root bone in a bone layer: mirror the bone tool's
+            // creation (pivot at the head/origin); chained bone on a
+            // bone host: head snaps to the parent's tail
+            Bone *bone = nullptr;
+            if (const auto boneLayer = enve_cast<BoneLayer*>(mBox.data())) {
+                const auto boneRef = enve::make_shared<Bone>();
+                boneLayer->addContained(boneRef);
+                boneRef->getBoxTransformAnimator()->setPivot(0, 0);
+                bone = boneRef.get();
+            } else if (const auto hostBone = enve_cast<Bone*>(mBox.data())) {
+                bone = hostBone->addChildBone();
+            } else {
+                return QJSValue(QJSValue::NullValue);
+            }
+            if (!bone) { return QJSValue(QJSValue::NullValue); }
+            if (length > 0) {
+                bone->lengthAnimator()->setCurrentBaseValue(length);
+            }
+            if (!name.isEmpty()) { bone->prp_setName(name); }
+            finishAction();
+            // same wrap as JsSceneProxy::wrapBox (layer-side helper)
+            const auto proxy = new JsLayerProxy(QPointer<BoundingBox>(bone),
+                                                mEngine.data(), nullptr);
+            return wrapOwnedQObject(mEngine.data(), proxy);
+        }
+
+        QJSValue JsLayerProxy::boneLength()
+        {
+            if (!mBox || !mEngine) { return QJSValue(QJSValue::NullValue); }
+            const auto bone = enve_cast<Bone*>(mBox.data());
+            if (!bone) { return QJSValue(QJSValue::NullValue); }
+            const auto proxy = new JsPropertyProxy(
+                        QPointer<Property>(bone->lengthAnimator()),
+                        JsPropertyProxy::Kind::Scalar, nullptr);
+            return wrapOwnedQObject(mEngine.data(), proxy);
+        }
+
         int JsLayerProxy::inPoint() const
         {
             if (!mBox || !mBox->hasDurationRectangle()) { return 0; }
@@ -2375,6 +2429,9 @@ namespace Friction
                 case eBoxType::vectorPath:
                     box = enve::make_shared<SmartVectorPath>();
                     break;
+                case eBoxType::boneLayer:
+                    box = enve::make_shared<BoneLayer>();
+                    break;
                 default:
                     return QJSValue(QJSValue::NullValue);
             }
@@ -2565,6 +2622,12 @@ namespace Friction
             }
             finishAction();
             return mEngine->toScriptValue(true);
+        }
+
+        QJSValue JsSceneProxy::addBoneLayer(const QString &name)
+        {
+            if (!mScene) { return QJSValue(QJSValue::NullValue); }
+            return addBox(int(eBoxType::boneLayer), name);
         }
 
         QJSValue JsSceneProxy::importFile(const QString &filePath)

@@ -257,6 +257,18 @@ namespace Friction
             // "panX"/"panY"/"zoom"/"rotZ"/"focal" -> scalar property
             // proxy (value/setValue/keyframes). Null otherwise.
             Q_INVOKABLE QJSValue cameraProperty(const QString &name);
+            // FK bone rigging: true for bone containers (BoneLayer)
+            // and individual bones (Bone)
+            Q_INVOKABLE bool isBoneLayer() const;
+            Q_INVOKABLE bool isBone() const;
+            // grow the skeleton: on a BoneLayer creates a root bone,
+            // on a Bone chains a child (head snaps to the parent's
+            // tail). Length in scene units along local +X (default
+            // 100). Returns the new bone proxy or null on wrong host.
+            Q_INVOKABLE QJSValue addBone(const QString &name = QString(),
+                                         const qreal length = 100);
+            // bone length animator (keyframable scalar) on bones only
+            Q_INVOKABLE QJSValue boneLength();
             // layer duration trimming (AE inPoint / outPoint)
             Q_INVOKABLE bool setInPoint(const int frame);
             Q_INVOKABLE bool setOutPoint(const int frame);
@@ -409,7 +421,11 @@ namespace Friction
                                          const QJSValue &nodes,
                                          const bool closed);
             Q_INVOKABLE QJSValue addSound(const QString &filePath,
-                                         const QString &name = QString());
+                                          const QString &name = QString());
+            // Moho-style FK rig host: a bone container layer that
+            // holds bones (and optionally the artwork they drive).
+            // Grow bones with the layer proxy's addBone().
+            Q_INVOKABLE QJSValue addBoneLayer(const QString &name);
             Q_INVOKABLE QJSValue importFile(const QString &filePath);
             Q_INVOKABLE bool setMarker(const int frame,
                                        const QString &title = QString());

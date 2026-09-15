@@ -48,6 +48,12 @@ class RenderWidget : public QWidget
 public:
     explicit RenderWidget(QWidget *parent = nullptr);
     void createNewRenderInstanceWidgetForCanvas(Canvas *canvas);
+    // queue a canvas as a new card and return it (caller configures
+    // its settings, then calls renderOnly to start it)
+    RenderInstanceWidget *addCanvasRenderInstance(Canvas *canvas);
+    // uncheck every other card, check this one and start the queue -
+    // renders exactly the given card in queue order
+    void renderOnly(RenderInstanceWidget *wid);
     void setRenderedFrame(const int frame);
     void clearRenderQueue();
     void write(eWriteStream& dst) const;

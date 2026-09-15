@@ -673,6 +673,16 @@ void MainWindow::toggleTopViewWindow()
     }
 }
 
+bool MainWindow::isTopViewVisible() const
+{
+    return mTopViewWindow && mTopViewWindow->isVisible();
+}
+
+RenderWidget *MainWindow::renderWidget() const
+{
+    return mRenderWidget;
+}
+
 void MainWindow::openRenderQueueWindow()
 {
     AppSupport::setSettings("ui",

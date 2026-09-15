@@ -119,6 +119,10 @@ namespace Friction
             QJsonObject toolRemoveRasterEffect(const QJsonObject &args);
             void toolRenderMarkupAsync(const QJsonObject &args,
                                        const std::function<void(const QJsonObject&)> &callback);
+            // queue the active scene for video render and (optionally)
+            // wait for completion; reports back through the callback
+            void toolRenderAsync(const QJsonObject &args,
+                                 const std::function<void(const QJsonObject&)> &callback);
             QJsonObject toolUpdateLayer(const QJsonObject &args);
             QJsonObject toolAnimateLayer(const QJsonObject &args);
             QJsonObject toolGetStoryboard(const QJsonObject &args);
@@ -134,6 +138,10 @@ namespace Friction
             QJsonObject toolSetMarker(const QJsonObject &args);
             QJsonObject toolClearMarkers(const QJsonObject &args);
             QJsonObject toolListMarkers(const QJsonObject &args);
+            QJsonObject toolAddBone(const QJsonObject &args);
+            QJsonObject toolGetAppState(const QJsonObject &args);
+            QJsonObject toolSetTheme(const QJsonObject &args);
+            QJsonObject toolSetTopView(const QJsonObject &args);
 
             QJsonObject dispatchToolImpl(const QString &toolName,
                                          const QJsonObject &arguments);

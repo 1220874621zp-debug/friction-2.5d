@@ -195,6 +195,22 @@ void RenderWidget::createNewRenderInstanceWidgetForCanvas(Canvas *canvas)
     addRenderInstanceWidget(wid);
 }
 
+RenderInstanceWidget *RenderWidget::addCanvasRenderInstance(Canvas *canvas)
+{
+    const auto wid = new RenderInstanceWidget(canvas, this);
+    addRenderInstanceWidget(wid);
+    return wid;
+}
+
+void RenderWidget::renderOnly(RenderInstanceWidget * const target)
+{
+    for (RenderInstanceWidget *wid : mRenderInstanceWidgets) {
+        if (wid != target) { wid->setChecked(false); }
+    }
+    target->setChecked(true);
+    render();
+}
+
 void RenderWidget::addRenderInstanceWidget(RenderInstanceWidget *wid)
 {
     mContLayout->addWidget(wid);

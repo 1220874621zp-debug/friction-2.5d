@@ -106,6 +106,11 @@ public:
     static MainWindow *sGetInstance();
 
     void toggleTopViewWindow();
+    // true when the floating top view window exists and is visible
+    bool isTopViewVisible() const;
+    // render queue dock (MCP render tool drives the same queue the
+    // UI shows, so AI-initiated renders stay visible to the user)
+    RenderWidget *renderWidget() const;
 
     void setupDocument();
     void setupImporters();
