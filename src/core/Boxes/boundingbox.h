@@ -99,6 +99,7 @@ enum class eBoxType {
     solid,
     cameraLayer,
     kraImage,
+    lottie,
 
     count
 };

@@ -140,6 +140,7 @@ set(
     Boxes/internallinkgroupbox.cpp
     Boxes/layerboxrenderdata.cpp
     Boxes/linkcanvasrenderdata.cpp
+    Boxes/lottiebox.cpp
     Boxes/pathbox.cpp
     Boxes/pathboxrenderdata.cpp
     Boxes/patheffectsmenu.cpp
@@ -369,6 +370,7 @@ set(
     svgexporthelpers.cpp
     svgimporter.cpp
     vtracerprovider.cpp
+    lottieprovider.cpp
     Depth/modelcatalog.cpp
     Depth/aidepthprovider.cpp
     CacheHandlers/tmpfileregistry.cpp
@@ -514,6 +516,7 @@ set(
     Boxes/internallinkgroupbox.h
     Boxes/layerboxrenderdata.h
     Boxes/linkcanvasrenderdata.h
+    Boxes/lottiebox.h
     Boxes/adjustmentlayer.h
     Boxes/bone.h
     Boxes/bonelayer.h
@@ -768,6 +771,7 @@ set(
     svgexporthelpers.h
     svgimporter.h
     vtracerprovider.h
+    lottieprovider.h
     Depth/modelcatalog.h
     Depth/aidepthprovider.h
     CacheHandlers/tmpfileregistry.h

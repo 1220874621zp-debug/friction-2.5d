@@ -32,6 +32,8 @@
 #include "Boxes/boundingbox.h"
 #include "Boxes/containerbox.h"
 #include "Boxes/textbox.h"
+#include "Boxes/lottiebox.h"
+#include "lottieprovider.h"
 #include "layeranimpresets.h"
 #include "textanimpresets.h"
 #include "GUI/mainwindow.h"
@@ -511,6 +513,10 @@ namespace Friction
                 return toolGetLayerProperties(arguments);
             } else if (toolName == QStringLiteral("friction_create_layer")) {
                 return toolCreateLayer(arguments);
+            } else if (toolName == QStringLiteral("friction_create_lottie_layer")) {
+                return toolCreateLottieLayer(arguments);
+            } else if (toolName == QStringLiteral("friction_update_lottie_layer")) {
+                return toolUpdateLottieLayer(arguments);
             } else if (toolName == QStringLiteral("friction_duplicate_layer")) {
                 return toolDuplicateLayer(arguments);
             } else if (toolName == QStringLiteral("friction_delete_layer")) {
@@ -1718,6 +1724,181 @@ namespace Friction
             return resp;
         }
 
+        // stable cache dir for AI-authored lottie json so updates can
+        // rewrite the same file the layer points at
+        static QString mcpLottieCacheDir()
+        {
+            const QString base = QDir::temp().absoluteFilePath(
+                        QStringLiteral("friction-mcp-lottie"));
+            QDir().mkpath(base);
+            return base;
+        }
+
+        static bool writeLottieJsonToCache(const QString &json,
+                                           QString &pathOut,
+                                           QString &errOut)
+        {
+            QJsonParseError parseErr;
+            const auto doc = QJsonDocument::fromJson(json.toUtf8(),
+                                                     &parseErr);
+            if (parseErr.error != QJsonParseError::NoError
+                    || !doc.isObject()) {
+                errOut = QStringLiteral("Invalid Lottie JSON: %1")
+                        .arg(parseErr.errorString());
+                return false;
+            }
+            static int counter = 0;
+            const QString path = mcpLottieCacheDir() +
+                    QStringLiteral("/lottie-%1.json")
+                        .arg(++counter, 4, 10, QLatin1Char('0'));
+            QFile file(path);
+            if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+                errOut = QStringLiteral("Cannot write %1").arg(path);
+                return false;
+            }
+            file.write(json.toUtf8());
+            file.close();
+            pathOut = path;
+            return true;
+        }
+
+        QJsonObject McpDispatcher::toolCreateLottieLayer(const QJsonObject &args)
+        {
+            const QString json = args.value(QStringLiteral("json")).toString();
+            QString path = args.value(QStringLiteral("path")).toString();
+            QJsonObject resp;
+            if (json.isEmpty() && path.isEmpty()) {
+                resp[QStringLiteral("error")] = QStringLiteral("Missing json or path parameter");
+                resp[QStringLiteral("success")] = false;
+                return resp;
+            }
+            if (!LottieLib::available()) {
+                resp[QStringLiteral("error")] = QStringLiteral(
+                            "Lottie runtime not available (frictionskottie library missing)");
+                resp[QStringLiteral("success")] = false;
+                return resp;
+            }
+            if (json.isEmpty()) {
+                if (!QFileInfo::exists(path)) {
+                    resp[QStringLiteral("error")] = QStringLiteral(
+                                "File does not exist: %1").arg(path);
+                    resp[QStringLiteral("success")] = false;
+                    return resp;
+                }
+            } else {
+                QString err;
+                if (!writeLottieJsonToCache(json, path, err)) {
+                    resp[QStringLiteral("error")] = err;
+                    resp[QStringLiteral("success")] = false;
+                    return resp;
+                }
+            }
+            auto *canvas = activeScene();
+            if (!canvas) {
+                resp[QStringLiteral("error")] = QStringLiteral("No active scene");
+                resp[QStringLiteral("success")] = false;
+                return resp;
+            }
+            if (Actions::sInstance) {
+                // importFile sniffs the json and routes to a LottieBox
+                auto *imported = Actions::sInstance->importFile(
+                            path, canvas->getCurrentGroup());
+                const auto lottie = enve_cast<LottieBox*>(imported);
+                if (!lottie) {
+                    resp[QStringLiteral("error")] = QStringLiteral(
+                                "Import did not produce a Lottie layer "
+                                "(is the json a valid bodymovin document?)");
+                    resp[QStringLiteral("success")] = false;
+                    return resp;
+                }
+                const QString customName = args.value(QStringLiteral("name")).toString();
+                if (!customName.isEmpty()) {
+                    imported->prp_setName(customName);
+                }
+                resp[QStringLiteral("success")] = true;
+                resp[QStringLiteral("name")] = imported->prp_getName();
+                resp[QStringLiteral("path")] = path;
+                resp[QStringLiteral("fps")] = lottie->getLottieFps();
+                return resp;
+            }
+            resp[QStringLiteral("error")] = QStringLiteral("Actions unavailable");
+            resp[QStringLiteral("success")] = false;
+            return resp;
+        }
+
+        QJsonObject McpDispatcher::toolUpdateLottieLayer(const QJsonObject &args)
+        {
+            const QString json = args.value(QStringLiteral("json")).toString();
+            QString path = args.value(QStringLiteral("path")).toString();
+            QJsonObject resp;
+            if (json.isEmpty() && path.isEmpty()) {
+                resp[QStringLiteral("error")] = QStringLiteral("Missing json or path parameter");
+                resp[QStringLiteral("success")] = false;
+                return resp;
+            }
+            if (!LottieLib::available()) {
+                resp[QStringLiteral("error")] = QStringLiteral(
+                            "Lottie runtime not available (frictionskottie library missing)");
+                resp[QStringLiteral("success")] = false;
+                return resp;
+            }
+            auto *canvas = activeScene();
+            if (!canvas) {
+                resp[QStringLiteral("error")] = QStringLiteral("No active scene");
+                resp[QStringLiteral("success")] = false;
+                return resp;
+            }
+            bool refOk = false;
+            const auto box = resolveLayerRefCxx(args, canvas->getCurrentGroup(),
+                                                QString(), &refOk);
+            const auto lottie = enve_cast<LottieBox*>(box);
+            if (!refOk || !lottie) {
+                resp[QStringLiteral("error")] = QStringLiteral(
+                            "Layer not found or not a Lottie layer");
+                resp[QStringLiteral("success")] = false;
+                return resp;
+            }
+            if (json.isEmpty()) {
+                if (!QFileInfo::exists(path)) {
+                    resp[QStringLiteral("error")] = QStringLiteral(
+                                "File does not exist: %1").arg(path);
+                    resp[QStringLiteral("success")] = false;
+                    return resp;
+                }
+            } else {
+                // only rewrite in place when the layer points into the
+                // MCP cache; user files always get a fresh cache copy
+                const QString current = lottie->filePath();
+                if (current.startsWith(mcpLottieCacheDir())) {
+                    path = current;
+                    QFile file(path);
+                    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+                        resp[QStringLiteral("error")] = QStringLiteral(
+                                    "Cannot write %1").arg(path);
+                        resp[QStringLiteral("success")] = false;
+                        return resp;
+                    }
+                    file.write(json.toUtf8());
+                    file.close();
+                } else {
+                    QString err;
+                    if (!writeLottieJsonToCache(json, path, err)) {
+                        resp[QStringLiteral("error")] = err;
+                        resp[QStringLiteral("success")] = false;
+                        return resp;
+                    }
+                }
+            }
+            // setFilePathNoRename reloads the animation and
+            // invalidates the whole influence range itself
+            lottie->setFilePathNoRename(path);
+            resp[QStringLiteral("success")] = true;
+            resp[QStringLiteral("name")] = lottie->prp_getName();
+            resp[QStringLiteral("path")] = path;
+            resp[QStringLiteral("fps")] = lottie->getLottieFps();
+            return resp;
+        }
+
         QJsonObject McpDispatcher::toolSetMarker(const QJsonObject &args)
         {
             auto *canvas = activeScene();
@@ -2856,6 +3037,29 @@ namespace Friction
                 tools.append(makeTool(QStringLiteral("friction_create_layer"),
                                       QStringLiteral("Create a new layer in the active scene (rect, ellipse, text, null, group, container, sound)"),
                                       props, QJsonArray{QStringLiteral("type"), QStringLiteral("name")}));
+            }
+
+            // 5b. create_lottie_layer
+            {
+                QJsonObject props;
+                props[QStringLiteral("json")] = QJsonObject{{QStringLiteral("type"), QStringLiteral("string")}, {QStringLiteral("description"), QStringLiteral("Lottie (bodymovin) animation JSON text, written directly by the AI")}};
+                props[QStringLiteral("path")] = QJsonObject{{QStringLiteral("type"), QStringLiteral("string")}, {QStringLiteral("description"), QStringLiteral("Path to a .json (bodymovin) or .lottie (zip) file")}};
+                props[QStringLiteral("name")] = QJsonObject{{QStringLiteral("type"), QStringLiteral("string")}, {QStringLiteral("description"), QStringLiteral("Layer name")}};
+                tools.append(makeTool(QStringLiteral("friction_create_lottie_layer"),
+                                      QStringLiteral("Create a Lottie animation layer in the active scene, from bodymovin JSON text or a .json/.lottie file. Renders with alpha; use for AI-generated motion graphics and titles"),
+                                      props));
+            }
+
+            // 5c. update_lottie_layer
+            {
+                QJsonObject props;
+                props[QStringLiteral("index")] = QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}, {QStringLiteral("description"), QStringLiteral("Layer index (1-based, top-level)")}};
+                props[QStringLiteral("name")] = QJsonObject{{QStringLiteral("type"), QStringLiteral("string")}, {QStringLiteral("description"), QStringLiteral("Layer name")}};
+                props[QStringLiteral("json")] = QJsonObject{{QStringLiteral("type"), QStringLiteral("string")}, {QStringLiteral("description"), QStringLiteral("Replacement Lottie (bodymovin) JSON text")}};
+                props[QStringLiteral("path")] = QJsonObject{{QStringLiteral("type"), QStringLiteral("string")}, {QStringLiteral("description"), QStringLiteral("Path to a replacement .json/.lottie file")}};
+                tools.append(makeTool(QStringLiteral("friction_update_lottie_layer"),
+                                      QStringLiteral("Replace the animation of an existing Lottie layer with new bodymovin JSON text or file (keeps the layer name and transform)"),
+                                      props));
             }
 
             // 6. duplicate_layer

@@ -64,6 +64,8 @@ if(UNIX AND NOT APPLE)
     option(BUILD_TESTING "Don't build gperftools tests" OFF)
     add_subdirectory(src/gperftools)
 endif()
+# lottie (skottie) runtime, loaded with QLibrary at runtime
+add_subdirectory(src/skottie-ffi)
 add_subdirectory(src/core)
 add_subdirectory(src/ui)
 add_subdirectory(src/app)

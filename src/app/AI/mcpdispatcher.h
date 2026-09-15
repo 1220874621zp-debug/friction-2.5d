@@ -95,6 +95,8 @@ namespace Friction
             QJsonObject toolListLayers(const QJsonObject &args);
             QJsonObject toolGetLayerProperties(const QJsonObject &args);
             QJsonObject toolCreateLayer(const QJsonObject &args);
+            QJsonObject toolCreateLottieLayer(const QJsonObject &args);
+            QJsonObject toolUpdateLottieLayer(const QJsonObject &args);
             QJsonObject toolDuplicateLayer(const QJsonObject &args);
             QJsonObject toolDeleteLayer(const QJsonObject &args);
             QJsonObject toolSetParentLayer(const QJsonObject &args);

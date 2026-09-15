@@ -63,6 +63,8 @@ namespace FileExtensions {
     extern QStringList video;
     CORE_EXPORT
     extern QStringList layers;
+    CORE_EXPORT
+    extern QStringList lottie;
 
     CORE_EXPORT
     QString filters(const QStringList& exts);
@@ -75,6 +77,8 @@ namespace FileExtensions {
     QString videoFilters();
     CORE_EXPORT
     QString layersFilters();
+    CORE_EXPORT
+    QString lottieFilters();
 };
 
 #endif // FILESOURCESCACHE_H

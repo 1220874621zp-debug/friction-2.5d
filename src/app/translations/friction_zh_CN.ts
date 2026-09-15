@@ -5135,6 +5135,29 @@ The scaling factor will then round up for .75 and above.</source>
     </message>
 </context>
 <context>
+    <name>LottieBox</name>
+    <message>
+        <location filename="../../core/Boxes/lottiebox.cpp" line="330"/>
+        <source>Change Source</source>
+        <translation>更换源文件</translation>
+    </message>
+    <message>
+        <location filename="../../core/Boxes/lottiebox.cpp" line="332"/>
+        <source>Lottie Files (%1)</source>
+        <translation>Lottie 文件 (%1)</translation>
+    </message>
+    <message>
+        <location filename="../../core/Boxes/lottiebox.cpp" line="344"/>
+        <source>Reload</source>
+        <translation>重新加载</translation>
+    </message>
+    <message>
+        <location filename="../../core/Boxes/lottiebox.cpp" line="349"/>
+        <source>Set Source File</source>
+        <translation>设置源文件</translation>
+    </message>
+</context>
+<context>
     <name>ImageBox</name>
     <message>
         <location filename="../../core/Boxes/imagebox.cpp" line="148"/>

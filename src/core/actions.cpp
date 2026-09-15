@@ -766,6 +766,13 @@ qsptr<VideoBox> createVideoForPath(const QString &path) {
     return vidBox;
 }
 
+#include "Boxes/lottiebox.h"
+qsptr<LottieBox> createLottieBoxForPath(const QString &path) {
+    const auto lottieBox = enve::make_shared<LottieBox>();
+    lottieBox->setFilePath(path);
+    return lottieBox;
+}
+
 qsptr<eIndependentSound> createSoundForPath(const QString &path) {
     const auto result = enve::make_shared<eIndependentSound>();
     result->setFilePath(path);
@@ -834,6 +841,11 @@ eBoxOrSound *Actions::importFile(const QString &path,
                     // resolve relative to its folder
                     qWarning() << "IMPORT: route=oca-manifest";
                     result = ImportOCA::loadOCAManifestFile(path, scene);
+                } else if (extLower == QLatin1String("lottie") ||
+                           (extLower == QLatin1String("json") &&
+                            LottieBox::looksLikeLottie(path))) {
+                    qWarning() << "IMPORT: route=lottie";
+                    result = createLottieBoxForPath(path);
                 } else if (isImageExt(extension)) {
                     qWarning() << "IMPORT: route=image";
                     result = createImageBox(path);

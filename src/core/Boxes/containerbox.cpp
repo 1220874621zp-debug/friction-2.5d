@@ -1923,6 +1923,7 @@ void ContainerBox::writeBoxOrSoundXEV(const stdsptr<XevZipFileSaver>& xevFileSav
 #include "bonelayer.h"
 #include "Psd/psdimagebox.h"
 #include "Kra/kraimagebox.h"
+#include "lottiebox.h"
 
 qsptr<BoundingBox> createBoxOfNonCustomType(const eBoxType type) {
     switch(type) {
@@ -1968,6 +1969,8 @@ qsptr<BoundingBox> createBoxOfNonCustomType(const eBoxType type) {
             return enve::make_shared<PsdImageBox>();
         case(eBoxType::kraImage):
             return enve::make_shared<KraImageBox>();
+        case(eBoxType::lottie):
+            return enve::make_shared<LottieBox>();
         // adjustment layers were never registered here - saving one
         // and reloading the project threw "Invalid box type"
         case(eBoxType::adjustmentLayer):
