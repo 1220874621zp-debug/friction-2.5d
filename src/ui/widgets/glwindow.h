@@ -55,6 +55,10 @@ protected:
     void updateFix();
 
     bool mRebind = false;
+    // Qt6: initializeGL() runs BEFORE the widget FBO exists (Qt5 created
+    // the FBO first); deferring GrContext/surface creation to the first
+    // paintGL restores the Qt5 ordering
+    bool mDeferInit = false;
     // Qt6: tracks which FBO/device size the Skia surface currently wraps;
     // paintGL rebinds whenever Qt silently recreates the widget FBO
     unsigned int mBoundFboId = ~0u;

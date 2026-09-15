@@ -116,7 +116,22 @@ void GLWindow::initializeGL() {
         }
 #endif
 
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+        // Qt6 invokes initializeGL() before the widget FBO exists
+        // (Qt5 created it first); initialize() against FBO 0 leaves skia
+        // broken on intel/core-profile - defer to the first paintGL
+        mDeferInit = true;
+        mRebind = true;
+        const auto& fmt = context()->format();
+        qDebug() << "[glwin] ctx format" << fmt.majorVersion() << "."
+                 << fmt.minorVersion() << "profile" << fmt.profile()
+                 << "samples" << fmt.samples() << "depth" << fmt.depthBufferSize()
+                 << "stencil" << fmt.stencilBufferSize()
+                 << "rgba" << fmt.redBufferSize() << fmt.greenBufferSize()
+                 << fmt.blueBufferSize() << fmt.alphaBufferSize();
+#else
         initialize();
+#endif
     } catch(const std::exception& e) {
         gPrintExceptionFatal(e);
     }
@@ -189,6 +204,16 @@ void GLWindow::initialize()
 
 void GLWindow::paintGL() {
 #if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+    if (mDeferInit) {
+        mDeferInit = false;
+        mRebind = false;
+        try {
+            initialize();
+        } catch(const std::exception& e) {
+            gPrintExceptionCritical(e);
+        }
+        if (!mCanvas) { return; }
+    }
     // Qt6's compositor may recreate the widget FBO outside resizeGL()
     // (hide/show, screen changes). A skia surface still wrapping the old
     // FBO id then renders into a recycled texture name, which shows up as
