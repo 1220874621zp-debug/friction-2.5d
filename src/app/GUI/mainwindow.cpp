@@ -1828,7 +1828,9 @@ void MainWindow::setupLayout()
     // GDI screen capture into canvas_diag/ next to the executable
     const auto canvasDiagShortcut = new QShortcut(
                 QKeySequence(QStringLiteral("Ctrl+Alt+D")), this);
-    canvasDiagShortcut->setContext(Qt::WindowShortcut);
+    // application level: the top view is its own top-level window,
+    // a WindowShortcut would not fire while it has focus
+    canvasDiagShortcut->setContext(Qt::ApplicationShortcut);
     connect(canvasDiagShortcut, &QShortcut::activated,
             this, []() { CanvasWindow::dumpCanvasDiagnostics(); });
 

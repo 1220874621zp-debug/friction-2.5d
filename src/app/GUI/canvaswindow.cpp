@@ -140,6 +140,7 @@ void CanvasWindow::dumpCanvasDiagnostics()
     int idx = 0;
     for (auto *cw : sInstances) cw->dumpDiag(dir, idx++, stamp);
     qDebug() << "[canvas-diag] dumped to" << dir;
+    GLWindow::dumpAllFboState();
 }
 
 void CanvasWindow::dumpDiag(const QString &dir,

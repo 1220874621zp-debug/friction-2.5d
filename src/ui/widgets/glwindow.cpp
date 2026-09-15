@@ -43,6 +43,32 @@ GLWindow::GLWindow(QWidget * const parent)
 #else
     setUpdateBehavior(QOpenGLWidget::NoPartialUpdate);
 #endif
+    sInstances << this;
+}
+
+GLWindow::~GLWindow()
+{
+    sInstances.removeAll(this);
+}
+
+QList<GLWindow*> GLWindow::sInstances;
+
+void GLWindow::dumpFboState() const
+{
+    qDebug() << "[glwin-diag]" << this
+             << "visible" << isVisible()
+             << "logical" << width() << "x" << height()
+             << "dpr" << devicePixelRatioF()
+             << "surface" << (mSurface ? "ok" : "null")
+             << "offscreenFbo" << mOffscreenFbo
+             << "tex" << mOffscreenTex
+             << "stencilRb" << mOffscreenStencil
+             << "rebindPending" << mRebind;
+}
+
+void GLWindow::dumpAllFboState()
+{
+    for (const auto *w : sInstances) w->dumpFboState();
 }
 
 void GLWindow::bindSkia(const int w, const int h) {
@@ -204,6 +230,11 @@ void GLWindow::paintGL() {
         glBlitFramebuffer(0, 0, pw, ph, 0, 0, pw, ph,
                           GL_COLOR_BUFFER_BIT, GL_NEAREST);
         glBindFramebuffer(GL_FRAMEBUFFER, GLuint(boundFbo));
+        // skia caches GL bindings; the blit above changed them behind its
+        // back, so the NEXT flush must not trust its cache (it would skip
+        // binding its target and render into whatever is bound - black
+        // canvas / cross-window garbage)
+        if (mGrContext) mGrContext->resetContext();
     }
 }
 

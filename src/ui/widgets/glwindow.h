@@ -43,6 +43,11 @@ struct ShaderEffectProgram;
 class UI_EXPORT GLWindow : public QOpenGLWidget, protected QGL33 {
 public:
     GLWindow(QWidget * const parent = nullptr);
+    ~GLWindow();
+
+    // canvas garbling diagnostics: dump every live GLWindow's raw
+    // (non re-rendered) framebuffer state to the debug log
+    static void dumpAllFboState();
 protected:
     virtual void renderSk(SkCanvas * const canvas) = 0;
     void resizeGL(int, int) final;
@@ -55,6 +60,10 @@ protected:
     void updateFix();
 
     bool mRebind = false;
+    // Qt6: tracks which FBO/device size the Skia surface currently wraps;
+    // paintGL rebinds whenever Qt silently recreates the FBO
+    unsigned int mBoundFboId = ~0u;
+    QSize mBoundDeviceSize;
     sk_sp<GrContext> mGrContext;
     sk_sp<SkSurface> mSurface;
     SkCanvas *mCanvas = nullptr;
@@ -63,6 +72,9 @@ protected:
     GLuint mOffscreenFbo = 0;
     GLuint mOffscreenTex = 0;
     GLuint mOffscreenStencil = 0;
+private:
+    static QList<GLWindow*> sInstances;
+    void dumpFboState() const;
 };
 
 #endif // GLWINDOW_H
