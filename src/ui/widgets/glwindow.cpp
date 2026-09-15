@@ -73,44 +73,65 @@ void GLWindow::bindSkia(const int w, const int h) {
     // dpr (e.g. 805 * 1.5 = 1207.5 -> Qt 1208 vs skia 1207)
     int scaledWidth = qRound(pixelRatio*w);
     int scaledHeight = qRound(pixelRatio*h);
-    GrGLFramebufferInfo fbInfo;
-    fbInfo.fFBOID = context()->defaultFramebufferObject();//buffer;
-    fbInfo.fFormat = GR_GL_RGBA8;//buffer;
+
+    // Render into OUR OWN offscreen FBO+texture, never directly into the
+    // FBO Qt manages: Qt6's compositor / high-DPI resize path (exposed on
+    // Intel core profile) reads the widget framebuffer while it is being
+    // written, surfacing recycled/stale texels as diagonal color blocks
+    // after a resize. Painting the whole scene into a private texture and
+    // transferring it with ONE atomic blit at the end of paintGL isolates
+    // Skia from the Qt widget-FBO lifecycle entirely.
+    if (mOffscreenDepthRbo) { glDeleteRenderbuffers(1, &mOffscreenDepthRbo); mOffscreenDepthRbo = 0; }
+    if (mOffscreenFbo) { glDeleteFramebuffers(1, &mOffscreenFbo); mOffscreenFbo = 0; }
+    if (mOffscreenTex) { glDeleteTextures(1, &mOffscreenTex); mOffscreenTex = 0; }
+    glGenTextures(1, &mOffscreenTex);
+    glBindTexture(GL_TEXTURE_2D, mOffscreenTex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, scaledWidth, scaledHeight,
+                 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    // GL_RGB8 wrapper so Skia's RGBA draw lands on RGB in the color buffer.
+    // A real depth24+stencil8 renderbuffer is attached so Skia's declared
+    // stencilBits matches an existing attachment - the missing-stencil
+    // GL_INVALID_OPERATION / frozen dashed frame that sank the earlier
+    // offscreen attempt is thereby avoided.
+    glGenRenderbuffers(1, &mOffscreenDepthRbo);
+    glBindRenderbuffer(GL_RENDERBUFFER, mOffscreenDepthRbo);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8,
+                          scaledWidth, scaledHeight);
+    glGenFramebuffers(1, &mOffscreenFbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, mOffscreenFbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                           GL_TEXTURE_2D, mOffscreenTex, 0);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+                              GL_RENDERBUFFER, mOffscreenDepthRbo);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT,
+                              GL_RENDERBUFFER, mOffscreenDepthRbo);
+    const GLenum offscreenStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    // restore Qt's context state (Skia/CV must not inherit our FBO binding)
+    glBindFramebuffer(GL_FRAMEBUFFER, context()->defaultFramebufferObject());
+    glBindRenderbuffer(GL_RENDERBUFFER, 0);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    if (offscreenStatus != GL_FRAMEBUFFER_COMPLETE) {
+        RuntimeThrow("Offscreen render target incomplete.");
+    }
+
     const int stencilBits =
             qEnvironmentVariableIsSet("FRICTION_SKIA_NOSTENCIL") ? 0 : 8;
+    GrGLFramebufferInfo fbInfo;
+    fbInfo.fFBOID = mOffscreenFbo;//buffer;
+    fbInfo.fFormat = GR_GL_RGBA8;//buffer;
     GrBackendRenderTarget backendRT = GrBackendRenderTarget(
                                         scaledWidth, scaledHeight,
                                         0, stencilBits, // (optional) 4, 8,
                                         fbInfo
                                         /*kRGBA_half_GrPixelConfig*/
                                         /*kSkia8888_GrPixelConfig*/);
-
-    // Query the REAL attachments of the Qt widget FBO. If Qt6 does not
-    // attach depth/stencil but we tell Skia stencilBits=8, Skia's stencil
-    // clears/ops hit an non-existent attachment -> GL_INVALID_OPERATION
-    // every frame and garbled canvas.
 #if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
-    {
-        GLint colorType = 0, depthType = 0, stencilType = 0;
-        GLint depthBits = 0, stencilBitsReal = 0;
-        const GLuint fbo = GLuint(fbInfo.fFBOID);
-        const auto qInt = [&](GLenum att, GLenum pname) {
-            GLint v = 0; glGetFramebufferAttachmentParameteriv(
-                         GL_FRAMEBUFFER, att, pname, &v); return v; };
-        colorType = qInt(GL_COLOR_ATTACHMENT0, GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE);
-        depthType = qInt(GL_DEPTH_ATTACHMENT, GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE);
-        stencilType = qInt(GL_STENCIL_ATTACHMENT, GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE);
-        if (depthType == GL_RENDERBUFFER)
-            glGetRenderbufferParameteriv(GL_RENDERBUFFER, GL_RENDERBUFFER_DEPTH_SIZE, &depthBits);
-        if (stencilType == GL_RENDERBUFFER)
-            glGetRenderbufferParameteriv(GL_RENDERBUFFER, GL_RENDERBUFFER_STENCIL_SIZE, &stencilBitsReal);
-        const GLenum fbStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
-        glDiagLog(QStringLiteral("[fbo] fbo=%1 size=%2x%3 dpr=%4 colorType=%5 depth=%6(%7) stencil=%8(%9) status=0x%10 declaredStencil=%11")
-                  .arg(fbo).arg(scaledWidth).arg(scaledHeight).arg(pixelRatio)
-                  .arg(colorType).arg(depthType).arg(depthBits)
-                  .arg(stencilType).arg(stencilBitsReal)
-                  .arg(int(fbStatus), 0, 16).arg(stencilBits));
-    }
+    glDiagLog(QStringLiteral("[fbo] OFFSCREEN size=%1x%2 dpr=%3 status=0x%4 declaredStencil=%5 (Qt widget fboID=%6)")
+              .arg(scaledWidth).arg(scaledHeight).arg(pixelRatio)
+              .arg(int(offscreenStatus), 0, 16).arg(stencilBits)
+              .arg(int(context()->defaultFramebufferObject())));
 #endif
 
     // setup SkSurface
@@ -130,7 +151,7 @@ void GLWindow::bindSkia(const int w, const int h) {
     if(!mSurface) RuntimeThrow("Failed to wrap buffer into SkSurface.");
     mCanvas = mSurface->getCanvas();
     mGrContext->resetContext();
-    mBoundFboId = fbInfo.fFBOID;
+    mBoundFboId = mOffscreenFbo;
     mBoundDeviceSize = QSize(scaledWidth, scaledHeight);
 }
 
@@ -246,15 +267,6 @@ void GLWindow::initialize()
     options.fInternalMultisampleCount =
             qEnvironmentVariableIsSet("FRICTION_SKIA_MSAA0")
             ? 0 : eSettings::instance().fInternalMultisampleCount;
-#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
-    // Qt6 A/B: under the Qt6+Intel core-profile the widget FBO shows the
-    // fill/backdrop region as diagonal recycled-texture color blocks right
-    // after a resize (GL_INVALID_OPERATION burst = internal MSAA resolve
-    // failing), while vector strokes stay clean. Force internal MSAA off
-    // to test whether resolve is the fill-corrupting path.
-    options.fInternalMultisampleCount = 0;
-    glDiagLog(QStringLiteral("[msaa] forced internalMultisampleCount=0 (Qt6 A/B)"));
-#endif
 
     mGrContext = GrContext::MakeGL(iface, options);
     if (!mGrContext) { RuntimeThrow("Failed to make GrContext."); }
@@ -279,15 +291,14 @@ void GLWindow::paintGL() {
         if (!mCanvas) { return; }
     }
     // Qt6's compositor may recreate the widget FBO outside resizeGL()
-    // (hide/show, screen changes). A skia surface still wrapping the old
-    // FBO id then renders into a recycled texture name, which shows up as
-    // garbled content from unrelated widgets - detect and rebind.
-    const auto fboId = defaultFramebufferObject();
+    // (hide/show, screen changes). Our surface lives in our OWN offscreen
+    // FBO, so it only depends on device size - rebind when that changes
+    // (a size change is also when the Qt compositor/high-DPI resize path
+    // used to show recycled-texel garble, so a fresh offscreen is right).
     const qreal pr = devicePixelRatioF();
     const QSize devSize(qRound(width()*pr), qRound(height()*pr));
-    if (fboId != mBoundFboId || devSize != mBoundDeviceSize) {
-        qDebug() << "[glwin] fbo/size changed, rebinding skia:"
-                 << mBoundFboId << "->" << fboId
+    if (devSize != mBoundDeviceSize) {
+        qDebug() << "[glwin] device size changed, rebinding skia:"
                  << mBoundDeviceSize << "->" << devSize;
         mRebind = true;
     }
@@ -305,6 +316,29 @@ void GLWindow::paintGL() {
     renderSk(mCanvas);
     mCanvas->flush();
 #if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+    // Present the private offscreen frame with ONE atomic blit into the
+    // Qt-managed widget FBO. Skia never writes the widget FBO directly, so
+    // its leftover GL state cannot corrupt what the compositor reads.
+    if (mOffscreenFbo) {
+        const qreal dpr = devicePixelRatioF();
+        const int pw = qRound(dpr*width());
+        const int ph = qRound(dpr*height());
+        glDisable(GL_SCISSOR_TEST); // Skia left it enabled with a stale
+                                    // small rect -> would clip the blit
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, mOffscreenFbo);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, defaultFramebufferObject());
+        glBlitFramebuffer(0, 0, pw, ph, 0, 0, pw, ph,
+                          GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        glBindFramebuffer(GL_FRAMEBUFFER, defaultFramebufferObject());
+        // Qt6's widget compositor may read the widget FBO on a different
+        // thread / on the next DWM present right after paintGL returns.
+        // Without a barrier the blit above may still be sitting in the GL
+        // command queue, so the compositor ingests a half-blitted (stale /
+        // partially-written) frame -> the top-left-bright / bottom-right
+        // dark diagonal gradient garble that only healed on re-expose.
+        // Force the blit to have been executed before handing back to Qt.
+        glFinish();
+    }
     // Qt6's RHI widget compositor blits THIS widget FBO to the screen right
     // after paintGL returns. Skia flushes while leaving global GL state
     // behind (own backing FBO bound, and GL_SCISSOR_TEST enabled with the
@@ -331,10 +365,12 @@ void GLWindow::paintGL() {
         static int sWarnCount = 0;
         if (sWarnCount < 10 || sWarnCount % 120 == 0)
             qWarning() << "[glwin] anomaly: glErr" << int(glErr)
-                       << "fbStatus" << int(fbStatus) << "fbo" << fboId;
+                       << "fbStatus" << int(fbStatus)
+                       << "fbo" << defaultFramebufferObject();
         if (sWarnCount < 10)
             glDiagLog(QStringLiteral("[anomaly] glErr=%1 fbStatus=0x%2 fbo=%3")
-                      .arg(int(glErr)).arg(int(fbStatus), 0, 16).arg(fboId));
+                      .arg(int(glErr)).arg(int(fbStatus), 0, 16)
+                      .arg(int(defaultFramebufferObject())));
         sWarnCount++;
     }
 #endif

@@ -66,6 +66,14 @@ protected:
     sk_sp<GrContext> mGrContext;
     sk_sp<SkSurface> mSurface;
     SkCanvas *mCanvas = nullptr;
+    // Qt6 garble fix: Skia renders into a private offscreen FBO+texture
+    // (with real depth24/stencil8), then paintGL does ONE atomic blit into
+    // the Qt-managed widget FBO. This isolates Skia from the Qt6 compositor
+    // / high-DPI resize path that reads the widget FBO mid-write and shows
+    // recycled texels (diagonal color blocks).
+    GLuint mOffscreenFbo = 0;
+    GLuint mOffscreenTex = 0;
+    GLuint mOffscreenDepthRbo = 0;
 };
 
 #endif // GLWINDOW_H
