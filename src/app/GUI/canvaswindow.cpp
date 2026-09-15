@@ -294,7 +294,7 @@ bool CanvasWindow::hasNoCanvas()
 void CanvasWindow::renderSk(SkCanvas * const canvas)
 {
     qreal pixelRatio = this->devicePixelRatioF();
-#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+#if 1 // qt5 control: garbling bisect active in both builds
     // garbling bisect: flush per stage and drain the error flag so we
     // learn WHICH drawing stage emits the per-frame GL_INVALID_OPERATION
     static int sStageLogFrames = 0;
@@ -319,14 +319,14 @@ void CanvasWindow::renderSk(SkCanvas * const canvas)
         canvas->restore();
     }
 
-#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+#if 1 // qt5 control: garbling bisect active in both builds
     canvas->flush();
     drainErr("scene");
 #endif
 
     drawRulersOverlay(canvas);
 
-#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+#if 1 // qt5 control: garbling bisect active in both builds
     canvas->flush();
     drainErr("rulers");
 #endif
@@ -340,7 +340,7 @@ void CanvasWindow::renderSk(SkCanvas * const canvas)
                                         height() * pixelRatio),
                          paint);
     }
-#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+#if 1 // qt5 control: garbling bisect active in both builds
     canvas->flush();
     drainErr("focus");
 #endif

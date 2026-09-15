@@ -54,7 +54,7 @@
 #include "MovablePoints/smartnodepoint.h"
 #include "Boxes/internallinkcanvas.h"
 
-#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+#if 1 // qt5 control: garbling bisect active in both builds
 #include <QOpenGLContext>
 #include <QOpenGLFunctions>
 // garbling bisect level 2: flush+drain inside Canvas::renderSk to find
@@ -583,7 +583,7 @@ void Canvas::renderSk(SkCanvas* const canvas,
                       const bool mouseGrabbing)
 {
     mDrawnSinceQue = true;
-#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+#if 1 // qt5 control: garbling bisect active in both builds
     if (sGlStage2Frames < 30) sGlStage2Frames++;
 #endif
     SkPaint paint;
@@ -664,7 +664,7 @@ void Canvas::renderSk(SkCanvas* const canvas,
         paint.setPathEffect(dashPathEffect);
         canvas->drawRect(toSkRect(getCurrentBounds()), paint);
     }
-#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+#if 1 // qt5 control: garbling bisect active in both builds
     drainGlErr2(canvas, "clearBackdropDash");
 #endif
     if (!mClipToCanvasSize || !drawCanvas) {
@@ -678,7 +678,7 @@ void Canvas::renderSk(SkCanvas* const canvas,
             canvas->drawRect(canvasRect, bgPaint);
         }
     }
-#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+#if 1 // qt5 control: garbling bisect active in both builds
     drainGlErr2(canvas, "bgfill");
 #endif
     if (gridVisible && !gridOnTop) {
@@ -717,7 +717,7 @@ void Canvas::renderSk(SkCanvas* const canvas,
 
     canvas->restore();
     canvas->restore();
-#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+#if 1 // qt5 control: garbling bisect active in both builds
     drainGlErr2(canvas, "contained");
 #endif
 
