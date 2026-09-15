@@ -43,78 +43,14 @@ GLWindow::GLWindow(QWidget * const parent)
 #else
     setUpdateBehavior(QOpenGLWidget::NoPartialUpdate);
 #endif
-    sInstances << this;
-}
-
-GLWindow::~GLWindow()
-{
-    sInstances.removeAll(this);
-}
-
-QList<GLWindow*> GLWindow::sInstances;
-
-void GLWindow::dumpFboState() const
-{
-    qDebug() << "[glwin-diag]" << this
-             << "visible" << isVisible()
-             << "logical" << width() << "x" << height()
-             << "dpr" << devicePixelRatioF()
-             << "surface" << (mSurface ? "ok" : "null")
-             << "offscreenFbo" << mOffscreenFbo
-             << "tex" << mOffscreenTex
-             << "stencilRb" << mOffscreenStencil
-             << "rebindPending" << mRebind;
-}
-
-void GLWindow::dumpAllFboState()
-{
-    for (const auto *w : sInstances) w->dumpFboState();
 }
 
 void GLWindow::bindSkia(const int w, const int h) {
     qreal pixelRatio = devicePixelRatioF();
     int scaledWidth = pixelRatio*w;
     int scaledHeight = pixelRatio*h;
-
-    // render into our OWN offscreen fbo+texture, never directly into the
-    // fbo Qt manages: Qt6's compositor may read the widget framebuffer
-    // while it is being written (transient garbling during continuous
-    // repaints, i.e. canvas dragging). Painting the whole scene into a
-    // private texture and transferring it with ONE atomic blit at the
-    // end of paintGL shrinks that race window to a single GPU copy.
-    if (mOffscreenFbo) { glDeleteFramebuffers(1, &mOffscreenFbo); mOffscreenFbo = 0; }
-    if (mOffscreenTex) { glDeleteTextures(1, &mOffscreenTex); mOffscreenTex = 0; }
-    if (mOffscreenStencil) { glDeleteRenderbuffers(1, &mOffscreenStencil); mOffscreenStencil = 0; }
-    glGenTextures(1, &mOffscreenTex);
-    glBindTexture(GL_TEXTURE_2D, mOffscreenTex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, scaledWidth, scaledHeight,
-                 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    // skia is told the target has 8 stencil bits (see GrBackendRenderTarget
-    // below) and dashed strokes do stencil-based path rendering: the
-    // attachment MUST exist or drivers hang on the stencil ops (safe
-    // frames toggle froze the app before this)
-    glGenRenderbuffers(1, &mOffscreenStencil);
-    glBindRenderbuffer(GL_RENDERBUFFER, mOffscreenStencil);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8,
-                          scaledWidth, scaledHeight);
-    glGenFramebuffers(1, &mOffscreenFbo);
-    glBindFramebuffer(GL_FRAMEBUFFER, mOffscreenFbo);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                           GL_TEXTURE_2D, mOffscreenTex, 0);
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
-                              GL_RENDERBUFFER, mOffscreenStencil);
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT,
-                              GL_RENDERBUFFER, mOffscreenStencil);
-    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-        glBindFramebuffer(GL_FRAMEBUFFER, context()->defaultFramebufferObject());
-        RuntimeThrow("Failed to create offscreen render target.");
-    }
-    glBindFramebuffer(GL_FRAMEBUFFER, context()->defaultFramebufferObject());
-
     GrGLFramebufferInfo fbInfo;
-    fbInfo.fFBOID = mOffscreenFbo;
+    fbInfo.fFBOID = context()->defaultFramebufferObject();//buffer;
     fbInfo.fFormat = GR_GL_RGBA8;//buffer;
     GrBackendRenderTarget backendRT = GrBackendRenderTarget(
                                         scaledWidth, scaledHeight,
@@ -207,7 +143,7 @@ void GLWindow::paintGL() {
         mRebind = false;
         try {
             bindSkia(width(), height());
-        } catch(const std::exception &e) {
+        } catch(const std::exception& e) {
             gPrintExceptionCritical(e);
         }
     }
@@ -215,27 +151,6 @@ void GLWindow::paintGL() {
     // glClear(GL_COLOR_BUFFER_BIT);
     renderSk(mCanvas);
     mCanvas->flush();
-
-    // single atomic transfer of the finished frame into the fbo Qt
-    // composites (see bindSkia): the long scene render stays invisible
-    // to the compositor, only this one blit races with it
-    if (mOffscreenFbo) {
-        const qreal dpr = devicePixelRatioF();
-        const int pw = qCeil(dpr*width());
-        const int ph = qCeil(dpr*height());
-        GLint boundFbo = 0;
-        glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &boundFbo);
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, mOffscreenFbo);
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, boundFbo);
-        glBlitFramebuffer(0, 0, pw, ph, 0, 0, pw, ph,
-                          GL_COLOR_BUFFER_BIT, GL_NEAREST);
-        glBindFramebuffer(GL_FRAMEBUFFER, GLuint(boundFbo));
-        // skia caches GL bindings; the blit above changed them behind its
-        // back, so the NEXT flush must not trust its cache (it would skip
-        // binding its target and render into whatever is bound - black
-        // canvas / cross-window garbage)
-        if (mGrContext) mGrContext->resetContext();
-    }
 }
 
 void GLWindow::showEvent(QShowEvent *e) {
