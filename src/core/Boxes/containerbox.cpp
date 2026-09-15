@@ -202,8 +202,8 @@ void ContainerBox::reparentKeepWorld(BoundingBox* const layer,
                                      ContainerBox* const newParent) {
     if(!layer || !newParent || layer == newParent) return;
     const auto transform = layer->getBoxTransformAnimator();
-    const QMatrix totalBefore = layer->getTotalTransform();
-    const QMatrix parentTotal = newParent->getTotalTransform();
+    const QTransform totalBefore = layer->getTotalTransform();
+    const QTransform parentTotal = newParent->getTotalTransform();
     const auto ref = layer->ref<BoundingBox>();
     // insertContained() runs the name through makeNameUniqueForDescendants()
     // whose prp_sFixName() strips every non-ASCII character ("道地" becomes
@@ -214,7 +214,7 @@ void ContainerBox::reparentKeepWorld(BoundingBox* const layer,
     newParent->addContained(ref);
     layer->prp_setName(name);
     if(!transform) return;
-    const QMatrix targetRel = totalBefore*parentTotal.inverted();
+    const QTransform targetRel = totalBefore*parentTotal.inverted();
     const QPointF pivot(transform->getPivotX(), transform->getPivotY());
     const auto v = MatrixDecomposition::decomposePivoted(targetRel, pivot);
     setChannelValue(transform->getPosAnimator(), v.fMoveX, v.fMoveY);

@@ -35,7 +35,7 @@ LayoutHandler::LayoutHandler(Document& document,
     mDocument(document), mAudioHandler(audioHandler) {
     const auto canvasComboLayout = new QHBoxLayout;
     canvasComboLayout->setSpacing(0);
-    canvasComboLayout->setMargin(0);
+    canvasComboLayout->setContentsMargins(0, 0, 0, 0);
     canvasComboLayout->setContentsMargins(0, 0, 0, 0);
 
     mComboWidget = new QWidget(parent);

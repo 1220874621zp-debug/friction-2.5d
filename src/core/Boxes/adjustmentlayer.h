@@ -20,7 +20,7 @@ protected:
     AdjustmentLayer();
 public:
     stdsptr<BoxRenderData> createRenderData() override;
-    void setupRenderData(const qreal relFrame, const QMatrix& parentM,
+    void setupRenderData(const qreal relFrame, const QTransform& parentM,
                          BoxRenderData* const data,
                          Canvas* const scene) override;
     void drawPixmapSk(SkCanvas * const canvas,

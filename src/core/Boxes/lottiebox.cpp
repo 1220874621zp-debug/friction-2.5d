@@ -326,7 +326,7 @@ int LottieBox::getAnimationFrameForRelFrame(const qreal relFrame)
 }
 
 void LottieBox::setupRenderData(const qreal relFrame,
-                                const QMatrix& parentM,
+                                const QTransform& parentM,
                                 BoxRenderData* const data,
                                 Canvas* const scene)
 {

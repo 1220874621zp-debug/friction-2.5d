@@ -86,7 +86,7 @@ private:
     ConnContextPtr<Canvas> mScene;
     ConnContextPtr<CameraLayer> mCamera;  // holds the animator connections
 
-    QMatrix mViewTransform;  // top-view world (x, z) -> device px
+    QTransform mViewTransform;  // top-view world (x, z) -> device px
     bool mNeedsFit = true;
 
     DragType mDragType = DragType::none;

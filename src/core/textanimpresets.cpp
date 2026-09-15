@@ -28,7 +28,6 @@
 #include "Boxes/textboxrenderdata.h"
 #include "Animators/texteffectcollection.h"
 #include "Animators/qstringanimator.h"
-#include <QRegExp>
 
 #include "skia/skqtconversions.h"
 #include "skia/skiaincludes.h"
@@ -39,7 +38,7 @@
 #include "Private/Tasks/taskscheduler.h"
 #include <cstdio>
 #include <QImage>
-#include <QMatrix>
+#include <QTransform>
 #include <QRectF>
 
 namespace {

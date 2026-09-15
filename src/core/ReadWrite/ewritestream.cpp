@@ -106,12 +106,14 @@ eWriteStream &eWriteStream::operator<<(const int64_t val)
     return *this;
 }
 
+#ifndef _MSC_VER
 eWriteStream &eWriteStream::operator<<(const long long val)
 {
     int32_t safeVal = static_cast<int32_t>(val);
     write(&safeVal, sizeof(int32_t));
     return *this;
 }
+#endif
 #endif
 
 eWriteStream &eWriteStream::operator<<(const iValueRange val) {
@@ -136,7 +138,7 @@ eWriteStream &eWriteStream::operator<<(const QRectF &val) {
 
 eWriteStream &eWriteStream::operator<<(const QTransform &val)
 {
-    // QMatrix (48 bytes)
+    // QTransform (48 bytes)
     qreal matrix2d[6] = {
         val.m11(), val.m12(),
         val.m21(), val.m22(),

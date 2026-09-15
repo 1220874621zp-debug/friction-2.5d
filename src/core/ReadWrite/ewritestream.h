@@ -73,7 +73,10 @@ public:
     eWriteStream& operator<<(const uint64_t val);
 #if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
     eWriteStream& operator<<(const int64_t val);
+#ifndef _MSC_VER
+    // on MSVC int64_t IS long long - declaring both is a redefinition
     eWriteStream& operator<<(const long long val);
+#endif
 #endif
     eWriteStream& operator<<(const iValueRange val);
     eWriteStream& operator<<(const qreal val);

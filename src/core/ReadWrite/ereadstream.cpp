@@ -145,11 +145,11 @@ eReadStream &eReadStream::operator>>(QRectF &val) {
 
 eReadStream &eReadStream::operator>>(QTransform &val)
 {
-    // Get QMatrix (48 bytes)
+    // Get QTransform (48 bytes)
     qreal m[6];
     read(m, sizeof(m));
 
-    // QMatrix => QTransform (m31=dx, m32=dy, m33=1.0)
+    // QTransform => QTransform (m31=dx, m32=dy, m33=1.0)
     val.setMatrix(m[0], m[1], 0.0,
                   m[2], m[3], 0.0,
                   m[4], m[5], 1.0);

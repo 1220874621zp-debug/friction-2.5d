@@ -23,6 +23,7 @@
 
 #ifndef TEXTANIMPRESETPANEL_H
 #define TEXTANIMPRESETPANEL_H
+#include "../ui/enterevent.h"
 
 #include <QWidget>
 #include <QImage>
@@ -69,7 +70,7 @@ public:
 protected:
     bool eventFilter(QObject* const obj, QEvent* const e) override;
     void paintEvent(QPaintEvent* const e) override;
-    void enterEvent(QEvent* const e) override;
+    void enterEvent(QtEnterEvent* const e) override;
     void leaveEvent(QEvent* const e) override;
     QSize sizeHint() const override;
 

@@ -691,7 +691,7 @@ static int runBindTest(Document& document, TaskScheduler& tasks) {
         fprintf(stderr, "[harness] tx after : %g %g %g %g %g %g\n",
                 m.m11(), m.m12(), m.m21(), m.m22(), m.dx(), m.dy());
         // exact round-trip expectation: world transform unchanged
-        QMatrix want; // recomputed via a fresh bind of the same values
+        QTransform want; // recomputed via a fresh bind of the same values
         const bool sane = !qIsNaN(m.m11()) && !qIsNaN(m.dx()) &&
                           qAbs(m.determinant()) > 0.01;
         fprintf(stderr, "[harness] tx sane=%d det=%.4f\n",

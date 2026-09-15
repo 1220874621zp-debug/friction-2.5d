@@ -77,7 +77,6 @@
 
 #include <QtMath>
 #include <cmath>
-#include <QDesktopWidget>
 
 #include <QMessageBox>
 
@@ -1763,7 +1762,7 @@ void BoxSingleWidget::loadStaticPixmaps(int iconSize)
     // on  = U+2B22 black hexagon (white),
     // off = U+2B21 white hexagon  (dim outline)
     {
-        const qreal dpr = qApp->desktop()->devicePixelRatioF();
+        const qreal dpr = QGuiApplication::primaryScreen()->devicePixelRatio();
         const auto makeHexIcon = [&pixmapSize, dpr](const ushort glyph,
                                                     const QColor& color) {
             auto pm = new QPixmap(pixmapSize * dpr);
@@ -1788,7 +1787,7 @@ void BoxSingleWidget::loadStaticPixmaps(int iconSize)
     // reset icon: clockwise open circle arrow glyph U+21BB (vector font
     // shape, rasterized at the actual device size -> always sharp)
     {
-        const qreal dpr = qApp->desktop()->devicePixelRatioF();
+        const qreal dpr = QGuiApplication::primaryScreen()->devicePixelRatio();
         auto pm = new QPixmap(pixmapSize * dpr);
         pm->setDevicePixelRatio(dpr);
         pm->fill(Qt::transparent);
@@ -1813,7 +1812,7 @@ void BoxSingleWidget::loadStaticPixmaps(int iconSize)
         QFile svgFile(QStringLiteral(":/icons/bone_parent.svg"));
         if (svgFile.open(QIODevice::ReadOnly)) {
             const QByteArray svgData = svgFile.readAll();
-            const qreal dpr = qApp->desktop()->devicePixelRatioF();
+            const qreal dpr = QGuiApplication::primaryScreen()->devicePixelRatio();
             const auto makeBoneLinkIcon =
                     [&pixmapSize, dpr, &svgData](const QColor& color) {
                 auto pm = new QPixmap(pixmapSize * dpr);
@@ -1837,7 +1836,7 @@ void BoxSingleWidget::loadStaticPixmaps(int iconSize)
     // the actual device size (S = solo, H = shy, fx = effects, T = preserve
     // underlying transparency); bright = active, dim = inactive
     {
-        const qreal dpr = qApp->desktop()->devicePixelRatioF();
+        const qreal dpr = QGuiApplication::primaryScreen()->devicePixelRatio();
         const auto makeTextIcon = [&pixmapSize, dpr](const QString& text,
                                                      const QColor& color,
                                                      const qreal sizeFactor) {
@@ -2255,7 +2254,7 @@ void BoxSingleWidget::mouseMoveEvent(QMouseEvent *event) {
         const int nameWidth = QApplication::fontMetrics().horizontalAdvance(name);
         // device-pixel size + dpr tag, otherwise the drag preview is
         // rendered blurry on high-DPI screens
-        const qreal dpr = devicePixelRatioF();
+        const qreal dpr = QGuiApplication::primaryScreen()->devicePixelRatio();
         QPixmap pixmap(QSize(mFillWidget->x() + nameWidth + eSizesUI::widget,
                              height()) * dpr);
         pixmap.setDevicePixelRatio(dpr);

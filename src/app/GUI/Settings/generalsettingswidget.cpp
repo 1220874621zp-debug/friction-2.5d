@@ -333,7 +333,7 @@ GeneralSettingsWidget::GeneralSettingsWidget(QWidget *parent)
     kraPathRow->setContentsMargins(0, 0, 0, 0);
     const auto kraPathLayout = new QHBoxLayout(kraPathRow);
     kraPathLayout->setContentsMargins(0, 0, 0, 0);
-    kraPathLayout->setMargin(0);
+    kraPathLayout->setContentsMargins(0, 0, 0, 0);
     const auto kraPathLabel = new QLabel(tr("KRA 缓存文件夹"), this);
     const auto kraPathEdit = new QLineEdit(this);
     kraPathEdit->setReadOnly(true);
@@ -356,7 +356,7 @@ GeneralSettingsWidget::GeneralSettingsWidget(QWidget *parent)
     kraBtnRow->setContentsMargins(0, 0, 0, 0);
     const auto kraBtnLayout = new QHBoxLayout(kraBtnRow);
     kraBtnLayout->setContentsMargins(0, 0, 0, 0);
-    kraBtnLayout->setMargin(0);
+    kraBtnLayout->setContentsMargins(0, 0, 0, 0);
     const auto openKraCacheBtn = new QPushButton(tr("打开 KRA 缓存目录"), this);
     const auto clearKraCacheBtn = new QPushButton(tr("清除 KRA 缓存"), this);
     kraBtnLayout->addWidget(openKraCacheBtn);
@@ -478,7 +478,7 @@ GeneralSettingsWidget::GeneralSettingsWidget(QWidget *parent)
     eCacheBtnRow->setContentsMargins(0, 0, 0, 0);
     const auto eCacheBtnLayout = new QHBoxLayout(eCacheBtnRow);
     eCacheBtnLayout->setContentsMargins(0, 0, 0, 0);
-    eCacheBtnLayout->setMargin(0);
+    eCacheBtnLayout->setContentsMargins(0, 0, 0, 0);
     const auto clearECacheBtn =
             new QPushButton(tr("清除内存换页缓存"), this);
     eCacheBtnLayout->addWidget(clearECacheBtn);

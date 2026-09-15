@@ -69,7 +69,7 @@ void KeyframeDiamondButton::setScene(Canvas *scene)
     update();
 }
 
-void KeyframeDiamondButton::enterEvent(QEvent *)
+void KeyframeDiamondButton::enterEvent(QtEnterEvent *)
 {
     mHovered = true;
     update();
@@ -158,7 +158,7 @@ InspectorColorButton::InspectorColorButton(ColorAnimator *anim, Canvas *scene, Q
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
 }
 
-void InspectorColorButton::enterEvent(QEvent *)
+void InspectorColorButton::enterEvent(QtEnterEvent *)
 {
     mHovered = true;
     update();

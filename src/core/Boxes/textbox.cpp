@@ -274,7 +274,10 @@ int CALLBACK gdiFontEnumProc(const LOGFONT* lf,
 {
     auto* out = reinterpret_cast<QVector<GdiFamilyEntry>*>(lParam);
     GdiFamilyEntry entry;
-    entry.name = QString::fromLocal8Bit(lf->lfFaceName);
+    // LOGFONT is LOGFONTW on MSVC (UNICODE): decode the wide face name
+    // directly - fromLocal8Bit would go through the ANSI code page and
+    // mangle non-ASCII family names
+    entry.name = QString::fromWCharArray(lf->lfFaceName);
     entry.lf = *lf;
     out->append(entry);
     return 1;

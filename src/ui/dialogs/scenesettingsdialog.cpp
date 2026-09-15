@@ -88,7 +88,9 @@ bool parseDurationField(const QString &text,
         if (!ok || h < 0) { return false; }
     }
     const qint64 total = qRound((h * 3600 + m * 60 + s) * fps) + f;
-    outFrames = int(qBound<qint64>(0, total, INT_MAX));
+    // explicit qint64 on all three args: Qt6 added perfect-forwarding
+    // qBound overloads and mixed int/qint64 args turn ambiguous
+    outFrames = int(qBound<qint64>(qint64(0), total, qint64(INT_MAX)));
     return true;
 }
 

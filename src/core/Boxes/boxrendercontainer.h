@@ -30,6 +30,7 @@
 #include "skia/skiaincludes.h"
 #include "smartPointers/ememory.h"
 #include "framerange.h"
+#include <QTransform>
 
 struct BoxRenderData;
 
@@ -62,7 +63,7 @@ protected:
     bool mAntiAlias = false;
     qreal mResolutionFraction;
     QRect mGlobalRect;
-    QMatrix mTransform;
+    QTransform mTransform;
     // full transform (incl. scene camera and resolution) the bitmap was
     // rasterized with - needed so the drag compensation can undo it
     SkMatrix mFullTransform;

@@ -207,7 +207,7 @@ bool PsdImageBox::ensureCachedFile()
 }
 
 void PsdImageBox::setupRenderData(const qreal relFrame,
-                                  const QMatrix& parentM,
+                                  const QTransform& parentM,
                                   BoxRenderData * const data,
                                   Canvas* const scene)
 {

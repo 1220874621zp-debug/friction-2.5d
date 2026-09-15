@@ -86,7 +86,9 @@ static LONG WINAPI writeCrashMiniDump(EXCEPTION_POINTERS* const pep) {
 
 #ifdef Q_OS_WIN
 #include "windowsincludes.h"
-#include <QtPlatformHeaders/QWindowsWindowFunctions>
+#if (QT_VERSION < QT_VERSION_CHECK(6, 0, 0))
+#include <QWindowsWindowFunctions>
+#endif
 #endif
 
 #include <QJSEngine>
@@ -397,7 +399,7 @@ int main(int argc, char *argv[])
             QFile dbg(QCoreApplication::applicationDirPath() + "/i18n_debug.txt");
             if (dbg.open(QIODevice::WriteOnly | QIODevice::Text)) {
                 QTextStream s(&dbg);
-                s.setCodec("UTF-8");
+                s.setEncoding(QStringConverter::Utf8);
                 s << "qt: " << qVersion() << "\n";
                 s << "locale: " << locale.name() << " chinese=" << isChinese
                   << " loaded=" << loaded << "\n";
@@ -441,9 +443,13 @@ int main(int argc, char *argv[])
     // https://github.com/musescore/MuseScore/pull/5820
     QApplication::setFont(QApplication::font("QMessageBox"));
 #endif
+#if (QT_VERSION < QT_VERSION_CHECK(6, 0, 0))
     if (!isRenderer) {
+        // QWindowsWindowFunctions was removed in Qt6; Qt6 keeps the
+        // window frame in fullscreen by default on Windows
         QWindowsWindowFunctions::setHasBorderInFullScreenDefault(true);
     }
+#endif
     const bool showSplash = true;
 #else
     const bool showSplash = false;

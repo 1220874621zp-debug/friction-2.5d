@@ -2702,7 +2702,7 @@ namespace Friction
                     if (args.value(QStringLiteral("extendScene")).toBool(true)) {
                         const auto range = scene->getFrameRange();
                         scene->setFrameRange({range.fMin,
-                                              range.fMax + (targets.count() - 1) * stagger});
+                                              range.fMax + (int(targets.count()) - 1) * stagger});
                     }
                 }
                 Friction::Core::endUndoGroupBatch();
@@ -2761,7 +2761,7 @@ namespace Friction
                 if (args.value(QStringLiteral("extendScene")).toBool(true)) {
                     const auto range = scene->getFrameRange();
                     scene->setFrameRange({range.fMin,
-                                          range.fMax + (targets.count() - 1) * stagger});
+                                          range.fMax + (int(targets.count()) - 1) * stagger});
                 }
             }
             Friction::Core::endUndoGroupBatch();
@@ -2854,7 +2854,7 @@ namespace Friction
             if (extendScene && stagger > 0) {
                 const auto range = scene->getFrameRange();
                 scene->setFrameRange({range.fMin,
-                                      range.fMax + (targets.count() - 1) * stagger});
+                                      range.fMax + (int(targets.count()) - 1) * stagger});
             }
             Friction::Core::endUndoGroupBatch();
 

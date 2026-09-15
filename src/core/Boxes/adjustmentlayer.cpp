@@ -103,7 +103,7 @@ stdsptr<BoxRenderData> AdjustmentLayer::createRenderData() {
 }
 
 void AdjustmentLayer::setupRenderData(const qreal relFrame,
-                                      const QMatrix& parentM,
+                                      const QTransform& parentM,
                                       BoxRenderData* const data,
                                       Canvas* const scene) {
     // like the base class, except the raster effect callers are NOT left

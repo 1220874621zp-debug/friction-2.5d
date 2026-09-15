@@ -229,7 +229,7 @@ bool SmartVectorPath::allSubPathsClosed(const qreal relFrame) const {
 }
 
 void SmartVectorPath::setupRenderData(const qreal relFrame,
-                                      const QMatrix& parentM,
+                                      const QTransform& parentM,
                                       BoxRenderData * const data,
                                       Canvas* const scene) {
     PathBox::setupRenderData(relFrame, parentM, data, scene);

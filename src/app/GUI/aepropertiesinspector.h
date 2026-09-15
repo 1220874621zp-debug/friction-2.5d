@@ -23,6 +23,7 @@
 
 #ifndef AEPROPERTIESINSPECTOR_H
 #define AEPROPERTIESINSPECTOR_H
+#include "../ui/enterevent.h"
 
 #include <QScrollArea>
 #include <QVBoxLayout>
@@ -62,7 +63,7 @@ signals:
 protected:
     void paintEvent(QPaintEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
-    void enterEvent(QEvent *event) override;
+    void enterEvent(QtEnterEvent *event) override;
     void leaveEvent(QEvent *event) override;
 
 private:
@@ -88,7 +89,7 @@ signals:
 protected:
     void paintEvent(QPaintEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
-    void enterEvent(QEvent *event) override;
+    void enterEvent(QtEnterEvent *event) override;
     void leaveEvent(QEvent *event) override;
 
 private:

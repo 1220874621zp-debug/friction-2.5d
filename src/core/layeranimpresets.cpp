@@ -23,7 +23,7 @@
 #include "skia/skqtconversions.h"
 #include "skia/skiaincludes.h"
 
-#include <QMatrix>
+#include <QTransform>
 #include <QRectF>
 
 namespace {
@@ -1357,7 +1357,7 @@ QList<QImage> renderPreviewSequence(BoundingBox* const box,
     // collect the transformed bounds of every frame first so all
     // frames share one stable fit
     struct FrameData {
-        QMatrix transform;
+        QTransform transform;
         SkMatrix totalTransform;
         qreal opacity = 100;
         SkPath path;

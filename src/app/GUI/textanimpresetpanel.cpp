@@ -477,7 +477,7 @@ void TextAnimTile::paintEvent(QPaintEvent* const e)
     p.drawPath(cardPath);
 }
 
-void TextAnimTile::enterEvent(QEvent* const e)
+void TextAnimTile::enterEvent(QtEnterEvent* const e)
 {
     Q_UNUSED(e)
     mHover = true;

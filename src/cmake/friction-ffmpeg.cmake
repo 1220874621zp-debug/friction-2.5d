@@ -20,7 +20,10 @@
 #
 
 if(WIN32)
-    set(FFMPEG_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/sdk/include)
+    # point at the isolated ffmpeg header copy, NOT sdk/include: the sdk
+    # include root also carries the whole Qt5 header tree, which would
+    # shadow the Qt6 headers on the compile line
+    set(FFMPEG_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/sdk/ffmpeg-win)
     set(FFMPEG_LIBRARIES
         avformat
         avcodec

@@ -632,7 +632,7 @@ int RenderHandler::maxInFlightFrames() const {
     const qint64 w = qint64(mCurrentScene->getCanvasWidth()*resFrac);
     const qint64 h = qint64(mCurrentScene->getCanvasHeight()*resFrac);
     const qint64 frameBytes = qMax<qint64>(1, w*h*4);
-    return int(qBound<qint64>(2, budgetBytes/frameBytes, 4));
+    return int(qBound<qint64>(qint64(2), budgetBytes/frameBytes, qint64(4)));
 }
 
 void RenderHandler::onSceneFrameCached() {

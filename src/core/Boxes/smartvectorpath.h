@@ -59,7 +59,7 @@ public:
     SkBlendMode getPaintBlendMode(const qreal relFrame) const override;
     bool isMaskBox() const override { return mMaskMode; }
 
-    void setupRenderData(const qreal relFrame, const QMatrix& parentM,
+    void setupRenderData(const qreal relFrame, const QTransform& parentM,
                          BoxRenderData * const data,
                          Canvas* const scene) override;
 

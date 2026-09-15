@@ -2,7 +2,7 @@
 
 #include <cmath>
 
-#include <QMatrix>
+#include <QTransform>
 #include <QMouseEvent>
 #include <QWheelEvent>
 
@@ -39,7 +39,7 @@ constexpr SkColor kCenterDot    = SkColorSetARGB(230, 210, 210, 215);
 // view transform survives a window close/reopen cycle (the widget is
 // rebuilt each time, but the user's pan/zoom should persist while the
 // same scene is active)
-QMatrix sSavedViewXform;
+QTransform sSavedViewXform;
 QPointer<Canvas> sSavedViewScene;
 bool sHasSavedView = false;
 }
@@ -146,7 +146,7 @@ void TopViewWindow::fitToContent()
     // the screen-down axis is NEGATIVE z (viewer/camera side at the
     // bottom, depth at the top), like looking at the scene from
     // behind the camera: layers above, camera below, view up
-    mViewTransform = QMatrix(s, 0., 0., -s,
+    mViewTransform = QTransform(s, 0., 0., -s,
                              -x0 * s + (sw - w * s) * 0.5,
                              z1 * s + (sh - h * s) * 0.5);
     update();
@@ -224,7 +224,7 @@ void TopViewWindow::collectFootprints(QList<Footprint>& out) const
             if (is3D || !cont) {
                 // 3D layers/groups: footprint at their depth; plain
                 // 2D layers: a gray marker line on the canvas plane
-                const QMatrix T = box->getTotalTransform();
+                const QTransform T = box->getTotalTransform();
                 const QRectF rel = box->getRelBoundingRect();
                 QPointF corners[4] = {
                     T.map(rel.topLeft()), T.map(rel.topRight()),
@@ -286,7 +286,7 @@ QPointF TopViewWindow::toDevice(const QPointF& logical) const
 QPointF TopViewWindow::mapToTopWorld(const QPointF& device) const
 {
     bool invertible = false;
-    const QMatrix inv = mViewTransform.inverted(&invertible);
+    const QTransform inv = mViewTransform.inverted(&invertible);
     return invertible ? inv.map(device) : QPointF();
 }
 
@@ -356,7 +356,7 @@ void TopViewWindow::startLayerDrag(const Footprint& fp)
     const auto adv = dynamic_cast<AdvancedTransformAnimator*>(
                 box->getTransformAnimator());
     if (!adv) { return; }
-    const QMatrix T = box->getTotalTransform();
+    const QTransform T = box->getTotalTransform();
     QPointF ax = T.map(QPointF(1., 0.)) - T.map(QPointF(0., 0.));
     if (qFuzzyIsNull(ax.manhattanLength())) { ax = QPointF(1., 0.); }
     mLocalXAxis = ax;
@@ -450,7 +450,7 @@ void TopViewWindow::renderSk(SkCanvas* const canvas)
     mFootprints = collectFootprints();
     mPose = cameraPose();
 
-    const QMatrix& T = mViewTransform;
+    const QTransform& T = mViewTransform;
     const auto devX = [&T](const qreal x)
     { return SkScalar(x * T.m11() + T.dx()); };
     const auto devY = [&T](const qreal z)

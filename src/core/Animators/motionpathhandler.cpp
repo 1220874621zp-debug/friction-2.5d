@@ -364,7 +364,7 @@ void MotionPathHandler::prp_drawCanvasControls(
 
     // position animator values live in the PARENT coordinate space;
     // the inherited transform (parent chain total) maps them to scene
-    const QMatrix m = mTarget->getInheritedTransform();
+    const QTransform m = mTarget->getInheritedTransform();
 
     // draw the bezier motion path through the position keys: one
     // cubic segment per key pair; the graph c0/c1 values are ABSOLUTE
