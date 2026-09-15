@@ -51,6 +51,8 @@
 #include "clipboardcontainer.h"
 //#include "Boxes/paintbox.h"
 #include <QFile>
+#include <QDateTime>
+#include <QCoreApplication>
 #include "MovablePoints/smartnodepoint.h"
 #include "Boxes/internallinkcanvas.h"
 
@@ -60,14 +62,34 @@
 // garbling bisect level 2: flush+drain inside Canvas::renderSk to find
 // the exact drawing stage emitting GL_INVALID_OPERATION on Intel/core
 static int sGlStage2Frames = 0;
+static QFile gGlStageFile;
 static void drainGlErr2(SkCanvas* const canvas, const char* const tag) {
-    if (sGlStage2Frames >= 30) return;
-    canvas->flush();
+    // NOTE: do NOT flush here - every extra flush submits pending GL
+    // commands mid-frame, competing with Qt6's compositor timing and
+    // itself aggravating the garble. Just drain the error flag, throttled.
+    Q_UNUSED(canvas)
     const auto ctx = QOpenGLContext::currentContext();
     if (!ctx) return;
     int n = 0;
     while (ctx->functions()->glGetError() != GL_NO_ERROR && n < 32) n++;
-    if (n) qWarning() << "[glstage2]" << tag << "errors" << n;
+    if (n) {
+        if (!gGlStageFile.isOpen()) {
+            gGlStageFile.setFileName(QCoreApplication::applicationDirPath() +
+                                     QStringLiteral("/glstage_drag.log"));
+            gGlStageFile.open(QIODevice::WriteOnly | QIODevice::Append);
+        }
+        if (gGlStageFile.isOpen()) {
+            gGlStageFile.write((QStringLiteral("%1 stage=%2 errors=%3\n")
+                                .arg(QDateTime::currentDateTime().toString(
+                                         Qt::ISODateWithMs))
+                                .arg(QString::fromUtf8(tag)).arg(n)).toUtf8());
+            gGlStageFile.flush();
+        }
+        // throttled console spam
+        if (sGlStage2Frames % 30 == 0)
+            qWarning() << "[glstage2]" << tag << "errors" << n;
+        sGlStage2Frames++;
+    }
 }
 #endif
 #include "pointtypemenu.h"
@@ -704,9 +726,20 @@ void Canvas::renderSk(SkCanvas* const canvas,
         // layers (AE rule) and that filtering happens per-layer in
         // the render pipeline; a whole-canvas concat would wrongly
         // transform 2D layers in this transient path
-        canvas->saveLayer(nullptr, nullptr);
-        drawContained(canvas, filter);
-        canvas->restore();
+        // Qt6 garble diagnostic: saveLayer makes Skia render into an
+        // internal offscreen FBO and switch back to the (recorded) widget
+        // FBO on restore. If Qt's compositor recreated the widget FBO
+        // mid-frame, the restore writes into a stale FBO id and the layer
+        // content lands in a recycled/undefined buffer (diagonal blocks
+        // while dragging). FRICTION_NO_SAVELAYER=1 skips the offscreen
+        // layer to prove that hypothesis.
+        if (qEnvironmentVariableIsSet("FRICTION_NO_SAVELAYER")) {
+            drawContained(canvas, filter);
+        } else {
+            canvas->saveLayer(nullptr, nullptr);
+            drawContained(canvas, filter);
+            canvas->restore();
+        }
     } else if (drawCanvas) {
         canvas->save();
         const float reversedRes = toSkScalar(1/mSceneFrame->fResolution);

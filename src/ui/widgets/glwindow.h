@@ -1,4 +1,4 @@
-/*
+﻿/*
 #
 # Friction - https://friction.graphics
 #
@@ -56,24 +56,18 @@ protected:
 
     bool mRebind = false;
     // Qt6: initializeGL() runs BEFORE the widget FBO exists (Qt5 created
-    // the FBO first); deferring GrContext/surface creation to the first
-    // paintGL restores the Qt5 ordering
+    // the FBO first); deferring GrContext/surface binding to the first
+    // paintGL restores the Qt5 ordering and keeps skia off FBO 0.
     bool mDeferInit = false;
-    // Qt6: tracks which FBO/device size the Skia surface currently wraps;
-    // paintGL rebinds whenever Qt silently recreates the widget FBO
+    // Qt6: track which FBO/size the skia surface currently wraps; Qt's
+    // compositor can recreate the widget FBO between paints (resize,
+    // hide/show, high-DPI reparent) - if it changed, rebind or every
+    // repaint targets a stale FBO (flicker + residual garble).
     unsigned int mBoundFboId = ~0u;
     QSize mBoundDeviceSize;
     sk_sp<GrContext> mGrContext;
     sk_sp<SkSurface> mSurface;
     SkCanvas *mCanvas = nullptr;
-    // Qt6 garble fix: Skia renders into a private offscreen FBO+texture
-    // (with real depth24/stencil8), then paintGL does ONE atomic blit into
-    // the Qt-managed widget FBO. This isolates Skia from the Qt6 compositor
-    // / high-DPI resize path that reads the widget FBO mid-write and shows
-    // recycled texels (diagonal color blocks).
-    GLuint mOffscreenFbo = 0;
-    GLuint mOffscreenTex = 0;
-    GLuint mOffscreenDepthRbo = 0;
 };
 
 #endif // GLWINDOW_H
