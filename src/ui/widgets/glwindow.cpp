@@ -29,8 +29,10 @@
 #include <QPainter>
 #include <QDebug>
 #include <QFile>
+#include <QDir>
 #include <QMutex>
 #include <QDateTime>
+#include <vector>
 #include "exceptions.h"
 
 // Qt6 garbling investigation: GL errors from KHR_debug and actual FBO
@@ -46,23 +48,78 @@ void glDiagLog(const QString& line) {
                  QStringLiteral(" ") + line + QStringLiteral("\n")).toUtf8());
     }
 }
+
+// Qt6/Windows high-DPI: the RHI compositor creates the widget FBO with a
+// physical size that can differ by 1-2 px from any guess based on
+// qRound(logical*dpr) - it truncates with QSize(int(x), int(y)). Blitting
+// an offscreen that is 1px larger overflows the destination and yields
+// GL_INVALID_OPERATION (gl_diag spans with "[anomaly] glErr=1282" every
+// frame) - the blit silently does nothing, Qt keeps compositing the stale
+// widget FBO and the canvas shows diagonal recycled-texel garble. Query
+// the real color-attachment size instead of assuming.
+bool queryWidgetFboPhysSize(QGL33* const gl,
+                            const GLuint fbo, GLsizei& w, GLsizei& h) {
+    w = 0; h = 0;
+    GLint prevRead = 0, prevDraw = 0;
+    gl->glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &prevRead);
+    gl->glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &prevDraw);
+    gl->glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
+    gl->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
+    GLint type = 0;
+    gl->glGetFramebufferAttachmentParameteriv(
+                GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE, &type);
+    GLint name = 0;
+    gl->glGetFramebufferAttachmentParameteriv(
+                GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME, &name);
+    bool ok = false;
+    if (type == GL_RENDERBUFFER) {
+        gl->glBindRenderbuffer(GL_RENDERBUFFER, GLuint(name));
+        GLint rw = 0, rh = 0;
+        gl->glGetRenderbufferParameteriv(GL_RENDERBUFFER,
+                                         GL_RENDERBUFFER_WIDTH, &rw);
+        gl->glGetRenderbufferParameteriv(GL_RENDERBUFFER,
+                                         GL_RENDERBUFFER_HEIGHT, &rh);
+        w = rw; h = rh; ok = (rw > 0 && rh > 0);
+    } else if (type == GL_TEXTURE) {
+        gl->glBindTexture(GL_TEXTURE_2D, GLuint(name));
+        GLint tw = 0, th = 0;
+        gl->glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &tw);
+        gl->glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &th);
+        w = tw; h = th; ok = (tw > 0 && th > 0);
+        gl->glBindTexture(GL_TEXTURE_2D, 0);
+    }
+    gl->glBindFramebuffer(GL_READ_FRAMEBUFFER, GLuint(prevRead));
+    gl->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, GLuint(prevDraw));
+    return ok;
+}
 }
 
 GLWindow::GLWindow(QWidget * const parent)
     : QOpenGLWidget(parent) {
+    // Qt6: official upstream friction qt6 branch uses NoPartialUpdate with
+    // full repaints. PartialUpdate made Qt6's compositor upload only the
+    // dirty-rect-listed region from the widget FBO and keep stale cached
+    // textures for the rest - with Skia repainting the WHOLE canvas every
+    // frame the untouched regions stayed recycled (diagonal color blocks
+    // that only healed on re-expose). NoPartialUpdate forces a full
+    // per-frame texture upload so the compositor always displays fresh FBO
+    // content.
+    setUpdateBehavior(QOpenGLWidget::NoPartialUpdate);
 #if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
-    // Qt6/Windows: with NoPartialUpdate the compositor's FBO lifecycle
-    // (DWM flip model) glitches under rapid repaints - the canvas starts
-    // showing textures from unrelated widgets (diagonal color blocks)
-    // until the window is re-exposed. PartialUpdate keeps Qt's blit-based
-    // path, which stays stable; the canvas fully redraws each frame so
-    // preserving old content costs nothing.
-    setUpdateBehavior(QOpenGLWidget::PartialUpdate);
     // recreateFbos() emits resized() even when the widget size did not
     // change - make sure the skia surface follows the new FBO
     connect(this, &QOpenGLWidget::resized, this, [this]() { mRebind = true; });
-#else
-    setUpdateBehavior(QOpenGLWidget::NoPartialUpdate);
+    // Qt6 compositor draw order (qbackingstoredefaultcompositor.cpp):
+    // texture widgets are drawn FIRST (NoBlend), then the raster backing
+    // store is BLENDED OVER them. Stale opaque pixels the store holds in
+    // this widget's rect (left behind by layout switches / the welcome
+    // screen) then cover the canvas - the "other widgets' textures"
+    // diagonal garble. Qt5 composited in the opposite order (GL texture
+    // last) and was immune. StacksOnTop moves this widget's texture to
+    // the final pass so nothing can be blended over it.
+    setAttribute(Qt::WA_AlwaysStackOnTop);
 #endif
 }
 
@@ -75,6 +132,25 @@ void GLWindow::bindSkia(const int w, const int h) {
     int scaledHeight = qRound(pixelRatio*h);
 
 #if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+    // Qt6: the RHI compositor creates the widget FBO at a size that is
+    // NOT reliably qRound(logical*dpr) - it truncates, and at fractional
+    // dpr (1.5) the guess can be 1px larger than the real attachment.
+    // Blitting that 1px-larger source overflows the destination FBO and
+    // raises GL_INVALID_OPERATION, which silently aborts the blit: the
+    // widget FBO keeps its stale contents and the compositor shows the
+    // recycled-texel diagonal garble. Trust nothing: read the actual
+    // color-attachment size of the bound widget FBO.
+    const GLuint widgetFbo = context()->defaultFramebufferObject();
+    GLsizei realW = 0, realH = 0;
+    if (queryWidgetFboPhysSize(this, widgetFbo, realW, realH)) {
+        scaledWidth = realW;
+        scaledHeight = realH;
+    }
+    glDiagLog(QStringLiteral("[fbo] REAL widget fbo=%1 attach=%2x%3 (guess=%4x%5 dpr=%6)")
+              .arg(int(widgetFbo)).arg(scaledWidth).arg(scaledHeight)
+              .arg(qRound(pixelRatio*w)).arg(qRound(pixelRatio*h))
+              .arg(pixelRatio));
+
     // Render into OUR OWN offscreen FBO+texture, never directly into the
     // FBO Qt manages: Qt6's compositor / high-DPI resize path (exposed on
     // Intel core profile) reads the widget framebuffer while it is being
@@ -311,7 +387,17 @@ void GLWindow::paintGL() {
     // (a size change is also when the Qt compositor/high-DPI resize path
     // used to show recycled-texel garble, so a fresh offscreen is right).
     const qreal pr = devicePixelRatioF();
-    const QSize devSize(qRound(width()*pr), qRound(height()*pr));
+    // Compare against the REAL widget-FBO size: at fractional dpr the
+    // qRound guess can differ from Qt's truncated attachment size, so a
+    // stale guess would skip the rebind and keep blitting an offscreen
+    // of the wrong size forever (persistent GL_INVALID_OPERATION).
+    GLsizei ww = 0, wh = 0;
+    if (!queryWidgetFboPhysSize(this, defaultFramebufferObject(), ww, wh) ||
+            ww <= 0 || wh <= 0) {
+        ww = qRound(width()*pr);
+        wh = qRound(height()*pr);
+    }
+    const QSize devSize(ww, wh);
     if (devSize != mBoundDeviceSize) {
         qDebug() << "[glwin] device size changed, rebinding skia:"
                  << mBoundDeviceSize << "->" << devSize;
@@ -331,20 +417,64 @@ void GLWindow::paintGL() {
     renderSk(mCanvas);
     mCanvas->flush();
 #if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+    // one-shot offscreen vs widget-FBO full readback: decide whether the
+    // garble is already inside the offscreen (Skia/1282) or only appears
+    // after Qt's compositor reads the widget FBO (timing/texture-id reuse)
+    {
+        static int sOffDumpFrames = 0;
+        if (sOffDumpFrames < 3 && mOffscreenFbo) {
+            sOffDumpFrames++;
+            const QDir dir = QCoreApplication::applicationDirPath() +
+                             QStringLiteral("/canvas_diag");
+            dir.mkpath(QStringLiteral("."));
+            const QString stamp = QString::number(sOffDumpFrames);
+            const GLsizei dw = mBoundDeviceSize.width();
+            const GLsizei dh = mBoundDeviceSize.height();
+            if (dw > 0 && dh > 0) {
+                std::vector<uchar> od(size_t(dw*dh*4));
+                std::vector<uchar> wd(size_t(dw*dh*4));
+                glBindFramebuffer(GL_READ_FRAMEBUFFER, mOffscreenFbo);
+                glReadPixels(0, 0, dw, dh, GL_RGBA, GL_UNSIGNED_BYTE,
+                             od.data());
+                glBindFramebuffer(GL_READ_FRAMEBUFFER,
+                                  defaultFramebufferObject());
+                glReadPixels(0, 0, dw, dh, GL_RGBA, GL_UNSIGNED_BYTE,
+                             wd.data());
+                glBindFramebuffer(GL_READ_FRAMEBUFFER, mOffscreenFbo);
+                QImage oi(od.data(), dw, dh, dw*4, QImage::Format_RGBA8888);
+                QImage wi(wd.data(), dw, dh, dw*4, QImage::Format_RGBA8888);
+                const QString base = dir.filePath(QStringLiteral("sb_%1_")
+                                                  .arg(stamp));
+                oi.mirrored().save(base + QStringLiteral("offscreen.png"));
+                wi.mirrored().save(base + QStringLiteral("widget.png"));
+                glDiagLog(QStringLiteral("[readback] frame=%1 %2x%3 saved offscreen vs widget")
+                          .arg(stamp).arg(dw).arg(dh));
+            }
+        }
+    }
     // Present the private offscreen frame with ONE atomic blit into the
     // Qt-managed widget FBO. Skia never writes the widget FBO directly, so
     // its leftover GL state cannot corrupt what the compositor reads.
     if (mOffscreenFbo) {
-        const qreal dpr = devicePixelRatioF();
-        const int pw = qRound(dpr*width());
-        const int ph = qRound(dpr*height());
+        // Blit using the REAL widget-FBO attachment size, never a guess:
+        // at fractional dpr a qRound(logical*dpr) guess is 1px too big,
+        // blitting it overflows the destination -> GL_INVALID_OPERATION
+        // -> the blit is a no-op -> widget FBO stays stale -> compositor
+        // shows the recycled-texel garble. (Same size already used when
+        // the offscreen was created in bindSkia.)
+        GLsizei bw = 0, bh = 0;
+        const GLuint bfo = defaultFramebufferObject();
+        if (!queryWidgetFboPhysSize(this, bfo, bw, bh) || bw <= 0 || bh <= 0) {
+            bw = qRound(devicePixelRatioF()*width());
+            bh = qRound(devicePixelRatioF()*height());
+        }
         glDisable(GL_SCISSOR_TEST); // Skia left it enabled with a stale
                                     // small rect -> would clip the blit
         glBindFramebuffer(GL_READ_FRAMEBUFFER, mOffscreenFbo);
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, defaultFramebufferObject());
-        glBlitFramebuffer(0, 0, pw, ph, 0, 0, pw, ph,
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, bfo);
+        glBlitFramebuffer(0, 0, bw, bh, 0, 0, bw, bh,
                           GL_COLOR_BUFFER_BIT, GL_NEAREST);
-        glBindFramebuffer(GL_FRAMEBUFFER, defaultFramebufferObject());
+        glBindFramebuffer(GL_FRAMEBUFFER, bfo);
         // Qt6's widget compositor may read the widget FBO on a different
         // thread / on the next DWM present right after paintGL returns.
         // Without a barrier the blit above may still be sitting in the GL
@@ -353,6 +483,30 @@ void GLWindow::paintGL() {
         // dark diagonal gradient garble that only healed on re-expose.
         // Force the blit to have been executed before handing back to Qt.
         glFinish();
+    }
+    // blit verification (throttled): read one pixel back from both the
+    // offscreen source and the (blitted) widget FBO - if they differ, the
+    // blit is being rejected by the driver and the compositor keeps
+    // showing the stale widget FBO (the diagonal garble).
+    {
+        static int sBlitCheckFrames = 0;
+        if (sBlitCheckFrames < 6 && mOffscreenFbo) {
+            sBlitCheckFrames++;
+            GLubyte src[4] = {0,0,0,0}, dst[4] = {0,0,0,0};
+            const GLsizei cx = qMax(1, int(qRound(width()*
+                                                 devicePixelRatioF())/2));
+            const GLsizei cy = qMax(1, int(qRound(height()*
+                                                 devicePixelRatioF())/2));
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, mOffscreenFbo);
+            glReadPixels(cx, cy, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, src);
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, defaultFramebufferObject());
+            glReadPixels(cx, cy, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, dst);
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, mOffscreenFbo);
+            glDiagLog(QStringLiteral("[blit] offscreen=(%1,%2,%3,%4) widgetFbo=(%5,%6,%7,%8) fbo=%9")
+                      .arg(int(src[0])).arg(int(src[1])).arg(int(src[2])).arg(int(src[3]))
+                      .arg(int(dst[0])).arg(int(dst[1])).arg(int(dst[2])).arg(int(dst[3]))
+                      .arg(int(defaultFramebufferObject())));
+        }
     }
     // Qt6's RHI widget compositor blits THIS widget FBO to the screen right
     // after paintGL returns. Skia flushes while leaving global GL state
@@ -364,10 +518,15 @@ void GLWindow::paintGL() {
     // full-widget state before handing back to Qt.
     const auto dfo = defaultFramebufferObject();
     glBindFramebuffer(GL_FRAMEBUFFER, dfo);
-    const qreal dpr2 = devicePixelRatioF();
-    glViewport(0, 0, qRound(width()*dpr2), qRound(height()*dpr2));
+    GLsizei vw = 0, vh = 0;
+    if (!queryWidgetFboPhysSize(this, dfo, vw, vh) || vw <= 0 || vh <= 0) {
+        const qreal dpr2 = devicePixelRatioF();
+        vw = qRound(width()*dpr2);
+        vh = qRound(height()*dpr2);
+    }
+    glViewport(0, 0, vw, vh);
     glDisable(GL_SCISSOR_TEST);
-    glScissor(0, 0, qRound(width()*dpr2), qRound(height()*dpr2));
+    glScissor(0, 0, vw, vh);
     // re-declare the fbo so the rebind guard is coherent next paint
     if (dfo != mBoundFboId) { mBoundFboId = dfo; }
 #endif
