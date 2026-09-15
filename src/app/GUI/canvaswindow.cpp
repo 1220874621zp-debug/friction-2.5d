@@ -305,6 +305,29 @@ void CanvasWindow::renderSk(SkCanvas * const canvas)
         while (glGetError() != GL_NO_ERROR && n < 32) n++;
         if (n && stageLog) qWarning() << "[glstage]" << tag << "errors" << n;
     };
+    // pure op-class probes: isolate which skia op the qt6 context rejects
+    static int sProbeFrames = 0;
+    if (sProbeFrames < 15) {
+        sProbeFrames++;
+        const auto drainP = [this](const char* tag) {
+            int n = 0;
+            while (glGetError() != GL_NO_ERROR && n < 32) n++;
+            if (n) qWarning() << "[glprobe]" << tag << "errors" << n;
+        };
+        SkPaint pp; pp.setColor(SK_ColorRED);
+        canvas->drawRect(SkRect::MakeWH(4, 4), pp);
+        canvas->flush(); drainP("identity-rect");
+        canvas->save();
+        canvas->scale(1.0001f, 1.0001f);
+        canvas->drawRect(SkRect::MakeWH(4, 4), pp);
+        canvas->restore();
+        canvas->flush(); drainP("scaled-rect");
+        canvas->clear(SkColorSetARGB(0, 0, 0, 0));
+        canvas->flush(); drainP("clear");
+        canvas->saveLayer(nullptr, nullptr);
+        canvas->restore();
+        canvas->flush(); drainP("savelayer");
+    }
 #endif
     if (mCurrentCanvas) {
         const QTransform worldToScreen(mViewTransform.m11(), mViewTransform.m12(), 0.0,

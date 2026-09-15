@@ -58,9 +58,11 @@ void GLWindow::bindSkia(const int w, const int h) {
     GrGLFramebufferInfo fbInfo;
     fbInfo.fFBOID = context()->defaultFramebufferObject();//buffer;
     fbInfo.fFormat = GR_GL_RGBA8;//buffer;
+    const int stencilBits =
+            qEnvironmentVariableIsSet("FRICTION_SKIA_NOSTENCIL") ? 0 : 8;
     GrBackendRenderTarget backendRT = GrBackendRenderTarget(
                                         scaledWidth, scaledHeight,
-                                        0, 8, // (optional) 4, 8,
+                                        0, stencilBits, // (optional) 4, 8,
                                         fbInfo
                                         /*kRGBA_half_GrPixelConfig*/
                                         /*kSkia8888_GrPixelConfig*/);
@@ -190,7 +192,12 @@ void GLWindow::initialize()
     if (!iface) { RuntimeThrow("Failed to make native interface."); }
 
     GrContextOptions options;
-    options.fInternalMultisampleCount = eSettings::instance().fInternalMultisampleCount;
+    // env kill-switches for the garbling investigation:
+    // FRICTION_SKIA_MSAA0=1 disables skia's internal msaa,
+    // FRICTION_SKIA_NOSTENCIL=1 reports a stencil-less render target
+    options.fInternalMultisampleCount =
+            qEnvironmentVariableIsSet("FRICTION_SKIA_MSAA0")
+            ? 0 : eSettings::instance().fInternalMultisampleCount;
 
     mGrContext = GrContext::MakeGL(iface, options);
     if (!mGrContext) { RuntimeThrow("Failed to make GrContext."); }
