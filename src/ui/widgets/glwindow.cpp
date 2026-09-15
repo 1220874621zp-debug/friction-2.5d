@@ -49,8 +49,33 @@ void GLWindow::bindSkia(const int w, const int h) {
     qreal pixelRatio = devicePixelRatioF();
     int scaledWidth = pixelRatio*w;
     int scaledHeight = pixelRatio*h;
+
+    // render into our OWN offscreen fbo+texture, never directly into the
+    // fbo Qt manages: Qt6's compositor may read the widget framebuffer
+    // while it is being written (transient garbling during continuous
+    // repaints, i.e. canvas dragging). Painting the whole scene into a
+    // private texture and transferring it with ONE atomic blit at the
+    // end of paintGL shrinks that race window to a single GPU copy.
+    if (mOffscreenFbo) { glDeleteFramebuffers(1, &mOffscreenFbo); mOffscreenFbo = 0; }
+    if (mOffscreenTex) { glDeleteTextures(1, &mOffscreenTex); mOffscreenTex = 0; }
+    glGenTextures(1, &mOffscreenTex);
+    glBindTexture(GL_TEXTURE_2D, mOffscreenTex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, scaledWidth, scaledHeight,
+                 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glGenFramebuffers(1, &mOffscreenFbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, mOffscreenFbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                           GL_TEXTURE_2D, mOffscreenTex, 0);
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        glBindFramebuffer(GL_FRAMEBUFFER, context()->defaultFramebufferObject());
+        RuntimeThrow("Failed to create offscreen render target.");
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, context()->defaultFramebufferObject());
+
     GrGLFramebufferInfo fbInfo;
-    fbInfo.fFBOID = context()->defaultFramebufferObject();//buffer;
+    fbInfo.fFBOID = mOffscreenFbo;
     fbInfo.fFormat = GR_GL_RGBA8;//buffer;
     GrBackendRenderTarget backendRT = GrBackendRenderTarget(
                                         scaledWidth, scaledHeight,
@@ -143,7 +168,7 @@ void GLWindow::paintGL() {
         mRebind = false;
         try {
             bindSkia(width(), height());
-        } catch(const std::exception& e) {
+        } catch(const std::exception &e) {
             gPrintExceptionCritical(e);
         }
     }
@@ -151,6 +176,22 @@ void GLWindow::paintGL() {
     // glClear(GL_COLOR_BUFFER_BIT);
     renderSk(mCanvas);
     mCanvas->flush();
+
+    // single atomic transfer of the finished frame into the fbo Qt
+    // composites (see bindSkia): the long scene render stays invisible
+    // to the compositor, only this one blit races with it
+    if (mOffscreenFbo) {
+        const qreal dpr = devicePixelRatioF();
+        const int pw = qCeil(dpr*width());
+        const int ph = qCeil(dpr*height());
+        GLint boundFbo = 0;
+        glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &boundFbo);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, mOffscreenFbo);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, boundFbo);
+        glBlitFramebuffer(0, 0, pw, ph, 0, 0, pw, ph,
+                          GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        glBindFramebuffer(GL_FRAMEBUFFER, GLuint(boundFbo));
+    }
 }
 
 void GLWindow::showEvent(QShowEvent *e) {

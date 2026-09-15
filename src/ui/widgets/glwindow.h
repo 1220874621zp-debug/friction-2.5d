@@ -58,6 +58,10 @@ protected:
     sk_sp<GrContext> mGrContext;
     sk_sp<SkSurface> mSurface;
     SkCanvas *mCanvas = nullptr;
+    // offscreen render target owned by the window: skia draws here, the
+    // finished frame is blitted into Qt's fbo once at the end of paintGL
+    GLuint mOffscreenFbo = 0;
+    GLuint mOffscreenTex = 0;
 };
 
 #endif // GLWINDOW_H
