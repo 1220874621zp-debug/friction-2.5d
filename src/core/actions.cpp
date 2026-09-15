@@ -833,7 +833,15 @@ eBoxOrSound *Actions::importFile(const QString &path,
         } else {
             try {
                 const QString extLower = extension.toLower();
-                if (extLower == QLatin1String("oca") ||
+                // bodymovin sniff runs first: an OCA manifest also
+                // carries a "layers" array, but never fr+op, so a
+                // lottie json must not fall through to the OCA route
+                if (extLower == QLatin1String("lottie") ||
+                    (extLower == QLatin1String("json") &&
+                     LottieBox::looksLikeLottie(path))) {
+                    qWarning() << "IMPORT: route=lottie";
+                    result = createLottieBoxForPath(path);
+                } else if (extLower == QLatin1String("oca") ||
                     (extLower == QLatin1String("json") &&
                      ImportOCA::looksLikeOCAJson(path))) {
                     // the OCA manifest FILE itself was picked (the
@@ -841,11 +849,6 @@ eBoxOrSound *Actions::importFile(const QString &path,
                     // resolve relative to its folder
                     qWarning() << "IMPORT: route=oca-manifest";
                     result = ImportOCA::loadOCAManifestFile(path, scene);
-                } else if (extLower == QLatin1String("lottie") ||
-                           (extLower == QLatin1String("json") &&
-                            LottieBox::looksLikeLottie(path))) {
-                    qWarning() << "IMPORT: route=lottie";
-                    result = createLottieBoxForPath(path);
                 } else if (isImageExt(extension)) {
                     qWarning() << "IMPORT: route=image";
                     result = createImageBox(path);

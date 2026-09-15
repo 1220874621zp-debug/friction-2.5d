@@ -243,10 +243,15 @@ bool LottieBox::looksLikeLottie(const QString& path)
 {
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly)) return false;
-    const QByteArray head = file.read(1024 * 1024);
-    const int first = head.indexOf('{');
-    if (first < 0) return false;
-    return jsonLooksLikeLottie(head);
+    const auto doc = QJsonDocument::fromJson(file.read(1024 * 1024));
+    if (!doc.isObject()) return false;
+    // bodymovin trio; OCA manifests also carry a "layers" array but
+    // never frame-rate/out-point, so this keeps the two json formats
+    // apart regardless of sniff order
+    const auto obj = doc.object();
+    return obj.contains(QStringLiteral("layers"))
+            && obj.contains(QStringLiteral("fr"))
+            && obj.contains(QStringLiteral("op"));
 }
 
 void LottieBox::setFilePathNoRename(const QString& path)
