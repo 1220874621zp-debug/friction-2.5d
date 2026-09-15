@@ -56,42 +56,6 @@
 #include "MovablePoints/smartnodepoint.h"
 #include "Boxes/internallinkcanvas.h"
 
-#if 1 // qt5 control: garbling bisect active in both builds
-#include <QOpenGLContext>
-#include <QOpenGLFunctions>
-// garbling bisect level 2: flush+drain inside Canvas::renderSk to find
-// the exact drawing stage emitting GL_INVALID_OPERATION on Intel/core
-static int sGlStage2Frames = 0;
-static QFile gGlStageFile;
-static void drainGlErr2(SkCanvas* const canvas, const char* const tag) {
-    // NOTE: do NOT flush here - every extra flush submits pending GL
-    // commands mid-frame, competing with Qt6's compositor timing and
-    // itself aggravating the garble. Just drain the error flag, throttled.
-    Q_UNUSED(canvas)
-    const auto ctx = QOpenGLContext::currentContext();
-    if (!ctx) return;
-    int n = 0;
-    while (ctx->functions()->glGetError() != GL_NO_ERROR && n < 32) n++;
-    if (n) {
-        if (!gGlStageFile.isOpen()) {
-            gGlStageFile.setFileName(QCoreApplication::applicationDirPath() +
-                                     QStringLiteral("/glstage_drag.log"));
-            gGlStageFile.open(QIODevice::WriteOnly | QIODevice::Append);
-        }
-        if (gGlStageFile.isOpen()) {
-            gGlStageFile.write((QStringLiteral("%1 stage=%2 errors=%3\n")
-                                .arg(QDateTime::currentDateTime().toString(
-                                         Qt::ISODateWithMs))
-                                .arg(QString::fromUtf8(tag)).arg(n)).toUtf8());
-            gGlStageFile.flush();
-        }
-        // throttled console spam
-        if (sGlStage2Frames % 30 == 0)
-            qWarning() << "[glstage2]" << tag << "errors" << n;
-        sGlStage2Frames++;
-    }
-}
-#endif
 #include "pointtypemenu.h"
 #include "Animators/transformanimator.h"
 #include "glhelpers.h"
@@ -605,9 +569,6 @@ void Canvas::renderSk(SkCanvas* const canvas,
                       const bool mouseGrabbing)
 {
     mDrawnSinceQue = true;
-#if 1 // qt5 control: garbling bisect active in both builds
-    if (sGlStage2Frames < 30) sGlStage2Frames++;
-#endif
     SkPaint paint;
     paint.setStyle(SkPaint::kFill_Style);
     const qreal pixelRatio = qApp->devicePixelRatio();
@@ -686,9 +647,6 @@ void Canvas::renderSk(SkCanvas* const canvas,
         paint.setPathEffect(dashPathEffect);
         canvas->drawRect(toSkRect(getCurrentBounds()), paint);
     }
-#if 1 // qt5 control: garbling bisect active in both builds
-    drainGlErr2(canvas, "clearBackdropDash");
-#endif
     if (!mClipToCanvasSize || !drawCanvas) {
         if (bgColor.alpha() == 255 && !mTransparencyGrid &&
                 skViewTrans.mapRect(canvasRect).contains(toSkRect(drawRect))) {
@@ -700,9 +658,6 @@ void Canvas::renderSk(SkCanvas* const canvas,
             canvas->drawRect(canvasRect, bgPaint);
         }
     }
-#if 1 // qt5 control: garbling bisect active in both builds
-    drainGlErr2(canvas, "bgfill");
-#endif
     if (gridVisible && !gridOnTop) {
         mDocument.getGrid()->drawGrid(canvas,
                                       gridViewport,
@@ -750,9 +705,6 @@ void Canvas::renderSk(SkCanvas* const canvas,
 
     canvas->restore();
     canvas->restore();
-#if 1 // qt5 control: garbling bisect active in both builds
-    drainGlErr2(canvas, "contained");
-#endif
 
     if (gridVisible && gridOnTop) {
         mDocument.getGrid()->drawGrid(canvas,

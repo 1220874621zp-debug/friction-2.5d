@@ -52,6 +52,7 @@ protected:
 
     void initialize();
     void bindSkia(const int w, const int h);
+    QSize queryFramebufferDeviceSize();
     void updateFix();
 
     bool mRebind = false;

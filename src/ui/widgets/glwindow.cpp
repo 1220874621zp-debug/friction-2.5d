@@ -29,7 +29,6 @@
 #include "colorhelpers.h"
 #include <QPainter>
 #include <QDebug>
-#include <QOpenGLFunctions>
 #include "exceptions.h"
 
 GLWindow::GLWindow(QWidget * const parent)
@@ -37,15 +36,55 @@ GLWindow::GLWindow(QWidget * const parent)
     setUpdateBehavior(QOpenGLWidget::NoPartialUpdate);
 }
 
+QSize GLWindow::queryFramebufferDeviceSize() {
+    // Measure the widget FBO instead of guessing from widget metrics:
+    // FBO-name recycling defeats id checks, and Qt6's resize choreography
+    // can serve paintGL with a stale width() - both were observed leaving
+    // the skia surface one resize behind the real framebuffer.
+    const GLuint fbo = defaultFramebufferObject();
+    GLint objType = 0, objName = 0;
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glGetFramebufferAttachmentParameteriv(
+                GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE, &objType);
+    glGetFramebufferAttachmentParameteriv(
+                GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME, &objName);
+    QSize result;
+    if (objType == GL_RENDERBUFFER) {
+        GLint w = 0, h = 0;
+        glBindRenderbuffer(GL_RENDERBUFFER, GLuint(objName));
+        glGetRenderbufferParameteriv(GL_RENDERBUFFER,
+                                     GL_RENDERBUFFER_WIDTH, &w);
+        glGetRenderbufferParameteriv(GL_RENDERBUFFER,
+                                     GL_RENDERBUFFER_HEIGHT, &h);
+        result = QSize(int(w), int(h));
+    } else if (objType == GL_TEXTURE) {
+        GLint w = 0, h = 0;
+        glBindTexture(GL_TEXTURE_2D, GLuint(objName));
+        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &w);
+        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &h);
+        result = QSize(int(w), int(h));
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    return result;
+}
+
 void GLWindow::bindSkia(const int w, const int h) {
-    qreal pixelRatio = devicePixelRatioF();
-    int scaledWidth = pixelRatio*w;
-    int scaledHeight = pixelRatio*h;
+    // Prefer the FBO's real color-attachment size: deriving it from
+    // width()*devicePixelRatioF() disagrees with Qt's own FBO allocation
+    // by rounding and can lag the widget by one resize, leaving a margin
+    // band the surface never covers.
+    QSize deviceSize = queryFramebufferDeviceSize();
+    if (!deviceSize.isValid()) {
+        deviceSize = QSize(qRound(w*devicePixelRatioF()),
+                           qRound(h*devicePixelRatioF()));
+    }
     GrGLFramebufferInfo fbInfo;
     fbInfo.fFBOID = context()->defaultFramebufferObject();//buffer;
     fbInfo.fFormat = GR_GL_RGBA8;//buffer;
     GrBackendRenderTarget backendRT = GrBackendRenderTarget(
-                                        scaledWidth, scaledHeight,
+                                        deviceSize.width(), deviceSize.height(),
                                         0, 8, // (optional) 4, 8,
                                         fbInfo
                                         /*kRGBA_half_GrPixelConfig*/
@@ -69,7 +108,7 @@ void GLWindow::bindSkia(const int w, const int h) {
     mCanvas = mSurface->getCanvas();
     mGrContext->resetContext();
     mBoundFboId = fbInfo.fFBOID;
-    mBoundDeviceSize = QSize(scaledWidth, scaledHeight);
+    mBoundDeviceSize = deviceSize;
 }
 
 void GLWindow::resizeGL(int, int) {
@@ -117,23 +156,20 @@ void GLWindow::initialize()
 
     const auto iface = GrGLMakeNativeInterface();
     if (!iface) { RuntimeThrow("Failed to make native interface."); }
-    // wraps every draw-path entry point with per-call error attribution
-    // ([glcall] <fn> err=<code>); pass-through unless an error occurs
+    // optional per-call GL error attribution ([glcall] <fn> err=<code>),
+    // disabled unless FRICTION_GL_WRAP_ON=1 (per-call glGetError is too
+    // costly to keep on in production)
     const auto wrappedIface = frictionWrapGlInterfaceForDiagnostics(iface);
 
     GrContextOptions options;
 #if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
-    // Qt6/Windows + Intel core profile: Skia's internal MSAA resolve
-    // (fInternalMultisampleCount default 4) silently fails when resolving
-    // into the widget-FBO-managed surface - the drawn content reappears as
-    // diagonal color bands only while the canvas is actively redrawn
-    // (dragging invalidates the scene-frame cache -> direct skia draw ->
-    // MSAA resolve path). Disable internal MSAA on Qt6; FRICTION_SKIA_MSAA0
-    // kept as an A/B override.
+    // The old MSAA-resolve suspicion was a misdiagnosis of the per-frame
+    // GL-state poisoning fixed by resetContext() in paintGL - restore the
+    // configured sample count; FRICTION_SKIA_MSAA0 stays as an emergency
+    // off-switch pending re-verification on Intel/core.
     options.fInternalMultisampleCount =
             qEnvironmentVariableIsSet("FRICTION_SKIA_MSAA0")
-            ? 0 : 0;
-    qDebug() << "[glwin] Qt6: internalMultisampleCount forced 0 (MSAA resolve workaround)";
+            ? 0 : eSettings::instance().fInternalMultisampleCount;
 #else
     options.fInternalMultisampleCount = eSettings::instance().fInternalMultisampleCount;
 #endif
@@ -150,22 +186,8 @@ void GLWindow::initialize()
 
 void GLWindow::paintGL() {
 #if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
-    // Frame-boundary error ancestry probe (Qt6 garble): every frame the
-    // glprobe saw exactly 1 GL_INVALID_OPERATION even for a trivial rect.
-    // Distinguish "our skia flush produced it" vs "Qt6 compositor left it
-    // from the previous frame's post-paintGL compose pass": clear the flag
-    // HERE, right before WE draw anything. If a probe later reports an
-    // error again, it was generated inside OUR rendering; if the pre-clear
-    // check already had one pending, the compositor dirtied it.
-    QOpenGLFunctions* const qgl = context()->functions();
-    int nPending = 0;
-    while (qgl->glGetError() != GL_NO_ERROR && nPending < 32) nPending++;
-    static int sPendingLog = 0;
-    if (nPending && sPendingLog < 60) {
-        sPendingLog++;
-        qWarning() << "[glpre] paintGL entry had" << nPending
-                   << "pending GL errors (from previous frame's compose?)";
-    }
+    // Frame boundary handled: the per-frame resetContext below resyncs
+    // skia's HW cache, so no error-ancestry probing is needed here.
     // Deferred init: Qt6 calls initializeGL() before the widget FBO is
     // created, so GrContext/surface creation (which needs the FBO id) is
     // deferred to the first paint where defaultFramebufferObject() is valid.
@@ -181,12 +203,12 @@ void GLWindow::paintGL() {
     }
     // Qt6's compositor may recreate the widget FBO outside resizeGL()
     // (hide/show, screen changes, high-DPI reparent). Skinny rebind guard:
-    // only re-wrap the surface when the FBO id or device size really
-    // changed, otherwise rendering keeps painting into a stale FBO and the
-    // repaint flickers between the new and old backing store.
+    // compare the FBO id and its MEASURED attachment size - name recycling
+    // and stale width() during resize choreography both defeat
+    // computed-size checks and would leave the surface painting stale
+    // framebuffer geometry (undrawn margin band during drag).
     const GLuint curFbo = defaultFramebufferObject();
-    const QSize curSize(qRound(width()*devicePixelRatioF()),
-                        qRound(height()*devicePixelRatioF()));
+    const QSize curSize = queryFramebufferDeviceSize();
     if (curFbo != mBoundFboId || curSize != mBoundDeviceSize) {
         mRebind = true;
     }

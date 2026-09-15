@@ -174,7 +174,11 @@ FR_WRAP(Viewport, (GrGLint x, GrGLint y, GrGLsizei w, GrGLsizei h),
 
 sk_sp<const GrGLInterface> frictionWrapGlInterfaceForDiagnostics(
         const sk_sp<const GrGLInterface>& iface) {
-    if (!iface || qEnvironmentVariableIsSet("FRICTION_GL_WRAP_OFF")) {
+    // Off by default: with the per-frame resetContext fix every binding is
+    // re-issued each frame, so the per-call glGetError overhead applies to
+    // every single GL call. Set FRICTION_GL_WRAP_ON=1 to re-enable the
+    // per-call error attribution ([glcall] lines + gl_diag.log).
+    if (!iface || !qEnvironmentVariableIsSet("FRICTION_GL_WRAP_ON")) {
         return iface;
     }
     auto* copy = new GrGLInterface;

@@ -30,7 +30,6 @@
 #include <QApplication>
 #include <QStatusBar>
 #include <QTransform>
-#include <QOpenGLExtraFunctions>
 #include <cmath>
 #include <QCoreApplication>
 #include <QDir>
@@ -295,109 +294,11 @@ bool CanvasWindow::hasNoCanvas()
 void CanvasWindow::renderSk(SkCanvas * const canvas)
 {
     qreal pixelRatio = this->devicePixelRatioF();
-#if 1 // qt5 control: garbling bisect active in both builds
-    // garbling bisect: flush per stage and drain the error flag so we
-    // learn WHICH drawing stage emits the per-frame GL_INVALID_OPERATION
-    static int sStageLogFrames = 0;
-    const bool stageLog = sStageLogFrames < 30;
-    if (stageLog) sStageLogFrames++;
-    const auto drainErr = [this, stageLog](const char* tag) {
-        int n = 0;
-        while (glGetError() != GL_NO_ERROR && n < 32) n++;
-        if (n && stageLog) {
-            // Snapshot the GL state right when the per-frame
-            // GL_INVALID_OPERATION is observed, to identify whether skia
-            // drew against a broken program/VAO/FBO/viewport.
-            GLint prog = 0, vao = 0, fbo = 0, vp[4] = {0,0,0,0},
-                  sc[4] = {0,0,0,0}, atex = 0, tex2d = 0;
-            glGetIntegerv(GL_CURRENT_PROGRAM, &prog);
-            glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &vao);
-            glGetIntegerv(GL_FRAMEBUFFER_BINDING, &fbo);
-            glGetIntegerv(GL_VIEWPORT, vp);
-            glGetIntegerv(GL_SCISSOR_BOX, sc);
-            glGetIntegerv(GL_ACTIVE_TEXTURE, &atex);
-            glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex2d);
-            qWarning() << "[glstage]" << tag << "errors" << n
-                       << "prog" << prog << "vao" << vao
-                       << "fbo" << fbo
-                       << "view" << vp[0] << vp[1] << vp[2] << vp[3]
-                       << "scis" << sc[0] << sc[1] << sc[2] << sc[3]
-                       << "atex" << atex << "tex2d" << tex2d;
-        }
-    };
-    // pure op-class probes: isolate which skia op the qt6 context rejects
-    static int sProbeFrames = 0;
-    if (sProbeFrames < 15) {
-        sProbeFrames++;
-        const auto drainP = [this](const char* tag) {
-            int n = 0;
-            while (glGetError() != GL_NO_ERROR && n < 32) n++;
-            if (n) qWarning() << "[glprobe]" << tag << "errors" << n;
-        };
-        SkPaint pp; pp.setColor(SK_ColorRED);
-        canvas->drawRect(SkRect::MakeWH(4, 4), pp);
-        canvas->flush(); drainP("identity-rect");
-        canvas->save();
-        canvas->scale(1.0001f, 1.0001f);
-        canvas->drawRect(SkRect::MakeWH(4, 4), pp);
-        canvas->restore();
-        canvas->flush(); drainP("scaled-rect");
-        canvas->clear(SkColorSetARGB(0, 0, 0, 0));
-        canvas->flush(); drainP("clear");
-        canvas->saveLayer(nullptr, nullptr);
-        canvas->restore();
-        canvas->flush(); drainP("savelayer");
-    }
-#endif
     if (mCurrentCanvas) {
         const QTransform worldToScreen(mViewTransform.m11(), mViewTransform.m12(), 0.0,
                                        mViewTransform.m21(), mViewTransform.m22(), 0.0,
                                        mViewTransform.dx(), mViewTransform.dy(), 1.0);
         mCurrentCanvas->setWorldToScreen(worldToScreen, pixelRatio);
-        // one-shot size audit: surface(w,h) from GLWindow bindSkia vs the
-        // widget logical rect passed as drawRect - any mismatch between
-        // these and the real FBO is how the 2858x1481 scissor appeared
-        // next to a 2778x1203 viewport (Skia draws past the FBO edge,
-        // driver rejects/garble). Qt5 shares this code but dpr=1 there.
-        static int sAudit = 0;
-        if (sAudit < 60) {
-            sAudit++;
-            QOpenGLExtraFunctions* qg = QOpenGLContext::currentContext() ?
-                        QOpenGLContext::currentContext()->extraFunctions() : nullptr;
-            GLint fboW = 0, fboH = 0;
-            if (qg) {
-                qg->glBindFramebuffer(GL_FRAMEBUFFER,
-                                      GLuint(defaultFramebufferObject()));
-                GLint objT = 0, objN = 0;
-                qg->glGetFramebufferAttachmentParameteriv(
-                            GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                            GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE, &objT);
-                qg->glGetFramebufferAttachmentParameteriv(
-                            GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                            GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME, &objN);
-                if (objT == GL_RENDERBUFFER) {
-                    qg->glBindRenderbuffer(GL_RENDERBUFFER, GLuint(objN));
-                    qg->glGetRenderbufferParameteriv(
-                                GL_RENDERBUFFER, GL_RENDERBUFFER_WIDTH, &fboW);
-                    qg->glGetRenderbufferParameteriv(
-                                GL_RENDERBUFFER, GL_RENDERBUFFER_HEIGHT, &fboH);
-                } else if (objT == GL_TEXTURE) {
-                    qg->glBindTexture(GL_TEXTURE_2D, GLuint(objN));
-                    qg->glGetTexLevelParameteriv(
-                                GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &fboW);
-                    qg->glGetTexLevelParameteriv(
-                                GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &fboH);
-                }
-                qg->glBindFramebuffer(GL_FRAMEBUFFER,
-                                      GLuint(defaultFramebufferObject()));
-            }
-            qWarning() << "[audit] dpr" << devicePixelRatioF()
-                       << "widgetLog" << width() << height()
-                       << "fboPhys" << fboW << fboH
-                       << "rectLog" << rect().width() << rect().height()
-                       << "viewTrans.dx" << mViewTransform.dx()
-                       << "dy" << mViewTransform.dy();
-        }
         canvas->save();
         mCurrentCanvas->renderSk(canvas,
                                  rect(),
@@ -406,17 +307,7 @@ void CanvasWindow::renderSk(SkCanvas * const canvas)
         canvas->restore();
     }
 
-#if 1 // qt5 control: garbling bisect active in both builds
-    canvas->flush();
-    drainErr("scene");
-#endif
-
     drawRulersOverlay(canvas);
-
-#if 1 // qt5 control: garbling bisect active in both builds
-    canvas->flush();
-    drainErr("rulers");
-#endif
 
     if (KFT_hasFocus()) {
         SkPaint paint;
@@ -427,10 +318,6 @@ void CanvasWindow::renderSk(SkCanvas * const canvas)
                                         height() * pixelRatio),
                          paint);
     }
-#if 1 // qt5 control: garbling bisect active in both builds
-    canvas->flush();
-    drainErr("focus");
-#endif
 }
 
 bool CanvasWindow::sRulersVisible = true;
