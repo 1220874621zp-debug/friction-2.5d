@@ -2103,7 +2103,8 @@ void MainWindow::importFile()
     const QString fileTypes = "(*.friction *.svg *.psd *.psb *.kra " +
             FileExtensions::videoFilters() +
             FileExtensions::imageFilters() +
-            FileExtensions::soundFilters() + ")";
+            FileExtensions::soundFilters() +
+            FileExtensions::lottieFilters() + ")";
     const auto importPaths = AppSupport::getOpenFiles(this,
                                                       title,
                                                       defPath,
