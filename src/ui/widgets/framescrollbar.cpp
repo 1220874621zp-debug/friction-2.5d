@@ -431,6 +431,13 @@ void FrameScrollBar::mousePressEvent(QMouseEvent *event)
                     }
                     bool apply = (mCurrentCanvas->getFrameOut().frame != frame);
                     mCurrentCanvas->setFrameOut(apply, frame);
+                    // no in point yet: default it to the first frame so a
+                    // lone out point already spans [start, out] - the usual
+                    // case - without forcing a second Set In click
+                    if (apply && !mCurrentCanvas->getFrameIn().enabled) {
+                        mCurrentCanvas->setFrameIn(true,
+                                                    mCurrentCanvas->getMinFrame());
+                    }
                 }
             } else if (selectedAction == setMarkerAct) {
                 if (mCurrentCanvas) {
