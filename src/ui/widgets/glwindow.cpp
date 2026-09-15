@@ -32,7 +32,17 @@
 
 GLWindow::GLWindow(QWidget * const parent)
     : QOpenGLWidget(parent) {
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+    // Qt6/Windows: with NoPartialUpdate the compositor's FBO lifecycle
+    // (DWM flip model) glitches under rapid repaints - the canvas starts
+    // showing textures from unrelated widgets (diagonal color blocks)
+    // until the window is re-exposed. PartialUpdate keeps Qt's blit-based
+    // path, which stays stable; the canvas fully redraws each frame so
+    // preserving old content costs nothing.
+    setUpdateBehavior(QOpenGLWidget::PartialUpdate);
+#else
     setUpdateBehavior(QOpenGLWidget::NoPartialUpdate);
+#endif
 }
 
 void GLWindow::bindSkia(const int w, const int h) {
