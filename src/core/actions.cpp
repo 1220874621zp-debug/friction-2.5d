@@ -874,6 +874,18 @@ eBoxOrSound *Actions::importFile(const QString &path,
             importedBox->planCenterPivotPosition();
             importedBox->startPosTransform();
             importedBox->moveByAbs(relDropPos);
+            // lottie animations land canvas-origin like images; when
+            // imported through the dialog (null drop pos) center the
+            // animation on the canvas instead - drop imports keep
+            // the drop position
+            if (enve_cast<LottieBox*>(result)
+                    && relDropPos.isNull() && scene) {
+                const QPointF canvasCenter(
+                            scene->getCanvasWidth() / 2.0,
+                            scene->getCanvasHeight() / 2.0);
+                importedBox->moveByAbs(
+                            canvasCenter - importedBox->getPivotAbsPos());
+            }
             importedBox->finishTransform();
         }
         if (const auto videoBox = enve_cast<VideoBox*>(result)) {
