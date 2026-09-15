@@ -58,16 +58,29 @@ void GLWindow::bindSkia(const int w, const int h) {
     // end of paintGL shrinks that race window to a single GPU copy.
     if (mOffscreenFbo) { glDeleteFramebuffers(1, &mOffscreenFbo); mOffscreenFbo = 0; }
     if (mOffscreenTex) { glDeleteTextures(1, &mOffscreenTex); mOffscreenTex = 0; }
+    if (mOffscreenStencil) { glDeleteRenderbuffers(1, &mOffscreenStencil); mOffscreenStencil = 0; }
     glGenTextures(1, &mOffscreenTex);
     glBindTexture(GL_TEXTURE_2D, mOffscreenTex);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, scaledWidth, scaledHeight,
                  0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    // skia is told the target has 8 stencil bits (see GrBackendRenderTarget
+    // below) and dashed strokes do stencil-based path rendering: the
+    // attachment MUST exist or drivers hang on the stencil ops (safe
+    // frames toggle froze the app before this)
+    glGenRenderbuffers(1, &mOffscreenStencil);
+    glBindRenderbuffer(GL_RENDERBUFFER, mOffscreenStencil);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8,
+                          scaledWidth, scaledHeight);
     glGenFramebuffers(1, &mOffscreenFbo);
     glBindFramebuffer(GL_FRAMEBUFFER, mOffscreenFbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
                            GL_TEXTURE_2D, mOffscreenTex, 0);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+                              GL_RENDERBUFFER, mOffscreenStencil);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT,
+                              GL_RENDERBUFFER, mOffscreenStencil);
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
         glBindFramebuffer(GL_FRAMEBUFFER, context()->defaultFramebufferObject());
         RuntimeThrow("Failed to create offscreen render target.");

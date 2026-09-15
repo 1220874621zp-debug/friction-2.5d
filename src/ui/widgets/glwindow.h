@@ -62,6 +62,7 @@ protected:
     // finished frame is blitted into Qt's fbo once at the end of paintGL
     GLuint mOffscreenFbo = 0;
     GLuint mOffscreenTex = 0;
+    GLuint mOffscreenStencil = 0;
 };
 
 #endif // GLWINDOW_H
