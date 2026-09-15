@@ -74,6 +74,7 @@ void GLWindow::bindSkia(const int w, const int h) {
     int scaledWidth = qRound(pixelRatio*w);
     int scaledHeight = qRound(pixelRatio*h);
 
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
     // Render into OUR OWN offscreen FBO+texture, never directly into the
     // FBO Qt manages: Qt6's compositor / high-DPI resize path (exposed on
     // Intel core profile) reads the widget framebuffer while it is being
@@ -115,6 +116,11 @@ void GLWindow::bindSkia(const int w, const int h) {
     if (offscreenStatus != GL_FRAMEBUFFER_COMPLETE) {
         RuntimeThrow("Offscreen render target incomplete.");
     }
+    glDiagLog(QStringLiteral("[fbo] OFFSCREEN size=%1x%2 dpr=%3 status=0x%4 declaredStencil=%5 (Qt widget fboID=%6)")
+              .arg(scaledWidth).arg(scaledHeight).arg(pixelRatio)
+              .arg(int(offscreenStatus), 0, 16)
+              .arg(qEnvironmentVariableIsSet("FRICTION_SKIA_NOSTENCIL") ? 0 : 8)
+              .arg(int(context()->defaultFramebufferObject())));
 
     const int stencilBits =
             qEnvironmentVariableIsSet("FRICTION_SKIA_NOSTENCIL") ? 0 : 8;
@@ -127,11 +133,20 @@ void GLWindow::bindSkia(const int w, const int h) {
                                         fbInfo
                                         /*kRGBA_half_GrPixelConfig*/
                                         /*kSkia8888_GrPixelConfig*/);
-#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
-    glDiagLog(QStringLiteral("[fbo] OFFSCREEN size=%1x%2 dpr=%3 status=0x%4 declaredStencil=%5 (Qt widget fboID=%6)")
-              .arg(scaledWidth).arg(scaledHeight).arg(pixelRatio)
-              .arg(int(offscreenStatus), 0, 16).arg(stencilBits)
-              .arg(int(context()->defaultFramebufferObject())));
+#else
+    // Qt5: original direct-render path - draw straight into Qt's widget
+    // FBO (the pre-migration behaviour). Do NOT use the offscreen FBO
+    // here: paintGL's blit is Qt6-only, so Qt5 would render into a
+    // never-presented texture and show a blank canvas.
+    GrGLFramebufferInfo fbInfo;
+    fbInfo.fFBOID = context()->defaultFramebufferObject();//buffer;
+    fbInfo.fFormat = GR_GL_RGBA8;//buffer;
+    GrBackendRenderTarget backendRT = GrBackendRenderTarget(
+                                        scaledWidth, scaledHeight,
+                                        0, 8, // (optional) 4, 8,
+                                        fbInfo
+                                        /*kRGBA_half_GrPixelConfig*/
+                                        /*kSkia8888_GrPixelConfig*/);
 #endif
 
     // setup SkSurface
@@ -151,7 +166,7 @@ void GLWindow::bindSkia(const int w, const int h) {
     if(!mSurface) RuntimeThrow("Failed to wrap buffer into SkSurface.");
     mCanvas = mSurface->getCanvas();
     mGrContext->resetContext();
-    mBoundFboId = mOffscreenFbo;
+    mBoundFboId = fbInfo.fFBOID;
     mBoundDeviceSize = QSize(scaledWidth, scaledHeight);
 }
 
