@@ -1545,7 +1545,10 @@ void AppSupport::initEnv(const bool &isRenderer)
 #endif
 
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
-    qputenv("QT_WIDGETS_RHI", "1");
+    // QT_WIDGETS_RHI can be disabled via environment for A/B testing
+    // the garbled-canvas issue on Intel/core-profile setups
+    if (!qEnvironmentVariableIsSet("QT_WIDGETS_RHI"))
+        qputenv("QT_WIDGETS_RHI", "1");
     qputenv("QT_WIDGETS_RHI_BACKEND", "opengl");
     qputenv("QSG_RHI_BACKEND", "opengl");
 #endif
