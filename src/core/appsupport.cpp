@@ -1545,10 +1545,16 @@ void AppSupport::initEnv(const bool &isRenderer)
 #endif
 
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
-    // QT_WIDGETS_RHI can be disabled via environment for A/B testing
-    // the garbled-canvas issue on Intel/core-profile setups
+    // The Qt6 RHI widget compositor shares one GL texture namespace between
+    // the app's OpenGL context and the RHI backend. Under Intel/core-profile
+    // the canvas's QOpenGLWidget FBO gets desynced there, resurfacing as
+    // stale textures from unrelated widgets (diagonal colored garble that
+    // only heals on re-expose) - the scissor/viewport reset in paintGL does
+    // NOT fix it. QT_WIDGETS_RHI=0 falls back to the classic Qt5 compositing
+    // path that keeps QOpenGLWidget isolated and is the known-good baseline.
+    // Keep an environment override for A/B comparison.
     if (!qEnvironmentVariableIsSet("QT_WIDGETS_RHI"))
-        qputenv("QT_WIDGETS_RHI", "1");
+        qputenv("QT_WIDGETS_RHI", "0");
     qputenv("QT_WIDGETS_RHI_BACKEND", "opengl");
     qputenv("QSG_RHI_BACKEND", "opengl");
 #endif
