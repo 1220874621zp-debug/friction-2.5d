@@ -294,6 +294,18 @@ bool CanvasWindow::hasNoCanvas()
 void CanvasWindow::renderSk(SkCanvas * const canvas)
 {
     qreal pixelRatio = this->devicePixelRatioF();
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+    // garbling bisect: flush per stage and drain the error flag so we
+    // learn WHICH drawing stage emits the per-frame GL_INVALID_OPERATION
+    static int sStageLogFrames = 0;
+    const bool stageLog = sStageLogFrames < 30;
+    if (stageLog) sStageLogFrames++;
+    const auto drainErr = [this, stageLog](const char* tag) {
+        int n = 0;
+        while (glGetError() != GL_NO_ERROR && n < 32) n++;
+        if (n && stageLog) qWarning() << "[glstage]" << tag << "errors" << n;
+    };
+#endif
     if (mCurrentCanvas) {
         const QTransform worldToScreen(mViewTransform.m11(), mViewTransform.m12(), 0.0,
                                        mViewTransform.m21(), mViewTransform.m22(), 0.0,
@@ -307,7 +319,17 @@ void CanvasWindow::renderSk(SkCanvas * const canvas)
         canvas->restore();
     }
 
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+    canvas->flush();
+    drainErr("scene");
+#endif
+
     drawRulersOverlay(canvas);
+
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+    canvas->flush();
+    drainErr("rulers");
+#endif
 
     if (KFT_hasFocus()) {
         SkPaint paint;
@@ -318,6 +340,10 @@ void CanvasWindow::renderSk(SkCanvas * const canvas)
                                         height() * pixelRatio),
                          paint);
     }
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+    canvas->flush();
+    drainErr("focus");
+#endif
 }
 
 bool CanvasWindow::sRulersVisible = true;
