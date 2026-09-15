@@ -53,6 +53,23 @@
 #include <QFile>
 #include "MovablePoints/smartnodepoint.h"
 #include "Boxes/internallinkcanvas.h"
+
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+#include <QOpenGLContext>
+#include <QOpenGLFunctions>
+// garbling bisect level 2: flush+drain inside Canvas::renderSk to find
+// the exact drawing stage emitting GL_INVALID_OPERATION on Intel/core
+static int sGlStage2Frames = 0;
+static void drainGlErr2(SkCanvas* const canvas, const char* const tag) {
+    if (sGlStage2Frames >= 30) return;
+    canvas->flush();
+    const auto ctx = QOpenGLContext::currentContext();
+    if (!ctx) return;
+    int n = 0;
+    while (ctx->functions()->glGetError() != GL_NO_ERROR && n < 32) n++;
+    if (n) qWarning() << "[glstage2]" << tag << "errors" << n;
+}
+#endif
 #include "pointtypemenu.h"
 #include "Animators/transformanimator.h"
 #include "glhelpers.h"
@@ -566,6 +583,9 @@ void Canvas::renderSk(SkCanvas* const canvas,
                       const bool mouseGrabbing)
 {
     mDrawnSinceQue = true;
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+    if (sGlStage2Frames < 30) sGlStage2Frames++;
+#endif
     SkPaint paint;
     paint.setStyle(SkPaint::kFill_Style);
     const qreal pixelRatio = qApp->devicePixelRatio();
@@ -644,6 +664,9 @@ void Canvas::renderSk(SkCanvas* const canvas,
         paint.setPathEffect(dashPathEffect);
         canvas->drawRect(toSkRect(getCurrentBounds()), paint);
     }
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+    drainGlErr2(canvas, "clearBackdropDash");
+#endif
     if (!mClipToCanvasSize || !drawCanvas) {
         if (bgColor.alpha() == 255 && !mTransparencyGrid &&
                 skViewTrans.mapRect(canvasRect).contains(toSkRect(drawRect))) {
@@ -655,6 +678,9 @@ void Canvas::renderSk(SkCanvas* const canvas,
             canvas->drawRect(canvasRect, bgPaint);
         }
     }
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+    drainGlErr2(canvas, "bgfill");
+#endif
     if (gridVisible && !gridOnTop) {
         mDocument.getGrid()->drawGrid(canvas,
                                       gridViewport,
@@ -691,6 +717,9 @@ void Canvas::renderSk(SkCanvas* const canvas,
 
     canvas->restore();
     canvas->restore();
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+    drainGlErr2(canvas, "contained");
+#endif
 
     if (gridVisible && gridOnTop) {
         mDocument.getGrid()->drawGrid(canvas,
