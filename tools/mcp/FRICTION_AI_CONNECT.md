@@ -38,6 +38,16 @@ friction_apply_anim_preset  {"preset": "l-sheet-slide-up", "scope": "all"}
 
 常用标签：`scene/seq/card/col/row/text/h1/p/line/circle/hud`；动画值写 `from->to`。完整参考见 `.agents/skills/friction-2.5d/SKILL.md`。
 
+## 画风参考（HTML → 原生构建）
+
+用户拿 HTML / 技能文件 / 网页当画风参考时，标准句式：
+
+```
+参考 xxx.html 的画风，在 Friction 里做一个 XXX 动画（+描述动效节奏）
+```
+
+处理方式：读 HTML/CSS 提取设计语言（色板 / border 描边 / border-radius / 硬阴影 box-shadow / 字体气质 / 布局密度）→ 原生图层重建（描边=setStrokeWidth、圆角=setCornerRadius、硬阴影=偏移纯色矩形垫底、web 字体换本地近似如 Arial Black / Consolas / 微软雅黑）→ `friction_eval_script` 打关键帧做动画。**勿手写、勿导出 Lottie**（本版仅支持 Lottie 导入，无导出）。
+
 ## 常用工具
 
 `friction_render_markup`｜`friction_apply_anim_preset`｜`friction_stagger_layers`｜`friction_update_layer`（就地改层）｜`friction_animate_layer`（单层宏动画）｜`friction_list_layers`｜`friction_get_scene_info`｜`friction_set_keyframe` + `friction_set_keyframe_easing`｜`friction_eval_script`（全量 JS）｜`friction_capture_viewport`（看画面）｜`friction_undo/redo`
