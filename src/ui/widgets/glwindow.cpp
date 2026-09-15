@@ -130,6 +130,47 @@ void GLWindow::initialize()
     glDisable(GL_DEPTH_TEST);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+    // garbling diagnostics: the driver names the exact invalid call,
+    // no more guessing which skia op fails
+    qDebug() << "[glwin] renderer"
+             << reinterpret_cast<const char*>(glGetString(GL_RENDERER))
+             << "version"
+             << reinterpret_cast<const char*>(glGetString(GL_VERSION));
+    if (context()->hasExtension(QByteArrayLiteral("GL_KHR_debug")) ||
+        context()->hasExtension(QByteArrayLiteral("GL_ARB_debug_output"))) {
+        // GL callback calling convention (APIENTRY not pulled in by Qt)
+#if defined(Q_OS_WIN)
+        using DebugCb = void (__stdcall*)(unsigned int, unsigned int,
+                                          unsigned int, unsigned int,
+                                          int, const char*, const void*);
+        using DebugMessageCallbackFn = void (__stdcall*)(DebugCb,
+                                                         const void*);
+#else
+        using DebugCb = void (*)(unsigned int, unsigned int,
+                                 unsigned int, unsigned int,
+                                 int, const char*, const void*);
+        using DebugMessageCallbackFn = void (*)(DebugCb, const void*);
+#endif
+        const auto pCallback = reinterpret_cast<DebugMessageCallbackFn>(
+                    context()->getProcAddress("glDebugMessageCallback"));
+        if (pCallback) {
+            glEnable(0x92E0);           // GL_DEBUG_OUTPUT
+            glEnable(0x8242);           // GL_DEBUG_OUTPUT_SYNCHRONOUS
+            pCallback([](unsigned int, unsigned int type, unsigned int id,
+                         unsigned int, int, const char* message,
+                         const void*) {
+                if (type != 0x824C) return; // GL_DEBUG_TYPE_ERROR only
+                static int sCount = 0;
+                if (sCount >= 40) return;
+                sCount++;
+                qWarning() << "[gldebug] id" << id << ":" << message;
+            }, nullptr);
+            qDebug() << "[glwin] KHR_debug callback installed";
+        }
+    }
+#endif
+
     const auto iface = GrGLMakeNativeInterface();
     if (!iface) { RuntimeThrow("Failed to make native interface."); }
 
