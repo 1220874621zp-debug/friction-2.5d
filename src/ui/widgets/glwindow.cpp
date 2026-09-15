@@ -248,6 +248,24 @@ void GLWindow::paintGL() {
     renderSk(mCanvas);
     mCanvas->flush();
 #if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+    // Qt6's RHI widget compositor blits THIS widget FBO to the screen right
+    // after paintGL returns. Skia flushes while leaving global GL state
+    // behind (own backing FBO bound, and GL_SCISSOR_TEST enabled with the
+    // last op's small rect). The compositor inherits that state: its
+    // full-widget blit gets scissored to a sub-region and the untouched
+    // area shows a recycled texture from unrelated widgets - the diagonal
+    // colored garbling that only healed on re-expose. Restore a clean
+    // full-widget state before handing back to Qt.
+    const auto dfo = defaultFramebufferObject();
+    glBindFramebuffer(GL_FRAMEBUFFER, dfo);
+    const qreal dpr2 = devicePixelRatioF();
+    glViewport(0, 0, qRound(width()*dpr2), qRound(height()*dpr2));
+    glDisable(GL_SCISSOR_TEST);
+    glScissor(0, 0, qRound(width()*dpr2), qRound(height()*dpr2));
+    // re-declare the fbo so the rebind guard is coherent next paint
+    if (dfo != mBoundFboId) { mBoundFboId = dfo; }
+#endif
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
     // anomaly telemetry (throttled): a persistent gl error or incomplete
     // framebuffer here means the garbling survived the rebind guard
     const GLenum glErr = glGetError();
