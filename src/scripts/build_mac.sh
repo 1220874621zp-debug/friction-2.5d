@@ -81,8 +81,10 @@ cmake --build .
 mv src/app/friction.app src/app/Friction.app
 macdeployqt src/app/Friction.app
 
-rm -f src/app/Friction.app/Contents/Frameworks/{libQt5MultimediaWidgets.5.dylib,libQt5Svg.5.dylib}
-rm -rf src/app/Friction.app/Contents/PlugIns/{bearer,iconengines,imageformats,mediaservice,printsupport,styles}
+# keep libQt5Svg.5.dylib/libQt5MultimediaWidgets.5.dylib in Frameworks:
+# the fork links QSvgRenderer directly (timeline/toolbox SVG icons),
+# removing them makes dyld abort at launch
+rm -rf src/app/Friction.app/Contents/PlugIns/{bearer,iconengines,mediaservice,printsupport,styles}
 
 # disable offline docs for now
 #if [ -f "${CWD}/docs/offline/index.html" ]; then

@@ -56,6 +56,11 @@ lipo -create -output libqtaudio_coreaudio.dylib ${ARM_PLUGINS}/audio/libqtaudio_
 cd ${UNI_PLUGINS}/platforms
 lipo -create -output libqcocoa.dylib ${ARM_PLUGINS}/platforms/libqcocoa.dylib ${INTEL_PLUGINS}/platforms/libqcocoa.dylib
 
+if [ -d "${UNI_PLUGINS}/imageformats" ]; then
+    cd ${UNI_PLUGINS}/imageformats
+    for plug in * ; do lipo -create -output $plug ${ARM_PLUGINS}/imageformats/$plug ${INTEL_PLUGINS}/imageformats/$plug ; done
+fi
+
 cd ${UNI_APP}
 lipo -create -output friction ${ARM_APP}/friction ${INTEL_APP}/friction
 
