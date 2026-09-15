@@ -28,7 +28,25 @@
 #include "colorhelpers.h"
 #include <QPainter>
 #include <QDebug>
+#include <QFile>
+#include <QMutex>
+#include <QDateTime>
 #include "exceptions.h"
+
+// Qt6 garbling investigation: GL errors from KHR_debug and actual FBO
+// attachment state go to a file (qWarning/console is lost for a GUI app),
+// so the exact illegal call can be read after the user reproduces the grarb.
+namespace {
+QMutex sGlDiagMutex;
+void glDiagLog(const QString& line) {
+    QMutexLocker lock(&sGlDiagMutex);
+    QFile f(QStringLiteral("gl_diag.log"));
+    if (f.open(QIODevice::WriteOnly | QIODevice::Append)) {
+        f.write((QDateTime::currentDateTime().toString(Qt::ISODateWithMs) +
+                 QStringLiteral(" ") + line + QStringLiteral("\n")).toUtf8());
+    }
+}
+}
 
 GLWindow::GLWindow(QWidget * const parent)
     : QOpenGLWidget(parent) {
@@ -66,6 +84,34 @@ void GLWindow::bindSkia(const int w, const int h) {
                                         fbInfo
                                         /*kRGBA_half_GrPixelConfig*/
                                         /*kSkia8888_GrPixelConfig*/);
+
+    // Query the REAL attachments of the Qt widget FBO. If Qt6 does not
+    // attach depth/stencil but we tell Skia stencilBits=8, Skia's stencil
+    // clears/ops hit an non-existent attachment -> GL_INVALID_OPERATION
+    // every frame and garbled canvas.
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+    {
+        GLint colorType = 0, depthType = 0, stencilType = 0;
+        GLint depthBits = 0, stencilBitsReal = 0;
+        const GLuint fbo = GLuint(fbInfo.fFBOID);
+        const auto qInt = [&](GLenum att, GLenum pname) {
+            GLint v = 0; glGetFramebufferAttachmentParameteriv(
+                         GL_FRAMEBUFFER, att, pname, &v); return v; };
+        colorType = qInt(GL_COLOR_ATTACHMENT0, GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE);
+        depthType = qInt(GL_DEPTH_ATTACHMENT, GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE);
+        stencilType = qInt(GL_STENCIL_ATTACHMENT, GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE);
+        if (depthType == GL_RENDERBUFFER)
+            glGetRenderbufferParameteriv(GL_RENDERBUFFER, GL_RENDERBUFFER_DEPTH_SIZE, &depthBits);
+        if (stencilType == GL_RENDERBUFFER)
+            glGetRenderbufferParameteriv(GL_RENDERBUFFER, GL_RENDERBUFFER_STENCIL_SIZE, &stencilBitsReal);
+        const GLenum fbStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+        glDiagLog(QStringLiteral("[fbo] fbo=%1 size=%2x%3 dpr=%4 colorType=%5 depth=%6(%7) stencil=%8(%9) status=0x%10 declaredStencil=%11")
+                  .arg(fbo).arg(scaledWidth).arg(scaledHeight).arg(pixelRatio)
+                  .arg(colorType).arg(depthType).arg(depthBits)
+                  .arg(stencilType).arg(stencilBitsReal)
+                  .arg(int(fbStatus), 0, 16).arg(stencilBits));
+    }
+#endif
 
     // setup SkSurface
     // To use distance field text, use commented out SkSurfaceProps instead
@@ -182,6 +228,8 @@ void GLWindow::initialize()
                 if (sCount >= 40) return;
                 sCount++;
                 qWarning() << "[gldebug] id" << id << ":" << message;
+                glDiagLog(QStringLiteral("[gldebug] id=%1 %2")
+                          .arg(id).arg(QString::fromUtf8(message ? message : "")));
             }, nullptr);
             qDebug() << "[glwin] KHR_debug callback installed";
         }
@@ -275,6 +323,9 @@ void GLWindow::paintGL() {
         if (sWarnCount < 10 || sWarnCount % 120 == 0)
             qWarning() << "[glwin] anomaly: glErr" << int(glErr)
                        << "fbStatus" << int(fbStatus) << "fbo" << fboId;
+        if (sWarnCount < 10)
+            glDiagLog(QStringLiteral("[anomaly] glErr=%1 fbStatus=0x%2 fbo=%3")
+                      .arg(int(glErr)).arg(int(fbStatus), 0, 16).arg(fboId));
         sWarnCount++;
     }
 #endif
