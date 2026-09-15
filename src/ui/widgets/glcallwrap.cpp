@@ -12,7 +12,10 @@
 
 namespace {
 
-GrGLFunctions gOrig;
+// This Skia version nests the function table inside GrGLInterface
+// (GrGLInterface::Functions, GrGLInterface.h) - there is no standalone
+// GrGLFunctions type.
+GrGLInterface::Functions gOrig;
 int gLogBudget = 80;
 QMutex gLogMutex;
 

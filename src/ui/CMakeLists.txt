@@ -95,6 +95,7 @@ set(
     widgets/framespinbox.cpp
     widgets/glwidget.cpp
     widgets/glwindow.cpp
+    widgets/glcallwrap.cpp
     widgets/labeledslider.cpp
     widgets/markereditor.cpp
     widgets/performancesettingswidget.cpp

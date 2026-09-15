@@ -30,6 +30,7 @@
 #include <QApplication>
 #include <QStatusBar>
 #include <QTransform>
+#include <QOpenGLExtraFunctions>
 #include <cmath>
 #include <QCoreApplication>
 #include <QDir>
@@ -303,7 +304,26 @@ void CanvasWindow::renderSk(SkCanvas * const canvas)
     const auto drainErr = [this, stageLog](const char* tag) {
         int n = 0;
         while (glGetError() != GL_NO_ERROR && n < 32) n++;
-        if (n && stageLog) qWarning() << "[glstage]" << tag << "errors" << n;
+        if (n && stageLog) {
+            // Snapshot the GL state right when the per-frame
+            // GL_INVALID_OPERATION is observed, to identify whether skia
+            // drew against a broken program/VAO/FBO/viewport.
+            GLint prog = 0, vao = 0, fbo = 0, vp[4] = {0,0,0,0},
+                  sc[4] = {0,0,0,0}, atex = 0, tex2d = 0;
+            glGetIntegerv(GL_CURRENT_PROGRAM, &prog);
+            glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &vao);
+            glGetIntegerv(GL_FRAMEBUFFER_BINDING, &fbo);
+            glGetIntegerv(GL_VIEWPORT, vp);
+            glGetIntegerv(GL_SCISSOR_BOX, sc);
+            glGetIntegerv(GL_ACTIVE_TEXTURE, &atex);
+            glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex2d);
+            qWarning() << "[glstage]" << tag << "errors" << n
+                       << "prog" << prog << "vao" << vao
+                       << "fbo" << fbo
+                       << "view" << vp[0] << vp[1] << vp[2] << vp[3]
+                       << "scis" << sc[0] << sc[1] << sc[2] << sc[3]
+                       << "atex" << atex << "tex2d" << tex2d;
+        }
     };
     // pure op-class probes: isolate which skia op the qt6 context rejects
     static int sProbeFrames = 0;
@@ -334,6 +354,50 @@ void CanvasWindow::renderSk(SkCanvas * const canvas)
                                        mViewTransform.m21(), mViewTransform.m22(), 0.0,
                                        mViewTransform.dx(), mViewTransform.dy(), 1.0);
         mCurrentCanvas->setWorldToScreen(worldToScreen, pixelRatio);
+        // one-shot size audit: surface(w,h) from GLWindow bindSkia vs the
+        // widget logical rect passed as drawRect - any mismatch between
+        // these and the real FBO is how the 2858x1481 scissor appeared
+        // next to a 2778x1203 viewport (Skia draws past the FBO edge,
+        // driver rejects/garble). Qt5 shares this code but dpr=1 there.
+        static int sAudit = 0;
+        if (sAudit < 60) {
+            sAudit++;
+            QOpenGLExtraFunctions* qg = QOpenGLContext::currentContext() ?
+                        QOpenGLContext::currentContext()->extraFunctions() : nullptr;
+            GLint fboW = 0, fboH = 0;
+            if (qg) {
+                qg->glBindFramebuffer(GL_FRAMEBUFFER,
+                                      GLuint(defaultFramebufferObject()));
+                GLint objT = 0, objN = 0;
+                qg->glGetFramebufferAttachmentParameteriv(
+                            GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                            GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE, &objT);
+                qg->glGetFramebufferAttachmentParameteriv(
+                            GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                            GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME, &objN);
+                if (objT == GL_RENDERBUFFER) {
+                    qg->glBindRenderbuffer(GL_RENDERBUFFER, GLuint(objN));
+                    qg->glGetRenderbufferParameteriv(
+                                GL_RENDERBUFFER, GL_RENDERBUFFER_WIDTH, &fboW);
+                    qg->glGetRenderbufferParameteriv(
+                                GL_RENDERBUFFER, GL_RENDERBUFFER_HEIGHT, &fboH);
+                } else if (objT == GL_TEXTURE) {
+                    qg->glBindTexture(GL_TEXTURE_2D, GLuint(objN));
+                    qg->glGetTexLevelParameteriv(
+                                GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &fboW);
+                    qg->glGetTexLevelParameteriv(
+                                GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &fboH);
+                }
+                qg->glBindFramebuffer(GL_FRAMEBUFFER,
+                                      GLuint(defaultFramebufferObject()));
+            }
+            qWarning() << "[audit] dpr" << devicePixelRatioF()
+                       << "widgetLog" << width() << height()
+                       << "fboPhys" << fboW << fboH
+                       << "rectLog" << rect().width() << rect().height()
+                       << "viewTrans.dx" << mViewTransform.dx()
+                       << "dy" << mViewTransform.dy();
+        }
         canvas->save();
         mCurrentCanvas->renderSk(canvas,
                                  rect(),

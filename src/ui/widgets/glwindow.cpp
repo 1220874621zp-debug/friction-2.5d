@@ -24,6 +24,7 @@
 // Fork of enve - Copyright (C) 2016-2020 Maurycy Liebner
 
 #include "glwindow.h"
+#include "glcallwrap.h"
 #include "Private/esettings.h"
 #include "colorhelpers.h"
 #include <QPainter>
@@ -116,6 +117,9 @@ void GLWindow::initialize()
 
     const auto iface = GrGLMakeNativeInterface();
     if (!iface) { RuntimeThrow("Failed to make native interface."); }
+    // wraps every draw-path entry point with per-call error attribution
+    // ([glcall] <fn> err=<code>); pass-through unless an error occurs
+    const auto wrappedIface = frictionWrapGlInterfaceForDiagnostics(iface);
 
     GrContextOptions options;
 #if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
@@ -134,7 +138,7 @@ void GLWindow::initialize()
     options.fInternalMultisampleCount = eSettings::instance().fInternalMultisampleCount;
 #endif
 
-    mGrContext = GrContext::MakeGL(iface, options);
+    mGrContext = GrContext::MakeGL(wrappedIface, options);
     if (!mGrContext) { RuntimeThrow("Failed to make GrContext."); }
 
     try {
@@ -197,6 +201,18 @@ void GLWindow::paintGL() {
     }
     // cleared by Canvas
     // glClear(GL_COLOR_BUFFER_BIT);
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+    // Qt6's QOpenGLWidgetPrivate::render() resets program/ARRAY_BUFFER/blend
+    // state on this context right before EVERY paintGL (Qt5 never did).
+    // Skia's HW-state cache still believes its bindings are current, skips
+    // the vertex-buffer rebind, and the per-flush geometry upload
+    // (glBufferData+glBufferSubData in GrGLBuffer::onUpdateData) dies with
+    // GL_INVALID_OPERATION -> that flush draws with stale/uninitialized
+    // buffer content (diagonal garble during live redraw). Re-sync Skia's
+    // cache every frame; the reset is lazy and lands before the first GL
+    // call of the coming flush.
+    if (mGrContext) { mGrContext->resetContext(kAll_GrBackendState); }
+#endif
     renderSk(mCanvas);
     mCanvas->flush();
 }
