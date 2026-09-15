@@ -246,6 +246,15 @@ void GLWindow::initialize()
     options.fInternalMultisampleCount =
             qEnvironmentVariableIsSet("FRICTION_SKIA_MSAA0")
             ? 0 : eSettings::instance().fInternalMultisampleCount;
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+    // Qt6 A/B: under the Qt6+Intel core-profile the widget FBO shows the
+    // fill/backdrop region as diagonal recycled-texture color blocks right
+    // after a resize (GL_INVALID_OPERATION burst = internal MSAA resolve
+    // failing), while vector strokes stay clean. Force internal MSAA off
+    // to test whether resolve is the fill-corrupting path.
+    options.fInternalMultisampleCount = 0;
+    glDiagLog(QStringLiteral("[msaa] forced internalMultisampleCount=0 (Qt6 A/B)"));
+#endif
 
     mGrContext = GrContext::MakeGL(iface, options);
     if (!mGrContext) { RuntimeThrow("Failed to make GrContext."); }
