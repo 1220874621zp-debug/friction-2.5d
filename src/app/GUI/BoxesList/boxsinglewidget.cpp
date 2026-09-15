@@ -2013,8 +2013,10 @@ void BoxSingleWidget::clearStaticPixmaps()
 
 void BoxSingleWidget::mousePressEvent(QMouseEvent *event) {
     if(!mTarget) return;
-    if(event->x() < mFillWidget->x() ||
-       event->x() > mFillWidget->x() + mFillWidget->width()) return;
+    const auto mouseX = AppSupport::getMouseX(event);
+    if (mouseX < mFillWidget->x() ||
+        mouseX > mFillWidget->x() + mFillWidget->width()) return;
+
     const auto target = mTarget->getTarget();
     if(event->button() == Qt::RightButton) {
         setSelected(true);
@@ -2231,7 +2233,7 @@ void BoxSingleWidget::mousePressEvent(QMouseEvent *event) {
                 }
             }
         }
-        menu.exec(event->globalPos());
+        menu.exec(AppSupport::getMouseGlobalPos(event));
         setSelected(false);
     } else {
         mDragPressPos = event->pos().x() > mFillWidget->x();
@@ -2278,13 +2280,14 @@ void BoxSingleWidget::mouseReleaseEvent(QMouseEvent *event)
     const auto target = mTarget->getTarget();
 
     const auto bbox = enve_cast<BoundingBox*>(target);
-    if (event->button() == Qt::MidButton && bbox) {
+    if (event->button() == Qt::MiddleButton && bbox) {
         PropertyNameDialog::sRenameBox(bbox, this);
         return;
     }
 
-    if (event->x() < mFillWidget->x() ||
-        event->x() > mFillWidget->x() + mFillWidget->width()) { return; }
+    const auto mouseX = AppSupport::getMouseX(event);
+    if (mouseX < mFillWidget->x() ||
+        mouseX > mFillWidget->x() + mFillWidget->width()) { return; }
     setSelected(false);
 
     if (pointToLen(event->pos() - mDragStartPos) > eSizesUI::widget/2) { return; }
@@ -2367,7 +2370,7 @@ bool BoxSingleWidget::selectRowRange(SWT_Abstraction* const absA,
     return true;
 }
 
-void BoxSingleWidget::enterEvent(QEvent *)
+void BoxSingleWidget::enterEvent(QtEnterEvent *)
 {
 #ifdef Q_OS_MAC
     setFocus();

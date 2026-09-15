@@ -216,10 +216,10 @@ public:
 
     virtual void updateAllBoxes(const UpdateReason reason);
 
-    virtual QMatrix getRelativeTransformAtCurrentFrame() const;
-    virtual QMatrix getRelativeTransformAtFrame(const qreal relFrame) const;
-    virtual QMatrix getInheritedTransformAtFrame(const qreal relFrame) const;
-    virtual QMatrix getTotalTransformAtFrame(const qreal relFrame) const;
+    virtual QTransform getRelativeTransformAtCurrentFrame() const;
+    virtual QTransform getRelativeTransformAtFrame(const qreal relFrame) const;
+    virtual QTransform getInheritedTransformAtFrame(const qreal relFrame) const;
+    virtual QTransform getTotalTransformAtFrame(const qreal relFrame) const;
     virtual QPointF mapAbsPosToRel(const QPointF &absPos);
 
     virtual void applyPaintSetting(const PaintSettingsApplier &setting);
@@ -234,7 +234,7 @@ public:
 
     virtual void setupCanvasMenu(PropertyMenu * const menu);
 
-    virtual void setupRenderData(const qreal relFrame, const QMatrix& parentM,
+    virtual void setupRenderData(const qreal relFrame, const QTransform& parentM,
                                  BoxRenderData * const data,
                                  Canvas * const scene);
     virtual void renderDataFinished(BoxRenderData *renderData);
@@ -366,12 +366,12 @@ public:
 
     stdsptr<BoxRenderData> createRenderData(const qreal relFrame);
     stdsptr<BoxRenderData> queRender(const qreal relFrame,
-                                     const QMatrix& parentM);
+                                     const QTransform& parentM);
     stdsptr<BoxRenderData> queExternalRender(
             const qreal relFrame, const bool forceRasterize);
 
     void setupWithoutRasterEffects(const qreal relFrame,
-                                   const QMatrix& parentM,
+                                   const QTransform& parentM,
                                    BoxRenderData * const data,
                                    Canvas* const scene);
     void setupRasterEffects(const qreal relFrame,
@@ -417,7 +417,7 @@ public:
                           const AlignRelativeTo relativeTo,
                           const QPointF lastPivotAbsPos);
 
-    QMatrix getTotalTransform() const;
+    QTransform getTotalTransform() const;
 
     MovablePoint *getPointAtAbsPos(const QPointF &absPos,
                                    const CanvasMode mode,
@@ -589,7 +589,7 @@ public:
                                qreal& rot,
                                qreal& scaleX, qreal& scaleY,
                                qreal& shearX, qreal& shearY,
-                               QMatrix& postTransform);
+                               QTransform& postTransform);
 
     bool hasTransformEffects() const;
     const QStringList checkTransformEffectsForSVGSupport();

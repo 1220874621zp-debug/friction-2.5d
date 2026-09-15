@@ -95,7 +95,6 @@ TextBox::TextBox()
 }
 
 #include <QApplication>
-#include <QDesktopWidget>
 
 void TextBox::openTextEditor(QWidget* dialogParent) {
     /*bool ok;
@@ -446,7 +445,7 @@ stdsptr<BoxRenderData> TextBox::createRenderData() {
     } else return PathBox::createRenderData();
 }
 
-void TextBox::setupRenderData(const qreal relFrame, const QMatrix& parentM,
+void TextBox::setupRenderData(const qreal relFrame, const QTransform& parentM,
                               BoxRenderData * const data,
                               Canvas * const scene) {
     if(!mTextEffects->hasEffects()) {
@@ -561,7 +560,7 @@ SkPath TextBox::getRelativePath(const qreal relFrame) const {
 
     const qreal lineInc = static_cast<qreal>(mFont.getSpacing())*lineSpacing;
 
-    const QStringList lines = textAtFrame.split(QRegExp("\n|\r\n|\r"));
+    const QStringList lines = textAtFrame.split(QRegularExpression("\n|\r\n|\r"));
     qreal maxWidth = 0;
     QList<qreal> lineWidths;
     for(const auto& line : lines) {

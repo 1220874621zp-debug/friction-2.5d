@@ -115,7 +115,7 @@ void BoolPropertyWidget::paintEvent(QPaintEvent *) {
     p.end();
 }
 
-void BoolPropertyWidget::enterEvent(QEvent *) {
+void BoolPropertyWidget::enterEvent(QtEnterEvent *) {
     mHovered = true;
     update();
 }

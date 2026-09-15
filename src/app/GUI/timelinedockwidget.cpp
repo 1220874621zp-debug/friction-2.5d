@@ -178,7 +178,7 @@ TimelineDockWidget::TimelineDockWidget(Document& document,
     mMainLayout = new QVBoxLayout(this);
     setLayout(mMainLayout);
     mMainLayout->setSpacing(0);
-    mMainLayout->setMargin(0);
+    mMainLayout->setContentsMargins(0, 0, 0, 0);
 
     mFrameRewindAct = new QAction(QIcon::fromTheme("rewind"),
                                   tr("Rewind"),

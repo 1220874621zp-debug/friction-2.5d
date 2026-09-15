@@ -71,8 +71,10 @@ RenderHandler::RenderHandler(Document &document,
     connect(mBacklogTimer, &QTimer::timeout, this, [this]() {
         if(mCurrentRenderSettings) nextSaveOutputFrame();
     });
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     connect(audioHandler.audioOutput(), &QAudioOutput::notify,
             this, &RenderHandler::audioPushTimerExpired);
+#endif
 
     const auto vidEmitter = videoEncoder.getEmitter();
 //    connect(vidEmitter, &VideoEncoderEmitter::encodingStarted,

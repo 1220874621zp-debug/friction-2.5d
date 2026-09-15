@@ -562,7 +562,7 @@ void Canvas::setTempLayoutActive(const bool active)
 
 void Canvas::renderSk(SkCanvas* const canvas,
                       const QRect& drawRect,
-                      const QMatrix& viewTrans,
+                      const QTransform& viewTrans,
                       const bool mouseGrabbing)
 {
     mDrawnSinceQue = true;

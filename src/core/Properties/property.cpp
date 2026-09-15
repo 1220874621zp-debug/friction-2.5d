@@ -178,16 +178,16 @@ BasicTransformAnimator *Property::getTransformAnimator() const {
     return nullptr;
 }
 
-QMatrix Property::getTransform() const {
+QTransform Property::getTransform() const {
     const auto trans = getTransformAnimator();
     if(trans) return trans->getTotalTransform();
-    return QMatrix();
+    return QTransform();
 
 }
-QMatrix Property::getTransform(const qreal relFrame) const {
+QTransform Property::getTransform(const qreal relFrame) const {
     const auto trans = getTransformAnimator();
     if(trans) return trans->getTotalTransformAtFrame(relFrame);
-    return QMatrix();
+    return QTransform();
 }
 
 void Property::prp_setSelected(const bool selected) {
@@ -305,7 +305,7 @@ bool Property::prp_sValidateName(const QString &name,
         *error = "Name cannot end with a space";
         return false;
     }
-    const int nValid = name.count(QRegExp("[A-Za-z0-9_ ]"));
+    const int nValid = name.count(QRegularExpression("[A-Za-z0-9_ ]"));
     if(nValid != name.count()) {
         // allow unicode letters (e.g. Chinese) on top of ASCII
         for(const auto& c : name) {

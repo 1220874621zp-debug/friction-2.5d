@@ -1067,7 +1067,7 @@ void CanvasWindow::dropEvent(QDropEvent *event)
 {
     if (handleSceneDrop(event)) { return; }
     if (handleEffectDrop(event)) { return; }
-    const QPointF pos = mapToCanvasCoord(event->posF());
+    const QPointF pos = mapToCanvasCoord(AppSupport::getDropPosF(event));
     mActions.handleDropEvent(event, pos);
 }
 

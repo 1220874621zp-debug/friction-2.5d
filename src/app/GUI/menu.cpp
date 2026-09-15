@@ -51,7 +51,7 @@ void MainWindow::setupMenuBar()
     const auto newAct = mFileMenu->addAction(QIcon::fromTheme("file_blank"),
                                              tr("New", "MenuBar_File"),
                                              this, &MainWindow::newFile,
-                                             Qt::CTRL + Qt::Key_N);
+                                             QStringLiteral("Ctrl+N"));
     newAct->setData(tr("New Project"));
     newAct->setObjectName("NewProjectAct");
 
@@ -60,7 +60,7 @@ void MainWindow::setupMenuBar()
     const auto openAct = mFileMenu->addAction(QIcon::fromTheme("file_folder"),
                                               tr("Open", "MenuBar_File"),
                                               this, qOverload<>(&MainWindow::openFile),
-                                              Qt::CTRL + Qt::Key_O);
+                                              QStringLiteral("Ctrl+O"));
     openAct->setData(tr("Open Project"));
     openAct->setObjectName("OpenProjectAct");
 
@@ -71,7 +71,7 @@ void MainWindow::setupMenuBar()
     mLinkedAct = mFileMenu->addAction(QIcon::fromTheme("linked"),
                                       tr("Link"),
                                       this, &MainWindow::linkFile,
-                                      Qt::CTRL + Qt::Key_L);
+                                      QStringLiteral("Ctrl+L"));
     mLinkedAct->setEnabled(false);
     mLinkedAct->setData(tr("Link File"));
     mLinkedAct->setObjectName("LinkFileAct");
@@ -81,7 +81,7 @@ void MainWindow::setupMenuBar()
     mImportAct = mFileMenu->addAction(QIcon::fromTheme("file_import"),
                                       tr("Import", "MenuBar_File"),
                                       this, qOverload<>(&MainWindow::importFile),
-                                      Qt::CTRL + Qt::Key_I);
+                                      QStringLiteral("Ctrl+L"));
     mImportAct->setEnabled(false);
     mImportAct->setObjectName("ImportFileAct");
     cmdAddAction(mImportAct);
@@ -111,7 +111,7 @@ void MainWindow::setupMenuBar()
     mSaveAct = mFileMenu->addAction(QIcon::fromTheme("disk_drive"),
                                     tr("Save", "MenuBar_File"),
                                     this, qOverload<>(&MainWindow::saveFile),
-                                    Qt::CTRL + Qt::Key_S);
+                                    QStringLiteral("Ctrl+S"));
     mSaveAct->setEnabled(false);
     mSaveAct->setData(tr("Save Project"));
     mSaveAct->setObjectName("SaveProjectAct");
@@ -120,7 +120,7 @@ void MainWindow::setupMenuBar()
     mSaveAsAct = mFileMenu->addAction(QIcon::fromTheme("disk_drive"),
                                       tr("Save As", "MenuBar_File"),
                                       this, [this]() { saveFileAs(); },
-                                      Qt::CTRL + Qt::SHIFT + Qt::Key_S);
+                                      QStringLiteral("Ctrl+Shift+S"));
     mSaveAsAct->setEnabled(false);
     mSaveAsAct->setData(tr("Save Project As ..."));
     cmdAddAction(mSaveAsAct);
@@ -190,7 +190,7 @@ void MainWindow::setupMenuBar()
 
     const auto redoQAct = mEditMenu->addAction(QIcon::fromTheme("loop_forwards"),
                                                tr("Redo", "MenuBar_Edit"));
-    redoQAct->setShortcut(Qt::CTRL + Qt::SHIFT + Qt::Key_Z);
+    redoQAct->setShortcut(QStringLiteral("Ctrl+Shift+Z"));
     mActions.redoAction->connect(redoQAct);
     cmdAddAction(redoQAct);
 
@@ -211,7 +211,7 @@ void MainWindow::setupMenuBar()
         qAct->setIcon(QIcon::fromTheme("copy"));
         mEditMenu->addAction(qAct);
 #ifndef Q_OS_MAC
-        qAct->setShortcut(Qt::CTRL + Qt::Key_C);
+        qAct->setShortcut(QStringLiteral("Ctrl+C"));
 #endif
         mActions.copyAction->connect(qAct);
         cmdAddAction(qAct);
@@ -222,7 +222,7 @@ void MainWindow::setupMenuBar()
         qAct->setIcon(QIcon::fromTheme("cut"));
         mEditMenu->addAction(qAct);
 #ifndef Q_OS_MAC
-        qAct->setShortcut(Qt::CTRL + Qt::Key_X);
+        qAct->setShortcut(QStringLiteral("Ctrl+X"));
 #endif
         mActions.cutAction->connect(qAct);
         cmdAddAction(qAct);
@@ -233,7 +233,7 @@ void MainWindow::setupMenuBar()
         qAct->setIcon(QIcon::fromTheme("paste"));
         mEditMenu->addAction(qAct);
 #ifndef Q_OS_MAC
-        qAct->setShortcut(Qt::CTRL + Qt::Key_V);
+        qAct->setShortcut(QStringLiteral("Ctrl+V"));
 #endif
         mActions.pasteAction->connect(qAct);
         cmdAddAction(qAct);
@@ -256,7 +256,7 @@ void MainWindow::setupMenuBar()
         mEditMenu->addAction(qAct);
         qAct->setIcon(QIcon::fromTheme("duplicate"));
 #ifndef Q_OS_MAC
-        qAct->setShortcut(Qt::CTRL + Qt::Key_D);
+        qAct->setShortcut(QStringLiteral("Ctrl+D"));
 #endif
         mActions.duplicateAction->connect(qAct);
         cmdAddAction(qAct);
@@ -291,7 +291,7 @@ void MainWindow::setupMenuBar()
                                                 "MenuBar_Edit"),
                                              &mActions,
                                              &Actions::invertSelectionAction,
-                                             Qt::SHIFT + Qt::Key_A,
+                                             QStringLiteral("Shift+A"),
                                              mEditMenu);
         mInvertSelAct->setIcon(QIcon::fromTheme("select"));
         mInvertSelAct->setEnabled(false);
@@ -304,7 +304,7 @@ void MainWindow::setupMenuBar()
                                                "MenuBar_Edit"),
                                             &mActions,
                                             &Actions::clearSelectionAction,
-                                            Qt::ALT + Qt::Key_A,
+                                            QStringLiteral("Alt+A"),
                                             mEditMenu);
         mClearSelAct->setIcon(QIcon::fromTheme("select"));
         mClearSelAct->setEnabled(false);
@@ -422,7 +422,7 @@ void MainWindow::setupMenuBar()
     const auto groupQAct = mObjectMenu->addAction(
         tr("Group", "MenuBar_Object"));
     groupQAct->setIcon(QIcon::fromTheme("group"));
-    groupQAct->setShortcut(Qt::CTRL + Qt::Key_G);
+    groupQAct->setShortcut(QStringLiteral("Ctrl+G"));
     mActions.groupAction->connect(groupQAct);
     groupQAct->setData(tr("Group Selected"));
     cmdAddAction(groupQAct);
@@ -430,7 +430,7 @@ void MainWindow::setupMenuBar()
     const auto ungroupQAct = mObjectMenu->addAction(
         tr("Ungroup", "MenuBar_Object"));
     ungroupQAct->setIcon(QIcon::fromTheme("group"));
-    ungroupQAct->setShortcut(Qt::CTRL + Qt::SHIFT + Qt::Key_G);
+    ungroupQAct->setShortcut(QStringLiteral("Ctrl+Shift+G"));
     mActions.ungroupAction->connect(ungroupQAct);
     cmdAddAction(ungroupQAct);
 
@@ -438,13 +438,13 @@ void MainWindow::setupMenuBar()
 
     const auto otpQAct = mPathMenu->addAction(
         tr("Object to Path", "MenuBar_Path"));
-    otpQAct->setShortcut(Qt::SHIFT + Qt::CTRL + Qt::Key_C);
+    otpQAct->setShortcut(QStringLiteral("Shift+Ctrl+C"));
     mActions.objectsToPathAction->connect(otpQAct);
     cmdAddAction(otpQAct);
 
     const auto stpQAct = mPathMenu->addAction(
         tr("Stroke to Path", "MenuBar_Path"));
-    stpQAct->setShortcut(Qt::CTRL + Qt::ALT + Qt::Key_C);
+    stpQAct->setShortcut(QStringLiteral("Ctrl+Alt+C"));
     mActions.strokeToPathAction->connect(stpQAct);
     cmdAddAction(stpQAct);
 
@@ -510,7 +510,7 @@ void MainWindow::setupMenuBar()
         const auto qAct = mPathMenu->addAction(
             tr("Break Apart", "MenuBar_Path"));
         qAct->setIcon(QIcon::fromTheme("booleans_break_apart"));
-        qAct->setShortcut(Qt::CTRL + Qt::SHIFT + Qt::Key_K);
+        qAct->setShortcut(QStringLiteral("Ctrl+Shift+K"));
         mActions.pathsBreakApartAction->connect(qAct);
         cmdAddAction(qAct);
     }

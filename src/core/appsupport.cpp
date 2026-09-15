@@ -250,7 +250,7 @@ void AppSupport::setSettings(QSettings *settings,
     QVariant result;
     if (append) {
         QVariant orig = getSettings(group, key);
-        QMetaType::Type type = static_cast<QMetaType::Type>(orig.type());
+        QMetaType::Type type = static_cast<QMetaType::Type>(orig.userType());
         if (!orig.isNull() && type == QMetaType::QStringList) {
             QStringList list = orig.toStringList();
             list.append(value.toString());
@@ -729,11 +729,12 @@ const QPair<QString, QString> AppSupport::getShaderID(const QString &path)
     if (!greFile.open(QIODevice::ReadOnly)) { return result; }
 
     QDomDocument document;
-    QString errMsg;
-    if (!document.setContent(&greFile, &errMsg)) {
+
+    if (!document.setContent(&greFile)) {
         greFile.close();
         return result;
     }
+
     greFile.close();
 
     QDomElement root = document.firstChildElement();
@@ -1437,7 +1438,7 @@ bool AppSupport::removeXDGDesktopIntegration()
         QFile fileName(QString("%1/%2").arg(path, file));
         if (fileName.exists()) {
             if (!fileName.remove()) {
-                qWarning() << "Failed to remove" << fileName;
+                qWarning() << "Failed to remove" << fileName.fileName();
                 return false;
             }
         }
@@ -1541,6 +1542,12 @@ void AppSupport::initEnv(const bool &isRenderer)
 #else
     qputenv("QT_XCB_GL_INTEGRATION", "xcb_glx");
 #endif
+#endif
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    qputenv("QT_WIDGETS_RHI", "1");
+    qputenv("QT_WIDGETS_RHI_BACKEND", "opengl");
+    qputenv("QSG_RHI_BACKEND", "opengl");
 #endif
 }
 
@@ -1683,5 +1690,104 @@ intKB AppSupport::getTotalRamBytes() {
     const int ret = sysctl(mib, 2, &bytes, &length, NULL, 0);
     if(ret) RuntimeThrow("Failed to retrieve memory using sysctl");
     return intKB(longB(bytes));
+#endif
+}
+
+int AppSupport::getMouseX(QMouseEvent *event)
+{
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    return qRound(event->position().x());
+#else
+    return event->x();
+#endif
+}
+
+int AppSupport::getMouseY(QMouseEvent *event)
+{
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    return qRound(event->position().y());
+#else
+    return event->y();
+#endif
+}
+
+int AppSupport::getMouseGlobalX(QMouseEvent *event)
+{
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    return qRound(event->globalPosition().x());
+#else
+    return event->globalX();
+#endif
+}
+
+int AppSupport::getMouseGlobalY(QMouseEvent *event)
+{
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    return qRound(event->globalPosition().y());
+#else
+    return event->globalY();
+#endif
+}
+
+QPoint AppSupport::getMouseGlobalPos(QMouseEvent *event)
+{
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    return event->globalPosition().toPoint();
+#else
+    return event->globalPos();
+#endif
+}
+
+QPoint AppSupport::getMouseGlobalPos(const QMouseEvent *event)
+{
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    return event->globalPosition().toPoint();
+#else
+    return event->globalPos();
+#endif
+}
+
+QPoint AppSupport::getDropPos(QDropEvent *event)
+{
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    return event->position().toPoint();
+#else
+    return event->pos();
+#endif
+}
+
+QPoint AppSupport::getDropPos(QDragEnterEvent *event)
+{
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    return event->position().toPoint();
+#else
+    return event->pos();
+#endif
+}
+
+QPoint AppSupport::getDropPos(QDragMoveEvent *event)
+{
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    return event->position().toPoint();
+#else
+    return event->pos();
+#endif
+}
+
+QPointF AppSupport::getDropPosF(QDropEvent *event)
+{
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    return event->position();
+#else
+    return event->posF();
+#endif
+}
+
+bool AppSupport::isValidColor(const QString &name)
+{
+#if QT_VERSION >= QT_VERSION_CHECK(6, 4, 0)
+    return QColor::isValidColorName(name);
+#else
+    return QColor::isValidColor(name);
 #endif
 }

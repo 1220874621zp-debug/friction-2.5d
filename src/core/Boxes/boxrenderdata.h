@@ -30,7 +30,7 @@
 #include <QWeakPointer>
 #include "Tasks/updatable.h"
 #include "Animators/animator.h"
-#include <QMatrix>
+#include <QTransform>
 class BoundingBox;
 class ShaderProgramCallerBase;
 #include "smartPointers/ememory.h"
@@ -87,8 +87,8 @@ public:
 
     uint fBoxStateId = 0;
 
-    QMatrix fResolutionScale;
-    QMatrix fScaledTransform;
+    QTransform fResolutionScale;
+    QTransform fScaledTransform;
 
 
     // track matte: matte layer's independent render + mode (see
@@ -96,10 +96,10 @@ public:
     stdsptr<BoxRenderData> fTrackMatteSample;
     int fTrackMatteMode = 0;
     void setTrackMatte(stdsptr<BoxRenderData> sample, const int mode);
-    QMatrix fInheritedTransform;
-    QMatrix fRelTransform;
-    QMatrix fTotalTransform;
-    QMatrix fRenderTransform;
+    QTransform fInheritedTransform;
+    QTransform fRelTransform;
+    QTransform fTotalTransform;
+    QTransform fRenderTransform;
 
     // 2.5D perspective (billboard plane), identity when unused
     SkMatrix fPerspectiveTransform;

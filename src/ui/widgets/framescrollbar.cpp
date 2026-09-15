@@ -383,7 +383,7 @@ void FrameScrollBar::mousePressEvent(QMouseEvent *event)
         menu.addSeparator();
         menu.addAction(splitDurationAct);
 
-        QAction* selectedAction = menu.exec(event->globalPos());
+        QAction* selectedAction = menu.exec(AppSupport::getMouseGlobalPos(event));
         if (selectedAction) {
             /*if (selectedAction == clampAction) {
                 mClamp = !mClamp;
@@ -453,7 +453,7 @@ void FrameScrollBar::mousePressEvent(QMouseEvent *event)
         return;
     }
     mPressed = true;
-    mLastMousePressFrame = posToFrame(event->x() );
+    mLastMousePressFrame = posToFrame(AppSupport::getMouseX(event));
     bool hasMarker = mCurrentCanvas ? mCurrentCanvas->hasMarker(mLastMousePressFrame) : false;
     bool hasMarkerIn = mCurrentCanvas ? mCurrentCanvas->hasMarkerIn(mLastMousePressFrame) : false;
     bool hasMarkerOut = mCurrentCanvas ? mCurrentCanvas->hasMarkerOut(mLastMousePressFrame) : false;
@@ -482,7 +482,7 @@ void FrameScrollBar::mousePressEvent(QMouseEvent *event)
 
 void FrameScrollBar::mouseMoveEvent(QMouseEvent *event)
 {
-    qreal newFrame = posToFrame(event->x() );
+    qreal newFrame = posToFrame(AppSupport::getMouseX(event));
     if (mGrabbedMarker.enabled && mCurrentCanvas) { // move grabbed marker
         if (mGrabbedMarker.in) {
             if (mCurrentCanvas->hasMarkerIn(newFrame) ||

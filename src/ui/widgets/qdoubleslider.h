@@ -27,6 +27,7 @@
 #define QDOUBLESLIDER_H
 
 #include "ui_global.h"
+#include "enterevent.h"
 
 #include <QWidget>
 #include <QLineEdit>
@@ -120,7 +121,7 @@ protected:
     void wheelEvent(QWheelEvent *event);
 #endif
 
-    void enterEvent(QEvent *);
+    void enterEvent(QtEnterEvent *);
     void leaveEvent(QEvent *);
 
     void resizeEvent(QResizeEvent *event);

@@ -70,7 +70,6 @@ static LONG WINAPI writeCrashMiniDump(EXCEPTION_POINTERS* const pep) {
 #ifndef Q_OS_WIN
 #include <unistd.h>
 #endif
-#include <QDesktopWidget>
 #include <QSplashScreen>
 
 #include "hardwareinfo.h"

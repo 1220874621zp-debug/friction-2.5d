@@ -126,8 +126,6 @@ namespace Friction
             QPushButton *mAlignVCenter;
             QPushButton *mAlignBottom;
 
-            QFontDatabase mFontDatabase;
-
             QPlainTextEdit *mTextInput;
 
             ConnContextQPtr<TextBox> mBoxTarget;

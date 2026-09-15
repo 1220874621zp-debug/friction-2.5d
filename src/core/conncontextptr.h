@@ -86,7 +86,7 @@ public:
 
     T* operator->() const { return mPtr.get(); }
     operator T*() const { return mPtr.get(); }
-    operator bool() const { return mPtr; }
+    operator bool() const { return !mPtr.isNull(); }
     T* operator*() const { return mPtr.get(); }
     ConnContext& operator<<(const QMetaObject::Connection& connection)
     { return mConnContext << connection; }

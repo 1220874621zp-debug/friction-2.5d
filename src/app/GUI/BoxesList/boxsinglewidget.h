@@ -38,6 +38,8 @@
 #include "smartPointers/ememory.h"
 #include "framerange.h"
 #include "Animators/SmartPath/smartpathanimator.h"
+#include "../ui/enterevent.h"
+
 class QrealAnimatorValueSlider;
 class QPlainTextEdit;
 class TimelineMovable;
@@ -168,7 +170,7 @@ protected:
     void mouseMoveEvent(QMouseEvent *event);
     void mouseReleaseEvent(QMouseEvent *event);
 
-    void enterEvent(QEvent *);
+    void enterEvent(QtEnterEvent *);
     void leaveEvent(QEvent *);
 
 #ifdef Q_OS_MAC

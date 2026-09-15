@@ -90,22 +90,37 @@ if(MSVC)
 endif()
 
 find_package(PkgConfig QUIET)
-find_package(QT NAMES Qt5 COMPONENTS Core REQUIRED)
-find_package(
-    Qt${QT_VERSION_MAJOR}
-    5.15.3
-    COMPONENTS
-    Gui
-    Widgets
-    OpenGL
-    Multimedia
-    Network
-    Qml
-    Xml
-    Svg
-    Concurrent
-    REQUIRED
-)
+option(USE_QT6 "Use Qt6" ON)
+if(USE_QT6)
+    set(QT_VERSION_MAJOR 6)
+    find_package(Qt6 6.4.2 REQUIRED COMPONENTS
+        Core
+        Gui
+        Widgets
+        OpenGLWidgets
+        OpenGL
+        Multimedia
+        Qml
+        Xml
+        Svg
+        Network
+        Concurrent
+    )
+else()
+    set(QT_VERSION_MAJOR 5)
+    find_package(Qt5 5.15.13 REQUIRED COMPONENTS
+        Core
+        Gui
+        Widgets
+        OpenGL
+        Multimedia
+        Qml
+        Xml
+        Svg
+        Network
+        Concurrent
+    )
+endif()
 
 set(QT_LIBRARIES
     Qt${QT_VERSION_MAJOR}::Core
@@ -119,6 +134,9 @@ set(QT_LIBRARIES
     Qt${QT_VERSION_MAJOR}::Svg
     Qt${QT_VERSION_MAJOR}::Concurrent
 )
+if(USE_QT6)
+    list(APPEND QT_LIBRARIES Qt${QT_VERSION_MAJOR}::OpenGLWidgets)
+endif()
 
 # the kra importer inflates raw-deflate zip entries with zlib; on
 # Windows the zlib symbols come from Qt5Core's bundled copy

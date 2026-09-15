@@ -986,7 +986,7 @@ void ContainerBox::setupCanvasMenu(PropertyMenu * const menu)
         QAction* defaultUngroup;
         if (areAllChildrenStatic()) { defaultUngroup = ungroupKeepAction; }
         else { defaultUngroup = ungroupAbandonAction; }
-        defaultUngroup->setShortcut(Qt::CTRL + Qt::SHIFT + Qt::Key_G);
+        defaultUngroup->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+G")));
         menu->addSeparator();
     }
 
@@ -1270,7 +1270,7 @@ static QList<BoundingBox*> renderSortedBoxes(
 void processChildData(BoundingBox * const child,
                       ContainerBoxRenderData * const parentData,
                       const qreal childRelFrame,
-                      const QMatrix& thisM,
+                      const QTransform& thisM,
                       const qreal absFrame,
                       QList<ChildRenderData>& delayed,
                       const bool soloActive) {
@@ -1314,7 +1314,7 @@ void processChildData(BoundingBox * const child,
 }
 
 void ContainerBox::processChildrenData(const qreal relFrame,
-                                       const QMatrix& thisM,
+                                       const QTransform& thisM,
                                        BoxRenderData * const data,
                                        Canvas* const scene) {
     Q_UNUSED(scene);
@@ -1369,7 +1369,7 @@ stdsptr<BoxRenderData> ContainerBox::createRenderData() {
 }
 
 void ContainerBox::setupRenderData(const qreal relFrame,
-                                   const QMatrix& parentM,
+                                   const QTransform& parentM,
                                    BoxRenderData * const data,
                                    Canvas* const scene) {
     BoundingBox::setupRenderData(relFrame, parentM, data, scene);

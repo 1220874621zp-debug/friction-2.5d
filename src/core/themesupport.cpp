@@ -29,7 +29,6 @@
 #include <QIcon>
 #include <QApplication>
 #include <QDebug>
-#include <QDesktopWidget>
 #include <QToolButton>
 #include <QPixmap>
 #include <QPainter>
@@ -508,6 +507,7 @@ const QString ThemeSupport::themeDisplayName(const QString &id)
 {
     return themePreset(id).displayName;
 }
+#include <QScreen>
 
 const QString ThemeSupport::getAppIconName(const bool alt)
 {
@@ -818,10 +818,10 @@ const QString ThemeSupport::getThemeStyle(int iconSize)
         css = stylesheet.readAll();
         stylesheet.close();
     }
-    qreal dpr = 1.0;
-    if (qobject_cast<QApplication*>(qApp) && QApplication::desktop()) {
-        dpr = QApplication::desktop()->devicePixelRatioF();
-    }
+    // QApplication::desktop() is gone in Qt6; the primary screen gives
+    // the same device pixel ratio for icon rendering
+    QScreen *screen = QGuiApplication::primaryScreen();
+    const qreal dpr = screen ? screen->devicePixelRatio() : 1.0;
     const qreal iconPixelRatio = iconSize * dpr;
     const int r = borderRadius();
     const int sbW = scrollbarWidth();
