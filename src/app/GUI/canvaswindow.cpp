@@ -31,6 +31,14 @@
 #include <QStatusBar>
 #include <QTransform>
 #include <cmath>
+#include <QCoreApplication>
+#include <QDir>
+#include <QDateTime>
+#include <vector>
+
+#ifdef Q_OS_WIN
+#include "windowsincludes.h"
+#endif
 
 #include "mainwindow.h"
 #include "GUI/BoxesList/boxscroller.h"
@@ -68,11 +76,120 @@ CanvasWindow::CanvasWindow(Document &document,
     setMouseTracking(true);
 
     KFT_setFocus();
+
+    sInstances << this;
 }
 
 CanvasWindow::~CanvasWindow()
 {
+    sInstances.removeAll(this);
     setCurrentCanvas(nullptr);
+}
+
+QList<CanvasWindow*> CanvasWindow::sInstances;
+
+void CanvasWindow::dumpCanvasDiagnostics()
+{
+    if (sInstances.isEmpty()) {
+        qDebug() << "[canvas-diag] no canvas window instance";
+        return;
+    }
+    const QString dir = QCoreApplication::applicationDirPath() +
+                        QStringLiteral("/canvas_diag");
+    QDir().mkpath(dir);
+    const QString stamp = QDateTime::currentDateTime().toString(
+                QStringLiteral("hhmmss_zzz"));
+
+#ifdef Q_OS_WIN
+    // GDI capture of the physical (virtual) desktop: the on-screen truth
+    // the compositor produced, independent of Qt
+    {
+        const int sx = GetSystemMetrics(SM_XVIRTUALSCREEN);
+        const int sy = GetSystemMetrics(SM_YVIRTUALSCREEN);
+        const int sw = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+        const int sh = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+        if (sw > 0 && sh > 0) {
+            HDC screenDC = GetDC(nullptr);
+            HDC memDC = CreateCompatibleDC(screenDC);
+            HBITMAP bmp = CreateCompatibleBitmap(screenDC, sw, sh);
+            HGDIOBJ old = SelectObject(memDC, bmp);
+            BitBlt(memDC, 0, 0, sw, sh, screenDC, sx, sy,
+                   SRCCOPY | CAPTUREBLT);
+            BITMAPINFO bi;
+            ZeroMemory(&bi, sizeof(bi));
+            bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+            bi.bmiHeader.biWidth = sw;
+            bi.bmiHeader.biHeight = -sh;
+            bi.bmiHeader.biPlanes = 1;
+            bi.bmiHeader.biBitCount = 32;
+            bi.bmiHeader.biCompression = BI_RGB;
+            QImage img(sw, sh, QImage::Format_ARGB32);
+            GetDIBits(memDC, bmp, 0, sh, img.bits(), &bi, DIB_RGB_COLORS);
+            SelectObject(memDC, old);
+            DeleteObject(bmp);
+            DeleteDC(memDC);
+            ReleaseDC(nullptr, screenDC);
+            img.convertToFormat(QImage::Format_RGB32)
+               .save(dir + QStringLiteral("/screen_") + stamp +
+                     QStringLiteral(".png"));
+            qDebug() << "[canvas-diag] screen capture" << sw << "x" << sh;
+        }
+    }
+#endif
+
+    int idx = 0;
+    for (auto *cw : sInstances) cw->dumpDiag(dir, idx++, stamp);
+    qDebug() << "[canvas-diag] dumped to" << dir;
+}
+
+void CanvasWindow::dumpDiag(const QString &dir,
+                            const int idx,
+                            const QString &stamp)
+{
+    const QString pre = dir + QStringLiteral("/") +
+                        QString::number(idx);
+    const qreal dpr = devicePixelRatioF();
+
+    // 1) raw FBO readback WITHOUT re-rendering: what skia last drew
+    if (isValid()) {
+        auto *ctx = context();
+        if (ctx && ctx->surface()) {
+            ctx->makeCurrent(ctx->surface());
+            GLint boundFbo = 0;
+            glGetIntegerv(GL_FRAMEBUFFER_BINDING, &boundFbo);
+            const GLuint fbo = GLuint(defaultFramebufferObject());
+            const int pw = qCeil(width()*dpr);
+            const int ph = qCeil(height()*dpr);
+            glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+            std::vector<uchar> data(size_t(pw*ph*4));
+            glReadPixels(0, 0, pw, ph, GL_RGBA, GL_UNSIGNED_BYTE,
+                         data.data());
+            const GLenum glErr = glGetError();
+            QImage img(data.data(), pw, ph, pw*4, QImage::Format_RGBA8888);
+            img.mirrored().save(pre + QStringLiteral("_fbo_raw_") +
+                                stamp + QStringLiteral(".png"));
+            glBindFramebuffer(GL_FRAMEBUFFER, GLuint(boundFbo));
+            ctx->doneCurrent();
+            qDebug() << "[canvas-diag]" << idx << "fbo raw" << pw << "x"
+                     << ph << "fboId" << fbo << "glErr" << int(glErr);
+        }
+    }
+
+    // 2) re-rendered grab: what a fresh render produces right now
+    const QImage re = grabFramebuffer();
+    re.save(pre + QStringLiteral("_fbo_render_") + stamp +
+            QStringLiteral(".png"));
+
+    // 3) state
+    qDebug() << "[canvas-diag]" << idx << "logical" << width() << "x"
+             << height() << "dpr" << dpr << "renderImg" << re.size()
+             << "canvas"
+             << (mCurrentCanvas ? mCurrentCanvas->prp_getName()
+                                : QStringLiteral("null"));
+    if (mCurrentCanvas) {
+        qDebug() << "[canvas-diag]" << idx << "viewTransform"
+                 << getViewTransform();
+    }
 }
 
 Canvas *CanvasWindow::getCurrentCanvas()

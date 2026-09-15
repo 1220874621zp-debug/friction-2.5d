@@ -1824,6 +1824,14 @@ void MainWindow::setupLayout()
         mDocument.actionFinished();
     });
 
+    // canvas garbling diagnostics: dumps raw FBO / re-rendered FBO /
+    // GDI screen capture into canvas_diag/ next to the executable
+    const auto canvasDiagShortcut = new QShortcut(
+                QKeySequence(QStringLiteral("Ctrl+Alt+D")), this);
+    canvasDiagShortcut->setContext(Qt::WindowShortcut);
+    connect(canvasDiagShortcut, &QShortcut::activated,
+            this, []() { CanvasWindow::dumpCanvasDiagnostics(); });
+
     // JS plugin system: Scripts menu + script console dock
     setupScripting();
 

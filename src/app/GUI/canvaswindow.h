@@ -67,6 +67,11 @@ public:
     const QTransform& getViewTransform() const
     { return mViewTransform; }
 
+    // canvas garbling diagnostics (Ctrl+Alt+D): dumps the raw FBO
+    // (no re-render), a re-rendered grab, and a GDI screen capture so
+    // the broken layer (content vs compositing) can be told apart
+    static void dumpCanvasDiagnostics();
+
     void setCurrentCanvas(Canvas * const canvas);
     bool hasNoCanvas();
 
@@ -131,6 +136,10 @@ private:
     // effect dragged from the effects panel -> apply it to the layer
     // under the drop point; returns true when the event was consumed
     bool handleEffectDrop(QDropEvent *event);
+
+    // canvas garbling diagnostics helpers (see dumpCanvasDiagnostics)
+    static QList<CanvasWindow*> sInstances;
+    void dumpDiag(const QString &dir, const int idx, const QString &stamp);
 
     // canvas rulers (viewport overlay strips): view-level toggle shared
     // by every canvas window, persisted in settings ("view"/"rulers")
