@@ -239,7 +239,11 @@ public:
         if (mFile.open(QIODevice::WriteOnly | QIODevice::Text
                        | QIODevice::Truncate)) {
             mStream.setDevice(&mFile);
+            #if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
             mStream.setEncoding(QStringConverter::Utf8);
+#else
+            mStream.setCodec("UTF-8");
+#endif
         }
     }
     void append(const QString &line) {

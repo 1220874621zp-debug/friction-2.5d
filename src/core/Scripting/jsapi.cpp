@@ -67,6 +67,11 @@
 
 #include <QFile>
 #include <QTextStream>
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+#include <QStringConverter>
+#else
+#include <QTextCodec>
+#endif
 #include <QQmlEngine>
 
 namespace Friction
@@ -3020,7 +3025,11 @@ namespace Friction
             // scripts are UTF-8; QTextStream defaults to the locale
             // codec (GBK on Chinese Windows), which mangles non-ASCII
             // and causes JS parse errors
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
             stream.setEncoding(QStringConverter::Utf8);
+#else
+            stream.setCodec("UTF-8");
+#endif
             const QString source = stream.readAll();
             file.close();
             const auto result = mEngine->evaluate(source, path);

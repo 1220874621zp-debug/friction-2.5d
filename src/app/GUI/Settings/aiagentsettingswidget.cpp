@@ -410,7 +410,11 @@ void AIAgentSettingsWidget::copyAiPrompt()
         QFile f(path);
         if (f.open(QIODevice::ReadOnly | QIODevice::Text)) {
             QTextStream ts(&f);
+            #if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
             ts.setEncoding(QStringConverter::Utf8);
+#else
+            ts.setCodec("UTF-8");
+#endif
             basePrompt = ts.readAll();
             f.close();
             if (!basePrompt.trimmed().isEmpty()) {

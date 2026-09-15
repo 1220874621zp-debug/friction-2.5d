@@ -399,7 +399,11 @@ int main(int argc, char *argv[])
             QFile dbg(QCoreApplication::applicationDirPath() + "/i18n_debug.txt");
             if (dbg.open(QIODevice::WriteOnly | QIODevice::Text)) {
                 QTextStream s(&dbg);
+                #if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
                 s.setEncoding(QStringConverter::Utf8);
+#else
+                s.setCodec("UTF-8");
+#endif
                 s << "qt: " << qVersion() << "\n";
                 s << "locale: " << locale.name() << " chinese=" << isChinese
                   << " loaded=" << loaded << "\n";
