@@ -1545,16 +1545,14 @@ void AppSupport::initEnv(const bool &isRenderer)
 #endif
 
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
-    // The Qt6 RHI widget compositor shares one GL texture namespace between
-    // the app's OpenGL context and the RHI backend. Under Intel/core-profile
-    // the canvas's QOpenGLWidget FBO gets desynced there, resurfacing as
-    // stale textures from unrelated widgets (diagonal colored garble that
-    // only heals on re-expose) - the scissor/viewport reset in paintGL does
-    // NOT fix it. QT_WIDGETS_RHI=0 falls back to the classic Qt5 compositing
-    // path that keeps QOpenGLWidget isolated and is the known-good baseline.
-    // Keep an environment override for A/B comparison.
+    // Qt6 has NO classic compositing path for QOpenGLWidget: with
+    // QT_WIDGETS_RHI=0 the canvas area is never composited at all (raster
+    // backing store leftovers show through = the "garble"/black canvas).
+    // RHI=1 is mandatory; the offscreen-blit in GLWindow::paintGL keeps
+    // skia isolated from the widget FBO lifecycle, so the RHI compositor
+    // always reads a fully finished frame. Env override kept for A/B.
     if (!qEnvironmentVariableIsSet("QT_WIDGETS_RHI"))
-        qputenv("QT_WIDGETS_RHI", "0");
+        qputenv("QT_WIDGETS_RHI", "1");
     qputenv("QT_WIDGETS_RHI_BACKEND", "opengl");
     qputenv("QSG_RHI_BACKEND", "opengl");
 #endif
