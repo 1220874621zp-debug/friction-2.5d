@@ -55,6 +55,10 @@ protected:
     void updateFix();
 
     bool mRebind = false;
+    // Qt6: tracks which FBO/device size the Skia surface currently wraps;
+    // paintGL rebinds whenever Qt silently recreates the widget FBO
+    unsigned int mBoundFboId = ~0u;
+    QSize mBoundDeviceSize;
     sk_sp<GrContext> mGrContext;
     sk_sp<SkSurface> mSurface;
     SkCanvas *mCanvas = nullptr;

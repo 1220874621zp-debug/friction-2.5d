@@ -40,6 +40,9 @@ GLWindow::GLWindow(QWidget * const parent)
     // path, which stays stable; the canvas fully redraws each frame so
     // preserving old content costs nothing.
     setUpdateBehavior(QOpenGLWidget::PartialUpdate);
+    // recreateFbos() emits resized() even when the widget size did not
+    // change - make sure the skia surface follows the new FBO
+    connect(this, &QOpenGLWidget::resized, this, [this]() { mRebind = true; });
 #else
     setUpdateBehavior(QOpenGLWidget::NoPartialUpdate);
 #endif
@@ -47,8 +50,11 @@ GLWindow::GLWindow(QWidget * const parent)
 
 void GLWindow::bindSkia(const int w, const int h) {
     qreal pixelRatio = devicePixelRatioF();
-    int scaledWidth = pixelRatio*w;
-    int scaledHeight = pixelRatio*h;
+    // Qt computes the widget FBO size with rounding (QSize * qreal);
+    // truncating made the surface 1px shorter than the FBO at fractional
+    // dpr (e.g. 805 * 1.5 = 1207.5 -> Qt 1208 vs skia 1207)
+    int scaledWidth = qRound(pixelRatio*w);
+    int scaledHeight = qRound(pixelRatio*h);
     GrGLFramebufferInfo fbInfo;
     fbInfo.fFBOID = context()->defaultFramebufferObject();//buffer;
     fbInfo.fFormat = GR_GL_RGBA8;//buffer;
@@ -76,6 +82,8 @@ void GLWindow::bindSkia(const int w, const int h) {
     if(!mSurface) RuntimeThrow("Failed to wrap buffer into SkSurface.");
     mCanvas = mSurface->getCanvas();
     mGrContext->resetContext();
+    mBoundFboId = fbInfo.fFBOID;
+    mBoundDeviceSize = QSize(scaledWidth, scaledHeight);
 }
 
 void GLWindow::resizeGL(int, int) {
@@ -139,6 +147,21 @@ void GLWindow::initialize()
 }
 
 void GLWindow::paintGL() {
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+    // Qt6's compositor may recreate the widget FBO outside resizeGL()
+    // (hide/show, screen changes). A skia surface still wrapping the old
+    // FBO id then renders into a recycled texture name, which shows up as
+    // garbled content from unrelated widgets - detect and rebind.
+    const auto fboId = defaultFramebufferObject();
+    const qreal pr = devicePixelRatioF();
+    const QSize devSize(qRound(width()*pr), qRound(height()*pr));
+    if (fboId != mBoundFboId || devSize != mBoundDeviceSize) {
+        qDebug() << "[glwin] fbo/size changed, rebinding skia:"
+                 << mBoundFboId << "->" << fboId
+                 << mBoundDeviceSize << "->" << devSize;
+        mRebind = true;
+    }
+#endif
     if(mRebind) {
         mRebind = false;
         try {
@@ -151,6 +174,19 @@ void GLWindow::paintGL() {
     // glClear(GL_COLOR_BUFFER_BIT);
     renderSk(mCanvas);
     mCanvas->flush();
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+    // anomaly telemetry (throttled): a persistent gl error or incomplete
+    // framebuffer here means the garbling survived the rebind guard
+    const GLenum glErr = glGetError();
+    const GLenum fbStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    if (glErr != GL_NO_ERROR || fbStatus != GL_FRAMEBUFFER_COMPLETE) {
+        static int sWarnCount = 0;
+        if (sWarnCount < 10 || sWarnCount % 120 == 0)
+            qWarning() << "[glwin] anomaly: glErr" << int(glErr)
+                       << "fbStatus" << int(fbStatus) << "fbo" << fboId;
+        sWarnCount++;
+    }
+#endif
 }
 
 void GLWindow::showEvent(QShowEvent *e) {
