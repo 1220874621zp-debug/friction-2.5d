@@ -53,9 +53,11 @@ QWidget {
 QToolTip {
     background-color: %3;
     color: #f3f3f2;
-    border: 1px solid %2;
     border-radius: %17px;
-    padding: 5px 8px;
+    /* no padding/border: the QSS box model is not fully accounted for
+       in QTipLabel's size computation - with CJK line boxes the text
+       bottom landed on the border line and the last strokes were cut
+       (Qt's native tooltip margins apply instead) */
 }
 
 /* =========================================================================
