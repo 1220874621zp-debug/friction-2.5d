@@ -814,13 +814,19 @@ eBoxOrSound *eBoxOrSound::trackMemberAtX(
 }
 
 void eBoxOrSound::scheduleTrackEnforce() const {
-    const QPointer<Canvas> scene = getParentScene();
-    const QPointer<ContainerBox> parent = mParentGroup.data();
+    // resolve scene/parent at execution time: during project load
+    // prp_readProperty_impl runs BEFORE addContained parents the box,
+    // so capturing them here would queue a silent no-op and every
+    // track member would keep its own row until the next selection
+    const QPointer<eBoxOrSound> self = const_cast<eBoxOrSound*>(this);
     const int tid = mTrackId;
     // const_cast: invokeMethod needs a non-const context object;
     // the lambda only reschedules a UI refresh, it does not mutate
     QMetaObject::invokeMethod(const_cast<eBoxOrSound*>(this),
-                              [scene, parent, tid]() {
+                              [self, tid]() {
+        if(!self || tid < 0) return;
+        const auto scene = self->getParentScene();
+        const auto parent = self->getParentGroup();
         if(scene && parent) scene->enforceTrack(parent, tid);
     }, Qt::QueuedConnection);
 }
