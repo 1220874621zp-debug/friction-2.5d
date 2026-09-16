@@ -6,9 +6,12 @@
 #include <QWheelEvent>
 #include <QKeyEvent>
 #include <QScrollBar>
+#include <QMenu>
+#include <QContextMenuEvent>
 #include <QtMath>
 #include <QRandomGenerator>
 #include <QDateTime>
+#include <algorithm>
 
 static const double MIN_CLIP_LEN = 0.2;   // seconds
 static const int SNAP_PX = 8;
@@ -840,4 +843,88 @@ QVector<EditorTimelineWidget::ClipInfo> EditorTimelineWidget::allClips() const
         out.append(info);
     }
     return out;
+}
+
+int EditorTimelineWidget::videoTrackCount() const
+{
+    int n = 0;
+    while (n < m_tracks.size() && m_tracks[n].type == ClipType::Video) ++n;
+    return n;
+}
+
+void EditorTimelineWidget::contextMenuEvent(QContextMenuEvent *e)
+{
+    const int idx = clipAt(e->pos());
+    if (idx < 0) { QWidget::contextMenuEvent(e); return; }
+    if (m_selected != idx) {
+        m_selected = idx;
+        const Clip &sel = m_clips[idx];
+        emit selectionChanged(QStringLiteral("%1  [%2 → %3]")
+                              .arg(sel.name, timecode(sel.start),
+                                   timecode(sel.start + sel.length)));
+        update();
+    }
+    const Clip &c = m_clips[idx];
+    const int src = c.track;
+    const bool upOk = src > 0 && m_tracks[src - 1].type == c.type;
+    const bool downOk = src + 1 < m_tracks.size()
+            && m_tracks[src + 1].type == c.type;
+    if (!upOk && !downOk) { QWidget::contextMenuEvent(e); return; }
+
+    QMenu menu(this);
+    QAction *up = menu.addAction(tr("合并到上一轨"));
+    up->setEnabled(upOk);
+    QAction *down = menu.addAction(tr("合并到下一轨"));
+    down->setEnabled(downOk);
+
+    QAction *act = menu.exec(e->globalPos());
+    if (act == up && upOk) mergeTrackInto(src, src - 1);
+    else if (act == down && downOk) mergeTrackInto(src, src + 1);
+}
+
+void EditorTimelineWidget::mergeTrackInto(const int src, const int dst)
+{
+    if (src == dst) return;
+    if (src < 0 || src >= m_tracks.size()) return;
+    if (dst < 0 || dst >= m_tracks.size()) return;
+    if (m_tracks[src].type != m_tracks[dst].type) return;
+    const QString srcName = m_tracks[src].name;
+    const QString dstName = m_tracks[dst].name;
+    // overlaps are allowed on purpose: the user resolves them by
+    // dragging / trimming afterwards
+    for (Clip &c : m_clips) {
+        if (c.track == src) c.track = dst;
+    }
+    compactLanes();
+    emitLog(QStringLiteral("merge track %1 -> %2").arg(srcName, dstName));
+    emit trackLayoutChanged();
+}
+
+void EditorTimelineWidget::compactLanes()
+{
+    const int oldVideo = videoTrackCount();
+    const int oldAudio = m_tracks.size() - oldVideo;
+    QVector<int> vUsed, aUsed;
+    for (const Clip &c : m_clips) {
+        if (c.track < oldVideo) {
+            if (!vUsed.contains(c.track)) vUsed.append(c.track);
+        } else {
+            const int lane = c.track - oldVideo;
+            if (!aUsed.contains(lane)) aUsed.append(lane);
+        }
+    }
+    // distinct lanes within range: full count means no gap to close
+    if (vUsed.size() == oldVideo && aUsed.size() == oldAudio) return;
+    std::sort(vUsed.begin(), vUsed.end());
+    std::sort(aUsed.begin(), aUsed.end());
+    QHash<int, int> vMap, aMap;
+    for (int i = 0; i < vUsed.size(); ++i) vMap.insert(vUsed[i], i);
+    for (int i = 0; i < aUsed.size(); ++i) aMap.insert(aUsed[i], i);
+    for (Clip &c : m_clips) {
+        if (c.track < oldVideo) c.track = vMap.value(c.track, 0);
+        else c.track = vUsed.size() + aMap.value(c.track - oldVideo, 0);
+    }
+    rebuildTracks(vUsed.size(), aUsed.size());
+    updateScrollBar();
+    update();
 }

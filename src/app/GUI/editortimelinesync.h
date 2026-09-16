@@ -38,11 +38,16 @@ private:
     void connectChildren();
     void syncPlayheadToDoc();
     void applyWriteback();
+    void storeTrackAssignments();
 
     Document &mDocument;
     QPointer<EditorTimelineWidget> mWidget;
     QPointer<Canvas> mActiveScene;
     QHash<int, QPointer<eBoxOrSound>> mClipToLayer;
+    // per-layer lane within its type group (video lanes 0.., audio lanes
+    // 0..), remembered in-session so merged tracks and manual track moves
+    // survive rebuilds; empty lanes are kept until a merge compacts them
+    QHash<eBoxOrSound*, int> mLayerLane;
     QList<QMetaObject::Connection> mSceneConns;
     QList<QMetaObject::Connection> mChildConns;
     bool mInWriteback = false;

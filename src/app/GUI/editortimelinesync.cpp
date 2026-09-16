@@ -10,6 +10,7 @@
 #include "smartPointers/ememory.h"
 
 #include <QMouseEvent>
+#include <QSet>
 
 EditorTimelineSync::EditorTimelineSync(Document &document,
                                        EditorTimelineWidget * const widget,
@@ -19,6 +20,9 @@ EditorTimelineSync::EditorTimelineSync(Document &document,
     , mWidget(widget)
 {
     mWidget->installEventFilter(this);
+
+    connect(mWidget, &EditorTimelineWidget::trackLayoutChanged,
+            this, &EditorTimelineSync::storeTrackAssignments);
 
     connect(&mDocument, qOverload<Canvas*>(&Document::sceneCreated),
             this, &EditorTimelineSync::rebuild);
@@ -96,9 +100,52 @@ void EditorTimelineSync::rebuild()
             else if (video) { items.append({layer, false}); }
         }
     }
+    // prune stale lane assignments, then resolve per-type lanes: stored
+    // lanes (merged tracks / manual track moves) survive rebuilds; layers
+    // without a stored lane fall back to the default one-per-track layout
+    QSet<eBoxOrSound*> live;
+    for (const auto &it : items) { live.insert(it.layer); }
+    for (auto it = mLayerLane.begin(); it != mLayerLane.end();) {
+        if (live.contains(it.key())) { ++it; continue; }
+        it = mLayerLane.erase(it);
+    }
+    QVector<int> lane(items.size(), -1);
+    QVector<int> vIdxs, aIdxs;
+    for (int i = 0; i < items.size(); ++i) {
+        (items[i].audio ? aIdxs : vIdxs).append(i);
+    }
+    for (const auto &idxs : {vIdxs, aIdxs}) {
+        bool anyStored = false;
+        QSet<int> used;
+        for (const int i : idxs) {
+            const int stored = mLayerLane.value(items[i].layer, -1);
+            if (stored < 0) { continue; }
+            lane[i] = stored;
+            used.insert(stored);
+            anyStored = true;
+        }
+        if (!anyStored) {
+            // default: contained order stacks bottom-up (item 0 at lane
+            // count-1 == V1/A1), matching the original one-per-track view
+            for (int k = 0; k < idxs.size(); ++k) {
+                lane[idxs[k]] = idxs.size() - 1 - k;
+            }
+            continue;
+        }
+        for (const int i : idxs) {
+            if (lane[i] >= 0) { continue; }
+            int l = 0;
+            while (used.contains(l)) { ++l; }
+            lane[i] = l;
+            used.insert(l);
+        }
+    }
     int videoCount = 0;
     int audioCount = 0;
-    for (const auto &it : items) { it.audio ? audioCount++ : videoCount++; }
+    for (int i = 0; i < items.size(); ++i) {
+        if (items[i].audio) { audioCount = qMax(audioCount, lane[i] + 1); }
+        else { videoCount = qMax(videoCount, lane[i] + 1); }
+    }
 
     mWidget->rebuildTracks(videoCount, audioCount);
     mWidget->clearAllClips();
@@ -107,9 +154,8 @@ void EditorTimelineSync::rebuild()
     const qreal fps = scene->getFps();
     const double fallbackLen = fps > 0. ?
                 scene->getFrameRange().fMax / fps : 0.;
-    int vIdx = 0;
-    int aIdx = 0;
-    for (const auto &it : items) {
+    for (int i = 0; i < items.size(); ++i) {
+        const auto &it = items[i];
         double start = 0.;
         double len = fallbackLen;
         const auto dur = it.layer->getDurationRectangle();
@@ -119,14 +165,25 @@ void EditorTimelineSync::rebuild()
             start = minF / fps;
             len = (maxF - minF + 1) / fps;
         }
-        const int track = it.audio ?
-                    videoCount + (audioCount - 1 - aIdx++) :
-                    (videoCount - 1 - vIdx++);
+        const int track = it.audio ? videoCount + lane[i] : lane[i];
         const int id = mWidget->appendClip(it.layer->prp_getName(),
                                            start, len, it.audio, track);
         mClipToLayer.insert(id, it.layer);
     }
     updatePlayheadFromDoc();
+}
+
+void EditorTimelineSync::storeTrackAssignments()
+{
+    if (!mWidget) { return; }
+    const int videoTracks = mWidget->videoTrackCount();
+    const auto clips = mWidget->allClips();
+    for (const auto &clip : clips) {
+        const auto layer = mClipToLayer.value(clip.id);
+        if (!layer) { continue; }
+        mLayerLane[layer.data()] = clip.audio ?
+                    clip.track - videoTracks : clip.track;
+    }
 }
 
 void EditorTimelineSync::updatePlayheadFromDoc()
@@ -197,6 +254,7 @@ bool EditorTimelineSync::eventFilter(QObject * const obj, QEvent * const ev)
                 mDragging = false;
                 syncPlayheadToDoc();
                 applyWriteback();
+                storeTrackAssignments();
                 rebuild();
                 mRebuildQueued = false;
             }

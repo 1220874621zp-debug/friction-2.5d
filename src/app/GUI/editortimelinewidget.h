@@ -32,6 +32,7 @@ public slots:
 signals:
     void logMessage(const QString &msg);
     void selectionChanged(const QString &info);
+    void trackLayoutChanged();
 
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -39,6 +40,7 @@ protected:
     void mouseMoveEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
     void mouseDoubleClickEvent(QMouseEvent *event) override;
+    void contextMenuEvent(QContextMenuEvent *event) override;
     void wheelEvent(QWheelEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
     void leaveEvent(QEvent *event) override;
@@ -145,6 +147,13 @@ public:
     void rebuildTracks(const int videoCount, const int audioCount);
     void setPlayheadSec(const double t);
     QVector<ClipInfo> allClips() const;
+    int videoTrackCount() const;
+
+private:
+    // ---- track merge (bridge extension): move every clip of srcTrack to
+    // dstTrack (same type, overlaps allowed), then drop emptied lanes ----
+    void mergeTrackInto(const int srcTrack, const int dstTrack);
+    void compactLanes();
 };
 
 #endif // EDITORTIMELINEWIDGET_H
