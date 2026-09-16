@@ -31,6 +31,9 @@
 #include "importhandler.h"
 #include "Sound/esoundsettings.h"
 #include "canvas.h"
+#include "themesupport.h"
+#include "GUI/global.h"
+#include <QToolTip>
 #include "eevent.h"
 #include "Boxes/rectangle.h"
 #include "Boxes/circle.h"
@@ -822,6 +825,95 @@ static int runRectToolTest(Document& document, TaskScheduler& tasks) {
     return 0;
 }
 
+// tooltip vertical-centering test with the REAL theme stylesheet,
+// REAL app-font chain and the REAL platform DPI: replicates the user
+// report "tooltip text sits at the bottom of the box instead of
+// vertically centered" (e.g. 切换组 / 溶解与普通节点 button tips)
+static int runTipTest(Document& document, TaskScheduler& tasks) {
+    Q_UNUSED(document) Q_UNUSED(tasks)
+    // dump the real theme stylesheet on request (--tiptest dump) so a
+    // standalone case can replicate the exact rule set the app runs
+    {
+        QFile dump(QStringLiteral("theme_dump.qss"));
+        if (dump.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            dump.write(ThemeSupport::getThemeStyle(20).toUtf8());
+            dump.close();
+            fprintf(stderr, "[harness] TIPTEST: dumped theme_dump.qss\n");
+        }
+    }
+    // same font chain as main.cpp: OS font scaled by the interface
+    // scaling evaluator, then the theme stylesheet on top
+    OS_FONT = QApplication::font();
+    eSizesUI::font.setEvaluator([]() {
+        const auto fm = QFontMetrics(OS_FONT);
+        return fm.height();
+    });
+    static QCoreApplication* appInst = QCoreApplication::instance();
+    eSizesUI::font.add(appInst, [](const int size) {
+        const auto fm = QFontMetrics(OS_FONT);
+        const qreal mult = size/qreal(fm.height());
+        QFont font = OS_FONT;
+        if(OS_FONT.pixelSize() == -1) {
+            font.setPointSizeF(mult*OS_FONT.pointSizeF());
+        } else {
+            font.setPixelSize(qRound(mult*OS_FONT.pixelSize()));
+        }
+        QApplication::setFont(font);
+    });
+    ThemeSupport::setupTheme(20);
+
+    const auto measure = [](const char* tag, const QString& text) {
+        QToolTip::showText(QPoint(200, 200), text);
+        for (int i = 0; i < 60; i++) QApplication::processEvents();
+        QWidget* tip = nullptr;
+        for (auto* w : QApplication::allWidgets()) {
+            if (strcmp(w->metaObject()->className(), "QTipLabel") == 0) {
+                tip = w; break;
+            }
+        }
+        if (!tip) {
+            fprintf(stderr, "[harness] TIPTEST %s: no QTipLabel\n", tag);
+            return;
+        }
+        const QImage img = tip->grab().toImage()
+                .convertToFormat(QImage::Format_RGB32);
+        const int W = img.width(), H = img.height();
+        int topText = -1, botText = -1;
+        for (int y = 0; y < H && topText < 0; y++) {
+            for (int x = 0; x < W; x++) {
+                const auto c = img.pixel(x, y);
+                if (qRed(c) > 150 && qGreen(c) > 150 && qBlue(c) > 150) {
+                    topText = y; break;
+                }
+            }
+        }
+        for (int y = H - 1; y >= 0 && botText < 0; y--) {
+            for (int x = 0; x < W; x++) {
+                const auto c = img.pixel(x, y);
+                if (qRed(c) > 150 && qGreen(c) > 150 && qBlue(c) > 150) {
+                    botText = y; break;
+                }
+            }
+        }
+        fprintf(stderr, "[harness] TIPTEST %s: label=%dx%d textRows=%d..%d "
+                        "gapTop=%d gapBottom=%d font=%s/%dpx%s\n",
+                tag, W, H, topText, botText,
+                topText, botText < 0 ? -1 : H - 1 - botText,
+                QApplication::font().family().toLocal8Bit().constData(),
+                QFontMetrics(QApplication::font()).height(),
+                (botText >= 0 && H - 1 - botText <= 1) ||
+                (topText > H/3)
+                    ? "  <<< NOT CENTERED" : "");
+        QToolTip::hideText();
+        for (int i = 0; i < 10; i++) QApplication::processEvents();
+    };
+
+    measure("cjk-plain", QStringLiteral("\u5207\u6362\u7ec4"));
+    measure("cjk-long ", QStringLiteral("\u6eb6\u89e3\u4e0e\u666e\u901a\u8282\u70b9"));
+    measure("latin    ", QStringLiteral("Switch Group"));
+    return 0;
+}
+
 // synthetic differential test: every layer creates a MotionPathHandler
 // in prp_updateCanvasProps(); repeated create/destroy cycles used to be
 // lethal with the double-shared PointsHandler ownership
@@ -1009,6 +1101,17 @@ int main(int argc, char *argv[]) {
         TaskScheduler taskScheduler;
         Document document(taskScheduler);
         return runAiDepthTest(args.count() > 1 ? args.at(1) : QString());
+    }
+    if(!args.isEmpty() && args.first() == "--tiptest") {
+        eSettings settings(HardwareInfo::sCpuThreads(),
+                           HardwareInfo::sRamKB());
+        ImportHandler importHandler;
+        TaskScheduler taskScheduler;
+        Document document(taskScheduler);
+        FilesHandler filesHandler;
+        MemoryHandler memoryHandler;
+        eFilterSettings filterSettings;
+        return runTipTest(document, taskScheduler);
     }
     if(!args.isEmpty() && args.first() == "--recttool") {
         eSettings settings(HardwareInfo::sCpuThreads(),
