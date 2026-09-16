@@ -26,10 +26,12 @@ EditorTimelineSync::EditorTimelineSync(Document &document,
 {
     mWidget->installEventFilter(this);
 
-    // context-menu merges inside the widget: push them into the native
-    // track model and refresh from it right away
+    // context-menu merges and the magnetic toggle inside the widget:
+    // persist clip times (the magnetic toggle slides clips), push the
+    // lanes into the native track model, refresh from it right away
     connect(mWidget, &EditorTimelineWidget::trackLayoutChanged,
             this, [this]() {
+        applyWriteback();
         applyTrackWriteback();
         rebuild();
     });
@@ -444,6 +446,8 @@ bool EditorTimelineSync::eventFilter(QObject * const obj, QEvent * const ev)
             if (me->button() == Qt::LeftButton && mDragging) {
                 mDragging = false;
                 syncPlayheadToDoc();
+                // magnetic invariant: tracks hold no gaps after any edit
+                if (mWidget->magnetic()) { mWidget->compactTrackGaps(); }
                 applyWriteback();
                 mWidget->compactLanes();      // drop lanes emptied by the drag
                 applyTrackWriteback();        // lanes -> native rows/tracks

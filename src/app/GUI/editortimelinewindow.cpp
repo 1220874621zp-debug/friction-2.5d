@@ -54,6 +54,12 @@ EditorTimelineWindow::EditorTimelineWindow(QWidget *parent)
     QAction *aAddA = tb->addAction(QStringLiteral("+ 音频"));
     QAction *aDel  = tb->addAction(QStringLiteral("删除"));
     tb->addSeparator();
+    // CapCut-style magnetic mode: no gaps within a track (turning it on
+    // compacts immediately; drag/trim releases keep it compact)
+    QAction *aMag = tb->addAction(QStringLiteral("磁吸"));
+    aMag->setCheckable(true);
+    aMag->setChecked(false);
+    tb->addSeparator();
     QAction *aZi = tb->addAction(QStringLiteral("放大"));
     QAction *aZo = tb->addAction(QStringLiteral("缩小"));
     QAction *aFit = tb->addAction(QStringLiteral("适配"));
@@ -63,6 +69,7 @@ EditorTimelineWindow::EditorTimelineWindow(QWidget *parent)
     connect(aAddV, &QAction::triggered, m_timeline, &EditorTimelineWidget::addVideoClip);
     connect(aAddA, &QAction::triggered, m_timeline, &EditorTimelineWidget::addAudioClip);
     connect(aDel,  &QAction::triggered, m_timeline, &EditorTimelineWidget::removeSelectedClip);
+    connect(aMag, &QAction::toggled, m_timeline, &EditorTimelineWidget::setMagnetic);
     connect(aZi,   &QAction::triggered, m_timeline, &EditorTimelineWidget::zoomIn);
     connect(aZo,   &QAction::triggered, m_timeline, &EditorTimelineWidget::zoomOut);
     connect(aFit,  &QAction::triggered, m_timeline, &EditorTimelineWidget::zoomFit);

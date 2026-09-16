@@ -1071,6 +1071,15 @@ void EditorTimelineWidget::applyMagneticFollow(const bool active)
 {
     if (m_drag != DragMode::TrimRight || m_dragClip < 0 ||
             m_dragClip >= m_clips.size()) { return; }
+    // live follow only exists in magnetic mode (Alt temporarily suspends)
+    if (!mMagnetic || !active) {
+        for (const auto &snap : m_trimSnap) {
+            if (snap.idx >= 0 && snap.idx < m_clips.size()) {
+                m_clips[snap.idx].start = snap.start;
+            }
+        }
+        return;
+    }
     const Clip &c = m_clips[m_dragClip];
     const double oldEnd = m_origStart + m_origLength;
     const double newEnd = c.start + c.length;
@@ -1081,14 +1090,58 @@ void EditorTimelineWidget::applyMagneticFollow(const bool active)
         // followers = clips that started inside the trimmed-away span
         // [newEnd, oldEnd] (a neighbour right at the old out point is the
         // attached case); they all shift left by the same delta so their
-        // mutual spacing and overlaps survive. Everything else - and
-        // everything, when suppressed or lengthened back - restores its
-        // snapshot position, making the follow idempotent per move.
-        if (active && delta > 1e-9 &&
+        // mutual spacing and overlaps survive. Everything else restores
+        // its snapshot position, making the follow idempotent per move.
+        if (delta > 1e-9 &&
                 snap.start >= newEnd - 1e-9 && snap.start <= oldEnd + 1e-9) {
             f.start = qMax(0.0, snap.start - delta);
         } else {
             f.start = snap.start;
         }
     }
+}
+
+void EditorTimelineWidget::setMagnetic(const bool on)
+{
+    if (mMagnetic == on) { return; }
+    mMagnetic = on;
+    if (!on) { return; }
+    // turning it on enforces the no-gap invariant right away; the layout
+    // signal lets the bridge persist the moved starts (undoable)
+    const int moved = compactTrackGaps();
+    if (moved > 0) {
+        emitLog(QStringLiteral("magnetic on: %1 clip(s) slid closed").arg(moved));
+        emit trackLayoutChanged();
+    } else {
+        emitLog(QStringLiteral("magnetic on: tracks already gap-free"));
+    }
+}
+
+int EditorTimelineWidget::compactTrackGaps()
+{
+    // per track, in start order: a clip that begins after the previous
+    // one ends slides left onto that out point; overlaps (merged tracks)
+    // are kept as-is, so only genuine gaps close
+    int moved = 0;
+    for (int t = 0; t < m_tracks.size(); ++t) {
+        QVector<int> order;
+        for (int i = 0; i < m_clips.size(); ++i) {
+            if (m_clips[i].track == t) { order.append(i); }
+        }
+        if (order.size() < 2) { continue; }
+        std::sort(order.begin(), order.end(), [this](const int a, const int b) {
+            return m_clips[a].start < m_clips[b].start;
+        });
+        double cursor = -1.0;
+        for (const int i : order) {
+            Clip &c = m_clips[i];
+            if (cursor >= 0.0 && c.start > cursor + 1e-9) {
+                c.start = cursor;
+                ++moved;
+            }
+            cursor = qMax(cursor, c.start + c.length);
+        }
+    }
+    if (moved > 0) { update(); }
+    return moved;
 }

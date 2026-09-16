@@ -161,6 +161,15 @@ public:
     // the linked scene, delivered by EditorTimelineSync); clips without
     // one keep the procedural placeholder tile
     void setClipThumbnail(const int clipId, const QImage &image);
+    // CapCut-style magnetic mode. While on, tracks hold no gaps: turning
+    // it on compacts every track right away, and every drag/trim release
+    // re-compacts (later clips slide left onto the previous clip's out
+    // point; overlaps between merged-track clips are kept). Trimming
+    // additionally follows live. Emits trackLayoutChanged when the
+    // enabling already moved clips so the bridge persists it.
+    void setMagnetic(const bool on);
+    bool magnetic() const { return mMagnetic; }
+    int compactTrackGaps();
 
 private:
     // ---- track merge (bridge extension): move every clip of srcTrack to
@@ -183,6 +192,7 @@ private:
     struct TrimSnap { int idx; double start; };
     QVector<TrimSnap> m_trimSnap;
     void applyMagneticFollow(const bool active);
+    bool mMagnetic = false;
 };
 
 #endif // EDITORTIMELINEWIDGET_H
