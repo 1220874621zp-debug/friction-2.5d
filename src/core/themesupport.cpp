@@ -979,40 +979,135 @@ const QIcon ThemeSupport::themedToolIcon(const QString &name,
     return colorizeIcon(icon, color, size);
 }
 
+FileThumbStore *FileThumbStore::instance()
+{
+    static FileThumbStore sStore;
+    return &sStore;
+}
+
+FileThumbStore::FileThumbStore(QObject *parent)
+    : QObject{parent}
+{
+    mWorker = std::thread([this]() {
+        while (true) {
+            QString path;
+            {
+                std::unique_lock<std::mutex> lock(mMutex);
+                mCond.wait(lock, [this]() { return mQuit || !mQueue.empty(); });
+                if (mQuit) { return; }
+                path = mQueue.front();
+                mQueue.pop_front();
+            }
+            // QImage I/O is safe off the GUI thread; the QPixmap/QIcon
+            // conversion happens in deliver() on the GUI thread.
+            QImage image;
+            QImageReader reader(path);
+            const QSize full = reader.size();
+            if (full.isValid()) {
+                QSize scaled = full;
+                scaled.scale(64, 64, Qt::KeepAspectRatio);
+                reader.setScaledSize(scaled);
+                image = reader.read();
+            }
+            QMetaObject::invokeMethod(this, "deliver",
+                                      Qt::QueuedConnection,
+                                      Q_ARG(QString, path),
+                                      Q_ARG(QImage, image));
+        }
+    });
+}
+
+FileThumbStore::~FileThumbStore()
+{
+    {
+        std::lock_guard<std::mutex> lock(mMutex);
+        mQuit = true;
+    }
+    mCond.notify_all();
+    if (mWorker.joinable()) { mWorker.join(); }
+}
+
+QIcon FileThumbStore::cached(const QString &path) const
+{
+    return mCache.value(path);
+}
+
+bool FileThumbStore::request(const QString &path)
+{
+    if (mFailed.contains(path) || mInFlight.contains(path)) { return false; }
+    mInFlight.insert(path);
+    {
+        std::lock_guard<std::mutex> lock(mMutex);
+        mQueue.push_back(path);
+    }
+    mCond.notify_one();
+    return true;
+}
+
+void FileThumbStore::deliver(const QString &path, const QImage &image)
+{
+    mInFlight.remove(path);
+    if (image.isNull()) {
+        // broken/undecodable file: remember so repaints never requeue it
+        mFailed.insert(path);
+        if (mFailed.size() > 4096) { mFailed.clear(); }
+        return;
+    }
+    mCache.insert(path, QIcon(QPixmap::fromImage(image)));
+    if (mCache.size() > 1024) {
+        // evict half instead of wiping everything, so browsing many
+        // folders does not make earlier ones slow again
+        const int remove = mCache.size() / 2;
+        auto it = mCache.begin();
+        for (int i = 0; i < remove; ++i) { it = mCache.erase(it); }
+    }
+    emit updated();
+}
+
+// formats worth thumbnailing ourselves: common import types with cheap
+// decoders; tiff/tga/icns/wbmp and friends are intentionally excluded
+// (slow to decode, rare in import folders)
+bool isThumbFormat(const QByteArray &suffix)
+{
+    static const QSet<QByteArray> formats = []() {
+        QSet<QByteArray> result;
+        const QList<QByteArray> supported = QImageReader::supportedImageFormats();
+        for (const QByteArray &f : supported) {
+            if (f == "jpg" || f == "jpeg" || f == "png" || f == "webp"
+                || f == "bmp" || f == "gif" || f == "svg" || f == "svgz") {
+                result.insert(f);
+            }
+        }
+        return result;
+    }();
+    return formats.contains(suffix);
+}
+
 ThemeIconProvider::ThemeIconProvider()
 {
     mIcon = QIcon::fromTheme(ThemeSupport::getAppIconName(true));
+    mImagePlaceholder = QIcon::fromTheme(QStringLiteral("file_image"));
+    if (mImagePlaceholder.isNull()) {
+        mImagePlaceholder = QFileIconProvider::icon(QFileIconProvider::File);
+    }
 }
 
 QIcon ThemeIconProvider::icon(const QFileInfo &info) const
 {
     const QString name = info.fileName().toLower();
     if (name.endsWith(".friction")) { return mIcon; }
-    {
-        static QHash<QString, QIcon> thumbCache;
-        const QString suffix = info.suffix().toLower();
-        const auto fmts = QImageReader::supportedImageFormats();
-        if(!suffix.isEmpty() && fmts.contains(suffix.toUtf8())) {
-            const QString key = info.absoluteFilePath();
-            const auto cached = thumbCache.constFind(key);
-            if(cached != thumbCache.constEnd()) return cached.value();
-            constexpr qint64 maxBytes = 64*1024*1024;
-            if(info.size() > 0 && info.size() < maxBytes) {
-                QImageReader reader(info.absoluteFilePath());
-                const QSize full = reader.size();
-                if(full.isValid()) {
-                    QSize scaled = full;
-                    scaled.scale(64, 64, Qt::KeepAspectRatio);
-                    reader.setScaledSize(scaled);
-                    const QImage img = reader.read();
-                    if(!img.isNull()) {
-                        const QIcon ic(QPixmap::fromImage(img));
-                        if(thumbCache.size() > 1024) thumbCache.clear();
-                        thumbCache.insert(key, ic);
-                        return ic;
-                    }
-                }
-            }
+    const QByteArray suffix = info.suffix().toLower().toUtf8();
+    if (!suffix.isEmpty() && isThumbFormat(suffix)) {
+        auto *store = FileThumbStore::instance();
+        const QString key = info.absoluteFilePath();
+        const QIcon cached = store->cached(key);
+        if (!cached.isNull()) { return cached; }
+        // decode budget: oversized files only burn worker CPU and their
+        // thumbnails would arrive too late to be useful
+        constexpr qint64 maxBytes = 16 * 1024 * 1024;
+        const qint64 size = info.size();
+        if (size > 0 && size < maxBytes && store->request(key)) {
+            return mImagePlaceholder;
         }
     }
     const QString suf = info.suffix().toLower();

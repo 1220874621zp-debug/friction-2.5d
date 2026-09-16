@@ -49,6 +49,8 @@
 #include <QDesktopServices>
 #include <QFileDialog>
 #include <QListView>
+#include <QAbstractItemView>
+#include <QTimer>
 #include <QProcess>
 #include <QInputDialog>
 
@@ -140,6 +142,24 @@ void applySidebar(QFileDialog &dialog)
 #else
     Q_UNUSED(dialog)
 #endif
+}
+
+// Thumbnails are decoded in the background (FileThumbStore): repaint the
+// dialog item views whenever new icons arrive, coalesced to avoid an
+// update storm while a large folder is still decoding.
+void hookThumbRefresh(QFileDialog &dialog)
+{
+    auto *flush = new QTimer(&dialog);
+    flush->setSingleShot(true);
+    flush->setInterval(60);
+    QObject::connect(FileThumbStore::instance(), &FileThumbStore::updated,
+                     flush, [flush]() { flush->start(); });
+    QObject::connect(flush, &QTimer::timeout, flush, [&dialog]() {
+        const auto views = dialog.findChildren<QAbstractItemView*>();
+        for (QAbstractItemView *view : views) {
+            if (view->viewport()) { view->viewport()->update(); }
+        }
+    });
 }
 }
 
@@ -446,6 +466,7 @@ const QString AppSupport::getSaveFile(QWidget *parent,
 
         ThemeIconProvider iconProvider;
         dialog.setIconProvider(&iconProvider);
+        hookThumbRefresh(dialog);
 
         if (!dialog.exec()) { return QString(); }
 
@@ -532,6 +553,7 @@ const QString AppSupport::getOpenFile(QWidget *parent,
 
     ThemeIconProvider iconProvider;
     dialog.setIconProvider(&iconProvider);
+    hookThumbRefresh(dialog);
 
     if (dialog.exec()) {
         const QStringList paths = dialog.selectedFiles();
@@ -563,6 +585,7 @@ const QStringList AppSupport::getOpenFiles(QWidget *parent,
 
     ThemeIconProvider iconProvider;
     dialog.setIconProvider(&iconProvider);
+    hookThumbRefresh(dialog);
 
     qWarning() << "DIALOG: opening file picker at" << dir
                << "(requested" << path << ")";
@@ -588,6 +611,7 @@ const QString AppSupport::getOpenDirectory(QWidget *parent,
 
     ThemeIconProvider iconProvider;
     dialog.setIconProvider(&iconProvider);
+    hookThumbRefresh(dialog);
 
     qWarning() << "DIALOG: opening directory picker at" << dir
                << "(requested" << path << ")";

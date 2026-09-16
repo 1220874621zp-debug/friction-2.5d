@@ -33,6 +33,13 @@
 #include <QFileIconProvider>
 #include <QIcon>
 #include <QMap>
+#include <QHash>
+#include <QSet>
+
+#include <condition_variable>
+#include <deque>
+#include <mutex>
+#include <thread>
 
 #include "include/core/SkColor.h"
 
@@ -171,6 +178,47 @@ public:
                                       const int size = 64);
 };
 
+/**
+ * @brief Session-wide background thumbnail store for the file dialogs.
+ *
+ * Decodes images on a single worker thread (FIFO) and delivers results
+ * back on the GUI thread, so navigating into an image-heavy folder no
+ * longer blocks the dialog while every file is decoded. All methods are
+ * GUI-thread only; the worker only touches its own decode state and the
+ * task queue.
+ */
+class CORE_EXPORT FileThumbStore : public QObject
+{
+    Q_OBJECT
+public:
+    static FileThumbStore *instance();
+
+    /** Cached thumbnail for path (null if none yet / not decodable). */
+    QIcon cached(const QString &path) const;
+    /** Enqueue a background decode; false when already in flight or
+        previously failed (broken files are never requeued). */
+    bool request(const QString &path);
+
+signals:
+    /** At least one new thumbnail became available (GUI thread). */
+    void updated();
+
+private:
+    explicit FileThumbStore(QObject *parent = nullptr);
+    ~FileThumbStore() override;
+    Q_INVOKABLE void deliver(const QString &path, const QImage &image);
+
+    QHash<QString, QIcon> mCache;
+    QSet<QString> mInFlight;
+    QSet<QString> mFailed;
+
+    std::thread mWorker;
+    std::mutex mMutex;
+    std::condition_variable mCond;
+    std::deque<QString> mQueue;
+    bool mQuit = false;
+};
+
 class CORE_EXPORT ThemeIconProvider : public QFileIconProvider
 {
 public:
@@ -179,6 +227,7 @@ public:
 
 private:
     QIcon mIcon;
+    QIcon mImagePlaceholder;
 };
 
 #endif // THEMESUPPORT_H
