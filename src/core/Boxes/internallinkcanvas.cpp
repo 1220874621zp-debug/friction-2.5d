@@ -54,7 +54,7 @@ void InternalLinkCanvas::prp_setupTreeViewMenu(PropertyMenu * const menu) {
         if(checked) box->enableFrameRemappingAction();
         else box->disableFrameRemappingAction();
     };
-    menu->addCheckableAction("Frame Remapping",
+    menu->addCheckableAction(tr("Frame Remapping"),
                              mFrameRemapping->enabled(),
                              remapOp);
 

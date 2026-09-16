@@ -11535,5 +11535,18 @@ Select the layers you want to import:</source>
             <source>Stretch</source>
             <translation>拉伸</translation>
         </message>
+        <message>
+            <location filename="../../core/Sound/esoundobjectbase.cpp" line="54" />
+            <source>Enabled</source>
+            <translation>已启用</translation>
+        </message>
+    </context>
+    <context>
+        <name>InternalLinkCanvas</name>
+        <message>
+            <location filename="../../core/Boxes/internallinkcanvas.cpp" line="57" />
+            <source>Frame Remapping</source>
+            <translation>帧重映射</translation>
+        </message>
     </context>
 </TS>

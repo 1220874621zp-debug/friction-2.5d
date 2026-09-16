@@ -51,7 +51,7 @@ void eSoundObjectBase::prp_setupTreeViewMenu(PropertyMenu * const menu) {
             [](eSoundObjectBase * sound, bool enable) {
         sound->setVisible(enable);
     };
-    menu->addCheckableAction("Enabled", isVisible(), enableOp);
+    menu->addCheckableAction(tr("Enabled"), isVisible(), enableOp);
 }
 
 SoundReaderForMerger *eSoundObjectBase::getSecondReader(const int relSecondId) {
