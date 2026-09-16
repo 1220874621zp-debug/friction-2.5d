@@ -11,6 +11,7 @@
 
 #include <QMouseEvent>
 #include <QSet>
+#include <QDebug>
 
 EditorTimelineSync::EditorTimelineSync(Document &document,
                                        EditorTimelineWidget * const widget,
@@ -160,6 +161,11 @@ void EditorTimelineSync::rebuild()
 
     mWidget->rebuildTracks(videoCount, audioCount);
     mWidget->clearAllClips();
+    qDebug("[ETL] rebuild panel=%s items=%d video=%d audio=%d active=%s",
+           scene ? scene->prp_getName().toUtf8().constData() : "-",
+           items.size(), videoCount, audioCount,
+           mDocument.fActiveScene ?
+               mDocument.fActiveScene->prp_getName().toUtf8().constData() : "-");
 
     if (!scene) { return; }
     const qreal fps = scene->getFps();
@@ -261,6 +267,11 @@ bool EditorTimelineSync::eventFilter(QObject * const obj, QEvent * const ev)
         if (type == QEvent::MouseButtonPress) {
             const auto me = static_cast<QMouseEvent*>(ev);
             if (me->button() == Qt::LeftButton) { mDragging = true; }
+        } else if (type == QEvent::Hide) {
+            // dock toggled off: never leave the dragging lock behind, it
+            // would freeze rebuilds until the next click-release
+            if (mDragging) { qDebug("[ETL] hidden while dragging, unlock"); }
+            mDragging = false;
         } else if (type == QEvent::MouseMove) {
             if (mDragging) { syncPlayheadToDoc(); }
         } else if (type == QEvent::MouseButtonRelease) {

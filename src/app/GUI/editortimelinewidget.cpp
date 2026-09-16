@@ -11,6 +11,7 @@
 #include <QtMath>
 #include <QRandomGenerator>
 #include <QDateTime>
+#include <QDebug>
 #include <algorithm>
 
 static const double MIN_CLIP_LEN = 0.2;   // seconds
@@ -454,6 +455,17 @@ void EditorTimelineWidget::mousePressEvent(QMouseEvent *e)
     setFocus();
     m_pressPos = e->pos();
 
+    // heal a drag whose release was lost (dock hidden mid-drag, alt-tab
+    // with button held): a fresh press always starts from a clean state
+    if (m_drag != DragMode::None) {
+        qDebug("[ETL] press heals stale drag=%d clip=%d",
+               static_cast<int>(m_drag), m_dragClip);
+        m_drag = DragMode::None;
+        m_dragClip = -1;
+        m_dragTempLane = -1;
+        m_snapTarget = -1.0;
+    }
+
     if (e->button() == Qt::MiddleButton) {
         // reserved: pan view
         return;
@@ -464,6 +476,9 @@ void EditorTimelineWidget::mousePressEvent(QMouseEvent *e)
     // playhead drag, even when the block sits under the playhead line
     QRectF r;
     int idx = clipAt(e->pos(), &r);
+    qDebug("[ETL] press %d,%d hit=%d clips=%d tracks=%d scroll=%.1fs px/s=%.1f",
+           e->pos().x(), e->pos().y(), idx, m_clips.size(), m_tracks.size(),
+           m_scrollSec, m_pxPerSec);
 
     // playhead: ruler area or near playhead line (when no clip is there)
     int phx = timeToX(m_playhead);
@@ -646,6 +661,19 @@ void EditorTimelineWidget::keyPressEvent(QKeyEvent *e)
 void EditorTimelineWidget::leaveEvent(QEvent *)
 {
     if (m_hover != -1) { m_hover = -1; update(); }
+}
+
+void EditorTimelineWidget::hideEvent(QHideEvent *)
+{
+    // dock toggled off: drop any drag state so reopening starts clean
+    if (m_drag != DragMode::None) {
+        qDebug("[ETL] hidden with active drag=%d, resetting",
+               static_cast<int>(m_drag));
+    }
+    m_drag = DragMode::None;
+    m_dragClip = -1;
+    m_dragTempLane = -1;
+    m_snapTarget = -1.0;
 }
 
 void EditorTimelineWidget::resizeEvent(QResizeEvent *)
