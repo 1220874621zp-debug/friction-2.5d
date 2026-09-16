@@ -15,6 +15,45 @@
 #include <QAction>
 #include <QApplication>
 #include <QStyleFactory>
+#include <QSvgRenderer>
+#include <QPainter>
+
+// user-supplied magnet glyph; the fill is swapped per state
+static const char* kMagneticSvg =
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 1024 1024\">"
+        "<path fill=\"%1\" d=\"M827.968 145.792a361.088 361.088 0 0 1 61.632 493.44"
+        "l-11.328 14.72L648.32 934.4l-4.8 5.312a70.72 70.72 0 0 1-94.592 4.48"
+        "l-134.016-109.888-6.4-6.4a44.992 44.992 0 0 1-4.864-49.216l5.056-7.488"
+        " 246.08-300.288 4.416-5.952a72.32 72.32 0 0 0-14.464-95.744L638.848 364.8"
+        "a72.32 72.32 0 0 0-90.752 8.96l-4.992 5.504-246.08 300.288a44.928 44.928"
+        " 0 0 1-63.232 6.272L99.84 575.936a70.592 70.592 0 0 1-14.208-93.44"
+        "l4.224-5.888 229.888-280.384 12.16-14.08a361.088 361.088 0 0 1 481.344"
+        "-47.68l14.72 11.328zM218.56 420.544l-79.168 96.64a6.592 6.592 0 0 0"
+        " 0.96 9.28l119.296 97.728 84.48-103.104-125.568-100.48z m610.176 192.832"
+        "A297.088 297.088 0 0 0 369.28 236.8L259.2 371.072l125.632 100.48"
+        " 108.8-132.864a136.32 136.32 0 0 1 210.816 172.8l-94.08 114.816"
+        " 125.504 100.48 92.928-113.408z m-259.136 62.528l-99.2 121.024"
+        " 119.232 97.792c2.816 2.24 6.912 1.92 9.216-0.896l96.32-117.504"
+        "L569.6 675.84z\"/></svg>";
+
+// rasterize at the device pixel ratio (physical-px painter, tagged dpr,
+// same pattern as timelinedockwidget's svgToolbarPixmap)
+static QPixmap magneticPixmap(const QColor &color, const int base = 24)
+{
+    const qreal dpr = qApp ? qApp->devicePixelRatio() : 1.;
+    QPixmap pm(QSize(base, base) * dpr);
+    pm.fill(Qt::transparent);
+    const QString svg = QString(kMagneticSvg).arg(color.name());
+    QSvgRenderer renderer(svg.toUtf8());
+    if (renderer.isValid()) {
+        QPainter p(&pm);
+        p.setRenderHint(QPainter::Antialiasing);
+        renderer.render(&p, QRectF(0, 0, base * dpr, base * dpr));
+        p.end();
+    }
+    pm.setDevicePixelRatio(dpr);
+    return pm;
+}
 
 EditorTimelineWindow::EditorTimelineWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -48,7 +87,8 @@ EditorTimelineWindow::EditorTimelineWindow(QWidget *parent)
         "QToolButton{color:#c8c8c8;background:transparent;border:1px solid transparent;"
         "border-radius:4px;padding:4px 10px;}"
         "QToolButton:hover{background:#2b2b2b;border-color:#3a3a3a;}"
-        "QToolButton:pressed{background:#08A581;color:#fff;}"));
+        "QToolButton:pressed{background:#08A581;color:#fff;}"
+        "QToolButton:checked{background:#08A581;border:1px solid #08A581;color:#fff;}"));
 
     // "+ video/audio" from the demo stay out: they add fake clips that
     // the next rebuild discards - the real panel mirrors scene layers.
@@ -56,10 +96,18 @@ EditorTimelineWindow::EditorTimelineWindow(QWidget *parent)
     // push later actions into the toolbar overflow menu and hide them
     QAction *aDel  = tb->addAction(QStringLiteral("删除"));
     // CapCut-style magnetic mode: no gaps within a track (turning it on
-    // compacts immediately; drag/trim releases keep it compact)
-    QAction *aMag = tb->addAction(QStringLiteral("磁吸"));
+    // compacts immediately; drag/trim releases keep it compact).
+    // Icon-only with a checked highlight: dim glyph when off, white
+    // glyph on the accent green when on
+    const QIcon magOff(magneticPixmap(QColor(0xc8, 0xc8, 0xc8)));
+    const QIcon magOn(magneticPixmap(QColor(0xff, 0xff, 0xff)));
+    QAction *aMag = tb->addAction(magOff, QString());
     aMag->setCheckable(true);
     aMag->setChecked(false);
+    aMag->setToolTip(QStringLiteral("磁吸：开启后同轨块贴紧无间隙"));
+    connect(aMag, &QAction::toggled, this, [aMag, magOff, magOn](const bool on) {
+        aMag->setIcon(on ? magOn : magOff);
+    });
     tb->addSeparator();
     QAction *aZi = tb->addAction(QStringLiteral("放大"));
     QAction *aZo = tb->addAction(QStringLiteral("缩小"));
