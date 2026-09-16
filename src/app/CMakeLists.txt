@@ -228,6 +228,8 @@ set(
     GUI/scenenavigatorbar.cpp
     GUI/projectpanel.cpp
     GUI/switchpanel.cpp
+    GUI/editortimelinepanel.cpp
+    GUI/editortimelinewidget.cpp
     GUI/textanimpresetpanel.cpp
     GUI/timelinebasewrappernode.cpp
     GUI/timelinedockwidget.cpp
@@ -301,6 +303,8 @@ set(
     GUI/textanimpresetpanel.h
     GUI/timelinebasewrappernode.h
     GUI/timelinedockwidget.h
+    GUI/editortimelinepanel.h
+    GUI/editortimelinewidget.h
     GUI/topviewwindow.h
     GUI/timelinehighlightwidget.h
     GUI/timelinewidget.h

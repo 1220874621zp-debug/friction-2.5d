@@ -73,6 +73,7 @@
 #include "quickeffectsearchdialog.h"
 #include "projectpanel.h"
 #include "switchpanel.h"
+#include "editortimelinepanel.h"
 #include <QShortcut>
 #include "textanimpresetpanel.h"
 #include "scriptmanager.h"
@@ -1586,6 +1587,9 @@ void MainWindow::rebuildWorkspaceMenu()
     if (mSwitchPanelDock) {
         panelsMenu->addAction(mSwitchPanelDock->toggleViewAction());
     }
+    if (mEditorTimelineDock) {
+        panelsMenu->addAction(mEditorTimelineDock->toggleViewAction());
+    }
     // the script console toggle lives in the Scripts menu only;
     // listing it here too showed the same entry twice
 
@@ -1799,6 +1803,13 @@ void MainWindow::setupLayout()
                                 QStringLiteral("dockSwitchLayers"),
                                 mSwitchPanel);
 
+    // NLE-style edit timeline panel: UI shell ported verbatim from the
+    // user's approved TimelineDemo (pure UI, engine wiring comes later)
+    mEditorTimelinePanel = new EditorTimelinePanel(this);
+    mEditorTimelineDock = makeDock(tr("剪辑时间轴"),
+                                   QStringLiteral("dockEditorTimeline"),
+                                   mEditorTimelinePanel);
+
     setCentralWidget(mStackWidget);
     addDockWidget(Qt::RightDockWidgetArea, mFillStrokeDock);
     addDockWidget(Qt::RightDockWidgetArea, mPropertiesDock);
@@ -1809,11 +1820,14 @@ void MainWindow::setupLayout()
 
     addDockWidget(Qt::RightDockWidgetArea, mTextAnimDock);
     addDockWidget(Qt::RightDockWidgetArea, mSwitchPanelDock);
+    // the edit timeline wants the wide bottom zone beside the timeline
+    addDockWidget(Qt::BottomDockWidgetArea, mEditorTimelineDock);
 
     // hidden by default, can be opened from the Panels menu
     mEasingDock->hide();
     mTextAnimDock->hide();
     mSwitchPanelDock->hide();
+    mEditorTimelineDock->hide();
 
     // switch panel listening is gated on the dock being visible:
     // closed = all scene/group signal connections dropped (zero cost)
