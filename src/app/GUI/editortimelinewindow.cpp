@@ -1,4 +1,4 @@
-#include "editortimelinepanel.h"
+#include "editortimelinewindow.h"
 #include "editortimelinewidget.h"
 
 #include <QToolBar>
@@ -13,22 +13,35 @@
 #include <QClipboard>
 #include <QGuiApplication>
 #include <QAction>
+#include <QApplication>
+#include <QStyleFactory>
 
-EditorTimelinePanel::EditorTimelinePanel(QWidget *parent)
-    : QWidget(parent)
+EditorTimelineWindow::EditorTimelineWindow(QWidget *parent)
+    : QMainWindow(parent)
 {
+    setWindowTitle(QStringLiteral("TimelineDemo - Qt6 剪辑时间轴"));
+    // hosting: demo main.cpp sets Fusion + palette app-wide; friction
+    // owns those globally, so scope both to this embedded window only
+    setStyle(QStyleFactory::create(QStringLiteral("Fusion")));
+    resize(1100, 420);
+
     // ---- central: timeline + horizontal scrollbar ----
-    QVBoxLayout *lay = new QVBoxLayout(this);
+    QWidget *central = new QWidget(this);
+    QVBoxLayout *lay = new QVBoxLayout(central);
     lay->setContentsMargins(0, 0, 0, 0);
     lay->setSpacing(0);
 
-    m_timeline = new EditorTimelineWidget(this);
-    QScrollBar *hbar = new QScrollBar(Qt::Horizontal, this);
+    m_timeline = new EditorTimelineWidget(central);
+    QScrollBar *hbar = new QScrollBar(Qt::Horizontal, central);
     hbar->setFixedHeight(12);
     m_timeline->setScrollBar(hbar);
 
+    lay->addWidget(m_timeline, 1);
+    lay->addWidget(hbar, 0);
+    setCentralWidget(central);
+
     // ---- toolbar ----
-    QToolBar *tb = new QToolBar(this);
+    QToolBar *tb = addToolBar(QStringLiteral("main"));
     tb->setMovable(false);
     tb->setStyleSheet(QStringLiteral(
         "QToolBar{background:#1d1d1d;border-bottom:1px solid #2c2c2c;spacing:6px;padding:4px;}"
@@ -53,21 +66,14 @@ EditorTimelinePanel::EditorTimelinePanel(QWidget *parent)
     connect(aZi,   &QAction::triggered, m_timeline, &EditorTimelineWidget::zoomIn);
     connect(aZo,   &QAction::triggered, m_timeline, &EditorTimelineWidget::zoomOut);
     connect(aFit,  &QAction::triggered, m_timeline, &EditorTimelineWidget::zoomFit);
-    connect(aLog,  &QAction::triggered, this, &EditorTimelinePanel::showDebugLog);
-
-    lay->addWidget(tb);
-    lay->addWidget(m_timeline, 1);
-    lay->addWidget(hbar, 0);
+    connect(aLog,  &QAction::triggered, this, &EditorTimelineWindow::showDebugLog);
 
     // ---- status bar ----
     m_selLabel = new QLabel(QStringLiteral("未选中素材"), this);
-    QStatusBar *status = new QStatusBar(this);
-    status->setSizeGripEnabled(false);
-    status->addWidget(m_selLabel, 1);
-    status->setStyleSheet(QStringLiteral(
+    statusBar()->addWidget(m_selLabel, 1);
+    statusBar()->setStyleSheet(QStringLiteral(
         "QStatusBar{background:#1d1d1d;color:#888;border-top:1px solid #2c2c2c;}"
         "QStatusBar::item{border:none;}"));
-    lay->addWidget(status, 0);
 
     // ---- log dialog (created lazily, view kept for appending) ----
     m_logDlg = new QDialog(this);
@@ -97,11 +103,18 @@ EditorTimelinePanel::EditorTimelinePanel(QWidget *parent)
                                            : QStringLiteral("选中: ") + info);
     });
 
-    // the demo's qApp->setPalette block is dropped: friction owns the
-    // global dark theme and this panel carries its own colors
+    // dark palette for the whole app
+    QPalette pal = qApp->palette();
+    pal.setColor(QPalette::Window, QColor(0x1b, 0x1b, 0x1b));
+    pal.setColor(QPalette::WindowText, QColor(0xc8, 0xc8, 0xc8));
+    pal.setColor(QPalette::Base, QColor(0x16, 0x16, 0x16));
+    pal.setColor(QPalette::Text, QColor(0xc8, 0xc8, 0xc8));
+    pal.setColor(QPalette::Button, QColor(0x24, 0x24, 0x26));
+    pal.setColor(QPalette::ButtonText, QColor(0xc8, 0xc8, 0xc8));
+    setPalette(pal);
 }
 
-void EditorTimelinePanel::showDebugLog()
+void EditorTimelineWindow::showDebugLog()
 {
     m_logDlg->show();
     m_logDlg->raise();

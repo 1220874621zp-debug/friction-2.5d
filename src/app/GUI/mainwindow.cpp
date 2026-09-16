@@ -73,7 +73,7 @@
 #include "quickeffectsearchdialog.h"
 #include "projectpanel.h"
 #include "switchpanel.h"
-#include "editortimelinepanel.h"
+#include "editortimelinewindow.h"
 #include <QShortcut>
 #include "textanimpresetpanel.h"
 #include "scriptmanager.h"
@@ -1803,12 +1803,13 @@ void MainWindow::setupLayout()
                                 QStringLiteral("dockSwitchLayers"),
                                 mSwitchPanel);
 
-    // NLE-style edit timeline panel: UI shell ported verbatim from the
-    // user's approved TimelineDemo (pure UI, engine wiring comes later)
-    mEditorTimelinePanel = new EditorTimelinePanel(this);
+    // NLE-style edit timeline panel: TimelineDemo's MainWindow ported
+    // verbatim (byte-level copy of the demo sources; pure UI, engine
+    // wiring comes later)
+    mEditorTimelineWindow = new EditorTimelineWindow(this);
     mEditorTimelineDock = makeDock(tr("剪辑时间轴"),
                                    QStringLiteral("dockEditorTimeline"),
-                                   mEditorTimelinePanel);
+                                   mEditorTimelineWindow);
 
     setCentralWidget(mStackWidget);
     addDockWidget(Qt::RightDockWidgetArea, mFillStrokeDock);
