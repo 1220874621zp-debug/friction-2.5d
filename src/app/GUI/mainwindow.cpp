@@ -1803,10 +1803,10 @@ void MainWindow::setupLayout()
                                 QStringLiteral("dockSwitchLayers"),
                                 mSwitchPanel);
 
-    // NLE-style edit timeline panel: scenes as clips stitched on
-    // tracks; the edit composition is an ordinary scene holding
-    // InternalLinkCanvas blocks (pure UI layer over the engine)
-    mEditTimelinePanel = new EditTimelinePanel(mDocument, this);
+    // NLE-style edit timeline panel (CapCut-like visuals): pure UI layer
+    // fed by a replaceable EditTimelineApi (stub for now, the engine
+    // adapter plugs in later without touching the widgets)
+    mEditTimelinePanel = new EditTimelinePanel(this);
     mEditTimelineDock = makeDock(tr("剪辑时间轴"),
                                  QStringLiteral("dockEditTimeline"),
                                  mEditTimelinePanel);

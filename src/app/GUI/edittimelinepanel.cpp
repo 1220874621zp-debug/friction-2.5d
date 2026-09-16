@@ -35,45 +35,50 @@
 #include <QScrollBar>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
-#include <QTimer>
+#include <QLinearGradient>
+#include <QtMath>
+#include <cmath>
+#include <algorithm>
+#include <climits>
 
-#include "Private/document.h"
-#include "themesupport.h"
-#include "appsupport.h"
-#include "canvas.h"
-#include "Boxes/containerbox.h"
-#include "Boxes/boundingbox.h"
-#include "Boxes/internallinkcanvas.h"
-#include "Boxes/boxrenderdata.h"
-#include "Animators/eboxorsound.h"
-#include "Timeline/durationrectangle.h"
-#include "mainwindow.h"
-#include "layouthandler.h"
+// ------------------------------ style constants ------------------------------
+// Visual spec taken from the reference screenshot: one uniform dark
+// canvas, square-cornered clips tightly packed, a 22px teal name strip
+// on video clips, filmstrip thumbnails, a teal waveform strip glued to
+// the bottom of video clips, blue audio blocks, 2px light playhead.
 
 namespace {
-const int kRulerH = 24;        // frame ruler height
-const int kRowH = 64;          // one track row per top-level box
-const int kLabelH = 16;        // clip name strip on top of the block
-const int kClipVMargin = 5;    // vertical inset of the clip inside its row
-const int kThumbW = 64;        // filmstrip thumbnail slot width
-const int kEdgeZone = 7;       // trim handle hit zone in pixels
-const int kSnapPx = 6;         // snap threshold in pixels
-const int kDragThreshold = 5;  // px before a pending press becomes a drag
-const int kScrollW = 12;       // manual scrollbar thickness
-const int kMaxThumbsPerClip = 48;
-const int kThumbCacheMax = 128;
-const int kThumbInFlightMax = 2;
+const int kRulerH = 26;         // timecode ruler
+const int kVideoTrackH = 114;   // 22 label + 66 thumbs + 26 wave
+const int kAudioTrackH = 72;    // 20 label + 52 wave
+const int kTrackGap = 6;
+const int kClipGap = 2;         // horizontal gap between clips
+const int kVideoLabelH = 22;
+const int kAudioLabelH = 20;
+const int kVideoThumbH = 66;
+const int kVideoWaveH = 26;
+const int kThumbW = 64;
+const int kEdgeZone = 8;        // trim handle hit zone in pixels
+const int kSnapPx = 6;
+const int kDragThreshold = 5;
+const int kScrollW = 12;
+const int kHandle = 6;          // selected-clip corner handle size
 
-const QColor kColBg(0x26, 0x28, 0x2B);
-const QColor kColRowA(0x2B, 0x3A, 0x3E);
-const QColor kColRowB(0x30, 0x40, 0x44);
-const QColor kColRuler(0x1F, 0x21, 0x24);
-const QColor kColLabelScene(0x3E, 0x7C, 0x8A);
-const QColor kColLabelPlain(0x4A, 0x4F, 0x54);
-const QColor kColClipBody(0x2B, 0x37, 0x3D);
-const QColor kColThumbPh(0x22, 0x30, 0x33);
-const QColor kColGhost(0x3A, 0x3F, 0x44);
-const QColor kColText(0xE8, 0xEC, 0xEE);
+const QColor kColBg(0x26, 0x26, 0x26);
+const QColor kColRuler(0x21, 0x21, 0x21);
+const QColor kColRulerText(0x8A, 0x8A, 0x8A);
+const QColor kColRulerTick(0x50, 0x50, 0x50);
+const QColor kColPlayhead(0xDD, 0xDD, 0xDD);
+const QColor kColVideoLabel(0x1B, 0x5E, 0x5A);
+const QColor kColVideoLabelText(0xDD, 0xDD, 0xDD);
+const QColor kColVideoThumbPh(0x16, 0x40, 0x3C);
+const QColor kColVideoWaveBg(0x1A, 0x4A, 0x48);
+const QColor kColVideoWave(0x3F, 0xA8, 0xA0);
+const QColor kColAudioBlock(0x1D, 0x4F, 0x94);
+const QColor kColAudioLabel(0x2A, 0x5F, 0xA8);
+const QColor kColAudioText(0xDD, 0xE6, 0xF5);
+const QColor kColAudioWave(0x5B, 0xA0, 0xE0);
+const QColor kColSelect(0xFF, 0xFF, 0xFF);
 const QColor kColHint(0x8A, 0x92, 0x98);
 
 QFont smallFont(const QFont& base)
@@ -82,16 +87,222 @@ QFont smallFont(const QFont& base)
     if (f.pointSize() > 0) f.setPointSize(qMax(7, f.pointSize() - 2));
     return f;
 }
+
+QString timeCode(const int frame, const int fps)
+{
+    const int f = qMax(1, fps);
+    const int ff = frame % f;
+    const int totalSec = frame / f;
+    const int ss = totalSec % 60;
+    const int mm = totalSec / 60;
+    return QString("%1:%2:%3").arg(mm, 2, 10, QChar('0')).
+            arg(ss, 2, 10, QChar('0')).arg(ff, 2, 10, QChar('0'));
 }
 
-// ------------------------------ EditTimelineView ------------------------------
+QString secondsLabel(const int frames, const int fps)
+{
+    return QString::number(qreal(frames) / qMax(1, fps), 'f', 1) +
+            QStringLiteral("s");
+}
+
+// scene clips live on video tracks, audio clips on audio tracks
+bool clipFitsTrack(const EditClip& clip, const EditTrack& track)
+{
+    if (track.kind == EditTrack::Kind::Video) {
+        return clip.kind == EditClip::Kind::Scene;
+    }
+    return clip.kind == EditClip::Kind::Audio;
+}
+}
+
+// ------------------------------ stub API ------------------------------
+
+void EditTimelineApiStub::load(EditTimelineData& out)
+{
+    EditTimelineData d;
+    d.fps = 25;
+    d.playheadFrame = 30;
+
+    EditTrack video1;
+    video1.kind = EditTrack::Kind::Video;
+    video1.name = QStringLiteral("视频轨 1");
+    EditClip c1;
+    c1.kind = EditClip::Kind::Scene;
+    c1.name = QStringLiteral("素材 1");
+    c1.startFrame = 0;
+    c1.durationFrames = 75;
+    video1.clips << c1;
+    EditClip c2 = c1;
+    c2.name = QStringLiteral("素材 2");
+    c2.startFrame = 75;
+    c2.durationFrames = 120;
+    video1.clips << c2;
+    EditClip c3 = c1;
+    c3.name = QStringLiteral("素材 3");
+    c3.startFrame = 200;
+    c3.durationFrames = 64;
+    video1.clips << c3;
+
+    EditTrack video2;
+    video2.kind = EditTrack::Kind::Video;
+    video2.name = QStringLiteral("视频轨 2");
+    EditClip o1 = c1;
+    o1.name = QStringLiteral("叠加 1");
+    o1.startFrame = 96;
+    o1.durationFrames = 88;
+    video2.clips << o1;
+
+    EditTrack audio1;
+    audio1.kind = EditTrack::Kind::Audio;
+    audio1.name = QStringLiteral("音频轨 1");
+    EditClip a1;
+    a1.kind = EditClip::Kind::Audio;
+    a1.name = QStringLiteral("音乐");
+    a1.startFrame = 0;
+    a1.durationFrames = 240;
+    audio1.clips << a1;
+    EditClip a2 = a1;
+    a2.name = QStringLiteral("音效");
+    a2.startFrame = 250;
+    a2.durationFrames = 60;
+    audio1.clips << a2;
+
+    d.tracks << video1 << video2 << audio1;
+    out = d;
+    mData = d;
+}
+
+void EditTimelineApiStub::compositionNames(QStringList& out)
+{
+    out << QStringLiteral("合成 1") << QStringLiteral("合成 2");
+}
+
+void EditTimelineApiStub::sceneNames(QStringList& out)
+{
+    out = mScenes;
+    if (out.isEmpty()) {
+        out << QStringLiteral("场景 A") << QStringLiteral("场景 B")
+            << QStringLiteral("场景 C") << QStringLiteral("场景 D");
+    }
+}
+
+void EditTimelineApiStub::moveClip(const int trackIdx, const int clipIdx,
+                                   const int newStart)
+{
+    if (trackIdx < 0 || trackIdx >= mData.tracks.count()) return;
+    auto& clips = mData.tracks[trackIdx].clips;
+    if (clipIdx < 0 || clipIdx >= clips.count()) return;
+    clips[clipIdx].startFrame = newStart;
+}
+
+void EditTimelineApiStub::trimClip(const int trackIdx, const int clipIdx,
+                                   const int newStart, const int newDuration)
+{
+    if (trackIdx < 0 || trackIdx >= mData.tracks.count()) return;
+    auto& clips = mData.tracks[trackIdx].clips;
+    if (clipIdx < 0 || clipIdx >= clips.count()) return;
+    clips[clipIdx].startFrame = newStart;
+    clips[clipIdx].durationFrames = qMax(1, newDuration);
+}
+
+void EditTimelineApiStub::moveClipToTrack(const int fromTrack,
+                                          const int clipIdx,
+                                          const int toTrack)
+{
+    if (fromTrack < 0 || fromTrack >= mData.tracks.count()) return;
+    if (toTrack < 0 || toTrack >= mData.tracks.count()) return;
+    auto& src = mData.tracks[fromTrack].clips;
+    if (clipIdx < 0 || clipIdx >= src.count()) return;
+    if (!clipFitsTrack(src[clipIdx], mData.tracks[toTrack])) return;
+    mData.tracks[toTrack].clips << src.takeAt(clipIdx);
+}
+
+void EditTimelineApiStub::setPlayhead(const int frame)
+{
+    mData.playheadFrame = frame;
+}
+
+void EditTimelineApiStub::openClip(const int trackIdx, const int clipIdx)
+{
+    Q_UNUSED(trackIdx)
+    Q_UNUSED(clipIdx)
+    // engine adapter: switchToScene(resolved source scene)
+}
+
+void EditTimelineApiStub::addSceneClip(const int sceneIndex)
+{
+    QStringList names;
+    sceneNames(names);
+    const QString name = names.value(sceneIndex,
+                                     QStringLiteral("新素材"));
+    if (mData.tracks.isEmpty()) return;
+    // append after the last clip of the first video track
+    for (auto& track : mData.tracks) {
+        if (track.kind != EditTrack::Kind::Video) continue;
+        int end = 0;
+        for (const auto& c : track.clips) {
+            end = qMax(end, c.startFrame + c.durationFrames);
+        }
+        EditClip c;
+        c.kind = EditClip::Kind::Scene;
+        c.name = name;
+        c.startFrame = end;
+        c.durationFrames = 80;
+        track.clips << c;
+        return;
+    }
+}
+
+void EditTimelineApiStub::createComposition(int& newCompositionIndex)
+{
+    newCompositionIndex = ++mCompSeq;
+}
+
+void EditTimelineApiStub::requestThumb(
+        const QString& key, const int seed, const QSize& size,
+        std::function<void(const QString&, const QImage&)> cb)
+{
+    QImage img(size, QImage::Format_RGB32);
+    const int hue = 150 + (seed * 37) % 60;
+    QLinearGradient grad(0, 0, 0, size.height());
+    grad.setColorAt(0.0, QColor::fromHsl(hue, 90, 96));
+    grad.setColorAt(1.0, QColor::fromHsl(hue + 20, 110, 56));
+    QPainter p(&img);
+    p.fillRect(img.rect(), grad);
+    p.setPen(QColor(255, 255, 255, 90));
+    QFont f = p.font();
+    f.setBold(true);
+    f.setPixelSize(qMax(10, size.height() / 3));
+    p.setFont(f);
+    p.drawText(img.rect(), Qt::AlignCenter, QString::number(seed));
+    p.end();
+    cb(key, img);
+}
+
+void EditTimelineApiStub::requestWave(
+        const QString& key, const int sampleCount,
+        std::function<void(const QString&, const QVector<qreal>&)> cb)
+{
+    QVector<qreal> samples(sampleCount);
+    const qreal seed = qreal(qHash(key) % 97) * 0.13;
+    for (int i = 0; i < sampleCount; ++i) {
+        const qreal v = (0.15 +
+                         0.75 * std::fabs(std::sin(i * 0.31 + seed)) *
+                         (0.55 + 0.45 * std::fabs(std::sin(i * 0.11 +
+                                                   seed * 2.7))));
+        samples[i] = qBound(0.0, v, 1.0);
+    }
+    cb(key, samples);
+}
+
+// ------------------------------ view ------------------------------
 
 EditTimelineView::EditTimelineView(EditTimelinePanel* const panel)
     : QWidget(panel)
     , mPanel(panel)
 {
     setMouseTracking(true);
-    setMinimumHeight(140);
+    setMinimumHeight(180);
     setFocusPolicy(Qt::ClickFocus);
     mHBar = new QScrollBar(Qt::Horizontal, this);
     mVBar = new QScrollBar(Qt::Vertical, this);
@@ -99,16 +310,10 @@ EditTimelineView::EditTimelineView(EditTimelinePanel* const panel)
     mVBar->hide();
     connect(mHBar, &QScrollBar::valueChanged, this, [this](int) {
         update();
-        scheduleThumbRequest();
     });
     connect(mVBar, &QScrollBar::valueChanged, this, [this](int) {
         update();
     });
-}
-
-Canvas* EditTimelineView::scene() const
-{
-    return mPanel->mTargetScene.data();
 }
 
 int EditTimelineView::firstViewedFrame() const
@@ -126,113 +331,130 @@ int EditTimelineView::frameAtX(const int x) const
     return qRound(firstViewedFrame() + x / mPpf);
 }
 
-int EditTimelineView::firstVisibleRow() const
+int EditTimelineView::trackHeight(const int trackIdx) const
 {
-    return mVBar->value();
+    const auto& tracks = mPanel->mData.tracks;
+    if (trackIdx < 0 || trackIdx >= tracks.count()) return 0;
+    return tracks.at(trackIdx).kind == EditTrack::Kind::Video ?
+                kVideoTrackH : kAudioTrackH;
 }
 
-int EditTimelineView::rowOfClip(eBoxOrSound* const clip) const
+int EditTimelineView::trackTop(const int trackIdx) const
 {
-    const int n = mPanel->mClips.count();
-    for (int i = 0; i < n; ++i) {
-        if (mPanel->mClips.at(i).data() == clip) return i;
+    int y = kRulerH;
+    for (int i = 0; i < trackIdx && i < mPanel->mData.tracks.count(); ++i) {
+        y += trackHeight(i) + kTrackGap;
+    }
+    return y;
+}
+
+QRect EditTimelineView::clipRect(const int trackIdx,
+                                 const int clipIdx) const
+{
+    const auto& tracks = mPanel->mData.tracks;
+    const auto& clip = tracks.at(trackIdx).clips.at(clipIdx);
+    const qreal x = xAtFrame(clip.startFrame);
+    const qreal w = qMax(4.0, clip.durationFrames * mPpf - kClipGap);
+    const int top = trackTop(trackIdx) + 1;
+    return QRect(qRound(x), top, qRound(w), trackHeight(trackIdx) - 2);
+}
+
+int EditTimelineView::clipAtFrame(const int trackIdx, const int frame) const
+{
+    const auto& clips = mPanel->mData.tracks.at(trackIdx).clips;
+    for (int i = 0; i < clips.count(); ++i) {
+        const auto& c = clips.at(i);
+        if (frame >= c.startFrame &&
+            frame < c.startFrame + c.durationFrames) return i;
     }
     return -1;
-}
-
-QRect EditTimelineView::clipRect(eBoxOrSound* const clip) const
-{
-    int f0 = 0;
-    int f1 = 0;
-    const auto rect = clip->getDurationRectangle();
-    if (rect) {
-        f0 = rect->getMinAbsFrame();
-        f1 = rect->getMaxAbsFrame();
-    } else if (scene()) {
-        const auto sfr = scene()->getFrameRange();
-        f0 = sfr.fMin;
-        f1 = sfr.fMax;
-    }
-    const qreal x = xAtFrame(f0);
-    const qreal w = qMax(4.0, (f1 - f0 + 1) * mPpf - 1.0);
-    return QRect(qRound(x), 0, qRound(w), kRowH - 2 * kClipVMargin);
 }
 
 EditTimelineView::Hit EditTimelineView::hitTest(const QPoint& pos) const
 {
     Hit hit;
-    if (pos.y() < kRulerH) return hit;
-    const int rows = mPanel->mClips.count();
-    const int row = firstVisibleRow() + (pos.y() - kRulerH) / kRowH;
-    if (row < 0 || row >= rows) return hit;
-    auto* clip = mPanel->mClips.at(row).data();
-    if (!clip) return hit;
-    const QRect rc = clipRect(clip);
-    if (pos.x() < rc.left() - 2 || pos.x() > rc.right() + 2) return hit;
-    hit.box = clip;
-    if (pos.x() - rc.left() <= kEdgeZone) hit.zone = Zone::EdgeMin;
-    else if (rc.right() - pos.x() <= kEdgeZone) hit.zone = Zone::EdgeMax;
-    else hit.zone = Zone::Body;
+    const auto& tracks = mPanel->mData.tracks;
+    for (int t = 0; t < tracks.count(); ++t) {
+        const int top = trackTop(t);
+        const int bottom = top + trackHeight(t);
+        if (pos.y() < top || pos.y() >= bottom) continue;
+        const int frame = frameAtX(pos.x());
+        const int c = clipAtFrame(t, frame);
+        if (c < 0) return hit;
+        const QRect rc = clipRect(t, c);
+        if (pos.x() < rc.left() || pos.x() > rc.right()) return hit;
+        hit.track = t;
+        hit.clip = c;
+        if (pos.x() - rc.left() <= kEdgeZone) hit.zone = Zone::EdgeMin;
+        else if (rc.right() - pos.x() <= kEdgeZone) hit.zone = Zone::EdgeMax;
+        else hit.zone = Zone::Body;
+        return hit;
+    }
     return hit;
 }
 
-void EditTimelineView::sceneChanged()
+void EditTimelineView::dataChanged()
 {
     updateScrollRanges();
     update();
-    scheduleThumbRequest();
 }
 
 void EditTimelineView::updateScrollRanges()
 {
-    const auto s = scene();
-    if (!s) {
-        mHBar->setRange(0, 0);
-        mVBar->setRange(0, 0);
-        mHBar->hide();
-        mVBar->hide();
-        return;
+    const auto& tracks = mPanel->mData.tracks;
+    int maxFrame = 300;
+    for (const auto& t : tracks) {
+        for (const auto& c : t.clips) {
+            maxFrame = qMax(maxFrame, c.startFrame + c.durationFrames);
+        }
     }
-    const auto fr = s->getFrameRange();
-    const int hMin = fr.fMin - 50;
-    const int hMax = qMax(fr.fMax + 250,
-                          hMin + qRound(width() / mPpf));
-    mHBar->setRange(hMin, hMax);
+    mHBar->setRange(0, maxFrame + 100);
     mHBar->setPageStep(qMax(1, qRound(width() / mPpf)));
-    const int rows = mPanel->mClips.count();
-    const int visRows = qMax(1, (height() - kRulerH) / kRowH);
-    mVBar->setRange(0, qMax(0, rows - visRows));
-    mVBar->setPageStep(visRows);
+
+    int contentH = kRulerH + 8;
+    for (int t = 0; t < tracks.count(); ++t) {
+        contentH += trackHeight(t) + kTrackGap;
+    }
+    mVBar->setRange(0, qMax(0, contentH - height()));
+    mVBar->setPageStep(qMax(1, height() / 2));
     mHBar->setVisible(mHBar->maximum() > mHBar->minimum());
     mVBar->setVisible(mVBar->maximum() > mVBar->minimum());
 }
 
-void EditTimelineView::scheduleThumbRequest()
+void EditTimelineView::requestClipAssets(const int trackIdx,
+                                         const int clipIdx,
+                                         const QRect& rc)
 {
-    if (!mPanel->mListening || mPanel->mThumbSuppress) return;
-    const auto s = scene();
-    if (!s) return;
-    const int rows = mPanel->mClips.count();
-    for (int row = 0; row < rows; ++row) {
-        const int y = kRulerH + (row - firstVisibleRow()) * kRowH;
-        if (y + kRowH < kRulerH) continue;
-        if (y >= height()) break;
-        auto* clip = mPanel->mClips.at(row).data();
-        if (!clip) continue;
-        const auto rect = clip->getDurationRectangle();
-        if (!rect) continue;
-        auto* src = mPanel->resolveSourceScene(clip);
-        if (!src) continue;
-        const QRect rc = clipRect(clip);
-        if (rc.width() < kThumbW) continue;
-        const int shift = rect->getRelShift();
-        const auto sfr = src->getFrameRange();
-        const int slotCount = qMin(kMaxThumbsPerClip, rc.width() / kThumbW);
-        for (int k = 0; k < slotCount; ++k) {
-            const int absF = frameAtX(rc.x() + k * kThumbW + kThumbW / 2);
-            const int srcF = qBound(sfr.fMin, absF - shift, sfr.fMax);
-            mPanel->enqueueThumb(src, srcF);
+    if (!mPanel->mListening) return;
+    const auto& track = mPanel->mData.tracks.at(trackIdx);
+    const auto& clip = track.clips.at(clipIdx);
+    if (track.kind == EditTrack::Kind::Video &&
+        clip.kind == EditClip::Kind::Scene) {
+        const int slotCount = qMax(1, rc.width() / kThumbW);
+        for (int s = 0; s < slotCount; ++s) {
+            const QString key = QStringLiteral("t%1:c%2:s%3").
+                    arg(trackIdx).arg(clipIdx).arg(s);
+            if (mPanel->mThumbCache.contains(key)) continue;
+            mPanel->mApi->requestThumb(key, clipIdx * 13 + s,
+                                       QSize(kThumbW, kVideoThumbH),
+                [panel = QPointer<EditTimelinePanel>(mPanel)]
+                (const QString& k, const QImage& img) {
+                    if (!panel) return;
+                    panel->mThumbCache.insert(k, img);
+                    panel->mView->update();
+                });
         }
+    }
+    const QString wkey = QStringLiteral("w%1:c%2:%3").
+            arg(trackIdx).arg(clipIdx).arg(rc.width());
+    if (!mPanel->mWaveCache.contains(wkey)) {
+        mPanel->mApi->requestWave(wkey, qMax(2, rc.width() / 2),
+            [panel = QPointer<EditTimelinePanel>(mPanel)]
+            (const QString& k, const QVector<qreal>& v) {
+                if (!panel) return;
+                panel->mWaveCache.insert(k, v);
+                panel->mView->update();
+            });
     }
 }
 
@@ -240,162 +462,215 @@ void EditTimelineView::paintEvent(QPaintEvent*)
 {
     QPainter p(this);
     p.fillRect(rect(), kColBg);
-    const auto s = scene();
+    const auto& tracks = mPanel->mData.tracks;
 
-    if (!s) {
+    p.translate(0, -mVBar->value());
+
+    if (tracks.isEmpty()) {
         p.setPen(kColHint);
-        p.drawText(rect().adjusted(12, 12, -12, -12),
+        p.drawText(QRect(0, kRulerH + 20, width(), 80),
                    Qt::AlignTop | Qt::AlignHCenter | Qt::TextWordWrap,
-                   tr("从顶部选择一个场景作为剪辑合成，\n或点击「新建合成」。"));
-        p.fillRect(QRect(0, 0, width(), kRulerH), kColRuler);
-        return;
-    }
-
-    const int first = firstVisibleRow();
-    const int rows = mPanel->mClips.count();
-
-    // row backgrounds
-    for (int r = first; r < rows; ++r) {
-        const int y = kRulerH + (r - first) * kRowH;
-        if (y >= height()) break;
-        p.fillRect(QRect(0, y, width(), kRowH),
-                   r % 2 == 0 ? kColRowA : kColRowB);
-    }
-
-    if (rows == 0) {
-        p.setPen(kColHint);
-        p.drawText(QRect(0, kRulerH, width(), height() - kRulerH),
-                   Qt::AlignCenter | Qt::TextWordWrap,
                    tr("点击「添加素材」把场景作为素材块加进来"));
     }
 
-    // clips
-    for (int r = 0; r < rows; ++r) {
-        const int y = kRulerH + (r - first) * kRowH;
-        if (y + kRowH < kRulerH) continue;
-        if (y >= height()) break;
-        auto* clip = mPanel->mClips.at(r).data();
-        if (!clip) continue;
-        drawClip(&p, clip, r);
-    }
-
-    // row-switch ghost + insertion band
-    if (mDrag == Drag::RowSwitch && mTargetRow >= 0 && mPressBox) {
-        const int y = kRulerH + (mTargetRow - first) * kRowH;
-        if (y > -kRowH && y < height()) {
-            const auto hl = ThemeSupport::getThemeHighlightColor(40);
-            p.fillRect(QRect(0, y, width(), kRowH), hl);
-            p.setPen(QPen(ThemeSupport::getThemeHighlightColor(), 1));
-            p.drawLine(0, y, width(), y);
-            p.drawLine(0, y + kRowH, width(), y + kRowH);
-            p.setOpacity(0.6);
-            drawClip(&p, mPressBox.data(), mTargetRow);
-            p.setOpacity(1.0);
+    for (int t = 0; t < tracks.count(); ++t) {
+        drawTrackBackground(&p, t);
+        const auto& clips = tracks.at(t).clips;
+        for (int c = 0; c < clips.count(); ++c) {
+            const QRect rc = clipRect(t, c);
+            if (rc.right() < 0 || rc.left() > width()) continue;
+            drawClip(&p, t, c, rc);
         }
     }
+
+    // row-switch ghost: translucent block riding the target track
+    if (mDrag == Drag::RowSwitch && mGhostTrack >= 0 &&
+        mPressHit.track >= 0 && mPressHit.clip >= 0) {
+        const auto& clip = mPanel->mData.tracks.at(mPressHit.track).
+                clips.at(mPressHit.clip);
+        const int frame = frameAtX(mPressPos.x());
+        const qreal gx = xAtFrame(frame - clip.durationFrames / 2);
+        const int top = trackTop(mGhostTrack) + 1;
+        QRect ghost(qRound(gx), top,
+                    qRound(clip.durationFrames * mPpf - kClipGap),
+                    trackHeight(mGhostTrack) - 2);
+        ghost = ghost.intersected(rect().adjusted(0, kRulerH, 0, 0));
+        if (!ghost.isNull()) {
+            p.setOpacity(0.55);
+            p.fillRect(ghost, clip.kind == EditClip::Kind::Scene ?
+                        kColVideoLabel : kColAudioLabel);
+            p.setOpacity(1.0);
+            p.setPen(QPen(kColSelect, 1));
+            p.drawRect(ghost);
+        }
+    }
+
+    p.resetTransform();
 
     drawRuler(&p);
     drawPlayhead(&p);
 }
 
-void EditTimelineView::drawClip(QPainter* const p,
-                                eBoxOrSound* const clip,
-                                const int row)
+void EditTimelineView::drawTrackBackground(QPainter* const p,
+                                           const int trackIdx)
 {
-    const int first = firstVisibleRow();
-    const int y = kRulerH + (row - first) * kRowH;
-    QRect rc = clipRect(clip);
-    rc.setY(y + kClipVMargin);
-    if (rc.right() < 0 || rc.left() > width()) return;
+    Q_UNUSED(p)
+    Q_UNUSED(trackIdx)
+    // the reference shows one uniform dark canvas: no row stripes, no
+    // separators, no track headers
+}
 
-    const bool ghost = !clip->hasDurationRectangle();
-    auto* src = mPanel->resolveSourceScene(clip);
+void EditTimelineView::drawClip(QPainter* const p, const int trackIdx,
+                                const int clipIdx, const QRect& rc)
+{
+    const auto& track = mPanel->mData.tracks.at(trackIdx);
+    const auto& clip = track.clips.at(clipIdx);
+    const int fps = qMax(1, mPanel->mData.fps);
 
-    p->save();
-    if (!clip->isVisible()) p->setOpacity(0.45);
+    if (clip.kind == EditClip::Kind::Scene) {
+        // 22px teal name strip: name on the left, duration on the right
+        const QRect label(rc.left(), rc.top(), rc.width(), kVideoLabelH);
+        p->fillRect(label, kColVideoLabel);
+        p->setFont(smallFont(p->font()));
+        const int durW = 52;
+        const QString text = p->fontMetrics().elidedText(
+                    clip.name, Qt::ElideRight,
+                    qMax(0, rc.width() - 12 - durW));
+        p->setPen(kColVideoLabelText);
+        p->drawText(QRect(label.left() + 6, label.top(),
+                          qMax(0, label.width() - 12 - durW), label.height()),
+                    Qt::AlignVCenter | Qt::AlignLeft, text);
+        p->setPen(QColor(0xAA, 0xDD, 0xD9));
+        p->drawText(QRect(label.right() - durW - 4, label.top(),
+                          durW, label.height()),
+                    Qt::AlignVCenter | Qt::AlignRight,
+                    secondsLabel(clip.durationFrames, fps));
 
-    QPainterPath path;
-    path.addRoundedRect(QRectF(rc), 3, 3);
-    p->fillPath(path, ghost ? kColGhost :
-                             (src ? kColLabelScene : kColLabelPlain));
-
-    const QRectF body(rc.x() + 1, rc.y() + kLabelH,
-                      rc.width() - 2, rc.height() - kLabelH - 1);
-    QPainterPath bodyPath;
-    bodyPath.addRoundedRect(body, 2.5, 2.5);
-    p->fillPath(bodyPath, kColClipBody);
-
-    // filmstrip: one thumbnail per kThumbW px slot, the source frame is
-    // the block frame minus the duration rect shift (identity remap)
-    if (src && !ghost) {
-        const auto rect = clip->getDurationRectangle();
-        const int shift = rect->getRelShift();
-        const auto sfr = src->getFrameRange();
-        p->setClipPath(bodyPath);
-        for (int x = rc.x(); x < rc.right(); x += kThumbW) {
-            const int absF = frameAtX(x + kThumbW / 2);
-            const int srcF = qBound(sfr.fMin, absF - shift, sfr.fMax);
-            const auto it = mPanel->mThumbCache.constFind(
-                        mPanel->thumbKey(src, srcF));
+        // filmstrip
+        const QRect band(rc.left(), rc.top() + kVideoLabelH,
+                         rc.width(), kVideoThumbH);
+        const int slotCount = qMax(1, rc.width() / kThumbW);
+        for (int s = 0; s < slotCount; ++s) {
+            const QRect slot(band.left() + s * kThumbW, band.top(),
+                             qMin(kThumbW, band.right() -
+                                  (band.left() + s * kThumbW) + 1),
+                             band.height());
+            if (slot.width() <= 0) break;
+            const QString key = QStringLiteral("t%1:c%2:s%3").
+                    arg(trackIdx).arg(clipIdx).arg(s);
+            const auto it = mPanel->mThumbCache.constFind(key);
             if (it != mPanel->mThumbCache.constEnd()) {
-                p->drawImage(QRectF(x, body.top(),
-                                    kThumbW, body.height()), it.value());
+                p->drawImage(slot, it.value());
             } else {
-                p->fillRect(QRectF(x, body.top(),
-                                   kThumbW, body.height()), kColThumbPh);
+                p->fillRect(slot, kColVideoThumbPh);
             }
         }
+        requestClipAssets(trackIdx, clipIdx, rc);
+
+        // teal waveform strip glued under the thumbnails
+        const QRect wave(rc.left(), rc.top() + kVideoLabelH + kVideoThumbH,
+                         rc.width(), kVideoWaveH);
+        p->fillRect(wave, kColVideoWaveBg);
+        const QString wkey = QStringLiteral("w%1:c%2:%3").
+                arg(trackIdx).arg(clipIdx).arg(rc.width());
+        const auto wit = mPanel->mWaveCache.constFind(wkey);
+        if (wit != mPanel->mWaveCache.constEnd()) {
+            drawWaveform(p, wave, wit.value(), kColVideoWave);
+        }
+    } else {
+        // blue audio block: label strip + full-block mirrored waveform
+        p->fillRect(rc, kColAudioBlock);
+        const QRect label(rc.left(), rc.top(), rc.width(), kAudioLabelH);
+        p->fillRect(label, kColAudioLabel);
+        p->setFont(smallFont(p->font()));
+        const QString text = p->fontMetrics().elidedText(
+                    clip.name, Qt::ElideRight, qMax(0, rc.width() - 12));
+        p->setPen(kColAudioText);
+        p->drawText(QRect(label.left() + 6, label.top(),
+                          label.width() - 12, label.height()),
+                    Qt::AlignVCenter | Qt::AlignLeft, text);
+        const QRect wave(rc.left(), rc.top() + kAudioLabelH,
+                         rc.width(), rc.height() - kAudioLabelH);
+        const QString wkey = QStringLiteral("w%1:c%2:%3").
+                arg(trackIdx).arg(clipIdx).arg(rc.width());
+        const auto wit = mPanel->mWaveCache.constFind(wkey);
+        if (wit != mPanel->mWaveCache.constEnd()) {
+            drawWaveform(p, wave, wit.value(), kColAudioWave);
+        }
+        requestClipAssets(trackIdx, clipIdx, rc);
     }
-    p->restore();
 
-    // name strip
-    const QString name = src ? src->prp_getName() : clip->prp_getName();
-    p->setFont(smallFont(p->font()));
-    const QString text = p->fontMetrics().elidedText(
-                name, Qt::ElideRight, qMax(0, rc.width() - 10));
-    p->setPen(kColText);
-    p->drawText(QRect(rc.x() + 5, rc.y(), rc.width() - 10, kLabelH),
-                Qt::AlignVCenter | Qt::AlignLeft, text);
-
-    if (clip->isSelected()) {
-        p->setPen(QPen(ThemeSupport::getThemeHighlightColor(), 2));
+    // selection: 1.5px white outline + corner handles (square, no
+    // rounding - the whole design is sharp-cornered)
+    if (clip.selected) {
+        p->setPen(QPen(kColSelect, 1.5));
         p->setBrush(Qt::NoBrush);
-        p->drawRoundedRect(QRectF(rc).adjusted(1, 1, -1, -1), 3, 3);
+        p->drawRect(rc);
+        p->setPen(Qt::NoPen);
+        p->setBrush(kColSelect);
+        p->drawRect(rc.left() - kHandle / 2, rc.top() - kHandle / 2,
+                    kHandle, kHandle);
+        p->drawRect(rc.right() - kHandle / 2 + 1, rc.top() - kHandle / 2,
+                    kHandle, kHandle);
+        p->drawRect(rc.left() - kHandle / 2,
+                    rc.bottom() - kHandle / 2 + 1, kHandle, kHandle);
+        p->drawRect(rc.right() - kHandle / 2 + 1,
+                    rc.bottom() - kHandle / 2 + 1, kHandle, kHandle);
+    }
+}
+
+void EditTimelineView::drawWaveform(QPainter* const p, const QRect& rc,
+                                    const QVector<qreal>& samples,
+                                    const QColor& color)
+{
+    const qreal midY = rc.center().y();
+    p->setPen(Qt::NoPen);
+    p->setBrush(color);
+    const int barCount = (rc.width() + 1) / 2;
+    for (int i = 0; i < barCount; ++i) {
+        const int idx = i * samples.count() / qMax(1, barCount);
+        if (idx >= samples.count()) break;
+        const qreal h = samples.at(idx) * (rc.height() - 4);
+        const int hi = qMax(1, qRound(h));
+        p->drawRect(rc.left() + i * 2, qRound(midY - hi / 2.0), 2, hi);
     }
 }
 
 void EditTimelineView::drawRuler(QPainter* const p)
 {
-    p->fillRect(QRect(0, 0, width(), kRulerH), kColRuler);
-    const auto s = scene();
-    if (!s) return;
+    const QRect ruler(0, 0, width(), kRulerH);
+    p->fillRect(ruler, kColRuler);
+    p->setPen(QPen(QColor(0x33, 0x33, 0x33), 1));
+    p->drawLine(ruler.bottomLeft(), ruler.bottomRight());
 
     static const int ladder[] = {1, 2, 5, 10, 25, 50, 100,
                                  250, 500, 1000, 2500, 5000};
     int inc = ladder[11];
     for (int i = 0; i < 12; ++i) {
-        if (ladder[i] * mPpf >= 70) { inc = ladder[i]; break; }
+        if (ladder[i] * mPpf >= 80) { inc = ladder[i]; break; }
     }
     const int sub = qMax(1, inc / 5);
-
-    const qreal fps = s->getFps();
+    const int fps = qMax(1, mPanel->mData.fps);
     p->setFont(smallFont(p->font()));
-    p->setPen(QColor(0x9A, 0xA2, 0xA8));
-    const int first = firstViewedFrame();
-    int f = qCeil(first / qreal(inc)) * inc;
+    p->setPen(kColRulerText);
+    int f = qCeil(firstViewedFrame() / qreal(inc)) * inc;
     for (;; f += inc) {
         const qreal x = xAtFrame(f);
         if (x > width()) break;
-        if (x < -60) continue;
-        p->drawLine(QPointF(x, kRulerH - 7), QPointF(x, kRulerH));
-        p->drawText(QRectF(x - 40, 2, 80, kRulerH - 9),
-                    Qt::AlignVCenter | Qt::AlignHCenter,
-                    AppSupport::getTimeCodeFromFrame(f, float(fps)));
-        if (sub * mPpf >= 12) {
+        if (x >= -60) {
+            p->setPen(kColRulerTick);
+            p->drawLine(QPointF(x, kRulerH - 6), QPointF(x, kRulerH));
+            p->setPen(kColRulerText);
+            p->drawText(QRectF(x - 40, 2, 80, kRulerH - 9),
+                        Qt::AlignVCenter | Qt::AlignHCenter,
+                        timeCode(f, fps));
+        }
+        if (sub * mPpf >= 14) {
+            p->setPen(kColRulerTick);
             for (int k = 1; k < 5; ++k) {
                 const qreal xm = xAtFrame(f + k * sub);
                 if (xm > width()) break;
-                p->drawLine(QPointF(xm, kRulerH - 4), QPointF(xm, kRulerH));
+                p->drawLine(QPointF(xm, kRulerH - 3), QPointF(xm, kRulerH));
             }
         }
     }
@@ -403,149 +678,185 @@ void EditTimelineView::drawRuler(QPainter* const p)
 
 void EditTimelineView::drawPlayhead(QPainter* const p)
 {
-    const auto s = scene();
-    if (!s) return;
-    const qreal x = xAtFrame(s->getCurrentFrame()) + mPpf / 2;
+    const qreal x = xAtFrame(mPanel->mData.playheadFrame) + mPpf / 2;
     if (x < -10 || x > width() + 10) return;
-    const auto col = ThemeSupport::getThemeHighlightColor();
-    p->setPen(QPen(col, 1));
-    p->drawLine(QPointF(x, kRulerH - 6), QPointF(x, height()));
+    p->setPen(QPen(kColPlayhead, 2));
+    p->drawLine(QPointF(x, 8), QPointF(x, height()));
     QPainterPath tri;
-    tri.moveTo(x - 6, 0);
-    tri.lineTo(x + 6, 0);
-    tri.lineTo(x, 9);
+    tri.moveTo(x - 5, 0);
+    tri.lineTo(x + 5, 0);
+    tri.lineTo(x, 8);
     tri.closeSubpath();
-    p->fillPath(tri, col);
+    p->fillPath(tri, kColPlayhead);
 }
 
 void EditTimelineView::setFrameFromX(const int x)
 {
-    const auto s = scene();
-    if (!s) return;
-    const int f = qBound(mHBar->minimum(), frameAtX(x), mHBar->maximum());
-    s->anim_setAbsFrame(f);
+    const int f = qBound(0, frameAtX(x), mHBar->maximum());
+    mPanel->mData.playheadFrame = f;
+    mPanel->mApi->setPlayhead(f);
+    mPanel->updateTimeLabel();
+    update();
 }
 
-void EditTimelineView::beginHorizontal(const QPoint& pos)
+void EditTimelineView::beginDragOp(const QPoint& pos)
 {
-    auto* box = mPressBox.data();
-    if (!box) { mDrag = Drag::None; return; }
-    if (!box->hasDurationRectangle()) box->createDurationRectangle();
-    const auto rect = box->getDurationRectangle();
-    if (!rect) { mDrag = Drag::None; return; }
     mPressFrame = frameAtX(pos.x());
     mLastApplied = 0;
-    mOrigMin = rect->getMinAbsFrame();
-    mOrigMax = rect->getMaxAbsFrame();
+    const auto& clip = mPanel->mData.tracks.at(mPressHit.track).
+            clips.at(mPressHit.clip);
+    mDragBackup = clip;
+    mDragBackupTrack = mPressHit.track;
     if (mZone == Zone::EdgeMin) {
-        box->startMinFramePosTransform();
         mDrag = Drag::TrimMin;
     } else if (mZone == Zone::EdgeMax) {
-        box->startMaxFramePosTransform();
         mDrag = Drag::TrimMax;
     } else {
-        box->startDurationRectPosTransform();
         mDrag = Drag::Move;
     }
-    mPanel->mThumbSuppress = true;
 }
 
 void EditTimelineView::beginRowSwitch()
 {
-    mStartRow = rowOfClip(mPressBox.data());
-    mTargetRow = mStartRow;
+    mGhostTrack = mPressHit.track;
     mDrag = Drag::RowSwitch;
-    mPanel->mThumbSuppress = true;
 }
 
-QList<int> EditTimelineView::snapCandidates() const
+int EditTimelineView::snapDelta(const int unsnapped,
+                                const bool draggingEdge) const
 {
-    QList<int> out;
-    out << 0;
-    const auto s = scene();
-    if (s) out << s->getCurrentFrame();
-    const int n = mPanel->mClips.count();
-    for (int i = 0; i < n; ++i) {
-        auto* c = mPanel->mClips.at(i).data();
-        if (!c || c == mPressBox.data()) continue;
-        const auto r = c->getDurationRectangle();
-        if (!r) continue;
-        out << r->getMinAbsFrame() << r->getMaxAbsFrame() + 1;
-    }
-    return out;
-}
-
-int EditTimelineView::snappedMoveDelta(const int total) const
-{
-    if (mPpf < 2.5) return total;
+    if (mPpf < 2.5) return unsnapped;
     const int tol = qMax(1, qRound(kSnapPx / mPpf));
-    const int newMin = mOrigMin + total;
-    const int newMax = mOrigMax + total;
-    int best = total;
+    const auto& backup = mDragBackup;
+    // edges of the moving clip in "delta space"
+    int best = unsnapped;
     int bestDist = tol + 1;
-    const auto cands = snapCandidates();
-    for (const int c : cands) {
-        const int dMin = qAbs(newMin - c);
-        if (dMin < bestDist) { bestDist = dMin; best = c - mOrigMin; }
-        const int dMax = qAbs(newMax - c);
-        if (dMax < bestDist) { bestDist = dMax; best = c - mOrigMax; }
-    }
-    return best;
-}
 
-int EditTimelineView::snappedEdgeDelta(const int total,
-                                       const bool minEdge) const
-{
-    if (mPpf < 2.5) return total;
-    const int tol = qMax(1, qRound(kSnapPx / mPpf));
-    const int orig = minEdge ? mOrigMin : mOrigMax;
-    const int edge = orig + total;
-    int best = total;
-    int bestDist = tol + 1;
-    const auto cands = snapCandidates();
-    for (const int c : cands) {
-        const int d = qAbs(edge - c);
-        if (d < bestDist) { bestDist = d; best = c - orig; }
+    QList<int> cands;
+    cands << 0 << mPanel->mData.playheadFrame;
+    const auto& tracks = mPanel->mData.tracks;
+    for (int t = 0; t < tracks.count(); ++t) {
+        if (t == mPressHit.track) continue;
+        for (const auto& c : tracks.at(t).clips) {
+            cands << c.startFrame << c.startFrame + c.durationFrames;
+        }
+    }
+    // same-track neighbours (excluding the dragged clip) still snap
+    {
+        const auto& clips = tracks.at(mPressHit.track).clips;
+        for (int i = 0; i < clips.count(); ++i) {
+            if (i == mPressHit.clip) continue;
+            cands << clips.at(i).startFrame <<
+                     clips.at(i).startFrame + clips.at(i).durationFrames;
+        }
+    }
+
+    for (const int cand : cands) {
+        if (draggingEdge) {
+            const int edge = backup.startFrame + unsnapped;
+            const int d = qAbs(edge - cand);
+            if (d < bestDist) { bestDist = d; best = cand - backup.startFrame; }
+        } else {
+            const int minEdge = backup.startFrame + unsnapped;
+            const int maxEdge = minEdge + backup.durationFrames;
+            const int dMin = qAbs(minEdge - cand);
+            if (dMin < bestDist) {
+                bestDist = dMin;
+                best = cand - backup.startFrame;
+            }
+            const int dMax = qAbs(maxEdge - cand);
+            if (dMax < bestDist) {
+                bestDist = dMax;
+                best = cand - (backup.startFrame + backup.durationFrames);
+            }
+        }
     }
     return best;
 }
 
 void EditTimelineView::applyMoveDelta(const int total)
 {
-    auto* box = mPressBox.data();
-    if (!box) return;
-    const int step = total - mLastApplied;
-    if (step == 0) return;
-    box->moveDurationRect(step);
-    mLastApplied = total;
+    auto& clip = mPanel->mData.tracks[mPressHit.track].clips[mPressHit.clip];
+    clip.startFrame = qMax(0, mDragBackup.startFrame + total);
     update();
 }
 
-void EditTimelineView::applyMinDelta(const int total)
+void EditTimelineView::applyTrimDelta(const int total, const bool minEdge)
 {
-    auto* box = mPressBox.data();
-    if (!box) return;
-    const int step = total - mLastApplied;
-    if (step == 0) return;
-    box->moveMinFrame(step);
-    mLastApplied = total;
+    auto& clip = mPanel->mData.tracks[mPressHit.track].clips[mPressHit.clip];
+    if (minEdge) {
+        // dragging the head: move start right = cut content head
+        int newStart = mDragBackup.startFrame + total;
+        int newDur = mDragBackup.durationFrames - total;
+        if (newDur < 1) { newDur = 1; newStart = mDragBackup.startFrame +
+                    mDragBackup.durationFrames - 1; }
+        if (newStart < 0) { newDur += newStart; newStart = 0; }
+        clip.startFrame = qMax(0, newStart);
+        clip.durationFrames = qMax(1, newDur);
+    } else {
+        int newDur = mDragBackup.durationFrames + total;
+        if (newDur < 1) newDur = 1;
+        clip.durationFrames = newDur;
+    }
     update();
 }
 
-void EditTimelineView::applyMaxDelta(const int total)
+void EditTimelineView::commitDrag()
 {
-    auto* box = mPressBox.data();
-    if (!box) return;
-    const int step = total - mLastApplied;
-    if (step == 0) return;
-    box->moveMaxFrame(step);
-    mLastApplied = total;
+    const int t = mPressHit.track;
+    const int c = mPressHit.clip;
+    if (t < 0 || c < 0) return;
+    auto& tracks = mPanel->mData.tracks;
+    if (t >= tracks.count() || c >= tracks.at(t).clips.count()) return;
+    const auto& clip = tracks.at(t).clips.at(c);
+
+    if (mDrag == Drag::Move) {
+        mPanel->mApi->moveClip(t, c, clip.startFrame);
+    } else if (mDrag == Drag::TrimMin || mDrag == Drag::TrimMax) {
+        mPanel->mApi->trimClip(t, c, clip.startFrame, clip.durationFrames);
+    } else if (mDrag == Drag::RowSwitch && mGhostTrack >= 0 &&
+               mGhostTrack != t) {
+        const int fromTrack = t;
+        const int fromClip = c;
+        const auto moving = clip;
+        // local move first (clip kind must fit the target track)
+        if (clipFitsTrack(moving, tracks.at(mGhostTrack))) {
+            tracks[mGhostTrack].clips << moving;
+            tracks[fromTrack].clips.removeAt(fromClip);
+            auto& dst = tracks[mGhostTrack].clips;
+            std::sort(dst.begin(), dst.end(),
+                      [](const EditClip& a, const EditClip& b)
+                      { return a.startFrame < b.startFrame; });
+            mPanel->mApi->moveClipToTrack(fromTrack, fromClip, mGhostTrack);
+        }
+    }
+    // keep clips ordered after move/trim
+    auto& src = tracks[t].clips;
+    std::sort(src.begin(), src.end(),
+              [](const EditClip& a, const EditClip& b)
+              { return a.startFrame < b.startFrame; });
+    updateScrollRanges();
+    update();
+}
+
+void EditTimelineView::rollbackDrag()
+{
+    if (mDragBackupTrack < 0) return;
+    auto& tracks = mPanel->mData.tracks;
+    if (mDragBackupTrack >= tracks.count()) return;
+    auto& clips = tracks[mDragBackupTrack].clips;
+    for (int i = 0; i < clips.count(); ++i) {
+        if (i == mPressHit.clip ||
+            (mPressHit.clip < 0 && clips.at(i).name == mDragBackup.name)) {
+            clips[i] = mDragBackup;
+            break;
+        }
+    }
     update();
 }
 
 void EditTimelineView::mousePressEvent(QMouseEvent* const e)
 {
-    mPanel->scheduleAutoSwitch();
     const QPoint pos = e->pos();
     if (e->button() == Qt::MiddleButton) {
         mDrag = Drag::Pan;
@@ -553,45 +864,51 @@ void EditTimelineView::mousePressEvent(QMouseEvent* const e)
         return;
     }
     if (e->button() != Qt::LeftButton) return;
-    const auto s = scene();
-    if (!s) return;
     if (pos.y() < kRulerH) {
         mDrag = Drag::Playhead;
         setFrameFromX(pos.x());
         return;
     }
-    const auto hit = hitTest(pos);
-    if (!hit.box) {
+    // account for the vertical scroll offset in hit testing
+    const QPoint contentPos(pos.x(), pos.y() + mVBar->value());
+    const auto hit = hitTest(contentPos);
+    if (hit.track < 0) {
         mDrag = Drag::Pan;
         mLastPanPos = pos;
-        s->clearBoxesSelection();
+        // clicking empty space clears the selection
+        for (auto& t : mPanel->mData.tracks) {
+            for (auto& c : t.clips) c.selected = false;
+        }
+        update();
         return;
     }
-    mPressBox = hit.box;
+    mPressHit = hit;
     mZone = hit.zone;
-    mPressPos = pos;
+    mPressPos = contentPos;
     mDrag = Drag::Pending;
-    mTargetRow = -1;
-    const auto bb = dynamic_cast<BoundingBox*>(hit.box);
-    if (bb) {
-        s->clearBoxesSelection();
-        s->addBoxToSelection(bb);
+    mGhostTrack = -1;
+    for (auto& t : mPanel->mData.tracks) {
+        for (auto& c : t.clips) c.selected = false;
     }
+    mPanel->mData.tracks[hit.track].clips[hit.clip].selected = true;
+    update();
 }
 
 void EditTimelineView::mouseMoveEvent(QMouseEvent* const e)
 {
     const QPoint pos = e->pos();
     if (mDrag == Drag::None) {
-        updateHoverCursor(pos);
+        const QPoint contentPos(pos.x(), pos.y() + mVBar->value());
+        updateHoverCursor(contentPos);
         return;
     }
+    const QPoint contentPos(pos.x(), pos.y() + mVBar->value());
     switch (mDrag) {
     case Drag::Pending: {
-        const int dx = pos.x() - mPressPos.x();
-        const int dy = pos.y() - mPressPos.y();
-        if (qAbs(dy) >= kRowH * 0.55) beginRowSwitch();
-        else if (qAbs(dx) >= kDragThreshold) beginHorizontal(pos);
+        const int dx = contentPos.x() - mPressPos.x();
+        const int dy = contentPos.y() - mPressPos.y();
+        if (qAbs(dy) >= kVideoTrackH * 0.55) beginRowSwitch();
+        else if (qAbs(dx) >= kDragThreshold) beginDragOp(contentPos);
         break;
     }
     case Drag::Playhead:
@@ -601,26 +918,32 @@ void EditTimelineView::mouseMoveEvent(QMouseEvent* const e)
         const int dx = pos.x() - mLastPanPos.x();
         const int dy = pos.y() - mLastPanPos.y();
         mHBar->setValue(mHBar->value() - qRound(dx / mPpf));
-        mVBar->setValue(mVBar->value() - qRound(double(dy) / kRowH));
+        mVBar->setValue(mVBar->value() - dy);
         mLastPanPos = pos;
         break;
     }
     case Drag::Move:
-        applyMoveDelta(snappedMoveDelta(frameAtX(pos.x()) - mPressFrame));
+        applyMoveDelta(snapDelta(
+                           frameAtX(contentPos.x()) - mPressFrame, false));
         break;
     case Drag::TrimMin:
-        applyMinDelta(snappedEdgeDelta(
-                          frameAtX(pos.x()) - mPressFrame, true));
+        applyTrimDelta(snapDelta(
+                           frameAtX(contentPos.x()) - mPressFrame, true), true);
         break;
     case Drag::TrimMax:
-        applyMaxDelta(snappedEdgeDelta(
-                          frameAtX(pos.x()) - mPressFrame, false));
+        applyTrimDelta(frameAtX(contentPos.x()) - mPressFrame, false);
         break;
     case Drag::RowSwitch: {
-        const int rows = mPanel->mClips.count();
-        int row = firstVisibleRow() + (pos.y() - kRulerH) / kRowH;
-        if (pos.y() < kRulerH) row = firstVisibleRow();
-        mTargetRow = qBound(0, row, qMax(0, rows - 1));
+        const auto& tracks = mPanel->mData.tracks;
+        int best = mPressHit.track;
+        int bestDist = INT_MAX;
+        for (int t = 0; t < tracks.count(); ++t) {
+            const int top = trackTop(t);
+            const int d = qAbs(contentPos.y() - (top + trackHeight(t) / 2));
+            if (d < bestDist) { bestDist = d; best = t; }
+        }
+        mGhostTrack = best;
+        mPressPos = contentPos;
         update();
         break;
     }
@@ -632,46 +955,24 @@ void EditTimelineView::mouseMoveEvent(QMouseEvent* const e)
 void EditTimelineView::mouseReleaseEvent(QMouseEvent* const e)
 {
     Q_UNUSED(e)
-    auto* box = mPressBox.data();
-    if (mDrag == Drag::Move && box) {
-        box->prp_pushUndoRedoName(tr("移动素材块"));
-        box->finishDurationRectPosTransform();
-        Document::sInstance->actionFinished();
-    } else if (mDrag == Drag::TrimMin && box) {
-        box->prp_pushUndoRedoName(tr("修剪入点"));
-        box->finishMinFramePosTransform();
-        Document::sInstance->actionFinished();
-    } else if (mDrag == Drag::TrimMax && box) {
-        box->prp_pushUndoRedoName(tr("修剪出点"));
-        box->finishMaxFramePosTransform();
-        Document::sInstance->actionFinished();
-    } else if (mDrag == Drag::RowSwitch && box &&
-               mTargetRow >= 0 && mTargetRow != mStartRow) {
-        box->prp_pushUndoRedoName(tr("调整轨道"));
-        box->moveTo(mTargetRow);
-        Document::sInstance->actionFinished();
-        mPanel->refreshClips();
+    if (mDrag == Drag::Move || mDrag == Drag::TrimMin ||
+        mDrag == Drag::TrimMax || mDrag == Drag::RowSwitch) {
+        commitDrag();
     }
     mDrag = Drag::None;
-    mPressBox = nullptr;
-    mTargetRow = -1;
-    mPanel->mThumbSuppress = false;
+    mGhostTrack = -1;
     updateScrollRanges();
-    scheduleThumbRequest();
     update();
 }
 
 void EditTimelineView::mouseDoubleClickEvent(QMouseEvent* const e)
 {
     if (e->button() != Qt::LeftButton) return;
-    const auto s = scene();
-    if (!s) return;
-    const auto hit = hitTest(e->pos());
-    if (!hit.box) return;
-    // cancel the deferred auto-switch: this click navigates instead
-    mPanel->cancelAutoSwitch();
-    auto* src = mPanel->resolveSourceScene(hit.box);
-    if (src) mPanel->requestSwitchScene(src);
+    const QPoint contentPos(e->pos().x(),
+                            e->pos().y() + mVBar->value());
+    const auto hit = hitTest(contentPos);
+    if (hit.track < 0) return;
+    mPanel->mApi->openClip(hit.track, hit.clip);
 }
 
 void EditTimelineView::wheelEvent(QWheelEvent* const e)
@@ -686,11 +987,9 @@ void EditTimelineView::wheelEvent(QWheelEvent* const e)
         mHBar->setValue(qBound(mHBar->minimum(), newFirst,
                                mHBar->maximum()));
         update();
-        scheduleThumbRequest();
     } else if (e->modifiers() & Qt::ShiftModifier) {
-        const int step = qMax(1, mVBar->pageStep() / 2);
-        mVBar->setValue(mVBar->value() +
-                        (e->angleDelta().y() > 0 ? -step : step));
+        mVBar->setValue(mVBar->value() -
+                        (e->angleDelta().y() > 0 ? 60 : -60));
     } else {
         const int step = qMax(1, mHBar->pageStep() / 4);
         mHBar->setValue(mHBar->value() +
@@ -716,18 +1015,12 @@ void EditTimelineView::leaveEvent(QEvent* const e)
 
 void EditTimelineView::keyPressEvent(QKeyEvent* const e)
 {
-    if (e->key() == Qt::Key_Escape) {
-        auto* box = mPressBox.data();
-        if (mDrag == Drag::Move && box) box->cancelDurationRectPosTransform();
-        else if (mDrag == Drag::TrimMin && box) box->cancelMinFramePosTransform();
-        else if (mDrag == Drag::TrimMax && box) box->cancelMaxFramePosTransform();
-        else { QWidget::keyPressEvent(e); return; }
+    if (e->key() == Qt::Key_Escape &&
+        (mDrag == Drag::Move || mDrag == Drag::TrimMin ||
+         mDrag == Drag::TrimMax || mDrag == Drag::RowSwitch)) {
+        rollbackDrag();
         mDrag = Drag::None;
-        mPressBox = nullptr;
-        mPanel->mThumbSuppress = false;
-        Document::sInstance->actionFinished();
-        updateScrollRanges();
-        scheduleThumbRequest();
+        mGhostTrack = -1;
         update();
         return;
     }
@@ -738,7 +1031,7 @@ void EditTimelineView::updateHoverCursor(const QPoint& pos)
 {
     if (pos.y() < kRulerH) { unsetCursor(); return; }
     const auto hit = hitTest(pos);
-    if (!hit.box) { unsetCursor(); return; }
+    if (hit.track < 0) { unsetCursor(); return; }
     if (hit.zone == Zone::EdgeMin || hit.zone == Zone::EdgeMax) {
         setCursor(Qt::SplitHCursor);
     } else {
@@ -746,36 +1039,29 @@ void EditTimelineView::updateHoverCursor(const QPoint& pos)
     }
 }
 
-// ------------------------------ EditTimelinePanel ------------------------------
+// ------------------------------ panel ------------------------------
 
-EditTimelinePanel::EditTimelinePanel(Document& doc, QWidget* const parent)
+EditTimelinePanel::EditTimelinePanel(QWidget* const parent)
     : QWidget(parent)
-    , mDocument(doc)
 {
-    setMinimumSize(360, 240);
+    setMinimumSize(360, 260);
 
     const auto topBar = new QWidget();
+    topBar->setAutoFillBackground(true);
     const auto topLay = new QHBoxLayout(topBar);
-    topLay->setContentsMargins(6, 4, 6, 4);
+    topLay->setContentsMargins(6, 3, 6, 3);
     topLay->setSpacing(4);
 
     mSceneCombo = new QComboBox();
-    mSceneCombo->setToolTip(
-                tr("剪辑合成场景：素材块存放在这个普通场景里，"
-                   "渲染该场景即输出剪辑成片"));
+    mSceneCombo->setToolTip(tr("剪辑合成场景"));
     mNewSceneBtn = new QPushButton(tr("新建合成"));
-    mNewSceneBtn->setToolTip(tr("新建一个场景并作为剪辑合成"));
     mAddClipBtn = new QPushButton(tr("添加素材"));
-    mAddClipBtn->setToolTip(tr("把项目里的一个场景作为素材块加进来"));
-    mReturnBtn = new QPushButton(tr("返回剪辑"));
-    mReturnBtn->setToolTip(tr("画布切回剪辑合成场景"));
     mTimeLabel = new QLabel();
     mTimeLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 
     topLay->addWidget(mSceneCombo, 1);
     topLay->addWidget(mNewSceneBtn);
     topLay->addWidget(mAddClipBtn);
-    topLay->addWidget(mReturnBtn);
     topLay->addWidget(mTimeLabel);
 
     mView = new EditTimelineView(this);
@@ -786,430 +1072,77 @@ EditTimelinePanel::EditTimelinePanel(Document& doc, QWidget* const parent)
     lay->addWidget(topBar);
     lay->addWidget(mView, 1);
 
-    mRefreshDebounce = new QTimer(this);
-    mRefreshDebounce->setSingleShot(true);
-    mRefreshDebounce->setInterval(120);
-    connect(mRefreshDebounce, &QTimer::timeout,
-            this, &EditTimelinePanel::refreshClips);
+    mApi = std::make_unique<EditTimelineApiStub>();
 
-    mThumbDirtyDebounce = new QTimer(this);
-    mThumbDirtyDebounce->setSingleShot(true);
-    mThumbDirtyDebounce->setInterval(800);
-    connect(mThumbDirtyDebounce, &QTimer::timeout, this, [this]() {
-        for (Canvas* s : mDirtySources) clearSceneThumbs(s);
-        mDirtySources.clear();
-        mView->update();
-        mView->scheduleThumbRequest();
+    connect(mNewSceneBtn, &QPushButton::clicked, this, [this]() {
+        int idx = -1;
+        mApi->createComposition(idx);
+        reload();
+    });
+    connect(mAddClipBtn, &QPushButton::clicked, this, [this]() {
+        QMenu menu(this);
+        QStringList names;
+        mApi->sceneNames(names);
+        if (names.isEmpty()) {
+            const auto a = menu.addAction(tr("没有可添加的场景"));
+            a->setEnabled(false);
+        } else {
+            for (int i = 0; i < names.count(); ++i) {
+                menu.addAction(names.at(i), this, [this, i]() {
+                    mApi->addSceneClip(i);
+                    reload();
+                });
+            }
+        }
+        menu.exec(mAddClipBtn->mapToGlobal(
+                      QPoint(0, mAddClipBtn->height())));
     });
 
-    mAutoSwitchTimer = new QTimer(this);
-    mAutoSwitchTimer->setSingleShot(true);
-    mAutoSwitchTimer->setInterval(180);
-    connect(mAutoSwitchTimer, &QTimer::timeout, this, [this]() {
-        if (mTargetScene) requestSwitchScene(mTargetScene);
-    });
+    setListeningEnabled(true);
+}
 
-    connect(mNewSceneBtn, &QPushButton::clicked,
-            this, &EditTimelinePanel::createCompositionScene);
-    connect(mAddClipBtn, &QPushButton::clicked,
-            this, &EditTimelinePanel::showAddClipMenu);
-    connect(mReturnBtn, &QPushButton::clicked, this, [this]() {
-        if (mTargetScene) requestSwitchScene(mTargetScene);
-    });
-    connect(mSceneCombo, qOverload<int>(&QComboBox::activated),
-            this, [this](const int index) {
-        if (index < 0 || index >= mDocument.fScenes.count()) return;
-        setTargetScene(mDocument.fScenes.at(index).get());
-    });
-
-    mReturnBtn->hide();
-    mAddClipBtn->setEnabled(false);
+void EditTimelinePanel::setApi(EditTimelineApi* const api)
+{
+    if (!api) return;
+    mApi.reset(api);
+    reload();
 }
 
 void EditTimelinePanel::setListeningEnabled(const bool enabled)
 {
-    if (mListening == enabled) return;
     mListening = enabled;
-    for (const auto& c : mDocConns) QObject::disconnect(c);
-    mDocConns.clear();
-
-    if (!enabled) {
-        mAutoSwitchTimer->stop();
-        mThumbDirtyDebounce->stop();
-        mRefreshDebounce->stop();
-        mDirtySources.clear();
-        mThumbSuppress = false;
-        setTargetScene(nullptr);
-        mActiveScene = nullptr;
-        rebuildSceneCombo();
-        updateReturnButton();
-        return;
-    }
-
-    mActiveScene = mDocument.fActiveScene.get();
-    mDocConns << connect(&mDocument, &Document::sceneCreated,
-                         this, [this](Canvas*) { rebuildSceneCombo(); });
-    mDocConns << connect(&mDocument,
-                         qOverload<Canvas*>(&Document::sceneRemoved),
-                         this, [this](Canvas* s) {
-        rebuildSceneCombo();
-        if (s == mTargetScene) {
-            Canvas* fallback = nullptr;
-            for (const auto& sc : mDocument.fScenes) {
-                fallback = sc.get();
-                break;
-            }
-            setTargetScene(fallback);
-        }
-    });
-    mDocConns << connect(&mDocument, &Document::activeSceneSet,
-                         this, [this](Canvas* s) {
-        mActiveScene = s;
-        updateReturnButton();
-    });
-
-    rebuildSceneCombo();
-    Canvas* initial = mTargetScene.data();
-    if (!initial) initial = mDocument.fActiveScene.get();
-    if (!initial) {
-        for (const auto& sc : mDocument.fScenes) {
-            initial = sc.get();
-            break;
-        }
-    }
-    setTargetScene(initial);
+    if (enabled) reload();
 }
 
-void EditTimelinePanel::setTargetScene(Canvas* const scene)
+void EditTimelinePanel::reload()
 {
-    if (mTargetScene == scene) return;
-    mAutoSwitchTimer->stop();
-    for (const auto& c : mSceneConns) QObject::disconnect(c);
-    mSceneConns.clear();
-    mThumbQueue.clear();
-    mQueuedKeys.clear();
-    mThumbToken++;
-    mThumbInFlight = 0;
-    clearThumbCache();
-    clearSourceConns();
-    mTargetScene = scene;
-    mClips.clear();
-
-    if (scene) {
-        auto& cs = mSceneConns;
-        cs << connect(scene, &ContainerBox::insertedObject,
-                      this, [this](int, eBoxOrSound*) {
-            scheduleClipsRefresh();
-        });
-        cs << connect(scene, &ContainerBox::removedObject,
-                      this, [this](int, eBoxOrSound*) {
-            scheduleClipsRefresh();
-        });
-        cs << connect(scene, &ContainerBox::movedObject,
-                      this, [this](int, int, eBoxOrSound*) {
-            scheduleClipsRefresh();
-        });
-        cs << connect(scene, &Canvas::objectSelectionChanged,
-                      this, [this]() { mView->update(); });
-        cs << connect(scene, &Canvas::currentFrameChanged,
-                      this, [this](int) {
-            updateTimeLabel();
-            mView->update();
-        });
-        cs << connect(scene, &Canvas::requestUpdate,
-                      this, [this]() { mView->update(); });
-    }
-
-    mAddClipBtn->setEnabled(scene);
-    updateReturnButton();
+    mThumbCache.clear();
+    mWaveCache.clear();
+    mApi->load(mData);
+    rebuildCompositionCombo();
+    updateTopBar();
+    mView->dataChanged();
     updateTimeLabel();
-    refreshClips();
-    rebuildSceneCombo();
 }
 
-void EditTimelinePanel::rebuildSceneCombo()
+void EditTimelinePanel::rebuildCompositionCombo()
 {
     mComboGuard = true;
     mSceneCombo->clear();
-    int idx = -1;
-    int cur = 0;
-    for (const auto& s : mDocument.fScenes) {
-        Canvas* sc = s.get();
-        if (!sc) continue;
-        mSceneCombo->addItem(sc->prp_getName());
-        if (sc == mTargetScene.data()) idx = cur;
-        cur++;
-    }
-    if (idx >= 0) mSceneCombo->setCurrentIndex(idx);
+    QStringList names;
+    mApi->compositionNames(names);
+    mSceneCombo->addItems(names);
+    if (mSceneCombo->count() > 0) mSceneCombo->setCurrentIndex(0);
     mComboGuard = false;
 }
 
-void EditTimelinePanel::scheduleClipsRefresh()
+void EditTimelinePanel::updateTopBar()
 {
-    if (!mListening) return;
-    mRefreshDebounce->start();
-}
-
-void EditTimelinePanel::clearSourceConns()
-{
-    for (auto it = mSourceConns.cbegin();
-         it != mSourceConns.cend(); ++it) {
-        for (const auto& c : it.value()) QObject::disconnect(c);
-    }
-    mSourceConns.clear();
-}
-
-void EditTimelinePanel::refreshClips()
-{
-    mClips.clear();
-    const auto target = mTargetScene.data();
-    if (target) {
-        for (auto* b : target->getContainedBoxes()) mClips.append(b);
-    }
-    clearSourceConns();
-    QSet<Canvas*> sources;
-    const int n = mClips.count();
-    for (int i = 0; i < n; ++i) {
-        auto* s = resolveSourceScene(mClips.at(i).data());
-        if (s) sources.insert(s);
-    }
-    for (Canvas* s : sources) {
-        QList<QMetaObject::Connection> cs;
-        cs << connect(s, &Canvas::requestUpdate, this, [this, s]() {
-            markSceneThumbsDirty(s);
-        });
-        mSourceConns.insert(s, cs);
-    }
-    mView->sceneChanged();
-    updateTimeLabel();
-}
-
-Canvas* EditTimelinePanel::resolveSourceScene(eBoxOrSound* const box) const
-{
-    auto* cur = dynamic_cast<BoundingBox*>(box);
-    if (!cur) return nullptr;
-    for (int i = 0; i < 16; ++i) {
-        const auto link = dynamic_cast<InternalLinkCanvas*>(cur);
-        if (!link) break;
-        auto* next = link->getLinkTarget();
-        if (!next) return nullptr;
-        cur = next;
-    }
-    return dynamic_cast<Canvas*>(cur);
-}
-
-void EditTimelinePanel::createCompositionScene()
-{
-    const auto scene = mDocument.createNewScene();
-    if (!scene) return;
-    setTargetScene(scene);
-    requestSwitchScene(scene);
-}
-
-void EditTimelinePanel::showAddClipMenu()
-{
-    if (!mTargetScene) return;
-    QMenu menu(this);
-    bool any = false;
-    for (const auto& s : mDocument.fScenes) {
-        Canvas* sc = s.get();
-        if (!sc || sc == mTargetScene.data()) continue;
-        any = true;
-        menu.addAction(sc->prp_getName(), this, [this, sc]() {
-            addSceneAsClip(sc);
-        });
-    }
-    if (!any) {
-        const auto a = menu.addAction(tr("没有可添加的场景"));
-        a->setEnabled(false);
-    }
-    menu.exec(mAddClipBtn->mapToGlobal(
-                  QPoint(0, mAddClipBtn->height())));
-}
-
-void EditTimelinePanel::addSceneAsClip(Canvas* const source)
-{
-    const auto target = mTargetScene.data();
-    if (!target || !source || source == target) return;
-    const int insert = target->getCurrentFrame();
-
-    target->prp_pushUndoRedoName(tr("添加素材块"));
-    const auto link = target->createLink(false);
-    if (!link) return;
-    target->addContained(link);
-    if (!link->hasDurationRectangle()) link->createDurationRectangle();
-    const auto rect = link->getDurationRectangle();
-    const auto fr = source->getFrameRange();
-    if (rect) {
-        // content window = the whole source scene; placed at the
-        // playhead: shift = insert - srcMin keeps the mapping intact
-        rect->setValues(RangeRectValues{insert - fr.fMin, fr.fMin, fr.fMax});
-    }
-    link->centerPivotPosition();
-    link->moveTo(0);
-    target->clearBoxesSelection();
-    target->addBoxToSelection(link.get());
-    Document::sInstance->actionFinished();
-    refreshClips();
-}
-
-void EditTimelinePanel::scheduleAutoSwitch()
-{
-    if (!mTargetScene) return;
-    if (mDocument.fActiveScene == mTargetScene.data()) return;
-    mAutoSwitchTimer->start();
-}
-
-void EditTimelinePanel::cancelAutoSwitch()
-{
-    mAutoSwitchTimer->stop();
-}
-
-void EditTimelinePanel::requestSwitchScene(Canvas* const scene)
-{
-    if (!scene) return;
-    const auto mw = MainWindow::sGetInstance();
-    if (!mw) return;
-    const auto lay = mw->getLayoutHandler();
-    if (lay) lay->switchToScene(scene);
-}
-
-void EditTimelinePanel::updateReturnButton()
-{
-    const bool away = mTargetScene && mActiveScene &&
-            mActiveScene != mTargetScene;
-    mReturnBtn->setVisible(away);
-    if (mTargetScene) {
-        mReturnBtn->setToolTip(
-                    tr("返回剪辑场景：%1").arg(mTargetScene->prp_getName()));
-    }
+    mAddClipBtn->setEnabled(!mData.tracks.isEmpty());
 }
 
 void EditTimelinePanel::updateTimeLabel()
 {
-    const auto s = mTargetScene.data();
-    if (!s) { mTimeLabel->setText(QString()); return; }
-    mTimeLabel->setText(AppSupport::getTimeCodeFromFrame(
-                            s->getCurrentFrame(), float(s->getFps())));
-}
-
-QString EditTimelinePanel::thumbKey(Canvas* const scene,
-                                    const int frame) const
-{
-    return QStringLiteral("%1:%2").arg(
-                reinterpret_cast<qulonglong>(scene), 0, 16).arg(frame);
-}
-
-void EditTimelinePanel::enqueueThumb(Canvas* const scene,
-                                     const int frame)
-{
-    if (!mListening || !scene || mThumbSuppress) return;
-    const QString key = thumbKey(scene, frame);
-    if (mThumbCache.contains(key) || mQueuedKeys.contains(key)) return;
-    mQueuedKeys.insert(key);
-    ThumbReq req;
-    req.scene = scene;
-    req.frame = frame;
-    mThumbQueue.append(req);
-    pumpThumbQueue();
-}
-
-void EditTimelinePanel::pumpThumbQueue()
-{
-    while (mThumbInFlight < kThumbInFlightMax && !mThumbQueue.isEmpty()) {
-        const auto req = mThumbQueue.takeFirst();
-        auto* scene = req.scene.data();
-        if (!scene) continue;
-        const QString key = thumbKey(scene, req.frame);
-        mQueuedKeys.remove(key);
-        const auto task = scene->queExternalRender(req.frame, true);
-        if (!task) continue;
-        mThumbInFlight++;
-        const std::weak_ptr<BoxRenderData> weak = task;
-        const QPointer<EditTimelinePanel> self = this;
-        const int token = mThumbToken;
-        task->addDependent({[self, weak, key, token]() {
-            const auto task = weak.lock();
-            if (!task) return;
-            QImage img;
-            const auto sk = task->fRenderedImage;
-            SkPixmap pm;
-            if (sk && sk->peekPixels(&pm)) {
-                QImage::Format fmt = QImage::Format_Invalid;
-                if (pm.colorType() == kBGRA_8888_SkColorType) {
-                    fmt = QImage::Format_ARGB32_Premultiplied;
-                } else if (pm.colorType() == kRGBA_8888_SkColorType) {
-                    fmt = QImage::Format_RGBA8888_Premultiplied;
-                }
-                if (fmt != QImage::Format_Invalid) {
-                    img = QImage(reinterpret_cast<const uchar*>(pm.addr()),
-                                 pm.width(), pm.height(),
-                                 int(pm.rowBytes()), fmt).copy();
-                }
-            }
-            if (img.width() > 256 || img.height() > 256) {
-                img = img.scaled(256, 256, Qt::KeepAspectRatio,
-                                 Qt::SmoothTransformation);
-            }
-            QMetaObject::invokeMethod(self.data(), [self, key, img, token]() {
-                if (!self || token != self->mThumbToken) return;
-                if (img.isNull()) self->thumbFailed();
-                else self->thumbArrived(key, img);
-            }, Qt::QueuedConnection);
-        }, [self, token]() {
-            // cancelled tasks must also free their in-flight slot or
-            // the pipeline stalls with a permanently consumed slot
-            QMetaObject::invokeMethod(self.data(), [self, token]() {
-                if (!self || token != self->mThumbToken) return;
-                self->thumbFailed();
-            }, Qt::QueuedConnection);
-        }});
-    }
-}
-
-void EditTimelinePanel::thumbArrived(const QString& key, const QImage& img)
-{
-    if (mThumbCache.contains(key)) {
-        mThumbOrder.removeAll(key);
-    } else if (mThumbOrder.count() >= kThumbCacheMax) {
-        mThumbCache.remove(mThumbOrder.takeFirst());
-    }
-    mThumbCache.insert(key, img);
-    mThumbOrder << key;
-    mThumbInFlight = qMax(0, mThumbInFlight - 1);
-    mView->update();
-    pumpThumbQueue();
-}
-
-void EditTimelinePanel::thumbFailed()
-{
-    mThumbInFlight = qMax(0, mThumbInFlight - 1);
-    pumpThumbQueue();
-}
-
-void EditTimelinePanel::clearThumbCache()
-{
-    mThumbCache.clear();
-    mThumbOrder.clear();
-}
-
-void EditTimelinePanel::clearSceneThumbs(Canvas* const scene)
-{
-    if (!scene) return;
-    const QString prefix = QStringLiteral("%1:").arg(
-                reinterpret_cast<qulonglong>(scene), 0, 16);
-    const QStringList keys = mThumbCache.keys();
-    for (const auto& k : keys) {
-        if (k.startsWith(prefix)) {
-            mThumbCache.remove(k);
-            mThumbOrder.removeAll(k);
-        }
-    }
-}
-
-void EditTimelinePanel::markSceneThumbsDirty(Canvas* const scene)
-{
-    if (!mListening || !scene) return;
-    mDirtySources.insert(scene);
-    mThumbDirtyDebounce->start();
+    mTimeLabel->setText(timeCode(mData.playheadFrame,
+                                 qMax(1, mData.fps)));
 }
