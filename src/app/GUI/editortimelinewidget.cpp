@@ -14,6 +14,8 @@
 #include <QDebug>
 #include <algorithm>
 
+#include "themesupport.h"
+
 static const double MIN_CLIP_LEN = 0.2;   // seconds
 static const int SNAP_PX = 8;
 static const int TRIM_PX = 6;
@@ -121,6 +123,7 @@ QRectF EditorTimelineWidget::clipRect(const Clip &c) const
 
 void EditorTimelineWidget::paintEvent(QPaintEvent *)
 {
+    refreshThemeColors();
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
     p.fillRect(rect(), cBg);
@@ -1144,4 +1147,14 @@ int EditorTimelineWidget::compactTrackGaps()
     }
     if (moved > 0) { update(); }
     return moved;
+}
+
+void EditorTimelineWidget::refreshThemeColors()
+{
+    // follow the app theme: accent drives selection/highlight, its
+    // darker shade the video clip name bars (was a hard-coded green)
+    const QColor accent = ThemeSupport::getThemeHighlightColor();
+    const QColor accentDark = ThemeSupport::getThemeHighlightDarkerColor();
+    if (cAccent != accent) { cAccent = accent; }
+    if (cVideoBar != accentDark) { cVideoBar = accentDark; }
 }

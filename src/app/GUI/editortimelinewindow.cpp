@@ -17,6 +17,9 @@
 #include <QStyleFactory>
 #include <QSvgRenderer>
 #include <QPainter>
+#include <QShowEvent>
+
+#include "themesupport.h"
 
 // user-supplied magnet glyph; the fill is swapped per state
 static const char* kMagneticSvg =
@@ -80,40 +83,35 @@ EditorTimelineWindow::EditorTimelineWindow(QWidget *parent)
     setCentralWidget(central);
 
     // ---- toolbar ----
-    QToolBar *tb = addToolBar(QStringLiteral("main"));
-    tb->setMovable(false);
-    tb->setStyleSheet(QStringLiteral(
-        "QToolBar{background:#1d1d1d;border-bottom:1px solid #2c2c2c;spacing:6px;padding:4px;}"
-        "QToolButton{color:#c8c8c8;background:transparent;border:1px solid transparent;"
-        "border-radius:4px;padding:4px 10px;}"
-        "QToolButton:hover{background:#2b2b2b;border-color:#3a3a3a;}"
-        "QToolButton:pressed{background:#08A581;color:#fff;}"
-        "QToolButton:checked{background:#08A581;border:1px solid #08A581;color:#fff;}"));
+    mToolBar = addToolBar(QStringLiteral("main"));
+    mToolBar->setMovable(false);
+    refreshThemeColors();
 
     // "+ video/audio" from the demo stay out: they add fake clips that
     // the next rebuild discards - the real panel mirrors scene layers.
     // Keeping the bar short also matters: a narrow bottom dock would
     // push later actions into the toolbar overflow menu and hide them
-    QAction *aDel  = tb->addAction(QStringLiteral("删除"));
+    QAction *aDel  = mToolBar->addAction(QStringLiteral("删除"));
     // CapCut-style magnetic mode: no gaps within a track (turning it on
     // compacts immediately; drag/trim releases keep it compact).
     // Icon-only with a checked highlight: dim glyph when off, white
-    // glyph on the accent green when on
-    const QIcon magOff(magneticPixmap(QColor(0xc8, 0xc8, 0xc8)));
-    const QIcon magOn(magneticPixmap(QColor(0xff, 0xff, 0xff)));
-    QAction *aMag = tb->addAction(magOff, QString());
+    // glyph on the theme accent when on (colors refreshed on show)
+    mMagOff = QIcon(magneticPixmap(QColor(0xc8, 0xc8, 0xc8)));
+    mMagOn = QIcon(magneticPixmap(QColor(0xff, 0xff, 0xff)));
+    QAction *aMag = mToolBar->addAction(mMagOff, QString());
     aMag->setCheckable(true);
     aMag->setChecked(false);
     aMag->setToolTip(QStringLiteral("磁吸：开启后同轨块贴紧无间隙"));
-    connect(aMag, &QAction::toggled, this, [aMag, magOff, magOn](const bool on) {
-        aMag->setIcon(on ? magOn : magOff);
+    mMagAction = aMag;
+    connect(aMag, &QAction::toggled, this, [this](const bool on) {
+        if (mMagAction) { mMagAction->setIcon(on ? mMagOn : mMagOff); }
     });
-    tb->addSeparator();
-    QAction *aZi = tb->addAction(QStringLiteral("放大"));
-    QAction *aZo = tb->addAction(QStringLiteral("缩小"));
-    QAction *aFit = tb->addAction(QStringLiteral("适配"));
-    tb->addSeparator();
-    QAction *aLog = tb->addAction(QStringLiteral("调试日志"));
+    mToolBar->addSeparator();
+    QAction *aZi = mToolBar->addAction(QStringLiteral("放大"));
+    QAction *aZo = mToolBar->addAction(QStringLiteral("缩小"));
+    QAction *aFit = mToolBar->addAction(QStringLiteral("适配"));
+    mToolBar->addSeparator();
+    QAction *aLog = mToolBar->addAction(QStringLiteral("调试日志"));
 
     connect(aDel,  &QAction::triggered, m_timeline, &EditorTimelineWidget::removeSelectedClip);
     connect(aMag, &QAction::toggled, m_timeline, &EditorTimelineWidget::setMagnetic);
@@ -173,4 +171,40 @@ void EditorTimelineWindow::showDebugLog()
     m_logDlg->show();
     m_logDlg->raise();
     m_logDlg->activateWindow();
+}
+
+void EditorTimelineWindow::refreshThemeColors()
+{
+    // accent from the app theme (follows the accent preset / custom
+    // color); press/checked highlights and the magnetic icons re-tint
+    const QColor accent = ThemeSupport::getThemeHighlightColor();
+    if (mToolBar) {
+        mToolBar->setStyleSheet(QStringLiteral(
+            "QToolBar{background:#1d1d1d;border-bottom:1px solid #2c2c2c;spacing:6px;padding:4px;}"
+            "QToolButton{color:#c8c8c8;background:transparent;border:1px solid transparent;"
+            "border-radius:4px;padding:4px 10px;}"
+            "QToolButton:hover{background:#2b2b2b;border-color:#3a3a3a;}"
+            "QToolButton:pressed{background:%1;color:#fff;}"
+            "QToolButton:checked{background:%1;border:1px solid %1;color:#fff;}")
+                .arg(accent.name()));
+    }
+    // the "on" glyph sits on the accent background, so tint it with the
+    // accent itself only when the accent is dark enough for white text
+    // (the default); otherwise keep white on a darkened accent
+    QColor onGlyph(0xff, 0xff, 0xff);
+    if (accent.lightness() > 150) {
+        onGlyph = ThemeSupport::getThemeHighlightDarkerColor().darker(160);
+    }
+    mMagOn = QIcon(magneticPixmap(onGlyph));
+    if (mMagAction && mMagAction->isChecked()) {
+        mMagAction->setIcon(mMagOn);
+    }
+}
+
+void EditorTimelineWindow::showEvent(QShowEvent *event)
+{
+    QMainWindow::showEvent(event);
+    // the theme may have changed while the dock was hidden; every show
+    // re-pulls the accent colors
+    refreshThemeColors();
 }

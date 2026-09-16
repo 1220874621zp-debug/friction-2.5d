@@ -193,6 +193,10 @@ private:
     QVector<TrimSnap> m_trimSnap;
     void applyMagneticFollow(const bool active);
     bool mMagnetic = false;
+    // re-pull the accent colors from the app theme (accent for
+    // selection/highlight, its darker shade for clip name bars) so the
+    // panel follows theme changes; cheap, called from paint
+    void refreshThemeColors();
 };
 
 #endif // EDITORTIMELINEWIDGET_H
