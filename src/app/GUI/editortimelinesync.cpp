@@ -6,7 +6,6 @@
 #include "Boxes/containerbox.h"
 #include "Boxes/boundingbox.h"
 #include "Boxes/boxrenderdata.h"
-#include "Boxes/internallinkcanvas.h"
 #include "Animators/eboxorsound.h"
 #include "Sound/esound.h"
 #include "Timeline/durationrectangle.h"
@@ -110,13 +109,16 @@ void EditorTimelineSync::rebuild()
     const auto collect = [&items](Canvas * const s) {
         items.clear();
         if (!s) { return; }
+        // mirror the native timeline: EVERY child layer shows here.
+        // Sounds become audio blocks; every visual layer (scene links,
+        // vectors, images, text, groups, ...) becomes a video block
+        // with the same thumbnail logic
         for (const auto &child : s->getContained()) {
             const auto layer = child.data();
             if (!layer) { continue; }
             const bool audio = enve_cast<eSound*>(layer) != nullptr;
-            const bool video = enve_cast<InternalLinkCanvas*>(layer) != nullptr;
             if (audio) { items.append({layer, true}); }
-            else if (video) { items.append({layer, false}); }
+            else { items.append({layer, false}); }
         }
     };
     collect(activeScene);
@@ -345,7 +347,9 @@ void EditorTimelineSync::requestThumbnails()
     if (mThumbDone.size() > 128) { mThumbDone.clear(); }
     for (auto it = mClipToLayer.begin(); it != mClipToLayer.end(); ++it) {
         const int clipId = it.key();
-        const auto box = enve_cast<InternalLinkCanvas*>(it.value().data());
+        // every visual layer renders (scene links, vectors, images,
+        // text, groups) - not just scene links
+        const auto box = enve_cast<BoundingBox*>(it.value().data());
         if (!box) { continue; } // audio blocks draw their waveform
         const auto dur = box->getDurationRectangle();
         if (!dur) { continue; }
@@ -406,7 +410,7 @@ void EditorTimelineSync::deliverThumbnail(const QString &key, const QImage &img)
     const auto scene = mPanelScene.data();
     if (!mWidget || !scene) { return; }
     for (auto it = mClipToLayer.begin(); it != mClipToLayer.end(); ++it) {
-        const auto box = enve_cast<InternalLinkCanvas*>(it.value().data());
+        const auto box = enve_cast<BoundingBox*>(it.value().data());
         if (!box) { continue; }
         const auto dur = box->getDurationRectangle();
         if (!dur) { continue; }

@@ -15,13 +15,16 @@ class Document;
 class EditorTimelineWidget;
 class eBoxOrSound;
 
-// Edit-timeline semantic bridge. The panel shows the children of the
-// ACTIVE scene: scene-link layers become video blocks, sound layers
-// become audio blocks. When the active scene has no link/sound children
-// (e.g. the user dove into a child scene), the panel keeps showing the
-// last scene that had blocks instead of blanking. The playhead tracks
-// the shown scene both ways; block drags/trims write back into the
-// layers' duration rectangles on mouse release.
+// Edit-timeline semantic bridge. The panel mirrors the native timeline:
+// EVERY child layer of the ACTIVE scene shows here - sound layers become
+// audio blocks, every visual layer (scene links = scenes, vectors,
+// images, text, groups, ...) becomes a video block rendered with the
+// same real-content thumbnail logic. When the active scene has no
+// children at all (e.g. the user dove into an empty child scene), the
+// panel keeps showing the last scene that had blocks instead of
+// blanking. The playhead tracks the shown scene both ways; block
+// drags/trims write back into the layers' duration rectangles on mouse
+// release.
 //
 // Track semantics are aligned with the native "layer-as-track" model
 // (eBoxOrSound::trackId): a panel lane with several blocks IS a native
