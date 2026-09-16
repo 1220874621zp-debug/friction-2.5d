@@ -742,6 +742,9 @@ void eBoxOrSound::applyTrackId(const int id) {
     const int oldId = mTrackId;
     mTrackId = id;
     if(id < 0) setHiddenByTrack(false);
+    // edit-timeline panel mirrors tracks from this id (and must refresh
+    // on undo/redo too, which also funnels through here)
+    if(oldId != id) emit trackIdChanged(id);
     // re-resolve both the abandoned and the joined track (queued: this
     // may run inside an undo/redo or a drag&drop reparent)
     if(oldId >= 0 || id >= 0) {

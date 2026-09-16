@@ -208,6 +208,7 @@ signals:
     void soloChanged(bool);
     void shyChanged(bool);
     void labelColorChanged(const QColor&);
+    void trackIdChanged(const int id);
 private:
     void applyTrackId(const int id);
     void scheduleTrackEnforce() const;

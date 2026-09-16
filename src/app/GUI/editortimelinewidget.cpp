@@ -236,6 +236,20 @@ QString EditorTimelineWidget::timecode(double t) const
 
 QPixmap EditorTimelineWidget::thumbnailTile(const Clip &c, int h)
 {
+    // real rendered frame first: scaled to the strip height once, then
+    // repeated across the clip body like the placeholder tiles
+    const auto raw = m_realThumbs.constFind(c.id);
+    if (raw != m_realThumbs.constEnd() && !raw.value().isNull()) {
+        auto scaled = m_realScaled.constFind(c.id);
+        if (scaled == m_realScaled.constEnd() || scaled.value().height() != h) {
+            const QPixmap pm = QPixmap::fromImage(
+                        raw.value().scaledToHeight(h, Qt::SmoothTransformation));
+            if (scaled != m_realScaled.constEnd()) m_realScaled[c.id] = pm;
+            else m_realScaled.insert(c.id, pm);
+            return pm;
+        }
+        return scaled.value();
+    }
     // one tile per clip; repeated across the clip body
     const int tileW = qMax(48, int(h * 16.0 / 9.0));
     QString key = QStringLiteral("%1x%2").arg(c.id).arg(h);
@@ -822,6 +836,8 @@ void EditorTimelineWidget::clearAllClips()
     m_snapTarget = -1.0;
     m_clips.clear();
     m_thumbCache.clear();
+    m_realThumbs.clear();
+    m_realScaled.clear();
     emit selectionChanged(QString());
     updateScrollBar();
     update();
@@ -1029,4 +1045,12 @@ void EditorTimelineWidget::renameLanes()
         if (i < v) { m_tracks[i].name = QStringLiteral("V%1").arg(v - i); }
         else { m_tracks[i].name = QStringLiteral("A%1").arg(m_tracks.size() - i); }
     }
+}
+
+void EditorTimelineWidget::setClipThumbnail(const int clipId, const QImage &image)
+{
+    if (image.isNull()) return;
+    m_realThumbs.insert(clipId, image);
+    m_realScaled.remove(clipId);
+    update();
 }

@@ -4,6 +4,7 @@
 #include <QWidget>
 #include <QVector>
 #include <QPixmap>
+#include <QImage>
 #include <QHash>
 #include <QElapsedTimer>
 
@@ -117,6 +118,10 @@ private:
 
     QScrollBar *m_scrollBar = nullptr;
     QHash<QString, QPixmap> m_thumbCache;
+    // clipId -> real rendered frame (raw) and its height-matched pixmap;
+    // placeholder tiles stay in m_thumbCache and are only used as fallback
+    QHash<int, QImage> m_realThumbs;
+    QHash<int, QPixmap> m_realScaled;
 
     // theme
     QColor cBg       {0x1b,0x1b,0x1b};
@@ -152,6 +157,10 @@ public:
     QVector<ClipInfo> allClips() const;
     int videoTrackCount() const;
     void compactLanes();
+    // real content thumbnail for a video clip (async offscreen render of
+    // the linked scene, delivered by EditorTimelineSync); clips without
+    // one keep the procedural placeholder tile
+    void setClipThumbnail(const int clipId, const QImage &image);
 
 private:
     // ---- track merge (bridge extension): move every clip of srcTrack to
