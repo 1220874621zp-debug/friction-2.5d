@@ -101,6 +101,7 @@ private:
     double m_playhead = 2.0;
 
     int m_selected = -1;        // clip index
+    QString m_keepSelName;      // selection survives rebuilds by clip name
     int m_hover = -1;
 
     DragMode m_drag = DragMode::None;

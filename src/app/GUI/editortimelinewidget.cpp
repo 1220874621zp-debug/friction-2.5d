@@ -460,9 +460,15 @@ void EditorTimelineWidget::mousePressEvent(QMouseEvent *e)
     }
     if (e->button() != Qt::LeftButton) return;
 
-    // playhead: ruler area or near playhead line
+    // clips win over the playhead: a press on a block must never start a
+    // playhead drag, even when the block sits under the playhead line
+    QRectF r;
+    int idx = clipAt(e->pos(), &r);
+
+    // playhead: ruler area or near playhead line (when no clip is there)
     int phx = timeToX(m_playhead);
-    if (e->pos().y() <= rulerHeight() || qAbs(e->pos().x() - phx) <= 4) {
+    if (idx < 0 &&
+            (e->pos().y() <= rulerHeight() || qAbs(e->pos().x() - phx) <= 4)) {
         m_drag = DragMode::Playhead;
         m_playhead = qMax(0.0, xToTime(e->pos().x()));
         emitLog(QStringLiteral("playhead -> %1").arg(timecode(m_playhead)));
@@ -470,8 +476,6 @@ void EditorTimelineWidget::mousePressEvent(QMouseEvent *e)
         return;
     }
 
-    QRectF r;
-    int idx = clipAt(e->pos(), &r);
     if (idx >= 0) {
         m_selected = idx;
         const Clip &c = m_clips[idx];
@@ -779,6 +783,9 @@ void EditorTimelineWidget::emitLog(const QString &msg)
 
 void EditorTimelineWidget::clearAllClips()
 {
+    // remember the selection so the sync-driven rebuild can restore it
+    m_keepSelName = (m_selected >= 0 && m_selected < m_clips.size()) ?
+                m_clips[m_selected].name : QString();
     m_selected = -1;
     m_hover = -1;
     m_drag = DragMode::None;
@@ -807,6 +814,12 @@ int EditorTimelineWidget::appendClip(const QString &name,
     c.length = qMax(MIN_CLIP_LEN, lengthSec);
     c.hueSeed = c.id * 37;
     m_clips.push_back(c);
+    if (!m_keepSelName.isEmpty() && c.name == m_keepSelName) {
+        m_selected = m_clips.size() - 1;
+        emit selectionChanged(QStringLiteral("%1  [%2 → %3]")
+                              .arg(c.name, timecode(c.start),
+                                   timecode(c.start + c.length)));
+    }
     updateScrollBar();
     update();
     return c.id;
