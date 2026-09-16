@@ -522,6 +522,15 @@ void EditorTimelineWidget::mousePressEvent(QMouseEvent *e)
             m_drag = DragMode::TrimLeft;
         } else if (nearR) {
             m_drag = DragMode::TrimRight;
+            // snapshot same-track starts for the magnetic follow; the
+            // follow is recomputed from this every move so it is fully
+            // reversible while dragging
+            m_trimSnap.clear();
+            for (int i = 0; i < m_clips.size(); ++i) {
+                if (i != idx && m_clips[i].track == c.track) {
+                    m_trimSnap.append({i, m_clips[i].start});
+                }
+            }
         } else {
             m_drag = DragMode::MoveClip;
             m_grabOffsetSec = xToTime(e->pos().x()) - c.start;
@@ -600,6 +609,9 @@ void EditorTimelineWidget::mouseMoveEvent(QMouseEvent *e)
         double sT = snapTime(ne, m_dragClip, &snapped);
         if (snapped) { ne = sT; m_snapTarget = sT; }
         c.length = ne - c.start;
+        // magnetic follow: shortening the out point slides attached
+        // neighbours left; Alt keeps them in place for a plain trim
+        applyMagneticFollow(!(e->modifiers() & Qt::AltModifier));
         break;
     }
     default: break;
@@ -1053,4 +1065,30 @@ void EditorTimelineWidget::setClipThumbnail(const int clipId, const QImage &imag
     m_realThumbs.insert(clipId, image);
     m_realScaled.remove(clipId);
     update();
+}
+
+void EditorTimelineWidget::applyMagneticFollow(const bool active)
+{
+    if (m_drag != DragMode::TrimRight || m_dragClip < 0 ||
+            m_dragClip >= m_clips.size()) { return; }
+    const Clip &c = m_clips[m_dragClip];
+    const double oldEnd = m_origStart + m_origLength;
+    const double newEnd = c.start + c.length;
+    const double delta = oldEnd - newEnd; // > 0: the out point shortened
+    for (const auto &snap : m_trimSnap) {
+        if (snap.idx < 0 || snap.idx >= m_clips.size()) { continue; }
+        Clip &f = m_clips[snap.idx];
+        // followers = clips that started inside the trimmed-away span
+        // [newEnd, oldEnd] (a neighbour right at the old out point is the
+        // attached case); they all shift left by the same delta so their
+        // mutual spacing and overlaps survive. Everything else - and
+        // everything, when suppressed or lengthened back - restores its
+        // snapshot position, making the follow idempotent per move.
+        if (active && delta > 1e-9 &&
+                snap.start >= newEnd - 1e-9 && snap.start <= oldEnd + 1e-9) {
+            f.start = qMax(0.0, snap.start - delta);
+        } else {
+            f.start = snap.start;
+        }
+    }
 }

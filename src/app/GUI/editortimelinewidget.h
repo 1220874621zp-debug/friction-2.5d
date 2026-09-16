@@ -172,6 +172,17 @@ private:
     int takeDragTempLane(const ClipType type, const int y);
     int dropDragTempLane();
     void renameLanes();
+
+    // ---- magnetic follow (CapCut-style, bridge extension): trimming a
+    // clip's out point shorter slides every same-track clip that started
+    // inside the trimmed-away span left by the same delta, so a neighbour
+    // attached to the old out point stays attached to the new one. Alt
+    // while trimming suppresses it for a plain trim. Recomputed from the
+    // press-time snapshot every move, so lengthening back restores all
+    // positions (idempotent).
+    struct TrimSnap { int idx; double start; };
+    QVector<TrimSnap> m_trimSnap;
+    void applyMagneticFollow(const bool active);
 };
 
 #endif // EDITORTIMELINEWIDGET_H
