@@ -137,10 +137,10 @@ void EditorTimelineSync::rebuild()
             anyStored = true;
         }
         if (!anyStored) {
-            // default: contained order stacks bottom-up (item 0 at lane
-            // count-1 == V1/A1), matching the original one-per-track view
+            // default mirrors the native timeline row order: contained
+            // item 0 is the top row there, so it gets the top lane
             for (int k = 0; k < idxs.size(); ++k) {
-                lane[idxs[k]] = idxs.size() - 1 - k;
+                lane[idxs[k]] = k;
             }
             continue;
         }
@@ -177,8 +177,10 @@ void EditorTimelineSync::rebuild()
         double len = fallbackLen;
         const auto dur = it.layer->getDurationRectangle();
         if (dur && fps > 0.) {
-            const int minF = dur->getMinRelFrame();
-            const int maxF = dur->getMaxRelFrame();
+            // absolute frames: the native timeline draws and hit-tests
+            // the duration bar in abs space (durationrectangle.cpp draw)
+            const int minF = dur->getMinAbsFrame();
+            const int maxF = dur->getMaxAbsFrame();
             start = minF / fps;
             len = (maxF - minF + 1) / fps;
         }
@@ -244,8 +246,9 @@ void EditorTimelineSync::applyWriteback()
         if (!dur) { continue; }
         const int newMin = qRound(clip.start * fps);
         const int newMax = qRound((clip.start + clip.length) * fps) - 1;
-        const int oldMin = dur->getMinRelFrame();
-        const int oldMax = dur->getMaxRelFrame();
+        const int oldMin = dur->getMinAbsFrame();
+        const int oldMax = dur->getMaxAbsFrame();
+        // rel/abs shift is constant, so abs deltas are valid rel moves
         if (newMin != oldMin) {
             dur->startMinFramePosTransform();
             dur->moveMinFrame(newMin - oldMin);
