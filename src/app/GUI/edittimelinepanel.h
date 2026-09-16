@@ -19,251 +19,162 @@
 #
 */
 
-// NLE-style edit timeline panel, visually modeled 1:1 on the reference
-// screenshot (dark #262626 canvas, square-cornered clips, 22px teal
-// name strip, filmstrip thumbnails, teal waveform strip attached under
-// video clips, blue audio blocks, 2px light playhead).
-//
-// This file is UI-ONLY by design: the panel owns a plain data model
-// (EditTimelineData) and talks to the engine exclusively through the
-// EditTimelineApi interface below. EditTimelineApiStub feeds fake data
-// so the whole look & feel can be validated before the real adapter
-// (InternalLinkCanvas / DurationRectangle / queExternalRender) is
-// plugged in - swapping the stub is the only change needed then.
+// NLE-style edit timeline panel. UI/interaction ported verbatim from
+// the user's approved standalone demo (ceshi/TimelineDemo): track
+// header column (V2/V1/A1 badges), 30px ruler, rounded clips with a
+// 16px teal name bar + procedural filmstrip tile (video) or mirrored
+// 1px-line waveform (audio), green accent, red playhead, snap guide,
+// press-time trim/move modes with overlap-revert, wheel/Ctrl zoom.
+// Engine wiring plugs into this later; the widget is pure UI with no
+// core dependencies.
 
 #ifndef EDITTIMELINEPANEL_H
 #define EDITTIMELINEPANEL_H
 
 #include <QWidget>
-#include <QPointer>
-#include <QImage>
-#include <QHash>
-#include <QString>
-#include <QList>
 #include <QVector>
-#include <functional>
-#include <memory>
+#include <QPixmap>
+#include <QHash>
 
-class QComboBox;
-class QPushButton;
-class QLabel;
-class QTimer;
 class QScrollBar;
-class QPainter;
-class QMouseEvent;
-class QWheelEvent;
-class QKeyEvent;
-class QResizeEvent;
-class EditTimelineView;
-class EditTimelinePanel;
+class QToolBar;
+class QLabel;
+class QDialog;
+class QPlainTextEdit;
 
-// ------------------------------ data model ------------------------------
-// Pure presentation data. No engine types here on purpose: the future
-// engine adapter converts between these and scene/link objects.
-
-struct EditClip {
-    enum class Kind { Scene, Audio };
-    Kind kind = Kind::Scene;
-    QString name;
-    int startFrame = 0;       // position on the edit timeline
-    int durationFrames = 96;
-    int sourceInFrame = 0;    // source in-point (thumbnail mapping)
-    bool selected = false;
-};
-
-struct EditTrack {
-    enum class Kind { Video, Audio };
-    Kind kind = Kind::Video;
-    QString name;
-    QList<EditClip> clips;    // kept sorted by startFrame
-};
-
-struct EditTimelineData {
-    int fps = 25;
-    int playheadFrame = 0;
-    QList<EditTrack> tracks;  // visual order: index 0 = topmost
-};
-
-// ------------------------------ API layer ------------------------------
-// The single seam between this UI and the engine. UI drags mutate the
-// local data live and commit once on release through these calls; the
-// engine implementation is authoritative and may push back a reload.
-// All callbacks must be invoked on the UI thread.
-
-class EditTimelineApi {
-public:
-    virtual ~EditTimelineApi() = default;
-
-    virtual void load(EditTimelineData& out) = 0;
-    virtual void compositionNames(QStringList& out) = 0;
-    virtual void sceneNames(QStringList& out) = 0;
-
-    virtual void moveClip(const int trackIdx, const int clipIdx,
-                          const int newStart) = 0;
-    virtual void trimClip(const int trackIdx, const int clipIdx,
-                          const int newStart, const int newDuration) = 0;
-    virtual void moveClipToTrack(const int fromTrack, const int clipIdx,
-                                 const int toTrack) = 0;
-    virtual void setPlayhead(const int frame) = 0;
-    virtual void openClip(const int trackIdx, const int clipIdx) = 0;
-    virtual void addSceneClip(const int sceneIndex) = 0;
-    virtual void createComposition(int& newCompositionIndex) = 0;
-
-    // thumbnails/waveform fill asynchronously (or synchronously) into
-    // the caches keyed by the UI; key is opaque to the provider
-    virtual void requestThumb(const QString& key, const int seed,
-                              const QSize& size,
-                              std::function<void(const QString&,
-                                                 const QImage&)>) = 0;
-    virtual void requestWave(const QString& key, const int sampleCount,
-                             std::function<void(const QString&,
-                                                const QVector<qreal>&)>) = 0;
-};
-
-// Fake implementation: three tracks, a few clips, generated thumbnails
-// (teal gradients with a frame number) and pseudo waveforms. Replace
-// with the engine adapter when wiring the real data.
-class EditTimelineApiStub : public EditTimelineApi {
-public:
-    void load(EditTimelineData& out) override;
-    void compositionNames(QStringList& out) override;
-    void sceneNames(QStringList& out) override;
-
-    void moveClip(const int trackIdx, const int clipIdx,
-                  const int newStart) override;
-    void trimClip(const int trackIdx, const int clipIdx,
-                  const int newStart, const int newDuration) override;
-    void moveClipToTrack(const int fromTrack, const int clipIdx,
-                         const int toTrack) override;
-    void setPlayhead(const int frame) override;
-    void openClip(const int trackIdx, const int clipIdx) override;
-    void addSceneClip(const int sceneIndex) override;
-    void createComposition(int& newCompositionIndex) override;
-
-    void requestThumb(const QString& key, const int seed,
-                      const QSize& size,
-                      std::function<void(const QString&,
-                                         const QImage&)>) override;
-    void requestWave(const QString& key, const int sampleCount,
-                     std::function<void(const QString&,
-                                        const QVector<qreal>&)>) override;
-
-private:
-    EditTimelineData mData;
-    QStringList mScenes;
-    int mCompSeq = 0;
-};
-
-// ------------------------------ view ------------------------------
-// The custom-painted NLE surface: timecode ruler on top (with the
-// triangular playhead handle), then the tracks. Manual scrollbars:
-// horizontal one works in frame units, vertical one in pixel units.
-
-class EditTimelineView : public QWidget {
+class EditTimelineWidget : public QWidget {
     Q_OBJECT
 public:
-    explicit EditTimelineView(EditTimelinePanel* const panel);
+    explicit EditTimelineWidget(QWidget* parent = nullptr);
 
-    void dataChanged();
-    void updateScrollRanges();
+    void setScrollBar(QScrollBar* bar);
+    double playheadTime() const { return m_playhead; }
+
+public slots:
+    void addVideoClip();
+    void addAudioClip();
+    void removeSelectedClip();
+    void zoomIn();
+    void zoomOut();
+    void zoomFit();
+
+signals:
+    void logMessage(const QString& msg);
+    void selectionChanged(const QString& info);
+
 protected:
-    void paintEvent(QPaintEvent*) override;
-    void mousePressEvent(QMouseEvent* const e) override;
-    void mouseMoveEvent(QMouseEvent* const e) override;
-    void mouseReleaseEvent(QMouseEvent* const e) override;
-    void mouseDoubleClickEvent(QMouseEvent* const e) override;
-    void wheelEvent(QWheelEvent* const e) override;
-    void resizeEvent(QResizeEvent* const e) override;
-    void leaveEvent(QEvent* const e) override;
-    void keyPressEvent(QKeyEvent* const e) override;
+    void paintEvent(QPaintEvent* event) override;
+    void mousePressEvent(QMouseEvent* event) override;
+    void mouseMoveEvent(QMouseEvent* event) override;
+    void mouseReleaseEvent(QMouseEvent* event) override;
+    void mouseDoubleClickEvent(QMouseEvent* event) override;
+    void wheelEvent(QWheelEvent* event) override;
+    void keyPressEvent(QKeyEvent* event) override;
+    void leaveEvent(QEvent* event) override;
+    void resizeEvent(QResizeEvent* event) override;
+
 private:
-    enum class Drag { None, Pending, Playhead, Pan,
-                      Move, TrimMin, TrimMax, RowSwitch };
-    enum class Zone { None, Body, EdgeMin, EdgeMax };
-    struct Hit { int track = -1; int clip = -1; Zone zone = Zone::None; };
+    enum class ClipType { Video, Audio };
+    struct Clip {
+        int id = 0;
+        QString name;
+        ClipType type = ClipType::Video;
+        int track = 0;       // index into m_tracks
+        double start = 0.0;  // seconds
+        double length = 4.0; // seconds
+        int hueSeed = 0;     // thumbnail variation seed
+    };
+    struct Track {
+        QString name;
+        int height = 64;
+        ClipType type = ClipType::Video;
+    };
 
-    EditTimelinePanel* const mPanel;
-    QScrollBar* mHBar = nullptr;
-    QScrollBar* mVBar = nullptr;
-    qreal mPpf = 8.0;          // pixels per frame (zoom)
+    // ---- layout / mapping ----
+    int rulerHeight() const { return 30; }
+    int headerWidth() const { return 132; }
+    int trackY(int track) const;           // top y of track content
+    int trackAtY(int y) const;             // -1 if none
+    double xToTime(int x) const;           // content area x -> seconds
+    int timeToX(double t) const;           // seconds -> content area x
+    double contentDuration() const;        // right edge of content (seconds)
+    QRectF clipRect(const Clip& c) const;
 
-    Drag mDrag = Drag::None;
-    Zone mZone = Zone::None;
-    Hit mPressHit;
-    QPoint mPressPos;
-    QPoint mLastPanPos;
-    int mPressFrame = 0;
-    int mLastApplied = 0;
-    EditClip mDragBackup;      // pre-drag state for Esc/rollback
-    int mDragBackupTrack = -1;
-    int mGhostTrack = -1;      // RowSwitch target
+    // ---- painting ----
+    void drawRuler(QPainter& p);
+    void drawTrackHeaders(QPainter& p);
+    void drawTrackBodies(QPainter& p);
+    void drawClip(QPainter& p, int index, bool ghost = false);
+    void drawPlayhead(QPainter& p);
+    QPixmap thumbnailTile(const Clip& c, int h);
+    QString timecode(double t) const;
 
-    int firstViewedFrame() const;
-    qreal xAtFrame(const int frame) const;
-    int frameAtX(const int x) const;
-    int trackTop(const int trackIdx) const;
-    int trackHeight(const int trackIdx) const;
-    QRect clipRect(const int trackIdx, const int clipIdx) const;
-    Hit hitTest(const QPoint& pos) const;
-    int clipAtFrame(int trackIdx, int frame) const;
+    // ---- interaction ----
+    enum class DragMode { None, MoveClip, TrimLeft, TrimRight, Playhead };
+    int clipAt(const QPoint& pos, QRectF* rectOut = nullptr) const;
+    double snapTime(double t, int ignoreClipIdx, bool* snappedOut) const;
+    void applyZoom(double factor, int anchorX);
+    void clampView();
+    void updateScrollBar();
+    void emitLog(const QString& msg);
+    bool overlapsOnTrack(int track, double start, double len,
+                         int ignoreIdx) const;
 
-    void drawRuler(QPainter* const p);
-    void drawPlayhead(QPainter* const p);
-    void drawTrackBackground(QPainter* const p, const int trackIdx);
-    void drawClip(QPainter* const p, const int trackIdx, const int clipIdx,
-                  const QRect& rc);
-    void drawWaveform(QPainter* const p, const QRect& rc,
-                      const QVector<qreal>& samples, const QColor& color);
-    void requestClipAssets(const int trackIdx, const int clipIdx,
-                           const QRect& rc);
+    QVector<Track> m_tracks;
+    QVector<Clip> m_clips;
+    int m_nextId = 1;
 
-    void beginDragOp(const QPoint& pos);
-    void beginRowSwitch();
-    void applyMoveDelta(const int total);
-    void applyTrimDelta(const int total, const bool minEdge);
-    int snapDelta(const int unsnapped, const bool draggingEdge) const;
-    void commitDrag();
-    void rollbackDrag();
-    void setFrameFromX(const int x);
-    void updateHoverCursor(const QPoint& pos);
+    double m_pxPerSec = 60.0;
+    double m_scrollSec = 0.0;   // left edge in seconds
+    double m_playhead = 2.0;
+
+    int m_selected = -1;        // clip index
+    int m_hover = -1;
+
+    DragMode m_drag = DragMode::None;
+    int m_dragClip = -1;
+    double m_grabOffsetSec = 0.0; // move: cursor time - clip start
+    double m_origStart = 0.0;
+    double m_origLength = 0.0;
+    int m_origTrack = 0;
+    double m_snapTarget = -1.0;   // snap guide x (seconds), -1 = none
+    QPoint m_pressPos;
+
+    QScrollBar* m_scrollBar = nullptr;
+    QHash<QString, QPixmap> m_thumbCache;
+
+    // theme (ported verbatim from the approved demo)
+    QColor cBg       {0x1b, 0x1b, 0x1b};
+    QColor cBgAlt    {0x22, 0x22, 0x22};
+    QColor cRuler    {0x1d, 0x1d, 0x1d};
+    QColor cHeader   {0x24, 0x24, 0x26};
+    QColor cGridLine {0x2c, 0x2c, 0x2c};
+    QColor cText     {0xc8, 0xc8, 0xc8};
+    QColor cTextDim  {0x77, 0x77, 0x77};
+    QColor cAccent   {0x08, 0xa5, 0x81};
+    QColor cPlayhead {0xe8, 0x4c, 0x4c};
+    QColor cVideoBar {0x0e, 0x7d, 0x6c};
+    QColor cAudioBody{0x1d, 0x33, 0x52};
+    QColor cAudioWave{0x4f, 0x8f, 0xd6};
 };
-
-// ------------------------------ panel ------------------------------
 
 class EditTimelinePanel : public QWidget {
     Q_OBJECT
 public:
-    explicit EditTimelinePanel(QWidget* const parent = nullptr);
+    explicit EditTimelinePanel(QWidget* parent = nullptr);
 
-    // dock visibility gate: false = stop asset requests/timers
+    // dock visibility gate (kept for the mainwindow connection; the
+    // pure-UI widget has nothing to stop while hidden)
     void setListeningEnabled(const bool enabled);
 
-    // replace the stub with the engine adapter (kept for the wiring)
-    void setApi(EditTimelineApi* const api);
-
 private:
-    friend class EditTimelineView;
+    void showDebugLog();
 
-    void reload();
-    void rebuildCompositionCombo();
-    void updateTopBar();
-    void updateTimeLabel();
-
-    std::unique_ptr<EditTimelineApi> mApi;
-    EditTimelineData mData;
-
-    QComboBox* mSceneCombo = nullptr;
-    QPushButton* mNewSceneBtn = nullptr;
-    QPushButton* mAddClipBtn = nullptr;
-    QLabel* mTimeLabel = nullptr;
-    EditTimelineView* mView = nullptr;
-
-    bool mListening = false;
-    bool mComboGuard = false;
-
-    // asset caches, filled through the API (stub generates them)
-    QHash<QString, QImage> mThumbCache;
-    QHash<QString, QVector<qreal>> mWaveCache;
+    EditTimelineWidget* mTimeline = nullptr;
+    QToolBar* mToolBar = nullptr;
+    QLabel* mSelLabel = nullptr;
+    QPlainTextEdit* mLogView = nullptr;   // owned by the log dialog
+    QDialog* mLogDlg = nullptr;
 };
 
 #endif // EDITTIMELINEPANEL_H

@@ -1803,9 +1803,9 @@ void MainWindow::setupLayout()
                                 QStringLiteral("dockSwitchLayers"),
                                 mSwitchPanel);
 
-    // NLE-style edit timeline panel (CapCut-like visuals): pure UI layer
-    // fed by a replaceable EditTimelineApi (stub for now, the engine
-    // adapter plugs in later without touching the widgets)
+    // NLE-style edit timeline panel: UI/interaction ported verbatim
+    // from the user's approved TimelineDemo (pure UI, engine wiring
+    // plugs into the widget later)
     mEditTimelinePanel = new EditTimelinePanel(this);
     mEditTimelineDock = makeDock(tr("剪辑时间轴"),
                                  QStringLiteral("dockEditTimeline"),
