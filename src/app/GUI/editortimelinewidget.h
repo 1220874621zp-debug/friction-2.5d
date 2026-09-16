@@ -130,9 +130,21 @@ private:
 public:
     // ---- friction semantic bridge (appended section; every line above
     // is the byte-level TimelineDemo port and stays untouched) ----
+    struct ClipInfo {
+        int id = 0;
+        QString name;
+        double start = 0.;
+        double length = 0.;
+        int track = 0;
+        bool audio = false;
+    };
     void clearAllClips();
-    void appendSceneClip(const QString &name, const double startSec,
-                         const double lengthSec);
+    int appendClip(const QString &name, const double startSec,
+                   const double lengthSec, const bool audio,
+                   const int track);
+    void rebuildTracks(const int videoCount, const int audioCount);
+    void setPlayheadSec(const double t);
+    QVector<ClipInfo> allClips() const;
 };
 
 #endif // EDITORTIMELINEWIDGET_H

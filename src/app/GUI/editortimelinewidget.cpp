@@ -784,22 +784,60 @@ void EditorTimelineWidget::clearAllClips()
     update();
 }
 
-void EditorTimelineWidget::appendSceneClip(const QString &name,
-                                           const double startSec,
-                                           const double lengthSec)
+int EditorTimelineWidget::appendClip(const QString &name,
+                                     const double startSec,
+                                     const double lengthSec,
+                                     const bool audio,
+                                     const int track)
 {
     Clip c;
     c.id = m_nextId++;
     c.name = name;
-    c.type = ClipType::Video;
-    // bottom-most video track = V1 (the demo's primary edit track)
-    for (int i = m_tracks.size() - 1; i >= 0; --i) {
-        if (m_tracks[i].type == ClipType::Video) { c.track = i; break; }
-    }
+    c.type = audio ? ClipType::Audio : ClipType::Video;
+    c.track = m_tracks.isEmpty() ? 0 : qBound(0, track, m_tracks.size() - 1);
     c.start = qMax(0.0, startSec);
     c.length = qMax(MIN_CLIP_LEN, lengthSec);
     c.hueSeed = c.id * 37;
     m_clips.push_back(c);
     updateScrollBar();
     update();
+    return c.id;
+}
+
+void EditorTimelineWidget::rebuildTracks(const int videoCount,
+                                         const int audioCount)
+{
+    m_tracks.clear();
+    // top -> bottom: V<max> ... V1, then A<max> ... A1 (demo layout)
+    for (int i = videoCount; i >= 1; --i) {
+        m_tracks.append({QStringLiteral("V%1").arg(i), 60, ClipType::Video});
+    }
+    for (int i = audioCount; i >= 1; --i) {
+        m_tracks.append({QStringLiteral("A%1").arg(i), 52, ClipType::Audio});
+    }
+    updateScrollBar();
+    update();
+}
+
+void EditorTimelineWidget::setPlayheadSec(const double t)
+{
+    m_playhead = qMax(0.0, t);
+    update();
+}
+
+QVector<EditorTimelineWidget::ClipInfo> EditorTimelineWidget::allClips() const
+{
+    QVector<ClipInfo> out;
+    out.reserve(m_clips.size());
+    for (const Clip &c : m_clips) {
+        ClipInfo info;
+        info.id = c.id;
+        info.name = c.name;
+        info.start = c.start;
+        info.length = c.length;
+        info.track = c.track;
+        info.audio = c.type == ClipType::Audio;
+        out.append(info);
+    }
+    return out;
 }
