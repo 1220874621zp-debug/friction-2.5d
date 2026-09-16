@@ -50,10 +50,11 @@ EditorTimelineWindow::EditorTimelineWindow(QWidget *parent)
         "QToolButton:hover{background:#2b2b2b;border-color:#3a3a3a;}"
         "QToolButton:pressed{background:#08A581;color:#fff;}"));
 
-    QAction *aAddV = tb->addAction(QStringLiteral("+ 视频"));
-    QAction *aAddA = tb->addAction(QStringLiteral("+ 音频"));
+    // "+ video/audio" from the demo stay out: they add fake clips that
+    // the next rebuild discards - the real panel mirrors scene layers.
+    // Keeping the bar short also matters: a narrow bottom dock would
+    // push later actions into the toolbar overflow menu and hide them
     QAction *aDel  = tb->addAction(QStringLiteral("删除"));
-    tb->addSeparator();
     // CapCut-style magnetic mode: no gaps within a track (turning it on
     // compacts immediately; drag/trim releases keep it compact)
     QAction *aMag = tb->addAction(QStringLiteral("磁吸"));
@@ -66,8 +67,6 @@ EditorTimelineWindow::EditorTimelineWindow(QWidget *parent)
     tb->addSeparator();
     QAction *aLog = tb->addAction(QStringLiteral("调试日志"));
 
-    connect(aAddV, &QAction::triggered, m_timeline, &EditorTimelineWidget::addVideoClip);
-    connect(aAddA, &QAction::triggered, m_timeline, &EditorTimelineWidget::addAudioClip);
     connect(aDel,  &QAction::triggered, m_timeline, &EditorTimelineWidget::removeSelectedClip);
     connect(aMag, &QAction::toggled, m_timeline, &EditorTimelineWidget::setMagnetic);
     connect(aZi,   &QAction::triggered, m_timeline, &EditorTimelineWidget::zoomIn);
