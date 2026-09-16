@@ -519,7 +519,19 @@ void Canvas::bonePoseMove(const eMouseEvent& e) {
     } else {
         const QPointF delta = e.fPos - mPoseMoveLast;
         mPoseMoveLast = e.fPos;
-        transform->translate(delta.x(), delta.y());
+        // the position animator stores PARENT-space values: a scene-
+        // space drag delta must be carried through the parent's
+        // inverse transform first. Without this, a bone linked under
+        // a rotated parent (Bone Parent tool) drifts along the wrong
+        // axes - e.g. a 90-degree parent turns a left-drag into an
+        // up/down move. Mapping two points cancels the translation
+        // and yields the linear-part inverse for the delta.
+        QPointF relDelta = delta;
+        if(const auto parent = mPoseBone->getParentGroup()) {
+            relDelta = parent->mapAbsPosToRel(e.fPos) -
+                       parent->mapAbsPosToRel(e.fPos - delta);
+        }
+        transform->translate(relDelta.x(), relDelta.y());
     }
     mPoseMoved = true;
     mPoseBone->planUpdate(UpdateReason::userChange);
