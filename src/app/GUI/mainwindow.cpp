@@ -74,6 +74,8 @@
 #include "projectpanel.h"
 #include "switchpanel.h"
 #include "editortimelinewindow.h"
+#include "editortimelinewidget.h"
+#include "editortimelinesync.h"
 #include <QShortcut>
 #include "textanimpresetpanel.h"
 #include "scriptmanager.h"
@@ -1804,12 +1806,16 @@ void MainWindow::setupLayout()
                                 mSwitchPanel);
 
     // NLE-style edit timeline panel: TimelineDemo's MainWindow ported
-    // verbatim (byte-level copy of the demo sources; pure UI, engine
-    // wiring comes later)
+    // verbatim (byte-level copy of the demo sources); scenes map to
+    // video blocks through the appended semantic bridge
     mEditorTimelineWindow = new EditorTimelineWindow(this);
     mEditorTimelineDock = makeDock(tr("剪辑时间轴"),
                                    QStringLiteral("dockEditorTimeline"),
                                    mEditorTimelineWindow);
+    mEditorTimelineSync = new EditorTimelineSync(
+                mDocument,
+                mEditorTimelineWindow->findChild<EditorTimelineWidget*>(),
+                this);
 
     setCentralWidget(mStackWidget);
     addDockWidget(Qt::RightDockWidgetArea, mFillStrokeDock);
@@ -1836,6 +1842,11 @@ void MainWindow::setupLayout()
             this, [this](const bool visible) {
         if(!mSwitchPanel) return;
         mSwitchPanel->setListeningEnabled(visible);
+    });
+    // edit timeline: refresh the scene -> clip mapping when reopened
+    connect(mEditorTimelineDock, &QDockWidget::visibilityChanged,
+            this, [this](const bool visible) {
+        if (visible && mEditorTimelineSync) { mEditorTimelineSync->rebuild(); }
     });
 
     // window-level Space shortcut: playback toggles from any focus

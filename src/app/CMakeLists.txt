@@ -230,6 +230,7 @@ set(
     GUI/switchpanel.cpp
     GUI/editortimelinewindow.cpp
     GUI/editortimelinewidget.cpp
+    GUI/editortimelinesync.cpp
     GUI/textanimpresetpanel.cpp
     GUI/timelinebasewrappernode.cpp
     GUI/timelinedockwidget.cpp
@@ -305,6 +306,7 @@ set(
     GUI/timelinedockwidget.h
     GUI/editortimelinewindow.h
     GUI/editortimelinewidget.h
+    GUI/editortimelinesync.h
     GUI/topviewwindow.h
     GUI/timelinehighlightwidget.h
     GUI/timelinewidget.h

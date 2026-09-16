@@ -126,6 +126,13 @@ private:
     QColor cVideoBar {0x0e,0x7d,0x6c}; // clip name bar (teal)
     QColor cAudioBody{0x1d,0x33,0x52}; // audio body (dark blue)
     QColor cAudioWave{0x4f,0x8f,0xd6};
+
+public:
+    // ---- friction semantic bridge (appended section; every line above
+    // is the byte-level TimelineDemo port and stays untouched) ----
+    void clearAllClips();
+    void appendSceneClip(const QString &name, const double startSec,
+                         const double lengthSec);
 };
 
 #endif // EDITORTIMELINEWIDGET_H

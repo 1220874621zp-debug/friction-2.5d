@@ -765,3 +765,41 @@ void EditorTimelineWidget::emitLog(const QString &msg)
     emit logMessage(QStringLiteral("[%1] %2")
                     .arg(QDateTime::currentDateTime().toString(QStringLiteral("HH:mm:ss")), msg));
 }
+
+// ================= friction semantic bridge =================
+// Appended section; every line above is the byte-level TimelineDemo
+// port and stays untouched. Driven by EditorTimelineSync.
+
+void EditorTimelineWidget::clearAllClips()
+{
+    m_selected = -1;
+    m_hover = -1;
+    m_drag = DragMode::None;
+    m_dragClip = -1;
+    m_snapTarget = -1.0;
+    m_clips.clear();
+    m_thumbCache.clear();
+    emit selectionChanged(QString());
+    updateScrollBar();
+    update();
+}
+
+void EditorTimelineWidget::appendSceneClip(const QString &name,
+                                           const double startSec,
+                                           const double lengthSec)
+{
+    Clip c;
+    c.id = m_nextId++;
+    c.name = name;
+    c.type = ClipType::Video;
+    // bottom-most video track = V1 (the demo's primary edit track)
+    for (int i = m_tracks.size() - 1; i >= 0; --i) {
+        if (m_tracks[i].type == ClipType::Video) { c.track = i; break; }
+    }
+    c.start = qMax(0.0, startSec);
+    c.length = qMax(MIN_CLIP_LEN, lengthSec);
+    c.hueSeed = c.id * 37;
+    m_clips.push_back(c);
+    updateScrollBar();
+    update();
+}
