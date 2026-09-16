@@ -99,6 +99,9 @@ static LONG WINAPI writeCrashMiniDump(EXCEPTION_POINTERS* const pep) {
 #include <QProxyStyle>
 #include <QStyleFactory>
 #include <QPainter>
+#include <QTimer>
+#include <QToolTip>
+#include <QToolButton>
 
 namespace {
 
@@ -664,6 +667,60 @@ int main(int argc, char *argv[])
                  renderHandler,
                  openProject);
     w.show();
+
+    // dev-only tooltip probe: FRICTION_TIPPROBE=1 runs the real app,
+    // hovers the first toolbox button, grabs the QTipLabel and dumps
+    // metrics + png, then quits - reproduces the reported vertical
+    // text mis-centering inside the real process
+    if (qEnvironmentVariableIsSet("FRICTION_TIPPROBE")) {
+        QTimer::singleShot(1500, &w, [&w]() {
+            QToolButton* btn = nullptr;
+            for (auto* wid : QApplication::allWidgets()) {
+                const auto tb = qobject_cast<QToolButton*>(wid);
+                if (tb && tb->objectName() == QStringLiteral("ToolBoxButton")
+                    && !tb->toolTip().isEmpty()) {
+                    btn = tb; break;
+                }
+            }
+            if (!btn) {
+                qWarning() << "[TIPPROBE] no toolbox button found";
+                QApplication::exit(3);
+                return;
+            }
+            qWarning() << "[TIPPROBE] button:" << btn->toolTip()
+                       << "btnFont:" << btn->font().toString()
+                       << "appFont:" << QApplication::font().toString()
+                       << "dpr:" << qApp->devicePixelRatio();
+            QToolTip::showText(btn->mapToGlobal(QPoint(4, 4)),
+                               btn->toolTip(), btn, btn->rect());
+            QTimer::singleShot(400, &w, [btn]() {
+                QWidget* tip = nullptr;
+                for (auto* wid : QApplication::allWidgets()) {
+                    if (strcmp(wid->metaObject()->className(),
+                               "QTipLabel") == 0) {
+                        tip = wid; break;
+                    }
+                }
+                if (!tip) {
+                    qWarning() << "[TIPPROBE] no QTipLabel";
+                    QApplication::exit(4);
+                    return;
+                }
+                const auto m = tip->contentsMargins();
+                qWarning() << "[TIPPROBE] tip size:" << tip->size()
+                           << "sizeHint:" << tip->sizeHint()
+                           << "font:" << tip->font().toString()
+                           << "fmH:" << QFontMetrics(tip->font()).height()
+                           << "margins:" << m
+                           << "text:" << tip->property("text").toString();
+                const QImage img = tip->grab().toImage();
+                img.save(QStringLiteral("tipprobe.png"));
+                qWarning() << "[TIPPROBE] saved tipprobe.png"
+                           << img.size();
+                QApplication::exit(0);
+            });
+        });
+    }
 
     splash.finish(&w);
 
