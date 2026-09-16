@@ -73,6 +73,7 @@
 #include "quickeffectsearchdialog.h"
 #include "projectpanel.h"
 #include "switchpanel.h"
+#include "edittimelinepanel.h"
 #include <QShortcut>
 #include "textanimpresetpanel.h"
 #include "scriptmanager.h"
@@ -1586,6 +1587,9 @@ void MainWindow::rebuildWorkspaceMenu()
     if (mSwitchPanelDock) {
         panelsMenu->addAction(mSwitchPanelDock->toggleViewAction());
     }
+    if (mEditTimelineDock) {
+        panelsMenu->addAction(mEditTimelineDock->toggleViewAction());
+    }
     // the script console toggle lives in the Scripts menu only;
     // listing it here too showed the same entry twice
 
@@ -1799,6 +1803,14 @@ void MainWindow::setupLayout()
                                 QStringLiteral("dockSwitchLayers"),
                                 mSwitchPanel);
 
+    // NLE-style edit timeline panel: scenes as clips stitched on
+    // tracks; the edit composition is an ordinary scene holding
+    // InternalLinkCanvas blocks (pure UI layer over the engine)
+    mEditTimelinePanel = new EditTimelinePanel(mDocument, this);
+    mEditTimelineDock = makeDock(tr("剪辑时间轴"),
+                                 QStringLiteral("dockEditTimeline"),
+                                 mEditTimelinePanel);
+
     setCentralWidget(mStackWidget);
     addDockWidget(Qt::RightDockWidgetArea, mFillStrokeDock);
     addDockWidget(Qt::RightDockWidgetArea, mPropertiesDock);
@@ -1809,11 +1821,14 @@ void MainWindow::setupLayout()
 
     addDockWidget(Qt::RightDockWidgetArea, mTextAnimDock);
     addDockWidget(Qt::RightDockWidgetArea, mSwitchPanelDock);
+    // the edit timeline wants the wide bottom zone beside the timeline
+    addDockWidget(Qt::BottomDockWidgetArea, mEditTimelineDock);
 
     // hidden by default, can be opened from the Panels menu
     mEasingDock->hide();
     mTextAnimDock->hide();
     mSwitchPanelDock->hide();
+    mEditTimelineDock->hide();
 
     // switch panel listening is gated on the dock being visible:
     // closed = all scene/group signal connections dropped (zero cost)
@@ -1821,6 +1836,13 @@ void MainWindow::setupLayout()
             this, [this](const bool visible) {
         if(!mSwitchPanel) return;
         mSwitchPanel->setListeningEnabled(visible);
+    });
+    // same gate for the edit timeline panel (thumbnail renders stop
+    // too)
+    connect(mEditTimelineDock, &QDockWidget::visibilityChanged,
+            this, [this](const bool visible) {
+        if(!mEditTimelinePanel) return;
+        mEditTimelinePanel->setListeningEnabled(visible);
     });
 
     // window-level Space shortcut: playback toggles from any focus

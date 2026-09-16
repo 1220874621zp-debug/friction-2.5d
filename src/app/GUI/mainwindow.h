@@ -280,6 +280,8 @@ private:
     class TextAnimPresetPanel *mTextAnimPanel = nullptr;
     QDockWidget *mSwitchPanelDock = nullptr;
     class SwitchPanel *mSwitchPanel = nullptr;
+    QDockWidget *mEditTimelineDock = nullptr;
+    class EditTimelinePanel *mEditTimelinePanel = nullptr;
     EffectsPresetsPanel *mEffectsPresetsPanel = nullptr;
     QuickEffectSearchDialog *mQuickEffectSearch = nullptr;
     // JS plugin system (Scripts menu + console dock)
