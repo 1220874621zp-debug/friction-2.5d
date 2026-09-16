@@ -481,6 +481,7 @@ void EditorTimelineWidget::mousePressEvent(QMouseEvent *e)
         m_origStart = c.start;
         m_origLength = c.length;
         m_origTrack = c.track;
+        m_dragTempLane = -1;
 
         bool nearL = qAbs(e->pos().x() - r.left()) <= TRIM_PX;
         bool nearR = qAbs(e->pos().x() - r.right()) <= TRIM_PX;
@@ -531,16 +532,19 @@ void EditorTimelineWidget::mouseMoveEvent(QMouseEvent *e)
         double snappedT = snapTime(newStart, m_dragClip, &snapped);
         if (snapped) { newStart = snappedT; m_snapTarget = snappedT; }
 
-        // track switching: only to a compatible track
+        // free track switching == merge/separate: a same-type lane under
+        // the cursor takes the clip as-is (overlaps allowed == merging
+        // into that track); hovering outside every same-type lane parks
+        // the clip on a new lane of its own (== separating)
         int tr = trackAtY(e->pos().y());
-        if (tr < 0) tr = c.track;
-        if (m_tracks[tr].type != c.type) tr = c.track;
-
-        // overlap constraint: revert if colliding
-        if (!overlapsOnTrack(tr, newStart, c.length, m_dragClip)) {
-            c.start = newStart;
-            c.track = tr;
+        const bool sameType = tr >= 0 && m_tracks[tr].type == c.type;
+        if (sameType && tr != m_dragTempLane) {
+            const int removed = dropDragTempLane();
+            c.track = (removed >= 0 && tr > removed) ? tr - 1 : tr;
+        } else if (!sameType) {
+            c.track = takeDragTempLane(c.type, e->pos().y());
         }
+        c.start = newStart;
         break;
     }
     case DragMode::TrimLeft: {
@@ -550,10 +554,10 @@ void EditorTimelineWidget::mouseMoveEvent(QMouseEvent *e)
         bool snapped = false;
         double sT = snapTime(ns, m_dragClip, &snapped);
         if (snapped) { ns = sT; m_snapTarget = sT; }
-        if (!overlapsOnTrack(c.track, ns, end - ns, m_dragClip)) {
-            c.start = ns;
-            c.length = end - ns;
-        }
+        // merged tracks may overlap: trimming into a neighbour is allowed,
+        // the user resolves overlaps by dragging / trimming on purpose
+        c.start = ns;
+        c.length = end - ns;
         break;
     }
     case DragMode::TrimRight: {
@@ -562,8 +566,7 @@ void EditorTimelineWidget::mouseMoveEvent(QMouseEvent *e)
         bool snapped = false;
         double sT = snapTime(ne, m_dragClip, &snapped);
         if (snapped) { ne = sT; m_snapTarget = sT; }
-        if (!overlapsOnTrack(c.track, c.start, ne - c.start, m_dragClip))
-            c.length = ne - c.start;
+        c.length = ne - c.start;
         break;
     }
     default: break;
@@ -598,6 +601,7 @@ void EditorTimelineWidget::mouseReleaseEvent(QMouseEvent *e)
     }
     m_drag = DragMode::None;
     m_dragClip = -1;
+    m_dragTempLane = -1;
     m_snapTarget = -1.0;
     update();
 }
@@ -779,6 +783,7 @@ void EditorTimelineWidget::clearAllClips()
     m_hover = -1;
     m_drag = DragMode::None;
     m_dragClip = -1;
+    m_dragTempLane = -1;
     m_snapTarget = -1.0;
     m_clips.clear();
     m_thumbCache.clear();
@@ -810,6 +815,7 @@ int EditorTimelineWidget::appendClip(const QString &name,
 void EditorTimelineWidget::rebuildTracks(const int videoCount,
                                          const int audioCount)
 {
+    m_dragTempLane = -1;
     m_tracks.clear();
     // top -> bottom: V<max> ... V1, then A<max> ... A1 (demo layout)
     for (int i = videoCount; i >= 1; --i) {
@@ -902,6 +908,7 @@ void EditorTimelineWidget::mergeTrackInto(const int src, const int dst)
 
 void EditorTimelineWidget::compactLanes()
 {
+    m_dragTempLane = -1;
     const int oldVideo = videoTrackCount();
     const int oldAudio = m_tracks.size() - oldVideo;
     QVector<int> vUsed, aUsed;
@@ -927,4 +934,58 @@ void EditorTimelineWidget::compactLanes()
     rebuildTracks(vUsed.size(), aUsed.size());
     updateScrollBar();
     update();
+}
+
+int EditorTimelineWidget::takeDragTempLane(const ClipType type, const int y)
+{
+    if (m_dragTempLane >= 0 && m_dragTempLane < m_tracks.size()
+            && m_tracks[m_dragTempLane].type == type) {
+        return m_dragTempLane;
+    }
+    int top, bottom;
+    if (type == ClipType::Video) {
+        top = 0;
+        bottom = videoTrackCount();
+    } else {
+        top = videoTrackCount();
+        bottom = m_tracks.size();
+    }
+    // cursor above the type group -> new lane on top, else at the bottom
+    const int idx = (bottom > top && y >= trackY(top)) ? bottom : top;
+    m_tracks.insert(idx, {QString(),
+                          type == ClipType::Video ? 60 : 52,
+                          type});
+    for (Clip &cc : m_clips) {
+        if (cc.track >= idx) { cc.track += 1; }
+    }
+    m_dragTempLane = idx;
+    renameLanes();
+    updateScrollBar();
+    update();
+    return idx;
+}
+
+int EditorTimelineWidget::dropDragTempLane()
+{
+    const int idx = m_dragTempLane;
+    m_dragTempLane = -1;
+    if (idx < 0 || idx >= m_tracks.size()) { return -1; }
+    // only ever occupied by the dragged clip itself
+    m_tracks.removeAt(idx);
+    for (Clip &cc : m_clips) {
+        if (cc.track > idx) { cc.track -= 1; }
+    }
+    renameLanes();
+    updateScrollBar();
+    update();
+    return idx;
+}
+
+void EditorTimelineWidget::renameLanes()
+{
+    const int v = videoTrackCount();
+    for (int i = 0; i < m_tracks.size(); ++i) {
+        if (i < v) { m_tracks[i].name = QStringLiteral("V%1").arg(v - i); }
+        else { m_tracks[i].name = QStringLiteral("A%1").arg(m_tracks.size() - i); }
+    }
 }

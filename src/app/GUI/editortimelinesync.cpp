@@ -254,6 +254,7 @@ bool EditorTimelineSync::eventFilter(QObject * const obj, QEvent * const ev)
                 mDragging = false;
                 syncPlayheadToDoc();
                 applyWriteback();
+                mWidget->compactLanes();      // drop lanes emptied by the drag
                 storeTrackAssignments();
                 rebuild();
                 mRebuildQueued = false;

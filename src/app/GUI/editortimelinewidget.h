@@ -109,6 +109,7 @@ private:
     double m_origStart = 0.0;
     double m_origLength = 0.0;
     int m_origTrack = 0;
+    int m_dragTempLane = -1;   // live-inserted lane while dragging outside
     double m_snapTarget = -1.0;   // for drawing snap guide, -1 = none
     QPoint m_pressPos;
 
@@ -148,12 +149,18 @@ public:
     void setPlayheadSec(const double t);
     QVector<ClipInfo> allClips() const;
     int videoTrackCount() const;
+    void compactLanes();
 
 private:
     // ---- track merge (bridge extension): move every clip of srcTrack to
     // dstTrack (same type, overlaps allowed), then drop emptied lanes ----
     void mergeTrackInto(const int srcTrack, const int dstTrack);
-    void compactLanes();
+    // free drag keeps the dragged clip on a throwaway lane while it hovers
+    // outside every same-type lane: releasing there == separating to its
+    // own lane (merge/separate without touching the context menu)
+    int takeDragTempLane(const ClipType type, const int y);
+    int dropDragTempLane();
+    void renameLanes();
 };
 
 #endif // EDITORTIMELINEWIDGET_H
