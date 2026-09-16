@@ -139,28 +139,41 @@ public:
     }
 
 protected:
-    // custom drag payload: scenes drag as their raw pointer in our
-    // private mime format, file assets drag as their file url (the
-    // canvas already accepts url drops as imports)
+    // custom drag payload: scenes drag as their raw pointers (one per
+    // line - multi-select drags link every selected scene) in our
+    // private mime format, file assets drag as their file urls (the
+    // canvas already accepts url drops as imports); a mixed selection
+    // carries both
     void startDrag(Qt::DropActions) {
-        const auto item = currentItem();
-        if (!item) { return; }
-        const auto scene = reinterpret_cast<Canvas*>(
-                    item->data(0, kScenePtrRole).toULongLong());
-        auto mimeData = new QMimeData;
-        if (scene) {
-            mimeData->setData(ProjectPanel::sMimeFormat(),
-                              QByteArray::number(
-                                  reinterpret_cast<qulonglong>(scene)));
-        } else {
+        // collect every selected row, not just the current one, so a
+        // rubber-band / ctrl selection drags as a whole
+        QList<QTreeWidgetItem*> rows = selectedItems();
+        const auto cur = currentItem();
+        if (cur && !rows.contains(cur)) { rows.prepend(cur); }
+        QList<QByteArray> scenePtrs;
+        QList<QUrl> fileUrls;
+        for (const auto item : rows) {
+            const auto scene = reinterpret_cast<Canvas*>(
+                        item->data(0, kScenePtrRole).toULongLong());
+            if (scene) {
+                scenePtrs << QByteArray::number(
+                            reinterpret_cast<qulonglong>(scene));
+                continue;
+            }
             const auto handler = reinterpret_cast<FileCacheHandler*>(
                         item->data(0, kFilePtrRole).toULongLong());
-            if (!handler) { delete mimeData; return; }
-            mimeData->setUrls({QUrl::fromLocalFile(handler->path())});
+            if (handler) { fileUrls << QUrl::fromLocalFile(handler->path()); }
         }
+        if (scenePtrs.isEmpty() && fileUrls.isEmpty()) { return; }
+        auto mimeData = new QMimeData;
+        if (!scenePtrs.isEmpty()) {
+            mimeData->setData(ProjectPanel::sMimeFormat(),
+                              scenePtrs.join('\n'));
+        }
+        if (!fileUrls.isEmpty()) { mimeData->setUrls(fileUrls); }
         QDrag drag(this);
         drag.setMimeData(mimeData);
-        const auto pm = item->icon(0).pixmap(32, 32);
+        const auto pm = cur ? cur->icon(0).pixmap(32, 32) : QPixmap();
         if (!pm.isNull()) {
             drag.setPixmap(pm);
             drag.setHotSpot(QPoint(pm.width() / 2, pm.height() / 2));

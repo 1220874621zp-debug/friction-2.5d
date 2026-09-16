@@ -1130,18 +1130,30 @@ bool CanvasWindow::handleSceneDrop(QDropEvent * const event)
     event->acceptProposedAction();
     if (!mCurrentCanvas) { return true; }
 
-    const auto raw = reinterpret_cast<Canvas*>(
-                mimeData->data(ProjectPanel::sMimeFormat()).toULongLong());
-    // validate the raw pointer against the live scene list
-    Canvas* scene = nullptr;
-    for (const auto& scenePtr : mDocument.fScenes) {
-        if (scenePtr.get() == raw) { scene = raw; break; }
+    // one raw scene pointer per line (multi-select drag from the
+    // project panel); a single-line payload is the legacy format
+    const QList<QByteArray> rawList =
+            mimeData->data(ProjectPanel::sMimeFormat()).split('\n');
+    QList<Canvas*> scenes;
+    bool sawForeign = false;
+    for (const auto& raw : rawList) {
+        const auto ptr = reinterpret_cast<Canvas*>(raw.toULongLong());
+        // validate each raw pointer against the live scene list
+        Canvas* scene = nullptr;
+        for (const auto& scenePtr : mDocument.fScenes) {
+            if (scenePtr.get() == ptr) { scene = ptr; break; }
+        }
+        if (!scene) { continue; }
+        if (scene == mCurrentCanvas) {
+            sawForeign = true; // self-link rejected below, others go on
+            continue;
+        }
+        if (!scenes.contains(scene)) { scenes << scene; }
     }
-    if (!scene) { return true; }
 
-    const auto mwd = MainWindow::sGetInstance();
-    if (scene == mCurrentCanvas) {
-        if (mwd && mwd->statusBar()) {
+    if (scenes.isEmpty()) {
+        const auto mwd = MainWindow::sGetInstance();
+        if (mwd && mwd->statusBar() && sawForeign) {
             mwd->statusBar()->showMessage(
                         tr("Cannot link a scene to itself"), 5000);
         }
@@ -1151,9 +1163,12 @@ bool CanvasWindow::handleSceneDrop(QDropEvent * const event)
     // same link the canvas right-click "Link Scene" menu creates; the
     // link keeps the scene's own position - the drag is only a shortcut
     // for the linking action, it must not move the content
-    const auto newLink = scene->createLink(false);
-    mCurrentCanvas->getCurrentGroup()->addContained(newLink);
-    newLink->centerPivotPosition();
+    const auto group = mCurrentCanvas->getCurrentGroup();
+    for (const auto& scene : scenes) {
+        const auto newLink = scene->createLink(false);
+        group->addContained(newLink);
+        newLink->centerPivotPosition();
+    }
     Document::sInstance->actionFinished();
     return true;
 }
