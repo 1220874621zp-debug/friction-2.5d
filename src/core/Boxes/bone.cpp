@@ -536,11 +536,15 @@ void Bone::prp_setupTreeViewMenu(PropertyMenu * const menu) {
     const QIcon icon = QIcon::fromTheme("group");
     menu->addPlainAction<Bone>(
                 icon,
-                tr("Bind Selected Layers to This Bone"),
+                // Bone has no Q_OBJECT of its own: a bare tr() would
+                // resolve to ContainerBox's context and miss the
+                // translation - use QObject::tr like the rest of this
+                // file (lupdate and runtime then agree on "QObject")
+                QObject::tr("Bind Selected Layers to This Bone"),
                 [](Bone* const bone) { bone->bindSelectedLayers(); });
     menu->addPlainAction<Bone>(
                 icon,
-                tr("Unbind Layers"),
+                QObject::tr("Unbind Layers"),
                 [](Bone* const bone) { bone->unbindLayers(); });
     ContainerBox::prp_setupTreeViewMenu(menu);
 }

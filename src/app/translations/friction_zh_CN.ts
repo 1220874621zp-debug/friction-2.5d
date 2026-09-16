@@ -1531,19 +1531,6 @@ Friction 正在运行，可直接发送指令开始创作
         </message>
     </context>
     <context>
-        <name>Bone</name>
-        <message>
-            <location filename="../../core/Boxes/bone.cpp" line="539" />
-            <source>Bind Selected Layers to This Bone</source>
-            <translation>绑定选中图层到此骨骼</translation>
-        </message>
-        <message>
-            <location filename="../../core/Boxes/bone.cpp" line="543" />
-            <source>Unbind Layers</source>
-            <translation>解绑图层</translation>
-        </message>
-    </context>
-    <context>
         <name>BoolProperty</name>
         <message>
             <location filename="../../core/Properties/boolproperty.cpp" line="60" />
@@ -9224,7 +9211,7 @@ Select the layers you want to import:</source>
             <source>Follow Object (Relative)</source>
             <translation>跟随对象（相对）</translation>
         </message>
-    </context>
+    <message><source>Bind Selected Layers to This Bone</source><translation>绑定选中图层到此骨骼</translation></message><message><source>Unbind Layers</source><translation>解绑图层</translation></message></context>
     <context>
         <name>QrealAnimator</name>
         <message>
