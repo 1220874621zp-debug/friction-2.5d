@@ -13,12 +13,12 @@ class EditorTimelineWidget;
 class eBoxOrSound;
 
 // Edit-timeline semantic bridge. The panel shows the children of the
-// ACTIVE scene only: scene-link layers become video blocks (one per
-// video track), sound layers become audio blocks. The playhead tracks
-// the document frame both ways; block drags/trims write back into the
-// layers' duration rectangles on mouse release. The demo UI
-// (editortimelinewidget) stays a byte-level TimelineDemo port and is
-// only driven through its appended public API.
+// ACTIVE scene: scene-link layers become video blocks, sound layers
+// become audio blocks. When the active scene has no link/sound children
+// (e.g. the user dove into a child scene), the panel keeps showing the
+// last scene that had blocks instead of blanking. The playhead tracks
+// the shown scene both ways; block drags/trims write back into the
+// layers' duration rectangles on mouse release.
 class EditorTimelineSync : public QObject
 {
     Q_OBJECT
@@ -34,15 +34,17 @@ public slots:
     void updatePlayheadFromDoc();
 
 private:
-    void connectActiveScene();
-    void connectChildren();
+    void connectPanelScene(Canvas * const scene);
+    void connectChildren(Canvas * const scene);
     void syncPlayheadToDoc();
     void applyWriteback();
     void storeTrackAssignments();
 
     Document &mDocument;
     QPointer<EditorTimelineWidget> mWidget;
-    QPointer<Canvas> mActiveScene;
+    // scene whose children the panel shows: the active scene, or the
+    // last one that had blocks when the active scene has none
+    QPointer<Canvas> mPanelScene;
     QHash<int, QPointer<eBoxOrSound>> mClipToLayer;
     // per-layer lane within its type group (video lanes 0.., audio lanes
     // 0..), remembered in-session so merged tracks and manual track moves

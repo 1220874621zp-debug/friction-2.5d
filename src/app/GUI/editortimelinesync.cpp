@@ -34,14 +34,12 @@ EditorTimelineSync::EditorTimelineSync(Document &document,
     rebuild();
 }
 
-void EditorTimelineSync::connectActiveScene()
+void EditorTimelineSync::connectPanelScene(Canvas * const scene)
 {
-    Canvas * const scene = mDocument.fActiveScene ?
-                mDocument.fActiveScene.data() : nullptr;
-    if (scene == mActiveScene.data()) { return; }
+    if (scene == mPanelScene.data()) { return; }
     for (const auto &conn : mSceneConns) { disconnect(conn); }
     mSceneConns.clear();
-    mActiveScene = scene;
+    mPanelScene = scene;
     if (!scene) { return; }
 
     mSceneConns << connect(scene, &Canvas::ca_childAdded,
@@ -56,11 +54,10 @@ void EditorTimelineSync::connectActiveScene()
                            this, [this](const qreal) { rebuild(); });
 }
 
-void EditorTimelineSync::connectChildren()
+void EditorTimelineSync::connectChildren(Canvas * const scene)
 {
     for (const auto &conn : mChildConns) { disconnect(conn); }
     mChildConns.clear();
-    const auto scene = mActiveScene.data();
     if (!scene) { return; }
     for (const auto &child : scene->getContained()) {
         const auto layer = child.data();
@@ -83,15 +80,16 @@ void EditorTimelineSync::rebuild()
     if (mInWriteback) { return; }
     if (mDragging) { mRebuildQueued = true; return; }
 
-    connectActiveScene();
-    connectChildren();
-    mClipToLayer.clear();
-
-    const auto scene = mActiveScene.data();
+    // panel scene: follow the active scene, but when it has nothing to
+    // edit (e.g. the user dove into a child scene), keep showing the
+    // last scene that had blocks instead of blanking the panel
+    const auto activeScene = mDocument.fActiveScene.data();
     struct Item { eBoxOrSound *layer; bool audio; };
     QList<Item> items;
-    if (scene) {
-        for (const auto &child : scene->getContained()) {
+    const auto collect = [&items](Canvas * const s) {
+        items.clear();
+        if (!s) { return; }
+        for (const auto &child : s->getContained()) {
             const auto layer = child.data();
             if (!layer) { continue; }
             const bool audio = enve_cast<eSound*>(layer) != nullptr;
@@ -99,7 +97,20 @@ void EditorTimelineSync::rebuild()
             if (audio) { items.append({layer, true}); }
             else if (video) { items.append({layer, false}); }
         }
+    };
+    collect(activeScene);
+    auto scene = activeScene;
+    if (items.isEmpty()) {
+        const auto fallback = mPanelScene.data();
+        if (fallback && fallback != activeScene) {
+            collect(fallback);
+            if (!items.isEmpty()) { scene = fallback; }
+        }
     }
+
+    connectPanelScene(scene);
+    connectChildren(scene);
+    mClipToLayer.clear();
     // prune stale lane assignments, then resolve per-type lanes: stored
     // lanes (merged tracks / manual track moves) survive rebuilds; layers
     // without a stored lane fall back to the default one-per-track layout
@@ -188,28 +199,32 @@ void EditorTimelineSync::storeTrackAssignments()
 
 void EditorTimelineSync::updatePlayheadFromDoc()
 {
-    if (!mWidget || !mDocument.fActiveScene) { return; }
-    const auto scene = mDocument.fActiveScene.data();
+    const auto scene = mPanelScene.data();
+    if (!mWidget || !scene) { return; }
     const qreal fps = scene->getFps();
     if (fps <= 0.) { return; }
-    mWidget->setPlayheadSec(mDocument.getActiveSceneFrame() / fps);
+    mWidget->setPlayheadSec(scene->anim_getCurrentAbsFrame() / fps);
 }
 
 void EditorTimelineSync::syncPlayheadToDoc()
 {
-    if (!mWidget || !mDocument.fActiveScene) { return; }
-    const auto scene = mDocument.fActiveScene.data();
+    const auto scene = mPanelScene.data();
+    if (!mWidget || !scene) { return; }
     const qreal fps = scene->getFps();
     if (fps <= 0.) { return; }
     const int frame = qRound(mWidget->playheadTime() * fps);
-    if (frame != mDocument.getActiveSceneFrame()) {
-        mDocument.setActiveSceneFrame(frame);
+    if (scene == mDocument.fActiveScene.data()) {
+        if (frame != mDocument.getActiveSceneFrame()) {
+            mDocument.setActiveSceneFrame(frame);
+        }
+    } else if (frame != scene->anim_getCurrentAbsFrame()) {
+        scene->anim_setAbsFrame(frame);
     }
 }
 
 void EditorTimelineSync::applyWriteback()
 {
-    const auto scene = mActiveScene.data();
+    const auto scene = mPanelScene.data();
     if (!mWidget || !scene) { return; }
     const qreal fps = scene->getFps();
     if (fps <= 0.) { return; }
