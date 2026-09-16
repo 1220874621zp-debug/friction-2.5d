@@ -1074,7 +1074,8 @@ void EditorTimelineWidget::applyMagneticFollow(const bool active)
 {
     if (m_drag != DragMode::TrimRight || m_dragClip < 0 ||
             m_dragClip >= m_clips.size()) { return; }
-    // live follow only exists in magnetic mode (Alt temporarily suspends)
+    // live follow only exists in magnetic mode (Alt temporarily suspends);
+    // suspended or off -> plain trim, all snapshots restore
     if (!mMagnetic || !active) {
         for (const auto &snap : m_trimSnap) {
             if (snap.idx >= 0 && snap.idx < m_clips.size()) {
@@ -1086,18 +1087,17 @@ void EditorTimelineWidget::applyMagneticFollow(const bool active)
     const Clip &c = m_clips[m_dragClip];
     const double oldEnd = m_origStart + m_origLength;
     const double newEnd = c.start + c.length;
-    const double delta = oldEnd - newEnd; // > 0: the out point shortened
+    // tape model: every same-track clip behind the trimmed one shifts by
+    // the same amount the out point moved - shortening slides the chain
+    // left onto the new out point (no gap), lengthening pushes it right
+    // (no overlap). Their mutual spacing and overlaps survive the shift,
+    // and the snapshot base keeps every move idempotent/reversible.
+    const double shift = newEnd - oldEnd;
     for (const auto &snap : m_trimSnap) {
         if (snap.idx < 0 || snap.idx >= m_clips.size()) { continue; }
         Clip &f = m_clips[snap.idx];
-        // followers = clips that started inside the trimmed-away span
-        // [newEnd, oldEnd] (a neighbour right at the old out point is the
-        // attached case); they all shift left by the same delta so their
-        // mutual spacing and overlaps survive. Everything else restores
-        // its snapshot position, making the follow idempotent per move.
-        if (delta > 1e-9 &&
-                snap.start >= newEnd - 1e-9 && snap.start <= oldEnd + 1e-9) {
-            f.start = qMax(0.0, snap.start - delta);
+        if (qAbs(shift) > 1e-9 && snap.start >= oldEnd - 1e-9) {
+            f.start = qMax(0.0, snap.start + shift);
         } else {
             f.start = snap.start;
         }
