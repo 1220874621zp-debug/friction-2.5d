@@ -825,6 +825,108 @@ static int runRectToolTest(Document& document, TaskScheduler& tasks) {
     return 0;
 }
 
+// circle-tool mask regression: with a single bitmap layer selected
+// the circle tool must draw an ellipse MASK (wrapped mask-host layer
+// + maskMode SmartVectorPath), not a plain Circle shape
+static int runCircleMaskTest(Document& document, TaskScheduler& tasks) {
+    Q_UNUSED(tasks)
+    auto pump = []() {
+        for(int j = 0; j < 30; j++) QApplication::processEvents();
+    };
+    QImage img(64, 64, QImage::Format_ARGB32);
+    img.fill(Qt::red);
+    const QString png = QDir::tempPath() + "/circlemask_red.png";
+    if(!img.save(png)) {
+        fprintf(stderr, "[harness] CIRCLEMASK FAIL: cannot write png\n");
+        return 10;
+    }
+    const auto scene = document.createNewScene(false);
+    const auto box = enve::make_shared<ImageBox>();
+    box->setFilePath(png);
+    scene->addContained(box);
+    pump();
+
+    scene->clearBoxesSelection();
+    scene->addBoxToSelection(box.get());
+    document.setCanvasMode(CanvasMode::circleCreate);
+    pump();
+
+    const auto mkEvent = [](const QEvent::Type type,
+                            const QPointF& pos,
+                            const QPointF& pressPos) {
+        QMouseEvent qe(type, pos, pos, pos,
+                       type == QEvent::MouseButtonRelease ?
+                           Qt::NoButton : Qt::LeftButton,
+                       Qt::LeftButton, Qt::NoModifier);
+        return eMouseEvent(pos, pos, pressPos, false, 1., &qe,
+                           [](){}, [](){}, nullptr);
+    };
+    // center-press + drag, circle-tool semantics
+    scene->mousePressEvent(mkEvent(QEvent::MouseButtonPress,
+                                   QPointF(100, 100), QPointF(100, 100)));
+    for(int i = 1; i <= 4; i++) {
+        const QPointF p(100 + 60*(i/4.), 100 + 40*(i/4.));
+        scene->mouseMoveEvent(mkEvent(QEvent::MouseMove, p, QPointF(100, 100)));
+    }
+    pump();
+    scene->mouseReleaseEvent(mkEvent(QEvent::MouseButtonRelease,
+                                     QPointF(160, 140), QPointF(100, 100)));
+    pump();
+
+    const auto dump = [&scene](const char* const tag) {
+        fprintf(stderr, "[harness] CIRCLEMASK %s: scene boxes=%d\n",
+                tag, scene->getContainedBoxesCount());
+        for(const auto& b : scene->getContainedBoxes()) {
+            const char* t;
+            if(enve_cast<ImageBox*>(b)) t = "IMAGE";
+            else if(enve_cast<SmartVectorPath*>(b)) {
+                const auto svp = static_cast<SmartVectorPath*>(b);
+                t = svp->getMaskMode() ? "SVP-MASK" : "SVP";
+            }
+            else if(enve_cast<Circle*>(b)) t = "CIRCLE(!)";
+            else if(enve_cast<ContainerBox*>(b)) t = "CONTAINER";
+            else t = "OTHER";
+            fprintf(stderr, "    - %s '%s'", t,
+                    b->prp_getName().toLocal8Bit().constData());
+            if(const auto g = enve_cast<ContainerBox*>(b)) {
+                fprintf(stderr, " children=%d [", g->getContainedBoxesCount());
+                for(const auto& c : g->getContainedBoxes()) {
+                    const char* ct;
+                    if(enve_cast<ImageBox*>(c)) ct = "IMAGE";
+                    else if(enve_cast<SmartVectorPath*>(c)) {
+                        ct = static_cast<SmartVectorPath*>(c)->getMaskMode()
+                                ? "SVP-MASK" : "SVP";
+                    }
+                    else ct = "?";
+                    fprintf(stderr, "%s ", ct);
+                }
+                fprintf(stderr, "]");
+            }
+            fprintf(stderr, "\n");
+        }
+        fflush(stderr);
+    };
+    dump("after circle-drag on selected bitmap");
+
+    // negative control: same drag with NO selection over empty area
+    // must still create a plain Circle shape
+    scene->clearBoxesSelection();
+    pump();
+    scene->mousePressEvent(mkEvent(QEvent::MouseButtonPress,
+                                   QPointF(300, 100), QPointF(300, 100)));
+    scene->mouseMoveEvent(mkEvent(QEvent::MouseMove,
+                                  QPointF(360, 140), QPointF(300, 100)));
+    pump();
+    scene->mouseReleaseEvent(mkEvent(QEvent::MouseButtonRelease,
+                                     QPointF(360, 140), QPointF(300, 100)));
+    pump();
+    dump("after plain circle-drag (no selection)");
+
+    fprintf(stderr, "[harness] CIRCLEMASK done\n");
+    fflush(stderr);
+    return 0;
+}
+
 // tooltip vertical-centering test with the REAL theme stylesheet,
 // REAL app-font chain and the REAL platform DPI: replicates the user
 // report "tooltip text sits at the bottom of the box instead of
@@ -1101,6 +1203,19 @@ int main(int argc, char *argv[]) {
         TaskScheduler taskScheduler;
         Document document(taskScheduler);
         return runAiDepthTest(args.count() > 1 ? args.at(1) : QString());
+    }
+    if(!args.isEmpty() && args.first() == "--circlemask") {
+        eSettings settings(HardwareInfo::sCpuThreads(),
+                           HardwareInfo::sRamKB());
+        ImportHandler importHandler;
+        TaskScheduler taskScheduler;
+        Document document(taskScheduler);
+        FilesHandler filesHandler;
+        MemoryHandler memoryHandler;
+        eFilterSettings filterSettings;
+        // Canvas::queTasks dereferences Actions::sInstance
+        Actions actions(document);
+        return runCircleMaskTest(document, taskScheduler);
     }
     if(!args.isEmpty() && args.first() == "--tiptest") {
         eSettings settings(HardwareInfo::sCpuThreads(),

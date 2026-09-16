@@ -153,16 +153,20 @@ void Canvas::mouseMoveEvent(const eMouseEvent &e)
         } else if (mCurrentMode == CanvasMode::camera) {
             cameraMove(e);
         } else if (mCurrentMode == CanvasMode::circleCreate) {
-            const QPointF anchor = mHasCreationPressPos ? mCreationPressPos : snapPosToGrid(e.fLastPressPos,
-                                                                                            e.fModifiers,
-                                                                                            false);
-            const QPointF current = snapEventPos(e, false);
-            const QPointF delta = current - anchor;
-            if (e.shiftMod()) {
-                const qreal lenR = pointToLen(delta);
-                mCurrentCircle->moveRadiusesByAbs({lenR, lenR});
-            } else {
-                mCurrentCircle->moveRadiusesByAbs(delta);
+            if (!mCurrentMaskRectNodes.isEmpty()) {
+                updateMaskCircleDrag(e);
+            } else if (mCurrentCircle) {
+                const QPointF anchor = mHasCreationPressPos ? mCreationPressPos : snapPosToGrid(e.fLastPressPos,
+                                                                                                e.fModifiers,
+                                                                                                false);
+                const QPointF current = snapEventPos(e, false);
+                const QPointF delta = current - anchor;
+                if (e.shiftMod()) {
+                    const qreal lenR = pointToLen(delta);
+                    mCurrentCircle->moveRadiusesByAbs({lenR, lenR});
+                } else {
+                    mCurrentCircle->moveRadiusesByAbs(delta);
+                }
             }
         } else if (mCurrentMode == CanvasMode::rectCreate) {
             if (!mCurrentMaskRectNodes.isEmpty()) {

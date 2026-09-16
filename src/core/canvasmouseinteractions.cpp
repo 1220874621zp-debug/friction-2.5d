@@ -663,16 +663,24 @@ void Canvas::handleLeftButtonMousePress(const eMouseEvent& e)
     } else if (mCurrentMode == CanvasMode::camera) {
         cameraPress(e);
     } else if (mCurrentMode == CanvasMode::circleCreate) {
-        const auto newPath = enve::make_shared<Circle>();
-        newPath->planCenterPivotPosition();
-        mCurrentContainer->addContained(newPath);
-        const QPointF snappedPos = snapEventPos(e, false);
-        newPath->setAbsolutePos(snappedPos);
-        clearBoxesSelection();
-        addBoxToSelection(newPath.get());
-        mCurrentCircle = newPath.get();
-        mCreationPressPos = snappedPos;
-        mHasCreationPressPos = true;
+        // bitmap auto-detect, same rule as the rect tool: a single
+        // selected bitmap/mask-host layer (or a press over one) draws
+        // an ellipse MASK instead of a plain circle shape
+        const auto maskTarget = resolveMaskTarget(e);
+        if (maskTarget && isMaskIntentTarget(maskTarget)) {
+            if (!startMaskCircleDrag(maskTarget, e)) { return; }
+        } else {
+            const auto newPath = enve::make_shared<Circle>();
+            newPath->planCenterPivotPosition();
+            mCurrentContainer->addContained(newPath);
+            const QPointF snappedPos = snapEventPos(e, false);
+            newPath->setAbsolutePos(snappedPos);
+            clearBoxesSelection();
+            addBoxToSelection(newPath.get());
+            mCurrentCircle = newPath.get();
+            mCreationPressPos = snappedPos;
+            mHasCreationPressPos = true;
+        }
     } else if (mCurrentMode == CanvasMode::nullCreate) {
         const auto newPath = enve::make_shared<NullObject>();
         newPath->planCenterPivotPosition();
@@ -1088,6 +1096,117 @@ void Canvas::finishMaskRectDrag(const eMouseEvent &e)
     Document::sInstance->actionFinished();
 }
 
+// circle tool mask drag: an ellipse mask on a bitmap layer (or over
+// an existing mask), the exact counterpart of startMaskRectDrag. The
+// ellipse is a 4-node kappa cubic approximation so it stays editable
+// with the point/pen tools like any path
+bool Canvas::startMaskCircleDrag(BoundingBox * const target,
+                                 const eMouseEvent &e)
+{
+    const auto host = ensureMaskHost(target);
+    if (!host) { return false; }
+    const auto maskPath = createMaskPath(host);
+    host->setRevealRowsOnce();
+    host->addContained(maskPath->ref<eBoxOrSound>());
+    clearBoxesSelection();
+    addBoxToSelection(maskPath.get());
+
+    const QPointF snappedPos = snapEventPos(e, false);
+    mMaskRectAnchor = snappedPos;
+    mCreationPressPos = snappedPos;
+    mHasCreationPressPos = true;
+    const auto relPos = maskPath->mapAbsPosToRel(snappedPos);
+    maskPath->getBoxTransformAnimator()->setPosition(relPos.x(), relPos.y());
+    mCurrentMaskRectPath = maskPath.get();
+
+    // E-S-W-N nodes, all stacked at the press point; the move handler
+    // spreads them into the ellipse (same scheme as the rect variant)
+    mCurrentMaskRectNodes.clear();
+    const auto handler = maskPath->getPathAnimator();
+    auto node = handler->createNewSubPathAtRelPos({0, 0});
+    node->setCtrlsMode(CtrlsMode::symmetric);
+    mCurrentMaskRectNodes << node;
+    for (int i = 0; i < 3; i++) {
+        node = node->actionAddPointAbsPos(snappedPos);
+        node->setCtrlsMode(CtrlsMode::symmetric);
+        mCurrentMaskRectNodes << node;
+    }
+    if (mCurrentMaskRectNodes.count() == 4) {
+        mCurrentMaskRectNodes.last()->actionConnectToNormalPoint(
+                    mCurrentMaskRectNodes.first().data());
+    }
+    return true;
+}
+
+void Canvas::updateMaskCircleDrag(const eMouseEvent &e)
+{
+    if (mCurrentMaskRectNodes.count() != 4) { return; }
+    // circle-tool semantics: the press point is the CENTER, the drag
+    // sets the radii (not corner-to-corner like the rect mask)
+    const QPointF anchor = mHasCreationPressPos ? mCreationPressPos
+                                                : mMaskRectAnchor;
+    const QPointF current = snapEventPos(e, false);
+    qreal rx = qAbs(current.x() - anchor.x());
+    qreal ry = qAbs(current.y() - anchor.y());
+    if (e.shiftMod()) { // perfect circle, like the circle tool
+        const qreal r = qMax(rx, ry);
+        rx = r; ry = r;
+    }
+    if (mStartTransform) {
+        for (const auto& node : mCurrentMaskRectNodes) {
+            if (node) { node->startTransform(); }
+        }
+    }
+    // kappa: cubic-approximation handle length factor for a quarter
+    // arc; each node's handles are tangent with kappa*otherRadius
+    const qreal k = 0.552284749831;
+    const QPointF c = anchor;
+    const QPointF pos[4] = {
+        QPointF(c.x() + rx, c.y()), QPointF(c.x(), c.y() + ry),
+        QPointF(c.x() - rx, c.y()), QPointF(c.x(), c.y() - ry) };
+    // (prev-side c0, next-side c2) per node, E-S-W-N winding
+    const QPointF c0[4] = {
+        QPointF(c.x() + rx, c.y() - k*ry), QPointF(c.x() + k*rx, c.y() + ry),
+        QPointF(c.x() - rx, c.y() + k*ry), QPointF(c.x() - k*rx, c.y() - ry) };
+    const QPointF c2[4] = {
+        QPointF(c.x() + rx, c.y() + k*ry), QPointF(c.x() - k*rx, c.y() + ry),
+        QPointF(c.x() - rx, c.y() - k*ry), QPointF(c.x() + k*rx, c.y() - ry) };
+    for (int i = 0; i < 4; i++) {
+        const auto& node = mCurrentMaskRectNodes.at(i);
+        if (!node) { continue; }
+        node->setAbsolutePos(pos[i]);
+        node->moveC0ToAbsPos(c0[i]);
+        node->moveC2ToAbsPos(c2[i]);
+    }
+}
+
+void Canvas::finishMaskCircleDrag(const eMouseEvent &e)
+{
+    Q_UNUSED(e)
+    if (mCurrentMaskRectNodes.isEmpty()) { return; }
+    if (!mStartTransform) {
+        for (const auto& node : mCurrentMaskRectNodes) {
+            if (node) { node->finishTransform(); }
+        }
+    }
+    // zero-radius mask would hide the whole layer - drop it instead
+    bool degenerate = true;
+    if (mCurrentMaskRectNodes.count() == 4 &&
+            mCurrentMaskRectNodes.at(0) && mCurrentMaskRectNodes.at(2)) {
+        const QPointF p0 = mCurrentMaskRectNodes.at(0)->getAbsolutePos();
+        const QPointF p2 = mCurrentMaskRectNodes.at(2)->getAbsolutePos();
+        degenerate = (p0 - p2).manhattanLength() < 2.;
+    }
+    if (degenerate && mCurrentMaskRectPath) {
+        mCurrentMaskRectPath->removeFromParent_k();
+        clearBoxesSelection();
+    }
+    mCurrentMaskRectNodes.clear();
+    mCurrentMaskRectPath.clear();
+    mHasCreationPressPos = false;
+    Document::sInstance->actionFinished();
+}
+
 void Canvas::handleLeftMouseRelease(const eMouseEvent &e)
 {
     if (e.fMouseGrabbing) { e.fReleaseMouse(); }
@@ -1133,6 +1252,9 @@ void Canvas::handleLeftMouseRelease(const eMouseEvent &e)
     } else if (mCurrentMode == CanvasMode::rectCreate &&
                !mCurrentMaskRectNodes.isEmpty()) {
         finishMaskRectDrag(e);
+    } else if (mCurrentMode == CanvasMode::circleCreate &&
+               !mCurrentMaskRectNodes.isEmpty()) {
+        finishMaskCircleDrag(e);
     } else if (mCurrentMode == CanvasMode::pathCreate) {
         handleAddSmartPointMouseRelease(e);
     } else if (mCurrentMode == CanvasMode::drawPath) {

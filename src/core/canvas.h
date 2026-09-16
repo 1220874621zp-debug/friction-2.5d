@@ -1270,6 +1270,11 @@ protected:
     bool startMaskRectDrag(BoundingBox * const target, const eMouseEvent &e);
     void updateMaskRectDrag(const eMouseEvent &e);
     void finishMaskRectDrag(const eMouseEvent &e);
+    // circle tool counterpart: ellipse mask (4-node kappa ellipse);
+    // shares the rect-drag session members, one drag at a time
+    bool startMaskCircleDrag(BoundingBox * const target, const eMouseEvent &e);
+    void updateMaskCircleDrag(const eMouseEvent &e);
+    void finishMaskCircleDrag(const eMouseEvent &e);
 
     void updateTransformation(const eKeyEvent &e);
     QPointF getMoveByValueForEvent(const eMouseEvent &e);
