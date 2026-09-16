@@ -109,7 +109,9 @@ public:
                                                        "All",
                                                        true).toBool();
 
-    CanvasMode fCanvasMode;
+    // uninitialized until the first tool switch; a Canvas created
+    // before that would inherit garbage
+    CanvasMode fCanvasMode = CanvasMode::boxTransform;
 
     // bookmarked
     QList<QColor> fColors;

@@ -31,7 +31,10 @@
 #include "importhandler.h"
 #include "Sound/esoundsettings.h"
 #include "canvas.h"
+#include "eevent.h"
 #include "Boxes/rectangle.h"
+#include "Boxes/circle.h"
+#include "Boxes/smartvectorpath.h"
 #include "Boxes/bonelayer.h"
 #include "Boxes/layerboxrenderdata.h"
 #include "Boxes/bone.h"
@@ -725,6 +728,100 @@ static int runBindTest(Document& document, TaskScheduler& tasks) {
     return ok ? 0 : 12;
 }
 
+// rect-tool regression: on an empty scene the rectangle tool must
+// create a shape on first drag; after creating an AE-style vector
+// layer both circle and rect must add shapes into it. Reproduces the
+// user report "empty scene: rect does nothing; circle works after a
+// vector layer exists; rect only works after a circle was added"
+static int runRectToolTest(Document& document, TaskScheduler& tasks) {
+    Q_UNUSED(tasks)
+    auto pump = []() {
+        for(int j = 0; j < 30; j++) QApplication::processEvents();
+    };
+    const auto mkEvent = [](const QEvent::Type type,
+                            const QPointF& pos,
+                            const QPointF& pressPos) {
+        QMouseEvent qe(type, pos, pos, pos,
+                       type == QEvent::MouseButtonRelease ?
+                           Qt::NoButton : Qt::LeftButton,
+                       Qt::LeftButton, Qt::NoModifier);
+        return eMouseEvent(pos, pos, pressPos, false, 1., &qe,
+                           [](){}, [](){}, nullptr);
+    };
+    const auto drag = [&](Canvas* const scene,
+                          const QPointF& a, const QPointF& b) {
+        scene->mousePressEvent(mkEvent(QEvent::MouseButtonPress, a, a));
+        for(int i = 1; i <= 4; i++) {
+            const QPointF p = a + (b - a) * (i / 4.);
+            scene->mouseMoveEvent(mkEvent(QEvent::MouseMove, p, a));
+        }
+        pump();
+        scene->mouseReleaseEvent(mkEvent(QEvent::MouseButtonRelease, b, a));
+        pump();
+    };
+    const auto typeTag = [](BoundingBox* const b) -> const char* {
+        if(!b) return "(null)";
+        if(enve_cast<RectangleBox*>(b)) return "RECT";
+        if(enve_cast<Circle*>(b)) return "CIRCLE";
+        if(enve_cast<SmartVectorPath*>(b)) return "SVP";
+        if(enve_cast<ContainerBox*>(b)) return "CONTAINER";
+        return "OTHER";
+    };
+    const auto dump = [&](Canvas* const scene, const char* const tag) {
+        fprintf(stderr, "[harness] RECTTOOL %s: scene boxes=%d\n",
+                tag, scene->getContainedBoxesCount());
+        for(const auto& b : scene->getContainedBoxes()) {
+            fprintf(stderr, "    - %s '%s'",
+                    typeTag(b),
+                    b->prp_getName().toLocal8Bit().constData());
+            if(const auto g = enve_cast<ContainerBox*>(b)) {
+                fprintf(stderr, " children=%d [", g->getContainedBoxesCount());
+                for(const auto& c : g->getContainedBoxes()) {
+                    fprintf(stderr, "%s ", typeTag(c));
+                }
+                fprintf(stderr, "]");
+            }
+            fprintf(stderr, "\n");
+        }
+        fflush(stderr);
+    };
+
+    // probe 1: fresh empty scene, rect first (the user's scenario)
+    document.setCanvasMode(CanvasMode::rectCreate);
+    const auto s1 = document.createNewScene(false);
+    drag(s1, QPointF(100, 100), QPointF(220, 180));
+    dump(s1, "P1 empty-scene rect-first");
+
+    // probe 2: fresh scene + vector layer, rect
+    const auto s2 = document.createNewScene(false);
+    s2->addVectorLayerAction();
+    drag(s2, QPointF(100, 100), QPointF(220, 180));
+    dump(s2, "P2 vector-layer rect");
+
+    // probe 3: fresh scene + vector layer, circle then rect
+    const auto s3 = document.createNewScene(false);
+    s3->addVectorLayerAction();
+    document.setCanvasMode(CanvasMode::circleCreate);
+    drag(s3, QPointF(300, 100), QPointF(380, 180));
+    dump(s3, "P3 vector-layer circle");
+    document.setCanvasMode(CanvasMode::rectCreate);
+    drag(s3, QPointF(100, 300), QPointF(220, 380));
+    dump(s3, "P3 vector-layer rect-after-circle");
+
+    // probe 4: fresh empty scene, circle first then rect (no layer)
+    const auto s4 = document.createNewScene(false);
+    document.setCanvasMode(CanvasMode::circleCreate);
+    drag(s4, QPointF(300, 100), QPointF(380, 180));
+    dump(s4, "P4 empty-scene circle-first");
+    document.setCanvasMode(CanvasMode::rectCreate);
+    drag(s4, QPointF(100, 300), QPointF(220, 380));
+    dump(s4, "P4 empty-scene rect-after-circle");
+
+    fprintf(stderr, "[harness] RECTTOOL done\n");
+    fflush(stderr);
+    return 0;
+}
+
 // synthetic differential test: every layer creates a MotionPathHandler
 // in prp_updateCanvasProps(); repeated create/destroy cycles used to be
 // lethal with the double-shared PointsHandler ownership
@@ -912,6 +1009,19 @@ int main(int argc, char *argv[]) {
         TaskScheduler taskScheduler;
         Document document(taskScheduler);
         return runAiDepthTest(args.count() > 1 ? args.at(1) : QString());
+    }
+    if(!args.isEmpty() && args.first() == "--recttool") {
+        eSettings settings(HardwareInfo::sCpuThreads(),
+                           HardwareInfo::sRamKB());
+        ImportHandler importHandler;
+        TaskScheduler taskScheduler;
+        Document document(taskScheduler);
+        FilesHandler filesHandler;
+        MemoryHandler memoryHandler;
+        eFilterSettings filterSettings;
+        // Canvas::queTasks dereferences Actions::sInstance
+        Actions actions(document);
+        return runRectToolTest(document, taskScheduler);
     }
     if(!args.isEmpty() && args.first() == "--synthetic") {
         const int cycles = args.count() > 1 ? args.at(1).toInt() : 5;

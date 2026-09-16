@@ -230,6 +230,11 @@ Canvas *Document::createNewScene(const bool emitCreated)
                                  fGizmoShearVisibility);
     newScene->setGizmoVisibility(Gizmos::Interact::All,
                                  fGizmoAllVisibility);
+    // the canvas-mode signal only fires on tool switches; a scene
+    // created while a shape tool is active must inherit that mode or
+    // the canvas stays in boxTransform and the tool silently does
+    // nothing until the user switches tools away and back
+    newScene->setCanvasMode(fCanvasMode);
 
     if (emitCreated) {
         emit sceneCreated(newScene.get());
