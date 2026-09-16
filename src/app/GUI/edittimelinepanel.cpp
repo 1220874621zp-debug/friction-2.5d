@@ -36,6 +36,7 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QVBoxLayout>
+#include <QHBoxLayout>
 #include <QClipboard>
 #include <QGuiApplication>
 
@@ -43,10 +44,7 @@ static const double MIN_CLIP_LEN = 0.2;   // seconds
 static const int SNAP_PX = 8;
 static const int TRIM_PX = 6;
 
-// ------------------------------ timeline widget ------------------------------
-// ported verbatim from the approved TimelineDemo
-
-EditTimelineWidget::EditTimelineWidget(QWidget* parent)
+EditTimelineWidget::EditTimelineWidget(QWidget *parent)
     : QWidget(parent)
 {
     setMouseTracking(true);
@@ -62,7 +60,7 @@ EditTimelineWidget::EditTimelineWidget(QWidget* parent)
 
     // seed some demo clips
     {
-        struct S { const char* n; ClipType t; int tr; double s; double l; };
+        struct S { const char *n; ClipType t; int tr; double s; double l; };
         const S demo[] = {
             {"jimeng-2026-08-23-6464", ClipType::Video, 0, 0.0, 5.0},
             {"shot_002_take1",         ClipType::Video, 0, 5.0, 3.2},
@@ -72,7 +70,7 @@ EditTimelineWidget::EditTimelineWidget(QWidget* parent)
             {"8.21 voiceover.mp3",     ClipType::Audio, 2, 0.0, 8.0},
             {"bgm_lofi.mp3",           ClipType::Audio, 2, 9.0, 6.0},
         };
-        for (const S& d : demo) {
+        for (const S &d : demo) {
             Clip c;
             c.id = m_nextId++;
             c.name = QString::fromUtf8(d.n);
@@ -88,11 +86,11 @@ EditTimelineWidget::EditTimelineWidget(QWidget* parent)
     emitLog(QStringLiteral("timeline ready, %1 clips").arg(m_clips.size()));
 }
 
-void EditTimelineWidget::setScrollBar(QScrollBar* bar)
+void EditTimelineWidget::setScrollBar(QScrollBar *bar)
 {
     m_scrollBar = bar;
     if (!m_scrollBar) return;
-    connect(m_scrollBar, &QScrollBar::valueChanged, this, [this](int v) {
+    connect(m_scrollBar, &QScrollBar::valueChanged, this, [this](int v){
         m_scrollSec = v / 100.0;
         update();
     });
@@ -132,12 +130,12 @@ int EditTimelineWidget::timeToX(double t) const
 double EditTimelineWidget::contentDuration() const
 {
     double end = 30.0;
-    for (const Clip& c : m_clips)
+    for (const Clip &c : m_clips)
         end = qMax(end, c.start + c.length + 5.0);
     return end;
 }
 
-QRectF EditTimelineWidget::clipRect(const Clip& c) const
+QRectF EditTimelineWidget::clipRect(const Clip &c) const
 {
     double x = timeToX(c.start);
     double w = c.length * m_pxPerSec;
@@ -147,7 +145,7 @@ QRectF EditTimelineWidget::clipRect(const Clip& c) const
 
 // ---------------------------------------------------------------- painting
 
-void EditTimelineWidget::paintEvent(QPaintEvent*)
+void EditTimelineWidget::paintEvent(QPaintEvent *)
 {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
@@ -162,9 +160,8 @@ void EditTimelineWidget::paintEvent(QPaintEvent*)
         drawClip(p, i);
 
     // ghost of dragged clip at original position
-    if (m_drag == DragMode::MoveClip &&
-        m_dragClip >= 0 && m_dragClip < m_clips.size()) {
-        const Clip& cur = m_clips[m_dragClip];
+    if (m_drag == DragMode::MoveClip && m_dragClip >= 0 && m_dragClip < m_clips.size()) {
+        const Clip &cur = m_clips[m_dragClip];
         if (qAbs(cur.start - m_origStart) > 1e-6 || cur.track != m_origTrack)
             drawClip(p, m_dragClip, true);
     }
@@ -184,10 +181,9 @@ void EditTimelineWidget::paintEvent(QPaintEvent*)
     p.drawLine(0, rulerHeight() - 1, width(), rulerHeight() - 1);
 }
 
-void EditTimelineWidget::drawRuler(QPainter& p)
+void EditTimelineWidget::drawRuler(QPainter &p)
 {
-    p.fillRect(headerWidth(), 0, width() - headerWidth(),
-               rulerHeight(), cRuler);
+    p.fillRect(headerWidth(), 0, width() - headerWidth(), rulerHeight(), cRuler);
 
     // choose tick step so labels stay readable
     double steps[] = {0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60, 300};
@@ -217,22 +213,18 @@ void EditTimelineWidget::drawRuler(QPainter& p)
     }
 }
 
-void EditTimelineWidget::drawTrackHeaders(QPainter& p)
+void EditTimelineWidget::drawTrackHeaders(QPainter &p)
 {
     for (int i = 0; i < m_tracks.size(); ++i) {
         int top = trackY(i);
         p.fillRect(0, top, headerWidth(), m_tracks[i].height, cHeader);
         p.setPen(cGridLine);
-        p.drawLine(0, top + m_tracks[i].height - 1,
-                   headerWidth(), top + m_tracks[i].height - 1);
-        p.drawLine(headerWidth() - 1, top,
-                   headerWidth() - 1, top + m_tracks[i].height);
+        p.drawLine(0, top + m_tracks[i].height - 1, headerWidth(), top + m_tracks[i].height - 1);
+        p.drawLine(headerWidth() - 1, top, headerWidth() - 1, top + m_tracks[i].height);
 
         // text-icon per track type
-        QString icon = m_tracks[i].type == ClipType::Video ?
-                    QStringLiteral("V") : QStringLiteral("A");
-        QColor ic = m_tracks[i].type == ClipType::Video ?
-                    cAccent : cAudioWave;
+        QString icon = m_tracks[i].type == ClipType::Video ? QStringLiteral("V") : QStringLiteral("A");
+        QColor ic = m_tracks[i].type == ClipType::Video ? cAccent : cAudioWave;
         QRect badge(10, top + (m_tracks[i].height - 22) / 2, 22, 22);
         p.setPen(Qt::NoPen);
         p.setBrush(ic.darker(130));
@@ -246,15 +238,14 @@ void EditTimelineWidget::drawTrackHeaders(QPainter& p)
     }
 }
 
-void EditTimelineWidget::drawTrackBodies(QPainter& p)
+void EditTimelineWidget::drawTrackBodies(QPainter &p)
 {
     for (int i = 0; i < m_tracks.size(); ++i) {
         int top = trackY(i);
-        p.fillRect(headerWidth(), top, width() - headerWidth(),
-                   m_tracks[i].height, (i % 2) ? cBgAlt : cBg);
+        p.fillRect(headerWidth(), top, width() - headerWidth(), m_tracks[i].height,
+                   (i % 2) ? cBgAlt : cBg);
         p.setPen(QColor(0x26, 0x26, 0x26));
-        p.drawLine(headerWidth(), top + m_tracks[i].height - 1,
-                   width(), top + m_tracks[i].height - 1);
+        p.drawLine(headerWidth(), top + m_tracks[i].height - 1, width(), top + m_tracks[i].height - 1);
     }
 }
 
@@ -264,12 +255,12 @@ QString EditTimelineWidget::timecode(double t) const
     int mm = total / 60, ss = total % 60;
     int ff = int((t - total) * 25.0 + 0.5); // assume 25fps display
     return QStringLiteral("%1:%2:%3")
-            .arg(mm, 2, 10, QLatin1Char('0'))
-            .arg(ss, 2, 10, QLatin1Char('0'))
-            .arg(ff, 2, 10, QLatin1Char('0'));
+        .arg(mm, 2, 10, QLatin1Char('0'))
+        .arg(ss, 2, 10, QLatin1Char('0'))
+        .arg(ff, 2, 10, QLatin1Char('0'));
 }
 
-QPixmap EditTimelineWidget::thumbnailTile(const Clip& c, int h)
+QPixmap EditTimelineWidget::thumbnailTile(const Clip &c, int h)
 {
     // one tile per clip; repeated across the clip body
     const int tileW = qMax(48, int(h * 16.0 / 9.0));
@@ -299,8 +290,7 @@ QPixmap EditTimelineWidget::thumbnailTile(const Clip& c, int h)
         int x = rng.bounded(qMax(1, tileW - w));
         int y = rng.bounded(qMax(1, h - hh));
         QColor c2 = QColor::fromHsv((hue + rng.bounded(120)) % 360,
-                                    60 + rng.bounded(120),
-                                    90 + rng.bounded(120));
+                                    60 + rng.bounded(120), 90 + rng.bounded(120));
         c2.setAlpha(150);
         tp.setPen(Qt::NoPen);
         tp.setBrush(c2);
@@ -328,14 +318,10 @@ QPixmap EditTimelineWidget::thumbnailTile(const Clip& c, int h)
     return pm;
 }
 
-void EditTimelineWidget::drawClip(QPainter& p, int index, bool ghost)
+void EditTimelineWidget::drawClip(QPainter &p, int index, bool ghost)
 {
     Clip c = m_clips[index];
-    if (ghost) {
-        c.start = m_origStart;
-        c.track = m_origTrack;
-        c.length = m_origLength;
-    }
+    if (ghost) { c.start = m_origStart; c.track = m_origTrack; c.length = m_origLength; }
     QRectF r = clipRect(c);
     if (r.right() < headerWidth() || r.left() > width()) return;
 
@@ -345,8 +331,7 @@ void EditTimelineWidget::drawClip(QPainter& p, int index, bool ghost)
     p.save();
     if (ghost) p.setOpacity(0.35);
     // keep everything of the clip inside the content area
-    p.setClipRect(QRectF(headerWidth(), 0,
-                         width() - headerWidth(), height()));
+    p.setClipRect(QRectF(headerWidth(), 0, width() - headerWidth(), height()));
 
     QPainterPath path;
     path.addRoundedRect(r, 4, 4);
@@ -357,8 +342,7 @@ void EditTimelineWidget::drawClip(QPainter& p, int index, bool ghost)
         // body
         p.fillPath(path, QColor(0x2a, 0x2a, 0x2c));
         // thumbnail filmstrip below the name bar
-        QRectF body(r.left(), r.top() + nameBarH,
-                    r.width(), r.height() - nameBarH);
+        QRectF body(r.left(), r.top() + nameBarH, r.width(), r.height() - nameBarH);
         if (body.height() > 4) {
             p.save();
             p.setClipRect(body, Qt::IntersectClip);
@@ -397,8 +381,7 @@ void EditTimelineWidget::drawClip(QPainter& p, int index, bool ghost)
         }
         p.save();
         p.setClipRect(r, Qt::IntersectClip);
-        p.fillRect(QRectF(r.left(), r.top(), r.width(), nameBarH),
-                   cAudioBody.lighter(135));
+        p.fillRect(QRectF(r.left(), r.top(), r.width(), nameBarH), cAudioBody.lighter(135));
         p.restore();
     }
 
@@ -409,8 +392,7 @@ void EditTimelineWidget::drawClip(QPainter& p, int index, bool ghost)
     p.setFont(f);
     p.drawText(r.adjusted(5, 0, -4, -(r.height() - nameBarH)),
                Qt::AlignVCenter | Qt::AlignLeft,
-               p.fontMetrics().elidedText(c.name, Qt::ElideRight,
-                                          int(r.width() - 8)));
+               p.fontMetrics().elidedText(c.name, Qt::ElideRight, int(r.width() - 8)));
 
     // border: selected = accent, hovered = lighter
     p.setBrush(Qt::NoBrush); // drawPath would otherwise fill with the leftover badge brush
@@ -423,14 +405,13 @@ void EditTimelineWidget::drawClip(QPainter& p, int index, bool ghost)
         p.drawRoundedRect(QRectF(r.left(), r.top(), 5, r.height()), 2, 2);
         p.drawRoundedRect(QRectF(r.right() - 5, r.top(), 5, r.height()), 2, 2);
     } else {
-        p.setPen(QPen(hovered ? QColor(0x9a, 0x9a, 0x9a)
-                              : QColor(0x10, 0x10, 0x10), 1));
+        p.setPen(QPen(hovered ? QColor(0x9a, 0x9a, 0x9a) : QColor(0x10, 0x10, 0x10), 1));
         p.drawPath(path);
     }
     p.restore();
 }
 
-void EditTimelineWidget::drawPlayhead(QPainter& p)
+void EditTimelineWidget::drawPlayhead(QPainter &p)
 {
     int x = timeToX(m_playhead);
     if (x < headerWidth()) return;
@@ -449,7 +430,7 @@ void EditTimelineWidget::drawPlayhead(QPainter& p)
 
 // ---------------------------------------------------------------- picking
 
-int EditTimelineWidget::clipAt(const QPoint& pos, QRectF* rectOut) const
+int EditTimelineWidget::clipAt(const QPoint &pos, QRectF *rectOut) const
 {
     // topmost track last drawn wins: iterate from end
     for (int i = m_clips.size() - 1; i >= 0; --i) {
@@ -462,14 +443,13 @@ int EditTimelineWidget::clipAt(const QPoint& pos, QRectF* rectOut) const
     return -1;
 }
 
-double EditTimelineWidget::snapTime(double t, int ignoreClipIdx,
-                                    bool* snappedOut) const
+double EditTimelineWidget::snapTime(double t, int ignoreClipIdx, bool *snappedOut) const
 {
     double best = t;
     double bestDist = SNAP_PX / m_pxPerSec;
     bool snapped = false;
 
-    auto consider = [&](double cand) {
+    auto consider = [&](double cand){
         double d = qAbs(cand - t);
         if (d < bestDist) { bestDist = d; best = cand; snapped = true; }
     };
@@ -483,14 +463,12 @@ double EditTimelineWidget::snapTime(double t, int ignoreClipIdx,
     return best;
 }
 
-bool EditTimelineWidget::overlapsOnTrack(int track, double start,
-                                         double len, int ignoreIdx) const
+bool EditTimelineWidget::overlapsOnTrack(int track, double start, double len, int ignoreIdx) const
 {
     for (int i = 0; i < m_clips.size(); ++i) {
         if (i == ignoreIdx || m_clips[i].track != track) continue;
-        const Clip& o = m_clips[i];
-        if (start < o.start + o.length - 1e-9 &&
-            o.start < start + len - 1e-9)
+        const Clip &o = m_clips[i];
+        if (start < o.start + o.length - 1e-9 && o.start < start + len - 1e-9)
             return true;
     }
     return false;
@@ -498,7 +476,7 @@ bool EditTimelineWidget::overlapsOnTrack(int track, double start,
 
 // ---------------------------------------------------------------- events
 
-void EditTimelineWidget::mousePressEvent(QMouseEvent* e)
+void EditTimelineWidget::mousePressEvent(QMouseEvent *e)
 {
     setFocus();
     m_pressPos = e->pos();
@@ -511,8 +489,7 @@ void EditTimelineWidget::mousePressEvent(QMouseEvent* e)
 
     // playhead: ruler area or near playhead line
     int phx = timeToX(m_playhead);
-    if (e->pos().y() <= rulerHeight() ||
-        qAbs(e->pos().x() - phx) <= 4) {
+    if (e->pos().y() <= rulerHeight() || qAbs(e->pos().x() - phx) <= 4) {
         m_drag = DragMode::Playhead;
         m_playhead = qMax(0.0, xToTime(e->pos().x()));
         emitLog(QStringLiteral("playhead -> %1").arg(timecode(m_playhead)));
@@ -524,10 +501,9 @@ void EditTimelineWidget::mousePressEvent(QMouseEvent* e)
     int idx = clipAt(e->pos(), &r);
     if (idx >= 0) {
         m_selected = idx;
-        const Clip& c = m_clips[idx];
+        const Clip &c = m_clips[idx];
         emit selectionChanged(QStringLiteral("%1  [%2 → %3]")
-                              .arg(c.name, timecode(c.start),
-                                   timecode(c.start + c.length)));
+                              .arg(c.name, timecode(c.start), timecode(c.start + c.length)));
         m_dragClip = idx;
         m_origStart = c.start;
         m_origLength = c.length;
@@ -551,7 +527,7 @@ void EditTimelineWidget::mousePressEvent(QMouseEvent* e)
     update();
 }
 
-void EditTimelineWidget::mouseMoveEvent(QMouseEvent* e)
+void EditTimelineWidget::mouseMoveEvent(QMouseEvent *e)
 {
     if (m_drag == DragMode::None) {
         // hover + cursor feedback
@@ -559,8 +535,7 @@ void EditTimelineWidget::mouseMoveEvent(QMouseEvent* e)
         int idx = clipAt(e->pos(), &r);
         if (idx != m_hover) { m_hover = idx; update(); }
         if (idx >= 0 &&
-            (qAbs(e->pos().x() - r.left()) <= TRIM_PX ||
-             qAbs(e->pos().x() - r.right()) <= TRIM_PX))
+            (qAbs(e->pos().x() - r.left()) <= TRIM_PX || qAbs(e->pos().x() - r.right()) <= TRIM_PX))
             setCursor(Qt::SizeHorCursor);
         else if (e->pos().y() <= rulerHeight())
             setCursor(Qt::PointingHandCursor);
@@ -577,7 +552,7 @@ void EditTimelineWidget::mouseMoveEvent(QMouseEvent* e)
         m_playhead = qMax(0.0, t);
         break;
     case DragMode::MoveClip: {
-        Clip& c = m_clips[m_dragClip];
+        Clip &c = m_clips[m_dragClip];
         double newStart = qMax(0.0, t - m_grabOffsetSec);
         bool snapped = false;
         double snappedT = snapTime(newStart, m_dragClip, &snapped);
@@ -596,7 +571,7 @@ void EditTimelineWidget::mouseMoveEvent(QMouseEvent* e)
         break;
     }
     case DragMode::TrimLeft: {
-        Clip& c = m_clips[m_dragClip];
+        Clip &c = m_clips[m_dragClip];
         double end = m_origStart + m_origLength;
         double ns = qBound(0.0, t, end - MIN_CLIP_LEN);
         bool snapped = false;
@@ -609,7 +584,7 @@ void EditTimelineWidget::mouseMoveEvent(QMouseEvent* e)
         break;
     }
     case DragMode::TrimRight: {
-        Clip& c = m_clips[m_dragClip];
+        Clip &c = m_clips[m_dragClip];
         double ne = qMax(t, m_origStart + MIN_CLIP_LEN);
         bool snapped = false;
         double sT = snapTime(ne, m_dragClip, &snapped);
@@ -623,37 +598,29 @@ void EditTimelineWidget::mouseMoveEvent(QMouseEvent* e)
 
     // edge auto-scroll while dragging
     if (m_drag != DragMode::Playhead) {
-        if (e->pos().x() > width() - 24)
-            m_scrollSec += 20 / m_pxPerSec;
-        else if (e->pos().x() < headerWidth() + 24)
-            m_scrollSec = qMax(0.0, m_scrollSec - 20 / m_pxPerSec);
+        if (e->pos().x() > width() - 24) m_scrollSec += 20 / m_pxPerSec;
+        else if (e->pos().x() < headerWidth() + 24) m_scrollSec = qMax(0.0, m_scrollSec - 20 / m_pxPerSec);
         updateScrollBar();
     }
     update();
 }
 
-void EditTimelineWidget::mouseReleaseEvent(QMouseEvent* e)
+void EditTimelineWidget::mouseReleaseEvent(QMouseEvent *e)
 {
     if (e->button() != Qt::LeftButton) return;
 
-    if (m_drag != DragMode::None && m_dragClip >= 0 &&
-        m_dragClip < m_clips.size()) {
-        const Clip& c = m_clips[m_dragClip];
-        if (qAbs(c.start - m_origStart) > 1e-6 ||
-            qAbs(c.length - m_origLength) > 1e-6 ||
+    if (m_drag != DragMode::None && m_dragClip >= 0 && m_dragClip < m_clips.size()) {
+        const Clip &c = m_clips[m_dragClip];
+        if (qAbs(c.start - m_origStart) > 1e-6 || qAbs(c.length - m_origLength) > 1e-6 ||
             c.track != m_origTrack) {
-            QString what = m_drag == DragMode::MoveClip ?
-                        QStringLiteral("move") :
-                        m_drag == DragMode::TrimLeft ?
-                        QStringLiteral("trim-left") :
-                        QStringLiteral("trim-right");
+            QString what = m_drag == DragMode::MoveClip ? QStringLiteral("move")
+                         : m_drag == DragMode::TrimLeft ? QStringLiteral("trim-left")
+                                                        : QStringLiteral("trim-right");
             emitLog(QStringLiteral("%1 clip \"%2\": [%3 → %4] track %5")
-                    .arg(what, c.name, timecode(c.start),
-                         timecode(c.start + c.length))
+                    .arg(what, c.name, timecode(c.start), timecode(c.start + c.length))
                     .arg(m_tracks[c.track].name));
             emit selectionChanged(QStringLiteral("%1  [%2 → %3]")
-                                  .arg(c.name, timecode(c.start),
-                                       timecode(c.start + c.length)));
+                                  .arg(c.name, timecode(c.start), timecode(c.start + c.length)));
         }
     }
     m_drag = DragMode::None;
@@ -662,7 +629,7 @@ void EditTimelineWidget::mouseReleaseEvent(QMouseEvent* e)
     update();
 }
 
-void EditTimelineWidget::mouseDoubleClickEvent(QMouseEvent* e)
+void EditTimelineWidget::mouseDoubleClickEvent(QMouseEvent *e)
 {
     // double click ruler: move playhead without drag
     if (e->pos().y() <= rulerHeight()) {
@@ -671,7 +638,7 @@ void EditTimelineWidget::mouseDoubleClickEvent(QMouseEvent* e)
     }
 }
 
-void EditTimelineWidget::wheelEvent(QWheelEvent* e)
+void EditTimelineWidget::wheelEvent(QWheelEvent *e)
 {
     if (e->modifiers() & Qt::ControlModifier) {
         double factor = e->angleDelta().y() > 0 ? 1.2 : 1.0 / 1.2;
@@ -686,22 +653,21 @@ void EditTimelineWidget::wheelEvent(QWheelEvent* e)
     e->accept();
 }
 
-void EditTimelineWidget::keyPressEvent(QKeyEvent* e)
+void EditTimelineWidget::keyPressEvent(QKeyEvent *e)
 {
-    if ((e->key() == Qt::Key_Delete ||
-         e->key() == Qt::Key_Backspace) && m_selected >= 0) {
+    if ((e->key() == Qt::Key_Delete || e->key() == Qt::Key_Backspace) && m_selected >= 0) {
         removeSelectedClip();
         return;
     }
     QWidget::keyPressEvent(e);
 }
 
-void EditTimelineWidget::leaveEvent(QEvent*)
+void EditTimelineWidget::leaveEvent(QEvent *)
 {
     if (m_hover != -1) { m_hover = -1; update(); }
 }
 
-void EditTimelineWidget::resizeEvent(QResizeEvent*)
+void EditTimelineWidget::resizeEvent(QResizeEvent *)
 {
     updateScrollBar();
 }
@@ -716,9 +682,8 @@ void EditTimelineWidget::addVideoClip()
     while (overlapsOnTrack(track, s, len, -1) && s < 1e6) {
         // jump past the blocking clip
         double next = s + len;
-        for (const Clip& o : m_clips)
-            if (o.track == track && s < o.start + o.length &&
-                o.start < s + len)
+        for (const Clip &o : m_clips)
+            if (o.track == track && s < o.start + o.length && o.start < s + len)
                 next = qMax(next, o.start + o.length);
         if (next <= s) break;
         s = next;
@@ -733,8 +698,7 @@ void EditTimelineWidget::addVideoClip()
     c.hueSeed = c.id * 37;
     m_clips.push_back(c);
     m_selected = m_clips.size() - 1;
-    emitLog(QStringLiteral("add video clip \"%1\" at %2")
-            .arg(c.name, timecode(s)));
+    emitLog(QStringLiteral("add video clip \"%1\" at %2").arg(c.name, timecode(s)));
     updateScrollBar();
     update();
 }
@@ -746,9 +710,8 @@ void EditTimelineWidget::addAudioClip()
     double s = m_playhead;
     while (overlapsOnTrack(track, s, len, -1) && s < 1e6) {
         double next = s + len;
-        for (const Clip& o : m_clips)
-            if (o.track == track && s < o.start + o.length &&
-                o.start < s + len)
+        for (const Clip &o : m_clips)
+            if (o.track == track && s < o.start + o.length && o.start < s + len)
                 next = qMax(next, o.start + o.length);
         if (next <= s) break;
         s = next;
@@ -763,8 +726,7 @@ void EditTimelineWidget::addAudioClip()
     c.hueSeed = c.id * 37;
     m_clips.push_back(c);
     m_selected = m_clips.size() - 1;
-    emitLog(QStringLiteral("add audio clip \"%1\" at %2")
-            .arg(c.name, timecode(s)));
+    emitLog(QStringLiteral("add audio clip \"%1\" at %2").arg(c.name, timecode(s)));
     updateScrollBar();
     update();
 }
@@ -772,8 +734,7 @@ void EditTimelineWidget::addAudioClip()
 void EditTimelineWidget::removeSelectedClip()
 {
     if (m_selected < 0 || m_selected >= m_clips.size()) return;
-    emitLog(QStringLiteral("remove clip \"%1\"")
-            .arg(m_clips[m_selected].name));
+    emitLog(QStringLiteral("remove clip \"%1\"").arg(m_clips[m_selected].name));
     m_thumbCache.remove(QStringLiteral("%1").arg(m_clips[m_selected].id));
     m_clips.removeAt(m_selected);
     m_selected = -1;
@@ -797,15 +758,8 @@ void EditTimelineWidget::applyZoom(double factor, int anchorX)
     update();
 }
 
-void EditTimelineWidget::zoomIn()
-{
-    applyZoom(1.3, headerWidth() + (width() - headerWidth()) / 2);
-}
-
-void EditTimelineWidget::zoomOut()
-{
-    applyZoom(1.0 / 1.3, headerWidth() + (width() - headerWidth()) / 2);
-}
+void EditTimelineWidget::zoomIn()  { applyZoom(1.3, headerWidth() + (width() - headerWidth()) / 2); }
+void EditTimelineWidget::zoomOut() { applyZoom(1.0 / 1.3, headerWidth() + (width() - headerWidth()) / 2); }
 
 void EditTimelineWidget::zoomFit()
 {
@@ -820,8 +774,7 @@ void EditTimelineWidget::zoomFit()
 
 void EditTimelineWidget::clampView()
 {
-    double maxScroll = qMax(0.0, contentDuration() -
-                               (width() - headerWidth()) / m_pxPerSec);
+    double maxScroll = qMax(0.0, contentDuration() - (width() - headerWidth()) / m_pxPerSec);
     m_scrollSec = qBound(0.0, m_scrollSec, maxScroll + 2.0);
 }
 
@@ -837,104 +790,96 @@ void EditTimelineWidget::updateScrollBar()
     m_scrollBar->setSingleStep(int(0.5 * 100));
 }
 
-void EditTimelineWidget::emitLog(const QString& msg)
+void EditTimelineWidget::emitLog(const QString &msg)
 {
     emit logMessage(QStringLiteral("[%1] %2")
-                    .arg(QDateTime::currentDateTime()
-                         .toString(QStringLiteral("HH:mm:ss")), msg));
+                    .arg(QDateTime::currentDateTime().toString(QStringLiteral("HH:mm:ss")), msg));
 }
 
 // ------------------------------ panel ------------------------------
+// dock chrome ported from the demo's MainWindow. The demo's
+// qApp->setPalette(...) block is intentionally omitted: friction owns
+// the global theme/palette.
 
-EditTimelinePanel::EditTimelinePanel(QWidget* const parent)
+EditTimelinePanel::EditTimelinePanel(QWidget *parent)
     : QWidget(parent)
 {
     setMinimumSize(560, 380);
 
-    // toolbar (style ported from the demo)
-    mToolBar = new QToolBar(this);
-    mToolBar->setMovable(false);
-    mToolBar->setStyleSheet(QStringLiteral(
-        "QToolBar{background:#1d1d1d;border-bottom:1px solid #2c2c2c;"
-        "spacing:6px;padding:4px;}"
-        "QToolButton{color:#c8c8c8;background:transparent;"
-        "border:1px solid transparent;border-radius:4px;padding:4px 10px;}"
+    // ---- layout: toolbar / timeline + horizontal scrollbar / status ----
+    QVBoxLayout *lay = new QVBoxLayout(this);
+    lay->setContentsMargins(0, 0, 0, 0);
+    lay->setSpacing(0);
+
+    m_timeline = new EditTimelineWidget(this);
+    QScrollBar *hbar = new QScrollBar(Qt::Horizontal, this);
+    hbar->setFixedHeight(12);
+    m_timeline->setScrollBar(hbar);
+
+    // ---- toolbar ----
+    QToolBar *tb = new QToolBar(this);
+    tb->setMovable(false);
+    tb->setStyleSheet(QStringLiteral(
+        "QToolBar{background:#1d1d1d;border-bottom:1px solid #2c2c2c;spacing:6px;padding:4px;}"
+        "QToolButton{color:#c8c8c8;background:transparent;border:1px solid transparent;"
+        "border-radius:4px;padding:4px 10px;}"
         "QToolButton:hover{background:#2b2b2b;border-color:#3a3a3a;}"
         "QToolButton:pressed{background:#08A581;color:#fff;}"));
 
-    const auto aAddV = mToolBar->addAction(QStringLiteral("+ 视频"));
-    const auto aAddA = mToolBar->addAction(QStringLiteral("+ 音频"));
-    const auto aDel = mToolBar->addAction(QStringLiteral("删除"));
-    mToolBar->addSeparator();
-    const auto aZi = mToolBar->addAction(QStringLiteral("放大"));
-    const auto aZo = mToolBar->addAction(QStringLiteral("缩小"));
-    const auto aFit = mToolBar->addAction(QStringLiteral("适配"));
-    mToolBar->addSeparator();
-    const auto aLog = mToolBar->addAction(QStringLiteral("调试日志"));
+    QAction *aAddV = tb->addAction(QStringLiteral("+ 视频"));
+    QAction *aAddA = tb->addAction(QStringLiteral("+ 音频"));
+    QAction *aDel  = tb->addAction(QStringLiteral("删除"));
+    tb->addSeparator();
+    QAction *aZi = tb->addAction(QStringLiteral("放大"));
+    QAction *aZo = tb->addAction(QStringLiteral("缩小"));
+    QAction *aFit = tb->addAction(QStringLiteral("适配"));
+    tb->addSeparator();
+    QAction *aLog = tb->addAction(QStringLiteral("调试日志"));
 
-    mTimeline = new EditTimelineWidget(this);
-    const auto hbar = new QScrollBar(Qt::Horizontal, this);
-    hbar->setFixedHeight(12);
-    mTimeline->setScrollBar(hbar);
+    connect(aAddV, &QAction::triggered, m_timeline, &EditTimelineWidget::addVideoClip);
+    connect(aAddA, &QAction::triggered, m_timeline, &EditTimelineWidget::addAudioClip);
+    connect(aDel,  &QAction::triggered, m_timeline, &EditTimelineWidget::removeSelectedClip);
+    connect(aZi,   &QAction::triggered, m_timeline, &EditTimelineWidget::zoomIn);
+    connect(aZo,   &QAction::triggered, m_timeline, &EditTimelineWidget::zoomOut);
+    connect(aFit,  &QAction::triggered, m_timeline, &EditTimelineWidget::zoomFit);
+    connect(aLog,  &QAction::triggered, this, &EditTimelinePanel::showDebugLog);
 
-    mSelLabel = new QLabel(QStringLiteral("未选中素材"), this);
-    mSelLabel->setStyleSheet(QStringLiteral(
-        "QLabel{background:#1d1d1d;color:#888;"
-        "border-top:1px solid #2c2c2c;padding:2px 8px;}"));
+    // ---- status label (stand-in for the demo's status bar) ----
+    m_selLabel = new QLabel(QStringLiteral("未选中素材"), this);
+    m_selLabel->setStyleSheet(QStringLiteral(
+        "QLabel{background:#1d1d1d;color:#888;border-top:1px solid #2c2c2c;padding:2px 8px;}"));
 
-    const auto lay = new QVBoxLayout(this);
-    lay->setContentsMargins(0, 0, 0, 0);
-    lay->setSpacing(0);
-    lay->addWidget(mToolBar);
-    lay->addWidget(mTimeline, 1);
+    lay->addWidget(tb);
+    lay->addWidget(m_timeline, 1);
     lay->addWidget(hbar);
-    lay->addWidget(mSelLabel);
+    lay->addWidget(m_selLabel);
 
-    connect(aAddV, &QAction::triggered,
-            mTimeline, &EditTimelineWidget::addVideoClip);
-    connect(aAddA, &QAction::triggered,
-            mTimeline, &EditTimelineWidget::addAudioClip);
-    connect(aDel, &QAction::triggered,
-            mTimeline, &EditTimelineWidget::removeSelectedClip);
-    connect(aZi, &QAction::triggered,
-            mTimeline, &EditTimelineWidget::zoomIn);
-    connect(aZo, &QAction::triggered,
-            mTimeline, &EditTimelineWidget::zoomOut);
-    connect(aFit, &QAction::triggered,
-            mTimeline, &EditTimelineWidget::zoomFit);
-    connect(aLog, &QAction::triggered,
-            this, &EditTimelinePanel::showDebugLog);
-
-    // log dialog (created lazily visible, view kept for appending)
-    mLogDlg = new QDialog(this);
-    mLogDlg->setWindowTitle(QStringLiteral("剪辑时间轴调试日志"));
-    mLogDlg->resize(560, 300);
-    const auto dlay = new QVBoxLayout(mLogDlg);
-    mLogView = new QPlainTextEdit(mLogDlg);
-    mLogView->setReadOnly(true);
-    mLogView->setStyleSheet(QStringLiteral(
-        "QPlainTextEdit{background:#161616;color:#b8ffb0;"
-        "border:1px solid #2c2c2c;"
+    // ---- log dialog (created lazily, view kept for appending) ----
+    m_logDlg = new QDialog(this);
+    m_logDlg->setWindowTitle(QStringLiteral("调试日志"));
+    m_logDlg->resize(560, 300);
+    QVBoxLayout *dlay = new QVBoxLayout(m_logDlg);
+    m_logView = new QPlainTextEdit(m_logDlg);
+    m_logView->setReadOnly(true);
+    m_logView->setStyleSheet(QStringLiteral(
+        "QPlainTextEdit{background:#161616;color:#b8ffb0;border:1px solid #2c2c2c;"
         "font-family:Consolas,monospace;font-size:12px;}"));
-    const auto copyBtn = new QPushButton(QStringLiteral("复制全部"), mLogDlg);
-    const auto btnLay = new QHBoxLayout;
+    QPushButton *copyBtn = new QPushButton(QStringLiteral("复制全部"), m_logDlg);
+    QHBoxLayout *btnLay = new QHBoxLayout;
     btnLay->addStretch(1);
     btnLay->addWidget(copyBtn);
-    dlay->addWidget(mLogView, 1);
+    dlay->addWidget(m_logView, 1);
     dlay->addLayout(btnLay, 0);
-    connect(copyBtn, &QPushButton::clicked, this, [this]() {
-        QGuiApplication::clipboard()->setText(mLogView->toPlainText());
-        mLogView->appendPlainText(
-                    QStringLiteral("[log] copied to clipboard"));
+    connect(copyBtn, &QPushButton::clicked, this, [this]{
+        QGuiApplication::clipboard()->setText(m_logView->toPlainText());
+        m_logView->appendPlainText(QStringLiteral("[log] copied to clipboard"));
     });
 
-    connect(mTimeline, &EditTimelineWidget::logMessage,
-            mLogView, &QPlainTextEdit::appendPlainText);
-    connect(mTimeline, &EditTimelineWidget::selectionChanged,
-            this, [this](const QString& info) {
-        mSelLabel->setText(info.isEmpty() ?
-                    QStringLiteral("未选中素材") :
-                    QStringLiteral("选中: ") + info);
+    connect(m_timeline, &EditTimelineWidget::logMessage,
+            m_logView, &QPlainTextEdit::appendPlainText);
+    connect(m_timeline, &EditTimelineWidget::selectionChanged, this, [this](const QString &info){
+        m_selLabel->setText(info.isEmpty() ? QStringLiteral("未选中素材")
+                                           : QStringLiteral("选中: ") + info);
     });
 }
 
@@ -946,7 +891,7 @@ void EditTimelinePanel::setListeningEnabled(const bool enabled)
 
 void EditTimelinePanel::showDebugLog()
 {
-    mLogDlg->show();
-    mLogDlg->raise();
-    mLogDlg->activateWindow();
+    m_logDlg->show();
+    m_logDlg->raise();
+    m_logDlg->activateWindow();
 }
