@@ -5,13 +5,7 @@
 #include <QScrollBar>
 #include <QStatusBar>
 #include <QLabel>
-#include <QDialog>
-#include <QPlainTextEdit>
-#include <QPushButton>
 #include <QVBoxLayout>
-#include <QHBoxLayout>
-#include <QClipboard>
-#include <QGuiApplication>
 #include <QAction>
 #include <QApplication>
 #include <QStyleFactory>
@@ -110,15 +104,12 @@ EditorTimelineWindow::EditorTimelineWindow(QWidget *parent)
     QAction *aZi = mToolBar->addAction(QStringLiteral("放大"));
     QAction *aZo = mToolBar->addAction(QStringLiteral("缩小"));
     QAction *aFit = mToolBar->addAction(QStringLiteral("适配"));
-    mToolBar->addSeparator();
-    QAction *aLog = mToolBar->addAction(QStringLiteral("调试日志"));
 
     connect(aDel,  &QAction::triggered, m_timeline, &EditorTimelineWidget::removeSelectedClip);
     connect(aMag, &QAction::toggled, m_timeline, &EditorTimelineWidget::setMagnetic);
     connect(aZi,   &QAction::triggered, m_timeline, &EditorTimelineWidget::zoomIn);
     connect(aZo,   &QAction::triggered, m_timeline, &EditorTimelineWidget::zoomOut);
     connect(aFit,  &QAction::triggered, m_timeline, &EditorTimelineWidget::zoomFit);
-    connect(aLog,  &QAction::triggered, this, &EditorTimelineWindow::showDebugLog);
 
     // ---- status bar ----
     m_selLabel = new QLabel(QStringLiteral("未选中素材"), this);
@@ -127,29 +118,6 @@ EditorTimelineWindow::EditorTimelineWindow(QWidget *parent)
         "QStatusBar{background:#1d1d1d;color:#888;border-top:1px solid #2c2c2c;}"
         "QStatusBar::item{border:none;}"));
 
-    // ---- log dialog (created lazily, view kept for appending) ----
-    m_logDlg = new QDialog(this);
-    m_logDlg->setWindowTitle(QStringLiteral("调试日志"));
-    m_logDlg->resize(560, 300);
-    QVBoxLayout *dlay = new QVBoxLayout(m_logDlg);
-    m_logView = new QPlainTextEdit(m_logDlg);
-    m_logView->setReadOnly(true);
-    m_logView->setStyleSheet(QStringLiteral(
-        "QPlainTextEdit{background:#161616;color:#b8ffb0;border:1px solid #2c2c2c;"
-        "font-family:Consolas,monospace;font-size:12px;}"));
-    QPushButton *copyBtn = new QPushButton(QStringLiteral("复制全部"), m_logDlg);
-    QHBoxLayout *btnLay = new QHBoxLayout;
-    btnLay->addStretch(1);
-    btnLay->addWidget(copyBtn);
-    dlay->addWidget(m_logView, 1);
-    dlay->addLayout(btnLay, 0);
-    connect(copyBtn, &QPushButton::clicked, this, [this]{
-        QGuiApplication::clipboard()->setText(m_logView->toPlainText());
-        m_logView->appendPlainText(QStringLiteral("[log] copied to clipboard"));
-    });
-
-    connect(m_timeline, &EditorTimelineWidget::logMessage,
-            m_logView, &QPlainTextEdit::appendPlainText);
     connect(m_timeline, &EditorTimelineWidget::selectionChanged, this, [this](const QString &info){
         m_selLabel->setText(info.isEmpty() ? QStringLiteral("未选中素材")
                                            : QStringLiteral("选中: ") + info);
@@ -164,13 +132,6 @@ EditorTimelineWindow::EditorTimelineWindow(QWidget *parent)
     pal.setColor(QPalette::Button, QColor(0x24, 0x24, 0x26));
     pal.setColor(QPalette::ButtonText, QColor(0xc8, 0xc8, 0xc8));
     setPalette(pal);
-}
-
-void EditorTimelineWindow::showDebugLog()
-{
-    m_logDlg->show();
-    m_logDlg->raise();
-    m_logDlg->activateWindow();
 }
 
 void EditorTimelineWindow::refreshThemeColors()

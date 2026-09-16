@@ -5,9 +5,7 @@
 #include <QIcon>
 
 class EditorTimelineWidget;
-class QPlainTextEdit;
 class QLabel;
-class QDialog;
 class QAction;
 class QToolBar;
 
@@ -20,17 +18,12 @@ public:
 protected:
     void showEvent(QShowEvent *event) override;
 
-private slots:
-    void showDebugLog();
-
 private:
     // re-pull accent colors from the app theme: toolbar QSS highlight
     // and the magnetic toggle icons follow theme changes on every show
     void refreshThemeColors();
 
     EditorTimelineWidget *m_timeline;
-    QPlainTextEdit *m_logView;   // owned by log dialog
-    QDialog *m_logDlg = nullptr;
     QLabel *m_selLabel;
     QAction *mMagAction = nullptr;
     QIcon mMagOn;
