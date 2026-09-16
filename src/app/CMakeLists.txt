@@ -228,7 +228,6 @@ set(
     GUI/scenenavigatorbar.cpp
     GUI/projectpanel.cpp
     GUI/switchpanel.cpp
-    GUI/edittimelinewidget.cpp
     GUI/textanimpresetpanel.cpp
     GUI/timelinebasewrappernode.cpp
     GUI/timelinedockwidget.cpp
