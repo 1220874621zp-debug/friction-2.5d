@@ -1,25 +1,4 @@
-/*
-#
-# Friction - https://friction.graphics
-#
-# Copyright (c) Ole-André Rodlie and contributors
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-#
-*/
-
-#include "edittimelinepanel.h"
+#include "edittimelinewidget.h"
 
 #include <QPainter>
 #include <QPainterPath>
@@ -30,15 +9,6 @@
 #include <QtMath>
 #include <QRandomGenerator>
 #include <QDateTime>
-#include <QToolBar>
-#include <QLabel>
-#include <QDialog>
-#include <QPlainTextEdit>
-#include <QPushButton>
-#include <QVBoxLayout>
-#include <QHBoxLayout>
-#include <QClipboard>
-#include <QGuiApplication>
 
 static const double MIN_CLIP_LEN = 0.2;   // seconds
 static const int SNAP_PX = 8;
@@ -794,104 +764,4 @@ void EditTimelineWidget::emitLog(const QString &msg)
 {
     emit logMessage(QStringLiteral("[%1] %2")
                     .arg(QDateTime::currentDateTime().toString(QStringLiteral("HH:mm:ss")), msg));
-}
-
-// ------------------------------ panel ------------------------------
-// dock chrome ported from the demo's MainWindow. The demo's
-// qApp->setPalette(...) block is intentionally omitted: friction owns
-// the global theme/palette.
-
-EditTimelinePanel::EditTimelinePanel(QWidget *parent)
-    : QWidget(parent)
-{
-    setMinimumSize(560, 380);
-
-    // ---- layout: toolbar / timeline + horizontal scrollbar / status ----
-    QVBoxLayout *lay = new QVBoxLayout(this);
-    lay->setContentsMargins(0, 0, 0, 0);
-    lay->setSpacing(0);
-
-    m_timeline = new EditTimelineWidget(this);
-    QScrollBar *hbar = new QScrollBar(Qt::Horizontal, this);
-    hbar->setFixedHeight(12);
-    m_timeline->setScrollBar(hbar);
-
-    // ---- toolbar ----
-    QToolBar *tb = new QToolBar(this);
-    tb->setMovable(false);
-    tb->setStyleSheet(QStringLiteral(
-        "QToolBar{background:#1d1d1d;border-bottom:1px solid #2c2c2c;spacing:6px;padding:4px;}"
-        "QToolButton{color:#c8c8c8;background:transparent;border:1px solid transparent;"
-        "border-radius:4px;padding:4px 10px;}"
-        "QToolButton:hover{background:#2b2b2b;border-color:#3a3a3a;}"
-        "QToolButton:pressed{background:#08A581;color:#fff;}"));
-
-    QAction *aAddV = tb->addAction(QStringLiteral("+ 视频"));
-    QAction *aAddA = tb->addAction(QStringLiteral("+ 音频"));
-    QAction *aDel  = tb->addAction(QStringLiteral("删除"));
-    tb->addSeparator();
-    QAction *aZi = tb->addAction(QStringLiteral("放大"));
-    QAction *aZo = tb->addAction(QStringLiteral("缩小"));
-    QAction *aFit = tb->addAction(QStringLiteral("适配"));
-    tb->addSeparator();
-    QAction *aLog = tb->addAction(QStringLiteral("调试日志"));
-
-    connect(aAddV, &QAction::triggered, m_timeline, &EditTimelineWidget::addVideoClip);
-    connect(aAddA, &QAction::triggered, m_timeline, &EditTimelineWidget::addAudioClip);
-    connect(aDel,  &QAction::triggered, m_timeline, &EditTimelineWidget::removeSelectedClip);
-    connect(aZi,   &QAction::triggered, m_timeline, &EditTimelineWidget::zoomIn);
-    connect(aZo,   &QAction::triggered, m_timeline, &EditTimelineWidget::zoomOut);
-    connect(aFit,  &QAction::triggered, m_timeline, &EditTimelineWidget::zoomFit);
-    connect(aLog,  &QAction::triggered, this, &EditTimelinePanel::showDebugLog);
-
-    // ---- status label (stand-in for the demo's status bar) ----
-    m_selLabel = new QLabel(QStringLiteral("未选中素材"), this);
-    m_selLabel->setStyleSheet(QStringLiteral(
-        "QLabel{background:#1d1d1d;color:#888;border-top:1px solid #2c2c2c;padding:2px 8px;}"));
-
-    lay->addWidget(tb);
-    lay->addWidget(m_timeline, 1);
-    lay->addWidget(hbar);
-    lay->addWidget(m_selLabel);
-
-    // ---- log dialog (created lazily, view kept for appending) ----
-    m_logDlg = new QDialog(this);
-    m_logDlg->setWindowTitle(QStringLiteral("调试日志"));
-    m_logDlg->resize(560, 300);
-    QVBoxLayout *dlay = new QVBoxLayout(m_logDlg);
-    m_logView = new QPlainTextEdit(m_logDlg);
-    m_logView->setReadOnly(true);
-    m_logView->setStyleSheet(QStringLiteral(
-        "QPlainTextEdit{background:#161616;color:#b8ffb0;border:1px solid #2c2c2c;"
-        "font-family:Consolas,monospace;font-size:12px;}"));
-    QPushButton *copyBtn = new QPushButton(QStringLiteral("复制全部"), m_logDlg);
-    QHBoxLayout *btnLay = new QHBoxLayout;
-    btnLay->addStretch(1);
-    btnLay->addWidget(copyBtn);
-    dlay->addWidget(m_logView, 1);
-    dlay->addLayout(btnLay, 0);
-    connect(copyBtn, &QPushButton::clicked, this, [this]{
-        QGuiApplication::clipboard()->setText(m_logView->toPlainText());
-        m_logView->appendPlainText(QStringLiteral("[log] copied to clipboard"));
-    });
-
-    connect(m_timeline, &EditTimelineWidget::logMessage,
-            m_logView, &QPlainTextEdit::appendPlainText);
-    connect(m_timeline, &EditTimelineWidget::selectionChanged, this, [this](const QString &info){
-        m_selLabel->setText(info.isEmpty() ? QStringLiteral("未选中素材")
-                                           : QStringLiteral("选中: ") + info);
-    });
-}
-
-void EditTimelinePanel::setListeningEnabled(const bool enabled)
-{
-    Q_UNUSED(enabled)
-    // pure-UI widget: nothing to disconnect while the dock is hidden
-}
-
-void EditTimelinePanel::showDebugLog()
-{
-    m_logDlg->show();
-    m_logDlg->raise();
-    m_logDlg->activateWindow();
 }

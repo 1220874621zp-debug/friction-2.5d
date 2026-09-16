@@ -73,7 +73,17 @@
 #include "quickeffectsearchdialog.h"
 #include "projectpanel.h"
 #include "switchpanel.h"
-#include "edittimelinepanel.h"
+#include "edittimelinewidget.h"
+#include <QToolBar>
+#include <QScrollBar>
+#include <QLabel>
+#include <QDialog>
+#include <QPlainTextEdit>
+#include <QPushButton>
+#include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QClipboard>
+#include <QGuiApplication>
 #include <QShortcut>
 #include "textanimpresetpanel.h"
 #include "scriptmanager.h"
@@ -1803,13 +1813,11 @@ void MainWindow::setupLayout()
                                 QStringLiteral("dockSwitchLayers"),
                                 mSwitchPanel);
 
-    // NLE-style edit timeline panel: UI/interaction ported verbatim
-    // from the user's approved TimelineDemo (pure UI, engine wiring
-    // plugs into the widget later)
-    mEditTimelinePanel = new EditTimelinePanel(this);
+    // NLE-style edit timeline: the user's TimelineDemo widget ported
+    // as-is (pure UI for now; engine wiring plugs in later)
     mEditTimelineDock = makeDock(tr("剪辑时间轴"),
                                  QStringLiteral("dockEditTimeline"),
-                                 mEditTimelinePanel);
+                                 setupEditTimeline());
 
     setCentralWidget(mStackWidget);
     addDockWidget(Qt::RightDockWidgetArea, mFillStrokeDock);
@@ -1836,13 +1844,6 @@ void MainWindow::setupLayout()
             this, [this](const bool visible) {
         if(!mSwitchPanel) return;
         mSwitchPanel->setListeningEnabled(visible);
-    });
-    // same gate for the edit timeline panel (thumbnail renders stop
-    // too)
-    connect(mEditTimelineDock, &QDockWidget::visibilityChanged,
-            this, [this](const bool visible) {
-        if(!mEditTimelinePanel) return;
-        mEditTimelinePanel->setListeningEnabled(visible);
     });
 
     // window-level Space shortcut: playback toggles from any focus
@@ -2518,6 +2519,101 @@ void MainWindow::cmdAddAction(QAction *act)
 {
     if (!act || eSettings::instance().fCommandPalette.contains(act)) { return; }
     eSettings::sInstance->fCommandPalette.append(act);
+}
+
+// edit timeline dock content: 1:1 port of TimelineDemo's MainWindow
+// (toolbar, timeline + scrollbar, status label, debug log dialog).
+// The demo's qApp->setPalette block is dropped - friction owns the
+// global theme.
+QWidget *MainWindow::setupEditTimeline()
+{
+    // ---- central: timeline + horizontal scrollbar ----
+    QWidget *central = new QWidget(this);
+    QVBoxLayout *lay = new QVBoxLayout(central);
+    lay->setContentsMargins(0, 0, 0, 0);
+    lay->setSpacing(0);
+
+    // ---- toolbar ----
+    QToolBar *tb = new QToolBar(central);
+    tb->setMovable(false);
+    tb->setStyleSheet(QStringLiteral(
+        "QToolBar{background:#1d1d1d;border-bottom:1px solid #2c2c2c;spacing:6px;padding:4px;}"
+        "QToolButton{color:#c8c8c8;background:transparent;border:1px solid transparent;"
+        "border-radius:4px;padding:4px 10px;}"
+        "QToolButton:hover{background:#2b2b2b;border-color:#3a3a3a;}"
+        "QToolButton:pressed{background:#08A581;color:#fff;}"));
+
+    QAction *aAddV = tb->addAction(QStringLiteral("+ 视频"));
+    QAction *aAddA = tb->addAction(QStringLiteral("+ 音频"));
+    QAction *aDel  = tb->addAction(QStringLiteral("删除"));
+    tb->addSeparator();
+    QAction *aZi = tb->addAction(QStringLiteral("放大"));
+    QAction *aZo = tb->addAction(QStringLiteral("缩小"));
+    QAction *aFit = tb->addAction(QStringLiteral("适配"));
+    tb->addSeparator();
+    QAction *aLog = tb->addAction(QStringLiteral("调试日志"));
+
+    mEditTimelineWidget = new EditTimelineWidget(central);
+    QScrollBar *hbar = new QScrollBar(Qt::Horizontal, central);
+    hbar->setFixedHeight(12);
+    mEditTimelineWidget->setScrollBar(hbar);
+
+    // ---- status label (stand-in for the demo's status bar) ----
+    mEtlSelLabel = new QLabel(QStringLiteral("未选中素材"), central);
+    mEtlSelLabel->setStyleSheet(QStringLiteral(
+        "QLabel{background:#1d1d1d;color:#888;border-top:1px solid #2c2c2c;padding:2px 8px;}"));
+
+    lay->addWidget(tb);
+    lay->addWidget(mEditTimelineWidget, 1);
+    lay->addWidget(hbar);
+    lay->addWidget(mEtlSelLabel);
+
+    connect(aAddV, &QAction::triggered, mEditTimelineWidget, &EditTimelineWidget::addVideoClip);
+    connect(aAddA, &QAction::triggered, mEditTimelineWidget, &EditTimelineWidget::addAudioClip);
+    connect(aDel,  &QAction::triggered, mEditTimelineWidget, &EditTimelineWidget::removeSelectedClip);
+    connect(aZi,   &QAction::triggered, mEditTimelineWidget, &EditTimelineWidget::zoomIn);
+    connect(aZo,   &QAction::triggered, mEditTimelineWidget, &EditTimelineWidget::zoomOut);
+    connect(aFit,  &QAction::triggered, mEditTimelineWidget, &EditTimelineWidget::zoomFit);
+    connect(aLog,  &QAction::triggered, this, &MainWindow::showEtlLog);
+
+    // ---- log dialog (created lazily, view kept for appending) ----
+    mEtlLogDlg = new QDialog(this);
+    mEtlLogDlg->setWindowTitle(QStringLiteral("调试日志"));
+    mEtlLogDlg->resize(560, 300);
+    QVBoxLayout *dlay = new QVBoxLayout(mEtlLogDlg);
+    mEtlLogView = new QPlainTextEdit(mEtlLogDlg);
+    mEtlLogView->setReadOnly(true);
+    mEtlLogView->setStyleSheet(QStringLiteral(
+        "QPlainTextEdit{background:#161616;color:#b8ffb0;border:1px solid #2c2c2c;"
+        "font-family:Consolas,monospace;font-size:12px;}"));
+    QPushButton *copyBtn = new QPushButton(QStringLiteral("复制全部"), mEtlLogDlg);
+    QHBoxLayout *btnLay = new QHBoxLayout;
+    btnLay->addStretch(1);
+    btnLay->addWidget(copyBtn);
+    dlay->addWidget(mEtlLogView, 1);
+    dlay->addLayout(btnLay, 0);
+    connect(copyBtn, &QPushButton::clicked, this, [this]() {
+        QGuiApplication::clipboard()->setText(mEtlLogView->toPlainText());
+        mEtlLogView->appendPlainText(QStringLiteral("[log] copied to clipboard"));
+    });
+
+    connect(mEditTimelineWidget, &EditTimelineWidget::logMessage,
+            mEtlLogView, &QPlainTextEdit::appendPlainText);
+    connect(mEditTimelineWidget, &EditTimelineWidget::selectionChanged,
+            this, [this](const QString &info) {
+        mEtlSelLabel->setText(info.isEmpty() ? QStringLiteral("未选中素材")
+                                             : QStringLiteral("选中: ") + info);
+    });
+
+    return central;
+}
+
+void MainWindow::showEtlLog()
+{
+    if (!mEtlLogDlg) return;
+    mEtlLogDlg->show();
+    mEtlLogDlg->raise();
+    mEtlLogDlg->activateWindow();
 }
 
 LayoutHandler *MainWindow::getLayoutHandler()

@@ -1,30 +1,5 @@
-/*
-#
-# Friction - https://friction.graphics
-#
-# Copyright (c) Ole-André Rodlie and contributors
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-#
-*/
-
-// Edit timeline panel - UI/interaction copied verbatim from
-// ceshi/TimelineDemo (user-approved). Pure UI, no core deps;
-// engine wiring plugs into the widget later.
-
-#ifndef EDITTIMELINEPANEL_H
-#define EDITTIMELINEPANEL_H
+#ifndef EDITTIMELINEWIDGET_H
+#define EDITTIMELINEWIDGET_H
 
 #include <QWidget>
 #include <QVector>
@@ -153,28 +128,4 @@ private:
     QColor cAudioWave{0x4f,0x8f,0xd6};
 };
 
-// dock content hosting the timeline: toolbar, status label and the
-// debug log dialog, ported 1:1 from the demo's MainWindow
-class QLabel;
-class QDialog;
-class QPlainTextEdit;
-class EditTimelinePanel : public QWidget {
-    Q_OBJECT
-public:
-    explicit EditTimelinePanel(QWidget *parent = nullptr);
-
-    // dock visibility gate (kept for the mainwindow connection; the
-    // pure-UI widget has nothing to stop while hidden)
-    void setListeningEnabled(const bool enabled);
-
-private slots:
-    void showDebugLog();
-
-private:
-    EditTimelineWidget *m_timeline;
-    QPlainTextEdit *m_logView;   // owned by log dialog
-    QDialog *m_logDlg = nullptr;
-    QLabel *m_selLabel;
-};
-
-#endif // EDITTIMELINEPANEL_H
+#endif // EDITTIMELINEWIDGET_H

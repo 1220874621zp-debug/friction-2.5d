@@ -281,7 +281,12 @@ private:
     QDockWidget *mSwitchPanelDock = nullptr;
     class SwitchPanel *mSwitchPanel = nullptr;
     QDockWidget *mEditTimelineDock = nullptr;
-    class EditTimelinePanel *mEditTimelinePanel = nullptr;
+    class EditTimelineWidget *mEditTimelineWidget = nullptr;
+    class QLabel *mEtlSelLabel = nullptr;
+    class QDialog *mEtlLogDlg = nullptr;
+    class QPlainTextEdit *mEtlLogView = nullptr;
+    QWidget *setupEditTimeline();
+    void showEtlLog();
     EffectsPresetsPanel *mEffectsPresetsPanel = nullptr;
     QuickEffectSearchDialog *mQuickEffectSearch = nullptr;
     // JS plugin system (Scripts menu + console dock)
