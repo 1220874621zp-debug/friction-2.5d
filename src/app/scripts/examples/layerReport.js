@@ -9,7 +9,7 @@ registerCommand("Layer Report", function() {
         return;
     }
 
-    var layers = scene.layers;
+    var layers = scene.layers();
     $.writeln("=== Scene \"" + scene.name + "\" ===");
     $.writeln("Size: " + scene.width + "x" + scene.height +
               " @ " + scene.fps + " fps, duration " +
