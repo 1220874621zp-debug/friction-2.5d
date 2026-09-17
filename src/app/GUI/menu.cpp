@@ -33,7 +33,6 @@
 #include "vtracerprovider.h"
 #include "Depth/aidepthprovider.h"
 
-#include <QDesktopServices>
 #include <QClipboard>
 #include <QMessageBox>
 #include <QStatusBar>
@@ -836,19 +835,6 @@ void MainWindow::setupMenuBar()
                     }, QKeySequence(AppSupport::getSettings("shortcuts",
                                                          "cmdPalette",
                                                          cmdDefKey).toString()));
-
-    help->addSeparator();
-    help->addAction(QIcon::fromTheme("user-home"),
-                    tr("Website"), this, []() {
-                        QDesktopServices::openUrl(QUrl(AppSupport::getAppUrl()));
-                    });
-
-    help->addAction(QIcon::fromTheme("dialog-information"),
-                    tr("Documentation"), this, []() {
-        const QString offline = AppSupport::getOfflineDocs();
-        const QString docs = offline.isEmpty() ? AppSupport::getOnlineDocs() : offline;
-        QDesktopServices::openUrl(QUrl::fromUserInput(docs));
-    });
 
     help->addSeparator();
     help->addAction(QIcon::fromTheme("renderlayers"),
