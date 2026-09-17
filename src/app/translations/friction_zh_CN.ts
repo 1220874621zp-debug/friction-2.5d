@@ -6793,6 +6793,11 @@ Are you sure you want to save this project file?</source>
             <translation>使用手册</translation>
         </message>
         <message>
+            <location filename="../GUI/menu.cpp" line="858" />
+            <source>GitHub</source>
+            <translation>GitHub</translation>
+        </message>
+        <message>
             <location filename="../GUI/menu.cpp" line="855" />
             <source>Install default presets</source>
             <translation>安装默认预设</translation>

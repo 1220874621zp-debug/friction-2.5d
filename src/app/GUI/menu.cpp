@@ -34,6 +34,7 @@
 #include "vtracerprovider.h"
 #include "Depth/aidepthprovider.h"
 
+#include <QDesktopServices>
 #include <QClipboard>
 #include <QMessageBox>
 #include <QStatusBar>
@@ -853,6 +854,11 @@ void MainWindow::setupMenuBar()
     }, QKeySequence(AppSupport::getSettings("shortcuts",
                                             "userManual",
                                             "F1").toString()));
+
+    help->addAction(QIcon::fromTheme("user-home"),
+                    tr("GitHub"), this, []() {
+        QDesktopServices::openUrl(QUrl("https://github.com/1220874621zp-debug/friction-2.5d"));
+    });
 
     help->addSeparator();
     help->addAction(QIcon::fromTheme("renderlayers"),
