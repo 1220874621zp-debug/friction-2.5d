@@ -23,6 +23,7 @@
 #include "mainwindow.h"
 
 #include "GUI/Settings/settingsdialog.h"
+#include "GUI/Dialogs/manualdialog.h"
 #include "AI/mcpserver.h"
 #include "GUI/timelinedockwidget.h"
 #include "dialogs/commandpalette.h"
@@ -835,6 +836,23 @@ void MainWindow::setupMenuBar()
                     }, QKeySequence(AppSupport::getSettings("shortcuts",
                                                          "cmdPalette",
                                                          cmdDefKey).toString()));
+
+    help->addAction(QIcon::fromTheme("dialog-information"),
+                    tr("User Manual"), this, [this]() {
+        // modeless, single instance: re-activate if already open
+        const auto existing = findChild<ManualDialog*>();
+        if (existing) {
+            existing->show();
+            existing->raise();
+            existing->activateWindow();
+            return;
+        }
+        const auto dialog = new ManualDialog(this);
+        dialog->setAttribute(Qt::WA_DeleteOnClose);
+        dialog->show();
+    }, QKeySequence(AppSupport::getSettings("shortcuts",
+                                            "userManual",
+                                            "F1").toString()));
 
     help->addSeparator();
     help->addAction(QIcon::fromTheme("renderlayers"),

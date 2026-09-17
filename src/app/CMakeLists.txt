@@ -206,6 +206,7 @@ set(
     GUI/Dialogs/animationtopaintdialog.cpp
     GUI/Dialogs/vectortracedialog.cpp
     GUI/Dialogs/aidepthdialog.cpp
+    GUI/Dialogs/manualdialog.cpp
     GUI/Expressions/expressiondialog.cpp
     GUI/Expressions/expressioneditor.cpp
     GUI/Expressions/expressionhighlighter.cpp
@@ -282,6 +283,7 @@ set(
     GUI/Dialogs/animationtopaintdialog.h
     GUI/Dialogs/vectortracedialog.h
     GUI/Dialogs/aidepthdialog.h
+    GUI/Dialogs/manualdialog.h
     GUI/Expressions/expressiondialog.h
     GUI/Expressions/expressioneditor.h
     GUI/Expressions/expressionhighlighter.h
@@ -349,6 +351,7 @@ set(
     RESOURCES
     resources.qrc
     icons/hicolor.qrc
+    manual/manual.qrc
 )
 if(${LINUX_DEPLOY})
     list(APPEND RESOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../../docs/docs_lin.qrc)

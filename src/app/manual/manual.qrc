@@ -1,0 +1,7 @@
+<RCC>
+    <qresource prefix="/manual">
+        <file>INDEX.md</file>
+        <file>basics/command-palette.md</file>
+        <file>scripting/script-console.md</file>
+    </qresource>
+</RCC>

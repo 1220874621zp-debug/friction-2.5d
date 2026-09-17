@@ -6788,14 +6788,9 @@ Are you sure you want to save this project file?</source>
             <translation>命令面板</translation>
         </message>
         <message>
-            <location filename="../GUI/menu.cpp" line="842" />
-            <source>Website</source>
-            <translation>官网</translation>
-        </message>
-        <message>
-            <location filename="../GUI/menu.cpp" line="847" />
-            <source>Documentation</source>
-            <translation>文档</translation>
+            <location filename="../GUI/menu.cpp" line="841" />
+            <source>User Manual</source>
+            <translation>使用手册</translation>
         </message>
         <message>
             <location filename="../GUI/menu.cpp" line="855" />
@@ -7067,6 +7062,38 @@ Are you sure you want to save this project file?</source>
             <location filename="../main.cpp" line="408" />
             <source>Object</source>
             <translation>对象</translation>
+        </message>
+    </context>
+    <context>
+        <name>ManualDialog</name>
+        <message>
+            <location filename="../GUI/Dialogs/manualdialog.cpp" line="51" />
+            <source>User Manual</source>
+            <translation>使用手册</translation>
+        </message>
+        <message>
+            <location filename="../GUI/Dialogs/manualdialog.cpp" line="76" />
+            <source>Search title or content ...</source>
+            <translation>搜索标题或正文…</translation>
+        </message>
+        <message>
+            <location filename="../GUI/Dialogs/manualdialog.cpp" line="148" />
+            <source>Contents</source>
+            <translation>总索引</translation>
+        </message>
+        <message>
+            <location filename="../GUI/Dialogs/manualdialog.cpp" line="182" />
+            <source>Uncategorized</source>
+            <translation>未收录</translation>
+        </message>
+        <message>
+            <location filename="../GUI/Dialogs/manualdialog.cpp" line="193" />
+            <source>## Missing document
+
+`%1` is not registered in `manual.qrc`, see `manual/README.md` for how to add manual pages.</source>
+            <translation>## 文档缺失
+
+`%1` 没有登记进 `manual.qrc`，请参考 `manual/README.md` 的维护说明补登记。</translation>
         </message>
     </context>
     <context>
