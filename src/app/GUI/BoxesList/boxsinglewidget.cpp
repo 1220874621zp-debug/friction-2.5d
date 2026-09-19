@@ -726,6 +726,26 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
         if (!mTarget) { return; }
         const auto ebs = enve_cast<eBoxOrSound*>(mTarget->getTarget());
         if (!ebs) { return; }
+        const bool enable = !ebs->isSolo();
+        // multi-selection: AE-style switch semantics - when this row's
+        // layer/sound belongs to the selection, every selected row
+        // follows, unified to the new state (same pattern as the 3D
+        // switch); sounds live outside the boxes list, so they are
+        // collected separately
+        const auto scene = mParent ? mParent->currentScene() : nullptr;
+        if (scene && ebs->isSelected()) {
+            const auto sel = scene->getSelectedBoxesList();
+            for (const auto& selBox : sel) {
+                if (selBox && selBox->isSolo() != enable) {
+                    selBox->setSolo(enable);
+                }
+            }
+            scene->forEachSelectedSound([enable](eBoxOrSound* s) {
+                if (s && s->isSolo() != enable) { s->setSolo(enable); }
+            });
+            Document::sInstance->actionFinished();
+            return;
+        }
         ebs->switchSolo();
         Document::sInstance->actionFinished();
     });
