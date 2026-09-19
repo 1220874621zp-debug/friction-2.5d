@@ -36,14 +36,243 @@
 #include "svgexporthelpers.h"
 #include "appsupport.h"
 #include "Properties/boxtargetproperty.h"
+#include "canvas.h"
 #include "Boxes/bone.h"
 #include "Private/document.h"
 #include "simpletask.h"
 #include "ReadWrite/evformat.h"
 #include "Animators/animator.h"
+#include "Animators/complexanimator.h"
+#include "Animators/qrealanimator.h"
+#include "Animators/transformanimator.h"
+#include "MovablePoints/movablepoint.h"
+#include "MovablePoints/pointshandler.h"
 
 #include <QtMath>
 #include <QDebug>
+
+// ---------------------------------------------------------------------------
+// puppet pins: direct mesh deformation, no bones required. A pin is a
+// degenerate skin driver (a point with an influence radius) whose x/y
+// are standard keyable animators, so dragging rides the regular undo /
+// auto-key / interpolation pipeline
+
+class SkinPinPoint : public MovablePoint {
+    e_OBJECT
+public:
+    SkinPinPoint(BasicTransformAnimator * const trans,
+                 SkinPin * const pin)
+        : MovablePoint(trans, TYPE_PIVOT_POINT), mPin(pin) {
+        setRadius(6);
+    }
+
+    QPointF getRelativePos() const override;
+    void setRelativePos(const QPointF &relPos) override;
+
+    void startTransform() override;
+    void finishTransform() override;
+
+    void canvasContextMenu(PointTypeMenu * const menu) override;
+private:
+    SkinPin * const mPin;
+};
+
+class SkinPin : public ComplexAnimator {
+public:
+    SkinPin(const QString& name, ImageBox * const box)
+        : ComplexAnimator(name), mBox(box) {
+        mX = enve::make_shared<QrealAnimator>(
+                    0, -100000, 100000, 1, QStringLiteral("x"));
+        mY = enve::make_shared<QrealAnimator>(
+                    0, -100000, 100000, 1, QStringLiteral("y"));
+        mRadius = enve::make_shared<QrealAnimator>(
+                    150, 1, 100000, 1,
+                    QStringLiteral("\u5F71\u54CD\u534A\u5F84"));
+        ca_addChild(mX);
+        ca_addChild(mY);
+        ca_addChild(mRadius);
+        setPointsHandler(enve::make_shared<PointsHandler>());
+        getPointsHandler()->appendPt(enve::make_shared<SkinPinPoint>(
+                    mBox ? mBox->getBoxTransformAnimator() : nullptr,
+                    this));
+        prp_enabledDrawingOnCanvas();
+    }
+
+    QPointF getRelPos() const {
+        return QPointF(mX->getEffectiveValue(),
+                       mY->getEffectiveValue());
+    }
+
+    void setRelPos(const QPointF& p) {
+        mX->setCurrentBaseValue(p.x());
+        mY->setCurrentBaseValue(p.y());
+    }
+
+    qreal getRadius() const { return mRadius->getEffectiveValue(); }
+    void setRadiusValue(const qreal r) {
+        mRadius->setCurrentBaseValue(r);
+    }
+
+    QPointF bindRel() const { return mBindRel; }
+    void setBindRel(const QPointF& p) { mBindRel = p; }
+
+    void startTransform() {
+        mPosAtStart = getRelPos();
+        mX->prp_startTransform();
+        mY->prp_startTransform();
+    }
+
+    void finishTransform() {
+        mX->prp_finishTransform();
+        mY->prp_finishTransform();
+        // Moho-style auto-keyframing (BoneTailPoint pattern): a real
+        // drag records a key at the current frame
+        if (QLineF(mPosAtStart, getRelPos()).length() > 0.01) {
+            mX->anim_saveCurrentValueAsKey();
+            mY->anim_saveCurrentValueAsKey();
+        }
+    }
+
+    void removeFromPins() {
+        if (mBox) mBox->removeSkinPin(this);
+    }
+
+    // serialization: the three child animators positionally (created
+    // by the ctor, StaticComplexAnimator pattern), then the bind pos
+    void prp_writeProperty_impl(eWriteStream& dst) const {
+        for (const auto& prop : ca_getChildren()) {
+            prop->prp_writeProperty(dst);
+        }
+        dst << mBindRel;
+    }
+
+    void prp_readProperty_impl(eReadStream& src) {
+        for (const auto& prop : ca_getChildren()) {
+            prop->prp_readProperty(src);
+        }
+        src >> mBindRel;
+    }
+
+    QDomElement prp_writePropertyXEV_impl(const XevExporter& exp) const {
+        auto ele = exp.createElement(QStringLiteral("SkinPin"));
+        ele.setAttribute(QStringLiteral("x"), mX->getEffectiveValue());
+        ele.setAttribute(QStringLiteral("y"), mY->getEffectiveValue());
+        ele.setAttribute(QStringLiteral("radius"),
+                         mRadius->getEffectiveValue());
+        ele.setAttribute(QStringLiteral("bindX"), mBindRel.x());
+        ele.setAttribute(QStringLiteral("bindY"), mBindRel.y());
+        return ele;
+    }
+
+    void prp_readPropertyXEV_impl(const QDomElement& ele,
+                                  const XevImporter& imp) {
+        Q_UNUSED(imp)
+        setRelPos(QPointF(ele.attribute(QStringLiteral("x")).toDouble(),
+                          ele.attribute(QStringLiteral("y")).toDouble()));
+        mBindRel = QPointF(ele.attribute(QStringLiteral("bindX")).toDouble(),
+                           ele.attribute(QStringLiteral("bindY")).toDouble());
+        setRadiusValue(ele.attribute(QStringLiteral("radius")).toDouble());
+    }
+
+private:
+    qptr<ImageBox> mBox;
+    qsptr<QrealAnimator> mX;
+    qsptr<QrealAnimator> mY;
+    qsptr<QrealAnimator> mRadius;
+    QPointF mBindRel;
+    QPointF mPosAtStart;
+};
+
+QPointF SkinPinPoint::getRelativePos() const { return mPin->getRelPos(); }
+
+void SkinPinPoint::setRelativePos(const QPointF &relPos) {
+    mPin->setRelPos(relPos);
+}
+
+void SkinPinPoint::startTransform() { mPin->startTransform(); }
+
+void SkinPinPoint::finishTransform() { mPin->finishTransform(); }
+
+void SkinPinPoint::canvasContextMenu(PointTypeMenu * const menu) {
+    if (menu->hasActionsForType<SkinPinPoint>()) return;
+    menu->addedActionsForType<SkinPinPoint>();
+    const PointTypeMenu::PlainSelectedOp<SkinPinPoint> delOp =
+            [pin = mPin](SkinPinPoint *) { pin->removeFromPins(); };
+    menu->addPlainAction(QIcon::fromTheme("trash"),
+                         QStringLiteral("\u5220\u9664\u6B64\u9489"), delOp);
+}
+
+class SkinPinsProperty : public ComplexAnimator {
+public:
+    SkinPinsProperty(ImageBox * const box)
+        : ComplexAnimator(QStringLiteral("\u8499\u76AE\u9489")), mBox(box) {}
+
+    int pinCount() const { return ca_getChildren().count(); }
+
+    SkinPin* pinAt(const int i) {
+        return static_cast<SkinPin*>(ca_getChildren().at(i).data());
+    }
+
+    SkinPin* addPin(const QPointF& relPos, const qreal radius) {
+        const auto pin = enve::make_shared<SkinPin>(
+                    QStringLiteral("\u9489 %1").arg(pinCount() + 1),
+                    mBox.data());
+        pin->setRelPos(relPos);
+        pin->setBindRel(relPos);
+        pin->setRadiusValue(radius);
+        ca_addChild(pin);
+        return pin.get();
+    }
+
+    void removePin(SkinPin * const pin) {
+        for (const auto& c : ca_getChildren()) {
+            if (c.data() == pin) { ca_removeChild(c); return; }
+        }
+    }
+
+    void prp_writeProperty_impl(eWriteStream& dst) const {
+        const auto& children = ca_getChildren();
+        dst << int(children.count());
+        for (const auto& prop : children) {
+            prop->prp_writeProperty(dst);
+        }
+    }
+
+    void prp_readProperty_impl(eReadStream& src) {
+        int count; src >> count;
+        for (int i = 0; i < count && i < 512; ++i) {
+            const auto pin = enve::make_shared<SkinPin>(
+                        QStringLiteral("\u9489 %1").arg(i + 1),
+                        mBox.data());
+            ca_addChild(pin);
+            pin->prp_readProperty(src);
+        }
+    }
+
+    QDomElement prp_writePropertyXEV_impl(const XevExporter& exp) const {
+        auto ele = exp.createElement(QStringLiteral("SkinPins"));
+        for (const auto& prop : ca_getChildren()) {
+            if (const auto pin = static_cast<SkinPin*>(prop.data())) {
+                ele.appendChild(pin->prp_writePropertyXEV_impl(exp));
+            }
+        }
+        return ele;
+    }
+
+    void prp_readPropertyXEV_impl(const QDomElement& ele,
+                                  const XevImporter& imp) {
+        Q_UNUSED(imp)
+        const auto pins = ele.elementsByTagName(
+                    QStringLiteral("SkinPin"));
+        for (int i = 0; i < pins.count(); ++i) {
+            const auto pin = addPin(QPointF(), 150.);
+            pin->prp_readPropertyXEV_impl(pins.at(i).toElement(), imp);
+        }
+    }
+
+private:
+    qptr<ImageBox> mBox;
+};
 
 ImageFileHandler* imageFileHandlerGetter(const QString& path) {
     return FilesHandler::sInstance->getFileHandler<ImageFileHandler>(path);
@@ -75,6 +304,10 @@ ImageBox::ImageBox(const QString &name, const eBoxType type) :
         skinSetupFollowConns();
         if(mSkin.hasBind()) prp_afterWholeInfluenceRangeChanged();
     });
+    // puppet pins container (direct deformation, no bones); always a
+    // child so the serialized property tree stays positional
+    mSkinPins = enve::make_shared<SkinPinsProperty>(this);
+    ca_addChild(mSkinPins);
 }
 
 ImageBox::ImageBox() : ImageBox(QStringLiteral("Image"), eBoxType::image) {
@@ -98,9 +331,11 @@ void ImageBox::fileHandlerAfterAssigned(ImageFileHandler *obj) {
 void ImageBox::writeBoundingBox(eWriteStream& dst) const {
     BoundingBox::writeBoundingBox(dst);
     dst.writeFilePath(mFileHandler->path());
-    // skin bind block (positional, version-gated on read)
-    dst << (mSkin.hasBind() ? int(1) : int(0));
-    if(!mSkin.hasBind()) return;
+    // skin bind block (positional, version-gated on read); the gate
+    // covers both drivers - puppet-pin-only layers carry the mesh here
+    // while the pins themselves serialize as animator children
+    dst << (hasSkinBind() ? int(1) : int(0));
+    if(!hasSkinBind()) return;
     dst << int(mSkin.fDefs.count());
     for(const auto& def : mSkin.fDefs) {
         dst << def.fName;
@@ -250,6 +485,54 @@ bool ImageBox::absPointInsideVisiblePixels(const QPointF &absPos) {
 // ---------------------------------------------------------------------------
 // bone skin bind (AnimeEffects-style mesh deformation)
 
+bool ImageBox::hasSkinBind() const {
+    return mSkin.hasBind() || (mSkinPins && mSkinPins->pinCount() > 0);
+}
+
+int ImageBox::skinPinCount() const {
+    return mSkinPins ? mSkinPins->pinCount() : 0;
+}
+
+SkinPin* ImageBox::addSkinPin(const QPointF& relPos) {
+    // first driver on this layer: generate the mesh now
+    if (!mSkin.fMesh.isValid()) {
+        mSkin.fBindBoxTotal = getTotalTransform();
+        skinGenerateMesh(mSkin);
+    }
+    const sk_sp<SkImage> img = mFileHandler ?
+                mFileHandler->getImage() : nullptr;
+    const qreal diag = img ? QLineF(QPointF(), QPointF(img->width(),
+                                                       img->height())).length()
+                           : 500.;
+    const qreal radius = qBound(40., 0.3 * diag, 800.);
+    const auto pin = mSkinPins->addPin(relPos, radius);
+    qDebug() << "[SKIN]" << prp_getName() << "pin added at"
+             << relPos << "radius" << radius
+             << "mesh verts=" << mSkin.fMesh.fPos.count();
+    prp_updateCanvasProps();
+    prp_afterWholeInfluenceRangeChanged();
+    if (Document::sInstance) Document::sInstance->actionFinished();
+    return pin;
+}
+
+void ImageBox::removeSkinPin(SkinPin * const pin) {
+    if (!mSkinPins || !pin) return;
+    mSkinPins->removePin(pin);
+    prp_updateCanvasProps();
+    prp_afterWholeInfluenceRangeChanged();
+    if (Document::sInstance) Document::sInstance->actionFinished();
+}
+
+void ImageBox::clearSkinPins() {
+    if (!mSkinPins || mSkinPins->pinCount() == 0) return;
+    while (mSkinPins->pinCount() > 0) {
+        mSkinPins->removePin(mSkinPins->pinAt(0));
+    }
+    prp_updateCanvasProps();
+    prp_afterWholeInfluenceRangeChanged();
+    if (Document::sInstance) Document::sInstance->actionFinished();
+}
+
 bool ImageBox::skinGenerateMesh(SkinBindData& skin) {
     const sk_sp<SkImage> img = mFileHandler ?
                 mFileHandler->getImage() : nullptr;
@@ -331,10 +614,11 @@ bool ImageBox::skinBindChain(Bone* const chainRoot) {
 }
 
 void ImageBox::skinUnbind() {
-    if(!mSkin.hasBind()) return;
+    if(!hasSkinBind()) return;
     mSkin.fDefs.clear();
     mSkin.fMesh = SkinMesh();
     skinClearFollowConns();
+    clearSkinPins();
     mSkinInternalSet = true;
     mSkinRoot->setTargetAction(nullptr);
     mSkinInternalSet = false;
@@ -416,6 +700,26 @@ void ImageBox::setupCanvasMenu(PropertyMenu * const menu)
 {
     if (menu->hasActionsForType<ImageBox>()) { return; }
     menu->addedActionsForType<ImageBox>();
+
+    const PropertyMenu::PlainSelectedOp<ImageBox> addPinOp =
+    [](ImageBox * box) {
+        // place the pin where the context menu was opened (scene ->
+        // image rel space); no bones involved anywhere
+        const auto scene = box->getParentScene();
+        if (!scene) return;
+        const QPointF rel = box->mapAbsPosToRel(
+                    scene->getLastContextMenuAbsPos());
+        box->addSkinPin(rel);
+    };
+    menu->addPlainAction(QIcon::fromTheme("newVectorLayer"),
+                         QStringLiteral("\u5728\u6B64\u5904\u6DFB\u52A0\u8499\u76AE\u9489\uFF08\u65E0\u9700\u9AA8\u9ABC\uFF0C\u62D6\u9489\u53D8\u5F62\uFF09"),
+                         addPinOp);
+
+    const PropertyMenu::PlainSelectedOp<ImageBox> clearPinsOp =
+    [](ImageBox * box) { box->clearSkinPins(); };
+    menu->addPlainAction(QIcon::fromTheme("trash"),
+                         QStringLiteral("\u6E05\u9664\u5168\u90E8\u8499\u76AE\u9489"),
+                         clearPinsOp);
 
     const PropertyMenu::PlainSelectedOp<ImageBox> skinRebindOp =
     [](ImageBox * box) { box->skinRebindPose(); };
@@ -507,8 +811,9 @@ void ImageBox::setupRenderData(const qreal relFrame, const QTransform& parentM,
     // skin bind: evaluate the deformed mesh HERE (GUI thread - bone
     // animator reads are unsafe off-thread); the raster path then only
     // consumes the assembled payload. The skin core is driver-agnostic:
-    // bones are resolved into plain driver poses before evaluate()
-    if (mSkin.hasBind()) {
+    // bones are resolved into plain driver poses before evaluate(),
+    // puppet pins are appended as degenerate (translation-only) drivers
+    if (hasSkinBind()) {
         QVector<SkinDriverPose> poses(mSkin.fDefs.count());
         const auto root = enve_cast<Bone*>(mSkinRoot->getTarget());
         if (root) {
@@ -534,8 +839,38 @@ void ImageBox::setupRenderData(const qreal relFrame, const QTransform& parentM,
                 pose.fValid = true;
             }
         }
+        const int pinCount = skinPinCount();
+        const SkinBindData* evalData = &mSkin;
+        SkinBindData combined;
+        if (pinCount > 0) {
+            // append the pins after the bone palette (defs and poses
+            // in the same order) and recompute the weights over the
+            // combined driver list; QVector COW keeps the mesh vertex
+            // buffer shared with the bind data
+            combined = mSkin;
+            const QTransform& L = data->fTotalTransform;
+            for (int i = 0; i < pinCount; ++i) {
+                const auto pin = mSkinPins->pinAt(i);
+                if (!pin) continue;
+                SkinBoneDef def;
+                def.fName = pin->prp_getName();
+                def.fBindHead = mSkin.fBindBoxTotal.map(pin->bindRel());
+                def.fBindTail = def.fBindHead;
+                def.fBindAngle = 0.;
+                def.fRadius = pin->getRadius();
+                combined.fDefs.append(def);
+                SkinDriverPose pose;
+                pose.fHead = L.map(pin->getRelPos());
+                pose.fAngle = 0.;
+                pose.fLen = 1.;
+                pose.fValid = true;
+                poses.append(pose);
+            }
+            SkinMeshGen::computeWeights(combined);
+            evalData = &combined;
+        }
         QVector<SkPoint> pos;
-        const bool ok = SkinMeshGen::evaluate(mSkin, poses,
+        const bool ok = SkinMeshGen::evaluate(*evalData, poses,
                                               data->fTotalTransform, pos);
         if (ok && !pos.isEmpty()) {
             imgData->fSkinned = true;

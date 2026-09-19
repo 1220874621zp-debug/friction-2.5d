@@ -34,6 +34,8 @@
 
 class BoxTargetProperty;
 class Bone;
+class SkinPin;
+class SkinPinsProperty;
 
 struct CORE_EXPORT ImageBoxRenderData : public ImageContainerRenderData {
     ImageBoxRenderData(ImageFileHandler * const cacheHandler,
@@ -90,7 +92,16 @@ public:
     // re-capture the bind pose from the CURRENT bone pose (and
     // regenerate the mesh when the image dimensions changed)
     void skinRebindPose();
-    bool hasSkinBind() const { return mSkin.hasBind(); }
+    bool hasSkinBind() const;
+
+    // ---- puppet pins (direct mesh deformation, NO bones needed) ----
+    // a pin is a degenerate skin driver: place it on the artwork,
+    // drag it (standard animator undo/auto-key), the mesh follows
+    // with a radial falloff - PS/AE puppet-warp workflow
+    SkinPin* addSkinPin(const QPointF& relPos);
+    void removeSkinPin(SkinPin* const pin);
+    void clearSkinPins();
+    int skinPinCount() const;
     // pixel-in-RAM state for diagnostics (blank canvas investigation):
     // false = pixels evicted/not loaded yet; the next render schedules
     // an async reload
@@ -119,6 +130,7 @@ private:
 
     QString mPath;
     qsptr<BoxTargetProperty> mSkinRoot;
+    qsptr<SkinPinsProperty> mSkinPins;
     SkinBindData mSkin;
     QList<QMetaObject::Connection> mSkinFollowConns;
     bool mSkinInternalSet = false;

@@ -177,6 +177,8 @@ void Canvas::handleRightButtonMouseRelease(const eMouseEvent& e)
     } else {
         mPressedBox = mHoveredBox;
         mPressedPoint = mHoveredPoint_d;
+        // "create here" menu actions (puppet-pin placement) read this
+        mLastContextMenuAbsPos = e.fPos;
         if (mPressedPoint) {
             QMenu qMenu;
             PointTypeMenu menu(&qMenu, this, e.fWidget);

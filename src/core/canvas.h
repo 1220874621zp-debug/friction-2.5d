@@ -185,6 +185,10 @@ public:
     // authoritative selection list (kept in sync with box isSelected)
     QList<BoundingBox*> getSelectedBoxesList() const
     { return mSelectedBoxes.getList(); }
+    // scene position of the last canvas context menu opening; menu
+    // actions that create content "here" (e.g. puppet pins) read it
+    QPointF getLastContextMenuAbsPos() const
+    { return mLastContextMenuAbsPos; }
     // selected property rows (e.g. Position clicked in the timeline)
     QList<Property*> getSelectedPropsList() const
     { return mSelectedProps.getList(); }
@@ -970,6 +974,10 @@ private:
     // bookkeeping (enforceTrack, forEachSelectedSound) stays inert so
     // the teardown never performs active cross-object updates
     bool mDestructing = false;
+
+    // scene position of the last canvas context menu opening (read by
+    // "create here" menu actions such as puppet-pin placement)
+    QPointF mLastContextMenuAbsPos;
 
     // temporary canvas mode state: world-position snapshot of every
     // layer taken on activation, plus the set of layers whose transform
