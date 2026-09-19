@@ -158,14 +158,23 @@ void Bone::skinBindSelectedLayers() {
     const auto chain = SkinMeshGen::collectChain(this);
     if (chain.isEmpty()) return;
     int bound = 0;
+    int skippedNotImage = 0;
     for (const auto box : scene->getSelectedBoxesList()) {
-        if (!box || box == this) continue;
+        if(!box || box == this) continue;
         if (enve_cast<Bone*>(box) || enve_cast<BoneLayer*>(box)) continue;
         // mesh skinning is an image-layer feature (PsdImageBox is an
         // ImageBox, so PSD parts skin-bind as well)
         const auto img = enve_cast<ImageBox*>(box);
-        if (!img) continue;
+        if (!img) { skippedNotImage++; continue; }
         if (img->skinBindChain(this)) bound++;
+    }
+    qDebug() << "[SKIN] bind request on" << prp_getName()
+             << "chainBones=" << chain.count()
+             << "bound=" << bound
+             << "skippedNotImage=" << skippedNotImage;
+    if (bound == 0) {
+        qWarning() << "[SKIN] nothing skin-bound: select the image/PSD"
+                      " layer(s) FIRST, then right-click this bone row";
     }
     if (bound > 0 && Document::sInstance) {
         Document::sInstance->actionFinished();

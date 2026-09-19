@@ -40,8 +40,10 @@
 #include "Private/document.h"
 #include "simpletask.h"
 #include "ReadWrite/evformat.h"
+#include "Animators/animator.h"
 
 #include <QtMath>
+#include <QDebug>
 
 ImageFileHandler* imageFileHandlerGetter(const QString& path) {
     return FilesHandler::sInstance->getFileHandler<ImageFileHandler>(path);
@@ -285,6 +287,7 @@ void ImageBox::skinCaptureDefs(const QList<Bone*>& chain) {
 
 void ImageBox::skinFinishBind() {
     SkinMeshGen::computeWeights(mSkin);
+    mSkinWarnedNoBones = false;
     skinSetupFollowConns();
     prp_afterWholeInfluenceRangeChanged();
 }
@@ -293,15 +296,37 @@ bool ImageBox::skinBindChain(Bone* const chainRoot) {
     if(!chainRoot) return false;
     const auto chain = SkinMeshGen::collectChain(chainRoot);
     if(chain.isEmpty()) return false;
+    // A layer that still lives INSIDE a bone chain (from an earlier
+    // rigid "Bind Selected Layers to This Bone") makes the skin
+    // matrices collapse to identity: the parenting already delivers
+    // the bone motion, and R = L_cur^-1 * M_b * L_bind cancels it
+    // exactly. Skin bind REPLACES rigid bind - move the layer out to
+    // the nearest non-bone ancestor first, keeping its world pose.
+    bool movedOutOfBone = false;
+    if(const auto parentBone = enve_cast<Bone*>(getParentGroup())) {
+        // bone-side unbind: moves the layer out of the chain to the
+        // nearest non-bone ancestor, keeping its world appearance
+        parentBone->unbindLayer(this);
+        movedOutOfBone = true;
+    }
     skinCaptureDefs(chain);
     if(!skinGenerateMesh(mSkin)) {
         mSkin.fDefs.clear();
+        qWarning() << "[SKIN]" << prp_getName()
+                   << "mesh generation failed - bind aborted";
         return false;
     }
     mSkinInternalSet = true;
     mSkinRoot->setTargetAction(chainRoot);
     mSkinInternalSet = false;
     skinFinishBind();
+    qDebug() << "[SKIN]" << prp_getName() << "bound:"
+             << "bones=" << mSkin.fDefs.count()
+             << "verts=" << mSkin.fMesh.fPos.count()
+             << "tris=" << mSkin.fMesh.fIndices.count() / 3
+             << "cellPx=" << mSkin.fMesh.fCellPx
+             << "uniformFallback=" << (mSkin.fMesh.fCellPx < 0)
+             << "movedOutOfBone=" << movedOutOfBone;
     return true;
 }
 
@@ -351,6 +376,34 @@ void ImageBox::skinSetupFollowConns() {
                 prp_afterChangedAbsRange(abs);
             });
         });
+        // live influence radius: the slider captures into the bind
+        // defs, so a later edit re-reads the bone's radius, rebuilds
+        // the weights and re-renders (no manual re-bind needed)
+        const auto radiusAnim = bone->skinRadiusAnimator();
+        if(radiusAnim) {
+            const qptr<Bone> bonePtr = bone;
+            mSkinFollowConns << connect(
+                        radiusAnim, &Animator::prp_absFrameRangeChanged,
+                        this, [this, bonePtr](const FrameRange&) {
+                SimpleTask::sScheduleContexted(this, [this, bonePtr]() {
+                    if(!bonePtr || !mSkin.hasBind()) return;
+                    bool changed = false;
+                    const QString name = bonePtr->prp_getName();
+                    const qreal radius = bonePtr->skinInfluenceRadius();
+                    for(auto& def : mSkin.fDefs) {
+                        if(def.fName != name) continue;
+                        if(qAbs(def.fRadius - radius) > 0.01) {
+                            def.fRadius = radius;
+                            changed = true;
+                        }
+                    }
+                    if(changed) {
+                        SkinMeshGen::computeWeights(mSkin);
+                        prp_afterWholeInfluenceRangeChanged();
+                    }
+                });
+            });
+        }
     }
 }
 
@@ -461,6 +514,7 @@ void ImageBox::setupRenderData(const qreal relFrame, const QTransform& parentM,
                                               data->fTotalTransform, pos);
         if (ok && !pos.isEmpty()) {
             imgData->fSkinned = true;
+            mSkinWarnedNoBones = false;
             SkRect bounds;
             bounds.setBoundsCheck(pos.constData(), pos.count());
             bounds.outset(2.f, 2.f);
@@ -475,6 +529,12 @@ void ImageBox::setupRenderData(const qreal relFrame, const QTransform& parentM,
                         nullptr,
                         mSkin.fMesh.fIndices.count(),
                         mSkin.fMesh.fIndices.constData());
+        } else if(!mSkinWarnedNoBones) {
+            mSkinWarnedNoBones = true;
+            qWarning() << "[SKIN]" << prp_getName()
+                       << "evaluate: no live bone matched (chain root"
+                          " unset or bone names changed) - drawing"
+                          " undeformed";
         }
     }
 }

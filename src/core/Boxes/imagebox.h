@@ -121,6 +121,7 @@ private:
     SkinBindData mSkin;
     QList<QMetaObject::Connection> mSkinFollowConns;
     bool mSkinInternalSet = false;
+    bool mSkinWarnedNoBones = false;
 };
 
 #endif // IMAGEBOX_H
