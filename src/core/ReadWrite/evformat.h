@@ -93,6 +93,10 @@ namespace EvFormat {
         // pin bind scene pos, appended in the pin's property block);
         // older files lack the fields and must skip them (positional)
         skinPinBone = 48,
+        // SkinPin softness animator became a 4th pin child (x, y,
+        // radius, softness); older files carry only 3 children and
+        // must skip reading the 4th (positional child layout)
+        skinPinSoftness = 49,
 
         nextVersion
     };

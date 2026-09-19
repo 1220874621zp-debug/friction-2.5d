@@ -105,9 +105,13 @@ public:
         mRadius = enve::make_shared<QrealAnimator>(
                     150, 1, 100000, 1,
                     QStringLiteral("\u5F71\u54CD\u534A\u5F84"));
+        mSoft = enve::make_shared<QrealAnimator>(
+                    0.5, 0, 1, 0.01,
+                    QStringLiteral("\u67D4\u548C\u5EA6"));
         ca_addChild(mX);
         ca_addChild(mY);
         ca_addChild(mRadius);
+        ca_addChild(mSoft);
         setPointsHandler(enve::make_shared<PointsHandler>());
         getPointsHandler()->appendPt(enve::make_shared<SkinPinPoint>(
                     mBox ? mBox->getBoxTransformAnimator() : nullptr,
@@ -129,6 +133,8 @@ public:
     void setRadiusValue(const qreal r) {
         mRadius->setCurrentBaseValue(r);
     }
+
+    qreal getSoftness() const { return mSoft->getEffectiveValue(); }
 
     QPointF bindRel() const { return mBindRel; }
     void setBindRel(const QPointF& p) { mBindRel = p; }
@@ -235,9 +241,9 @@ public:
         if (mBox) mBox->skinChangedNotify();
     }
 
-    // serialization: the three child animators positionally (created
-    // by the ctor, StaticComplexAnimator pattern), then the bind pos
-    // and the bone attachment (version-gated)
+    // serialization: the child animators positionally (created by the
+    // ctor; the softness child is version-gated - older files carry
+    // only x/y/radius), then the bind pos and the bone attachment
     void prp_writeProperty_impl(eWriteStream& dst) const {
         for (const auto& prop : ca_getChildren()) {
             prop->prp_writeProperty(dst);
@@ -247,8 +253,11 @@ public:
     }
 
     void prp_readProperty_impl(eReadStream& src) {
-        for (const auto& prop : ca_getChildren()) {
-            prop->prp_readProperty(src);
+        const auto& children = ca_getChildren();
+        const int n = src.evFileVersion() >= EvFormat::skinPinSoftness ?
+                    4 : 3;
+        for (int i = 0; i < n && i < children.count(); ++i) {
+            children.at(i)->prp_readProperty(src);
         }
         src >> mBindRel;
         if (src.evFileVersion() >= EvFormat::skinPinBone) {
@@ -262,6 +271,8 @@ public:
         ele.setAttribute(QStringLiteral("y"), mY->getEffectiveValue());
         ele.setAttribute(QStringLiteral("radius"),
                          mRadius->getEffectiveValue());
+        ele.setAttribute(QStringLiteral("softness"),
+                         mSoft->getEffectiveValue());
         ele.setAttribute(QStringLiteral("bindX"), mBindRel.x());
         ele.setAttribute(QStringLiteral("bindY"), mBindRel.y());
         if (!mBoneName.isEmpty()) {
@@ -278,6 +289,9 @@ public:
         mBindRel = QPointF(ele.attribute(QStringLiteral("bindX")).toDouble(),
                            ele.attribute(QStringLiteral("bindY")).toDouble());
         setRadiusValue(ele.attribute(QStringLiteral("radius")).toDouble());
+        mSoft->setCurrentBaseValue(
+                    ele.attribute(QStringLiteral("softness"),
+                                  QStringLiteral("0.5")).toDouble());
         mBoneName = ele.attribute(QStringLiteral("bone"));
     }
 
@@ -286,6 +300,7 @@ private:
     qsptr<QrealAnimator> mX;
     qsptr<QrealAnimator> mY;
     qsptr<QrealAnimator> mRadius;
+    qsptr<QrealAnimator> mSoft;
     QPointF mBindRel;
     QPointF mPosAtStart;
     // bone attachment (empty name = free pin)
@@ -1112,11 +1127,12 @@ void ImageBox::setupRenderData(const qreal relFrame, const QTransform& parentM,
             const QPointF delta = eff - bind;
             if (QLineF(QPointF(), delta).length() < 0.01) continue;
             const qreal radius = pin->getRadius();
+            const qreal softness = pin->getSoftness();
             for (int vi = 0; vi < pos.count(); ++vi) {
                 const auto& rest = mSkin.fMesh.fPos[vi];
                 const float w = SkinMeshGen::pinWeight(
                             QLineF(bind, QPointF(rest.x(), rest.y())).length(),
-                            radius);
+                            radius, softness);
                 if (w <= 0.f) continue;
                 pos[vi] += SkPoint::Make(float(delta.x()) * w,
                                          float(delta.y()) * w);

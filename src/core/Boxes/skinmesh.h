@@ -98,10 +98,11 @@ CORE_EXPORT bool evaluate(const SkinBindData& skin,
                           const QTransform& boxTotal,
                           QVector<SkPoint>& outPos);
 
-// puppet-pin falloff weight: full within 20% of the radius (exact
-// tracking around the pin), then a cubic fall-off to zero at the
-// radius - additive offset blending, NOT normalized like bones
-CORE_EXPORT float pinWeight(const qreal dist, const qreal radius);
+// puppet-pin falloff weight: softness 0..1 shapes the curve
+// (0 = tight grip with a hard hold core, 1 = widest/softest linear
+// spread); 0.5 is the validated default (20% hold + cubic falloff)
+CORE_EXPORT float pinWeight(const qreal dist, const qreal radius,
+                            const qreal softness = 0.5);
 
 // offline self-test of the whole core (mesh generation, weights,
 // deformation math AND the drawVertices render call path used by

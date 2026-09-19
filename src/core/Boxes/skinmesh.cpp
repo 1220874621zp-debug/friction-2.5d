@@ -830,6 +830,17 @@ int selfTest()
     check(pinWeight(160., 800.) == 1.f, "pinWeight hold zone (20%)");
     check(pinWeight(800., 800.) <= 0.f, "pinWeight zero at the radius");
     check(pinWeight(900., 800.) == 0.f, "pinWeight zero beyond radius");
+    // softness shapes the curve; 0.5 stays the validated default
+    check(qAbs(pinWeight(400., 800., 0.5) -
+               std::pow(1. - 0.375, 3.)) < 1e-4,
+          "pinWeight softness 0.5 = cubic default");
+    check(pinWeight(0.3 * 800., 800., 1.) == 1.f,
+          "softness 1 keeps its wide 40% hold core");
+    check(pinWeight(1., 800., 0.) < 1.f,
+          "softness 0 has no hold zone");
+    check(pinWeight(400., 800., 1.) > pinWeight(400., 800., 0.5) &&
+          pinWeight(400., 800., 0.5) > pinWeight(400., 800., 0.),
+          "higher softness = softer/wider influence");
     {
         // single pin dragged by (60, 40): the vertex AT the pin must
         // track exactly, far vertices must not move, mid vertices
@@ -865,16 +876,21 @@ int selfTest()
     return fails;
 }
 
-float pinWeight(const qreal dist, const qreal radius)
+float pinWeight(const qreal dist, const qreal radius,
+                const qreal softness)
 {
     if (radius <= 1. || dist >= radius) return 0.f;
-    // hold zone: vertices right around the pin follow it EXACTLY so
-    // the grabbed content tracks the cursor (mesh lattice points can
-    // sit a cell away from the pin itself)
-    const qreal hold = 0.2 * radius;
+    // softness shapes BOTH the hold zone and the falloff exponent,
+    // anchored so 0.5 reproduces the validated default exactly:
+    //   hold = 0.4R*s    : 0     .. 0.2R  .. 0.4R
+    //   exp  = 1 + 4*s   : 1     .. 3     .. 5
+    // hard (0) = no hold + steep quintic (tight grip, quick release),
+    // soft (1) = wide 40% hold + linear spread (gradual, widest blend)
+    const qreal s = qBound(0., softness, 1.);
+    const qreal hold = 0.4 * radius * s;
     if (dist <= hold) return 1.f;
     const qreal t = (dist - hold) / (radius - hold);
-    return float(std::pow(1. - t, 3.));
+    return float(std::pow(1. - t, 5. - 4. * s));
 }
 
 void diagPng(const QString& path)
