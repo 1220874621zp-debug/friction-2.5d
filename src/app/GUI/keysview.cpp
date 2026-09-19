@@ -441,17 +441,59 @@ void KeysView::mousePressEvent(QMouseEvent *e) {
         if (mMovingKeys) {
             cancelTransform();
         } else {
+            // the box/sound row under the cursor - layer markers are a
+            // track-area context op (AE-style), not a left-panel one
+            eBoxOrSound* rowBox = nullptr;
+            const auto& wids = mBoxesListWidget->visibleWidgets();
+            for(const auto& container : wids) {
+                const int containerTop = container->y();
+                const int containerBottom = containerTop + container->height();
+                if(containerTop > posU.y() || containerBottom < posU.y()) continue;
+                const auto bsw = static_cast<BoxSingleWidget*>(container);
+                rowBox = enve_cast<eBoxOrSound*>(bsw->getTarget());
+                break;
+            }
+            const auto addMarkerActions = [this, rowBox](QMenu& menu) {
+                if(!rowBox || !mCurrentScene) return;
+                const auto boxQ = QPointer<eBoxOrSound>(rowBox);
+                const auto sceneQ = QPointer<Canvas>(mCurrentScene);
+                menu.addSeparator();
+                menu.addAction(tr("添加图层标记"), this,
+                               [boxQ, sceneQ]() {
+                    if(!boxQ || !sceneQ) return;
+                    boxQ->setLayerMarker(sceneQ->getCurrentFrame());
+                    Document::sInstance->actionFinished();
+                });
+                menu.addAction(tr("移除图层标记"), this,
+                               [boxQ, sceneQ]() {
+                    if(!boxQ || !sceneQ) return;
+                    boxQ->removeLayerMarker(sceneQ->getCurrentFrame());
+                    Document::sInstance->actionFinished();
+                });
+                menu.addAction(tr("清除图层标记"), this,
+                               [boxQ]() {
+                    if(!boxQ) return;
+                    boxQ->clearLayerMarkers();
+                    Document::sInstance->actionFinished();
+                });
+            };
             auto movable = getRectangleMovableAtPos(posU.x(),
                                                     posU.y(),
                                                     mPixelsPerFrame,
                                                     mMinViewedFrame);
             if (!movable) {
+                QMenu menu;
+                addMarkerActions(menu);
+                if(!menu.actions().isEmpty()) {
+                    menu.exec(AppSupport::getMouseGlobalPos(e));
+                }
             } else if (movable->isDurationRect()) {
                 QMenu menu;
                 const QString editStr = tr("Edit duration");
                 const QString splitStr = tr("Split Clip");
                 menu.addAction(QIcon::fromTheme("sequence"), editStr);
                 menu.addAction(QIcon::fromTheme("cut"), splitStr);
+                addMarkerActions(menu);
                 const auto selectedAction = menu.exec(AppSupport::getMouseGlobalPos(e));
                 if (selectedAction) {
                     if (selectedAction->text() == editStr) {
