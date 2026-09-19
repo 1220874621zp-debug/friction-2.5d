@@ -525,7 +525,9 @@ ParticleEffect::ParticleEffect() :
                                                   QObject::tr("时间缩放"));
     globalGroup->ca_addChild(mTimeScale);
     mHideSource = enve::make_shared<BoolAnimator>(QObject::tr("隐藏源图内容"));
-    mHideSource->setCurrentBoolValue(false);
+    // AE Particular semantics by default: the layer's own content is
+    // not rendered, only the particles (opt back in via this checkbox)
+    mHideSource->setCurrentBoolValue(true);
     globalGroup->ca_addChild(mHideSource);
     ca_addChild(globalGroup);
 
