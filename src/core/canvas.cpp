@@ -1678,6 +1678,31 @@ void Canvas::pasteAction()
         }
         return;
     }
+    // mask payload: paste the copied masks into each selected layer
+    // (wrapping a plain layer into its layer-box host on demand, same
+    // as drawing a mask there) instead of creating standalone layers
+    // at the container root
+    if (container->isMaskClipboard() && !mSelectedBoxes.isEmpty()) {
+        int pastedLayers = 0;
+        const auto sel = mSelectedBoxes.getList();
+        for (const auto& box : sel) {
+            const auto host = ensureMaskHost(box);
+            if (!host) continue;
+            const int before = host->getContainedBoxesCount();
+            container->pasteTo(host);
+            if (host->getContainedBoxesCount() > before) {
+                pastedLayers++;
+            }
+        }
+        if (pastedLayers > 0) {
+            qWarning() << "[PASTE] masks pasted onto"
+                       << pastedLayers << "layer(s)";
+            Document::sInstance->actionFinished();
+            return;
+        }
+        qWarning() << "[PASTE] paste: mask clipboard found no"
+                      " layer to paste into";
+    }
     clearBoxesSelection();
     container->pasteTo(mCurrentContainer);
 }

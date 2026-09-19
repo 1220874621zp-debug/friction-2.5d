@@ -83,6 +83,13 @@ protected:
     BoxesClipboard(const QList<BoundingBox*> &src);
 public:
     void pasteTo(ContainerBox * const parent);
+
+    // true when every copied box is a mask (SmartVectorPath in mask
+    // mode): Ctrl+V then pastes them as masks into the selected
+    // layers instead of creating standalone layers
+    bool isMaskClipboard() const { return mIsMaskClipboard; }
+private:
+    bool mIsMaskClipboard = false;
 };
 
 class CORE_EXPORT KeysClipboard : public Clipboard {

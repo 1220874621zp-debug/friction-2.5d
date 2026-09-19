@@ -61,6 +61,10 @@ void Clipboard::read(const Clipboard::Reader &reader) {
 
 BoxesClipboard::BoxesClipboard(const QList<BoundingBox*> &src) :
     Clipboard(ClipboardType::boxes) {
+    mIsMaskClipboard = !src.isEmpty();
+    for(const auto& box : src) {
+        if(box && !box->isMaskBox()) { mIsMaskClipboard = false; break; }
+    }
     const auto writer = [&src](eWriteStream& writeStream) {
         const int nBoxes = src.count();
         writeStream << nBoxes;
