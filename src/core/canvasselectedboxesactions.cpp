@@ -546,6 +546,11 @@ void Canvas::setCurrentBox(BoundingBox* const box) {
 void Canvas::addBoxToSelection(BoundingBox * const box)
 {
     if (box->isSelected() || box->isLocked()) { return; }
+    // AE parity: selecting a layer (row click, canvas pick, scripts)
+    // drops the property-row selection, keeping the Ctrl+C copy
+    // precedence unambiguous - a stale property selection must never
+    // hijack a plain layer copy
+    clearSelectedProps();
     auto& connCtx = mSelectedBoxes.addObj(box);
     mLastSelectedBox = box;
     connCtx << connect(box, &BoundingBox::globalPivotInfluenced,

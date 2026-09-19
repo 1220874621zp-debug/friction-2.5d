@@ -32,6 +32,7 @@
 #include "Properties/boxtargetproperty.h"
 #include "RasterEffects/rastereffect.h"
 #include "RasterEffects/rastereffectcollection.h"
+#include "Animators/complexanimator.h"
 #include "Private/document.h"
 
 Clipboard::Clipboard(const ClipboardType type) : mType(type) {}
@@ -155,7 +156,8 @@ void KeysClipboard::addTargetAnimator(
 
 PropertyClipboard::PropertyClipboard(const Property* const source) :
     Clipboard(ClipboardType::property),
-    mContentType(std::type_index(typeid(*source))) {
+    mContentType(std::type_index(typeid(*source))),
+    mSourceName(source->prp_getName()) {
     if(const auto effect = dynamic_cast<const RasterEffect*>(source)) {
         // a single raster effect is serialized as a one-element
         // effects collection, so pasting onto another layer's effects
@@ -182,6 +184,34 @@ bool PropertyClipboard::fitsTarget(Property * const obj) const {
     if(compatibleTarget(obj) && !mIsSingleEffect) return true;
     return mIsSingleEffect &&
             enve_cast<RasterEffectCollection*>(obj) != nullptr;
+}
+
+bool PropertyClipboard::isEffectPayload() const {
+    return mIsSingleEffect ||
+            mContentType == std::type_index(typeid(RasterEffectCollection));
+}
+
+Property* PropertyClipboard::findCounterpart(
+        eBoxOrSound * const box) const {
+    if(!box) return nullptr;
+    return findMatchRecursive(box);
+}
+
+Property* PropertyClipboard::findMatchRecursive(
+        Property * const node) const {
+    if(!node) return nullptr;
+    // type + display name: both layers live in one session, so the
+    // translated property names ("位置"/"Position") always agree
+    if(mContentType == std::type_index(typeid(*node)) &&
+            node->prp_getName() == mSourceName) return node;
+    const auto ca = enve_cast<ComplexAnimator*>(node);
+    if(!ca) return nullptr;
+    const int n = ca->ca_getNumberOfChildren();
+    for(int i = 0; i < n; i++) {
+        const auto child = ca->ca_getChildAt(i);
+        if(const auto found = findMatchRecursive(child)) return found;
+    }
+    return nullptr;
 }
 
 bool PropertyClipboard::paste(Property * const target) {

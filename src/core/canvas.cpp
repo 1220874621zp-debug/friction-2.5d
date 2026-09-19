@@ -1593,34 +1593,35 @@ void Canvas::deleteAction()
 
 void Canvas::copyAction()
 {
-    if (mSelectedBoxes.isEmpty()) {
-        // AE-style: with only a property row selected (e.g. a single
-        // effect picked in the timeline/inspector) Edit > Copy used to
-        // be a silent no-op (grey menu) - copy the effects collection
-        // owning the selected property instead, so the next Paste onto
-        // a selected layer carries the effects over
-        const auto props = getSelectedPropsList();
-        if (!props.isEmpty()) {
-            const auto prop = props.last();
-            const auto collection = prop->getFirstAncestor(
-                        [](Property * const p) {
+    // AE precedence: a selected property row copies the property (or
+    // its whole effects collection) even when layers are also selected;
+    // clicking a layer row clears the property selection, so this
+    // never hijacks a plain layer copy
+    const auto props = getSelectedPropsList();
+    if (!props.isEmpty()) {
+        const auto prop = props.last();
+        const auto collection = prop->getFirstAncestor(
+                    [](Property * const p) {
                 return enve_cast<RasterEffectCollection*>(p) != nullptr;
             });
-            if (collection) {
-                const auto container =
-                        enve::make_shared<PropertyClipboard>(collection);
-                Document::sInstance->replaceClipboard(container);
-                qWarning() << "[PASTE] copy: effects collection"
-                           << collection->prp_getName()
-                           << "of" << prop->prp_getName();
-                return;
-            }
-            qWarning() << "[PASTE] copy: selected property"
-                       << prop->prp_getName()
-                       << "does not belong to an effects collection";
-        } else {
-            qWarning() << "[PASTE] copy: nothing selected";
+        if (collection) {
+            const auto container =
+                    enve::make_shared<PropertyClipboard>(collection);
+            Document::sInstance->replaceClipboard(container);
+            qWarning() << "[PASTE] copy: effects collection"
+                       << collection->prp_getName()
+                       << "of" << prop->prp_getName();
+            return;
         }
+        // generic property: Ctrl+V pastes it one-to-one onto the
+        // same-type same-name property of the selected layers
+        const auto container = enve::make_shared<PropertyClipboard>(prop);
+        Document::sInstance->replaceClipboard(container);
+        qWarning() << "[PASTE] copy: property" << prop->prp_getName();
+        return;
+    }
+    if (mSelectedBoxes.isEmpty()) {
+        qWarning() << "[PASTE] copy: nothing selected";
         return;
     }
     const auto container = enve::make_shared<BoxesClipboard>(mSelectedBoxes.getList());
@@ -1649,8 +1650,28 @@ void Canvas::pasteAction()
                            << pastedCount << "layer(s)";
                 return;
             }
-            qWarning() << "[PASTE] paste: clipboard holds a property but"
-                          " no layer is selected (or it does not fit)";
+            // generic property payload: paste one-to-one onto each
+            // selected layer's same-type same-name property (AE-style
+            // property paste; with a single layer selected this is the
+            // plain A-layer -> B-layer transfer)
+            if (!property->isEffectPayload()) {
+                for (const auto& box : mSelectedBoxes.getList()) {
+                    const auto counterpart = property->findCounterpart(box);
+                    if (counterpart && property->paste(counterpart)) {
+                        pastedCount++;
+                    }
+                }
+                if (pastedCount > 0) {
+                    qWarning() << "[PASTE] property pasted onto"
+                               << pastedCount << "layer(s)";
+                    return;
+                }
+                qWarning() << "[PASTE] paste: no counterpart property"
+                              " on the selected layer(s)";
+            } else {
+                qWarning() << "[PASTE] paste: clipboard holds a property but"
+                              " no layer is selected (or it does not fit)";
+            }
         } else {
             qWarning() << "[PASTE] paste: clipboard is empty or holds"
                           " keys/paths - nothing to paste as layer/effects";

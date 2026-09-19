@@ -570,6 +570,10 @@ void eBoxOrSound::selectionChangeTriggered(const bool shiftPressed) {
         }
     } else {
         pScene->clearBoxesSelection();
+        // AE timeline semantics: clicking a layer row drops the
+        // property-row selection, so Ctrl+C reliably copies the layer
+        // (a stale property selection never wins the copy precedence)
+        pScene->clearSelectedProps();
         pScene->addBoxToSelection(bb);
     }
 }

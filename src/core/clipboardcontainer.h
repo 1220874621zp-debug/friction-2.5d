@@ -38,6 +38,7 @@ class ContainerBox;
 class Key;
 class Animator;
 class Property;
+class eBoxOrSound;
 
 typedef QPair<qptr<Animator>, QByteArray> AnimatorKeyDataPair;
 
@@ -159,9 +160,22 @@ public:
     static bool sCopyAndPaste(const qsptr<T>& from, const qsptr<T>& to) {
         return PropertyClipboard(from.get()).paste(to.get());
     }
+
+    // true when the payload is an effects collection or one single
+    // effect - such a clipboard only ever pastes onto effects
+    // collections (appended), never onto a named counterpart property
+    bool isEffectPayload() const;
+
+    // one-to-one paste target for a generic copied property: the
+    // property under 'box' with the same runtime type and name as the
+    // copied source (AE-style property paste across layers)
+    Property* findCounterpart(eBoxOrSound * const box) const;
 private:
+    Property* findMatchRecursive(Property * const node) const;
+
     const std::type_index mContentType;
     bool mIsSingleEffect = false;
+    QString mSourceName;
 };
 
 template <typename T>
