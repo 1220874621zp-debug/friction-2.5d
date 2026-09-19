@@ -8,6 +8,9 @@
 #include "Animators/boolanimator.h"
 #include "Animators/staticcomplexanimator.h"
 #include "Properties/comboboxproperty.h"
+#include "Properties/boxtargetproperty.h"
+#include "Boxes/boundingbox.h"
+#include "Boxes/boxrenderdata.h"
 
 #include "appsupport.h"
 #include "skia/skqtconversions.h"
@@ -76,9 +79,18 @@ public:
     ParticleEffectCaller(const HardwareSupport hwSupport,
                          const QMargins& margin,
                          const ParticleFrameData& f,
-                         std::vector<ParticleSpawn>&& spawns) :
+                         std::vector<ParticleSpawn>&& spawns,
+                         const stdsptr<BoxRenderData>& spriteSample) :
         RasterEffectCaller(hwSupport, true, margin),
-        mF(f), mSpawns(std::move(spawns)) {}
+        mF(f), mSpawns(std::move(spawns)), mSpriteSample(spriteSample) {}
+
+    // setSrcRect feeds us the rect as it was BEFORE this effect's
+    // expansion; capture it so particles can anchor to the content
+    // bounds instead of the (variable) expanded-image center
+    QMargins getMargin(const SkIRect& srcRect) override {
+        fBaseRect = srcRect;
+        return fMargin;
+    }
 
     void processCpu(CpuRenderTools& renderTools,
                     const CpuRenderData& data) override {
@@ -95,10 +107,19 @@ public:
                               SkIntToScalar(-tile.top()));
         }
 
-        // particles live in image space; the canvas origin sits at the
-        // tile's top-left, and the emitter origin is the image center
-        const qreal ox = qreal(srcBtmp.width()) * 0.5;
-        const qreal oy = qreal(srcBtmp.height()) * 0.5;
+        // anchor: center of the pre-expansion base rect mapped into the
+        // final (possibly clamped) image; when the margin allocation or
+        // clamping changes, particles stay put relative to the content
+        qreal ox, oy;
+        if (fBaseRect.isEmpty()) {
+            ox = qreal(srcBtmp.width()) * 0.5;
+            oy = qreal(srcBtmp.height()) * 0.5;
+        } else {
+            ox = (qreal(fBaseRect.left()) + qreal(fBaseRect.right())) * 0.5
+                    - qreal(fDstRect.left());
+            oy = (qreal(fBaseRect.top()) + qreal(fBaseRect.bottom())) * 0.5
+                    - qreal(fDstRect.top());
+        }
 
         const bool hasDrag = mF.drag > 1e-4;
 
@@ -112,6 +133,11 @@ public:
         const qreal er = mF.endColor.redF();
         const qreal eg = mF.endColor.greenF();
         const qreal eb = mF.endColor.blueF();
+
+        sk_sp<SkImage> spriteImg;
+        if (mF.shape == 3 && mSpriteSample && mSpriteSample->fRenderedImage) {
+            spriteImg = mSpriteSample->fRenderedImage->makeRasterImage();
+        }
 
         SkPaint paint;
         paint.setAntiAlias(true);
@@ -188,6 +214,32 @@ public:
                 canvas.rotate(toSkScalar(s.rot0 + mF.spin * tau * s.spinSign));
                 canvas.drawRect(SkRect::MakeLTRB(-hs, -hs, hs, hs), paint);
                 canvas.restore();
+            } else if (mF.shape == 3) {
+                // sprite: the picked layer's independently rendered image
+                // scaled to the particle size (color params do not apply;
+                // only opacity and blend mode are honored)
+                if (spriteImg) {
+                    const qreal iw = qreal(spriteImg->width());
+                    const qreal ih = qreal(spriteImg->height());
+                    if (iw > 0.0 && ih > 0.0) {
+                        const qreal sc = size / qMax(iw, ih);
+                        canvas.save();
+                        canvas.translate(lx, ly);
+                        const qreal rot = s.rot0 + mF.spin * tau * s.spinSign;
+                        if (qAbs(rot) > 0.01) canvas.rotate(toSkScalar(rot));
+                        const SkRect srcR = SkRect::MakeWH(toSkScalar(iw),
+                                                           toSkScalar(ih));
+                        const SkRect dstR = SkRect::MakeXYWH(
+                                    toSkScalar(-iw * sc * 0.5),
+                                    toSkScalar(-ih * sc * 0.5),
+                                    toSkScalar(iw * sc),
+                                    toSkScalar(ih * sc));
+                        canvas.drawImageRect(spriteImg.get(), srcR, dstR,
+                                             &paint,
+                                             SkCanvas::kStrict_SrcRectConstraint);
+                        canvas.restore();
+                    }
+                }
             } else {
                 paint.setStyle(SkPaint::kFill_Style);
                 canvas.drawCircle(lx, ly, toSkScalar(size * 0.5), paint);
@@ -197,6 +249,8 @@ public:
 private:
     const ParticleFrameData mF;
     const std::vector<ParticleSpawn> mSpawns;
+    const stdsptr<BoxRenderData> mSpriteSample;
+    mutable SkIRect fBaseRect = SkIRect::MakeEmpty();
 };
 
 ParticleEffect::ParticleEffect() :
@@ -242,8 +296,17 @@ ParticleEffect::ParticleEffect() :
     mShape = enve::make_shared<ComboBoxProperty>(
                 QObject::tr("形状"), QStringList()
                 << QObject::tr("圆点") << QObject::tr("方块")
-                << QObject::tr("速度线"));
+                << QObject::tr("速度线") << QObject::tr("贴图（图层）"));
     shapeGroup->ca_addChild(mShape);
+    mSpriteTarget = enve::make_shared<BoxTargetProperty>(
+                QObject::tr("贴图图层"));
+    mSpriteTarget->setComboPicker(true);
+    connect(mSpriteTarget.data(), &BoxTargetProperty::targetSet,
+            this, [this](BoundingBox * const box) {
+        Q_UNUSED(box)
+        prp_afterWholeInfluenceRangeChanged();
+    });
+    shapeGroup->ca_addChild(mSpriteTarget);
     mStartSize = enve::make_shared<QrealAnimator>(6.0, 0.0, 1000.0, 0.1,
                                                   QObject::tr("起始大小"));
     shapeGroup->ca_addChild(mStartSize);
@@ -357,8 +420,6 @@ stdsptr<RasterEffectCaller> ParticleEffect::getEffectCaller(
         const qreal relFrame, const qreal resolution,
         const qreal influence, BoxRenderData * const data) const
 {
-    Q_UNUSED(data)
-
     ParticleFrameData f;
     f.relFrame = relFrame;
     f.timeScale = qMax(0.01, mTimeScale->getEffectiveValue(relFrame));
@@ -496,9 +557,25 @@ stdsptr<RasterEffectCaller> ParticleEffect::getEffectCaller(
             + qMax(f.startSize, f.endSize) * (1.0 + sizeVar) * 8.0 + 8.0;
     const int margin = qBound(0, qCeil(marginF), 9999);
 
+    // sprite sample: render the picked layer independently and wait for
+    // it (queExternalRender + addDependent, the liquid-glass pattern);
+    // picking inside this layer's own subtree would recurse
+    stdsptr<BoxRenderData> spriteSample;
+    if (f.shape == 3) {
+        const auto target = mSpriteTarget ?
+                    mSpriteTarget->getTarget() : nullptr;
+        const auto parentBox = data ? data->fParentBox.data() : nullptr;
+        if (target && data && target->isVisibleAndInVisibleDurationRect() &&
+            target != parentBox &&
+            !(parentBox && parentBox->isAncestor(target))) {
+            spriteSample = target->queExternalRender(relFrame, true);
+            if (spriteSample) spriteSample->addDependent(data);
+        }
+    }
+
     return enve::make_shared<ParticleEffectCaller>(
                 instanceHwSupport(), QMargins() + margin,
-                f, std::move(spawns));
+                f, std::move(spawns), spriteSample);
 }
 
 QMargins ParticleEffect::getMargin() const

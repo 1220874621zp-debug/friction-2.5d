@@ -7,6 +7,7 @@ class QrealAnimator;
 class ColorAnimator;
 class BoolAnimator;
 class ComboBoxProperty;
+class BoxTargetProperty;
 
 // analytic (stateless, deterministic) particle emitter effect
 // every particle's state is a closed-form function of
@@ -43,6 +44,7 @@ private:
     qsptr<QrealAnimator> mStartOpacity;
     qsptr<QrealAnimator> mEndOpacity;
     qsptr<ComboBoxProperty> mBlendMode;
+    qsptr<BoxTargetProperty> mSpriteTarget;
     qsptr<QrealAnimator> mSpin;
     // 物理
     qsptr<QrealAnimator> mSpeed;
