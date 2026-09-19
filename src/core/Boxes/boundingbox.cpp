@@ -1854,19 +1854,36 @@ void BoundingBox::prp_setupTreeViewMenu(PropertyMenu * const menu)
         })->setShortcut(Qt::Key_Delete);
 
         // AE-style effect paste onto this layer: accepts a copied
-        // effects collection or a single copied effect (appended)
+        // effects collection or a single copied effect (appended);
+        // pastes onto every selected layer when this layer belongs to
+        // the selection (same batch as the menu-bar paste path)
         {
             const auto clipProp = Document::sInstance->getPropertyClipboard();
             const auto effects = rasterEffectsCollection();
             const bool canPasteEffects =
                     clipProp && effects && clipProp->fitsTarget(effects);
+            const QPointer<BoundingBox> selfGuard = this;
             menu->addPlainAction(QIcon::fromTheme("edit-paste"),
                                  tr("粘贴特效"),
-                    [effects, clipProp]() {
-                if (clipProp && clipProp->fitsTarget(effects)) {
-                    clipProp->paste(effects);
-                    qWarning() << "[PASTE] context: effects pasted onto layer";
+                [selfGuard, clipProp]() {
+                if (!selfGuard || !clipProp) { return; }
+                QList<BoundingBox*> targets;
+                const auto scene = selfGuard->getParentScene();
+                if (scene && selfGuard->isSelected()) {
+                    targets = scene->getSelectedBoxesList();
                 }
+                if (targets.isEmpty()) { targets << selfGuard.data(); }
+                int pastedCount = 0;
+                for (const auto& box : targets) {
+                    if (!box) { continue; }
+                    const auto boxEffects = box->rasterEffectsCollection();
+                    if (boxEffects && clipProp->fitsTarget(boxEffects)) {
+                        clipProp->paste(boxEffects);
+                        pastedCount++;
+                    }
+                }
+                qWarning() << "[PASTE] context: effects pasted onto"
+                           << pastedCount << "layer(s)";
             })->setEnabled(canPasteEffects);
         }
 
