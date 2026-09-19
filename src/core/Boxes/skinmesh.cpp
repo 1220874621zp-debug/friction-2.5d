@@ -627,7 +627,11 @@ bool evaluate(const SkinBindData& skin,
         const QTransform m(c, s, -s, c,
                            pose.fHead.x() - (c * bh.x() - s * bh.y()),
                            pose.fHead.y() - (s * bh.x() + c * bh.y()));
-        mats[i] = invCur * m * skin.fBindBoxTotal;
+        // Qt row-vector convention: A*B applies A FIRST, so the
+        // chain is bind -> M -> invCur (rel -> bind scene -> current
+        // scene -> rel); the flipped order swaps axes whenever the
+        // layer/bone transforms carry rotation+translation
+        mats[i] = skin.fBindBoxTotal * m * invCur;
     }
 
     // linear blend skinning per vertex
@@ -824,6 +828,56 @@ int selfTest()
           "upper-right quadrant empty after rotation");
     check(SkColorGetA(cStay) > 200,
           "unchanged left half still renders");
+
+    // ---- 4b. composition-order regression guard ----
+    // with a rotated+translated layer (and a bind-rotated bone) a
+    // flipped multiply order in evaluate() shows up as axis-swapped
+    // motion; ground truth is built from single-matrix maps only
+    {
+        // layer = rotation by 30deg about (300, 200) + skew-free
+        const double ra = M_PI / 6.;
+        const double rc = std::cos(ra), rs = std::sin(ra);
+        const double px = 300., py = 200.;
+        const QTransform L(rc, rs, -rs, rc,
+                           px - (rc * px - rs * py),
+                           py - (rs * px + rc * py));
+        SkinBindData s2;
+        s2.fMesh = skin.fMesh;
+        s2.fBindBoxTotal = L;
+        SkinBoneDef d;
+        d.fName = QStringLiteral("A");
+        d.fBindHead = L.map(QPointF(48, 128));
+        d.fBindTail = L.map(QPointF(128, 128));
+        d.fBindAngle = 0.;
+        d.fRadius = 60.;
+        s2.fDefs = { d };
+        computeWeights(s2);
+        // pose: the bone rotated +90deg around its (unchanged) head
+        SkinDriverPose pose;
+        pose.fValid = true;
+        pose.fHead = d.fBindHead;
+        pose.fAngle = M_PI / 2.;
+        pose.fLen = 80.;
+        QVector<SkinDriverPose> poses2 { pose };
+        QVector<SkPoint> out2;
+        check(evaluate(s2, poses2, L, out2),
+              "evaluate ok (transformed layer)");
+        // ground truth for the left-half vertex: rel -> scene (L),
+        // rotate 90 about the bind head (single-matrix M), back (L^-1)
+        const double hc = std::cos(M_PI / 2.), hs = std::sin(M_PI / 2.);
+        const QPointF bh = d.fBindHead;
+        const QTransform m(hc, hs, -hs, hc,
+                           bh.x() - (hc * bh.x() - hs * bh.y()),
+                           bh.y() - (hs * bh.x() + hc * bh.y()));
+        const QPointF v0(skin.fMesh.fPos[iL].x(),
+                         skin.fMesh.fPos[iL].y());
+        const QPointF expected = L.inverted().map(
+                    m.map(L.map(v0)));
+        const QPointF got(out2[iL].x(), out2[iL].y());
+        check(QLineF(got, expected).length() < 1.f,
+              "rotation under rotated/translated layer matches "
+              "single-map ground truth (composition order)");
+    }
 
     // ---- 5. puppet-pin additive model ----
     check(pinWeight(0., 800.) == 1.f, "pinWeight full at the pin");

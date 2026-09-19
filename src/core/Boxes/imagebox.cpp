@@ -196,8 +196,12 @@ public:
         }
         if (!bone) return QPointF();
         const QTransform cur = bone->getTotalTransform();
+        // NOTE Qt row-vector convention: A*B applies A FIRST, so the
+        // driven transform is bindInv*cur (undo the bind pose, then
+        // apply the current one) - writing cur*bindInv swaps axes
+        // whenever the bone carries rotation+translation
         const QPointF drivenScene =
-                (cur * mBoneBindTotal.inverted()).map(mBindScene);
+                (mBoneBindTotal.inverted() * cur).map(mBindScene);
         return mBox->getTotalTransform().inverted().map(drivenScene);
     }
 
@@ -1117,8 +1121,10 @@ void ImageBox::setupRenderData(const qreal relFrame, const QTransform& parentM,
                 if (bone) {
                     const QTransform curB =
                             bone->getTotalTransformAtFrame(relFrame);
+                    // Qt row-vector convention: bindInv first, then
+                    // cur (see SkinPin::drivenRelPos)
                     const QPointF drivenScene =
-                            (curB * pin->boneBindTotal().inverted())
+                            (pin->boneBindTotal().inverted() * curB)
                                 .map(pin->bindScene());
                     eff = data->fTotalTransform.inverted().map(drivenScene)
                             + (pin->getRelPos() - bind);
