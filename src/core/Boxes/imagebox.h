@@ -99,6 +99,8 @@ public:
     // one-click full-skeleton bind: pins along every scene bone, each
     // bound to its own bone
     void skinPinsBindSkeleton();
+    // bind every FREE pin to its nearest bone in one action
+    void skinPinsAutoBindBones();
     // refresh the render cache after an out-of-animator pin change
     // (bone bind / unbind)
     void skinChangedNotify();

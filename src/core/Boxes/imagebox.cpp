@@ -162,7 +162,11 @@ public:
 
     // bind to the nearest bone in the scene (within reach); returns
     // true when bound
-    bool tryBindNearestBone() {
+    // bind to the nearest bone among the candidates; enforceReach
+    // caps the distance (placement-time adoption) while the explicit
+    // bulk action binds to the nearest bone however far; returns true
+    // when bound
+    bool tryBindNearestBone(const bool enforceReach = true) {
         if (!mBox) return false;
         const QPointF pScene =
                 mBox->getTotalTransform().map(effectiveRelPos());
@@ -173,7 +177,8 @@ public:
             const qreal d = distPointToBone(b, pScene);
             if (d < bestD) { bestD = d; best = b; }
         }
-        if (best && bestD <= qMax(200., 1.5 * best->getLength())) {
+        if (best && (!enforceReach ||
+                     bestD <= qMax(200., 1.5 * best->getLength()))) {
             bindToBone(best);
             return true;
         }
@@ -658,6 +663,29 @@ void ImageBox::skinPinsBindSkeleton() {
     if (Document::sInstance) Document::sInstance->actionFinished();
 }
 
+// bind every FREE pin to its nearest bone in one action (the
+// "pins first, rig later" workflow: placement-time adoption found no
+// bones because the skeleton did not exist yet)
+void ImageBox::skinPinsAutoBindBones() {
+    if (skinCandidateBones().isEmpty()) {
+        qWarning() << "[SKIN]" << prp_getName()
+                   << "auto-bind: no bones in scope";
+        return;
+    }
+    int bound = 0;
+    int free = 0;
+    for (int i = 0; i < skinPinCount(); ++i) {
+        const auto pin = mSkinPins->pinAt(i);
+        if (!pin || pin->hasBone()) continue;
+        free++;
+        if (pin->tryBindNearestBone(false)) bound++;
+    }
+    qDebug() << "[SKIN]" << prp_getName()
+             << "auto-bind: free=" << free << "bound=" << bound;
+    if (bound > 0) prp_afterWholeInfluenceRangeChanged();
+    if (Document::sInstance) Document::sInstance->actionFinished();
+}
+
 void ImageBox::removeSkinPin(SkinPin * const pin) {
     if (!mSkinPins || !pin) return;
     mSkinPins->removePin(pin);
@@ -781,6 +809,11 @@ void ImageBox::setupCanvasMenu(PropertyMenu * const menu)
                          QStringLiteral("\u8499\u76AE\u9489\u7ED1\u5B9A\u9AA8\u67B6\uFF08\u6CBF\u9AA8\u9ABC\u81EA\u52A8\u5E03\u9489\uFF09"),
                          bindSkelOp);
 
+    const PropertyMenu::PlainSelectedOp<ImageBox> autoBindOp =
+    [](ImageBox * box) { box->skinPinsAutoBindBones(); };
+    menu->addPlainAction(QIcon::fromTheme("bone"),
+                         QStringLiteral("\u56FE\u9489\u81EA\u52A8\u7ED1\u5B9A\u9AA8\u9ABC\uFF08\u6BCF\u9489\u8BA4\u9886\u6700\u8FD1\u9AA8\u9ABC\uFF09"),
+                         autoBindOp);
 
     const PropertyMenu::PlainSelectedOp<ImageBox> skinUnbindOp =
     [](ImageBox * box) { box->skinUnbind(); };
