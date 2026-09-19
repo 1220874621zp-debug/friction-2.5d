@@ -7,11 +7,11 @@
 #include "Boxes/imagebox.h"
 #include "Boxes/skinmesh.h"
 #include <QDebug>
-#include <QDebug>
 #include <QFile>
 #include <QTextStream>
 #include <QDateTime>
 #include <QCoreApplication>
+#include <QSet>
 #include "include/effects/SkDashPathEffect.h"
 #include "matrixdecomposition.h"
 #include "canvas.h"
@@ -157,24 +157,57 @@ void Bone::skinBindSelectedLayers() {
     // this bone and its whole child-bone chain form the palette
     const auto chain = SkinMeshGen::collectChain(this);
     if (chain.isEmpty()) return;
-    int bound = 0;
+
+    // bind targets. Right-clicking a bone row usually REPLACES the
+    // canvas selection with the bone, so relying on the selection
+    // alone silently no-ops; also take every image layer that lives
+    // inside this chain (artwork from an earlier rigid bind)
+    QList<BoundingBox*> targets;
+    QSet<BoundingBox*> seen;
+    QList<Bone*> stack{this};
+    while (!stack.isEmpty()) {
+        const auto b = stack.takeLast();
+        if (!b) continue;
+        for (const auto& c : b->getContained()) {
+            if (const auto child = enve_cast<Bone*>(c.data())) {
+                stack.append(child);
+            } else if (const auto layer =
+                       enve_cast<BoundingBox*>(c.data())) {
+                if (enve_cast<ImageBox*>(layer) &&
+                        !seen.contains(layer)) {
+                    seen.insert(layer);
+                    targets.append(layer);
+                }
+            }
+        }
+    }
     int skippedNotImage = 0;
     for (const auto box : scene->getSelectedBoxesList()) {
-        if(!box || box == this) continue;
+        if (!box || box == this) continue;
         if (enve_cast<Bone*>(box) || enve_cast<BoneLayer*>(box)) continue;
-        // mesh skinning is an image-layer feature (PsdImageBox is an
-        // ImageBox, so PSD parts skin-bind as well)
+        if (!enve_cast<ImageBox*>(box)) { skippedNotImage++; continue; }
+        if (!seen.contains(box)) {
+            seen.insert(box);
+            targets.append(box);
+        }
+    }
+
+    // mesh skinning is an image-layer feature (PsdImageBox is an
+    // ImageBox, so PSD parts skin-bind as well)
+    int bound = 0;
+    for (const auto box : targets) {
         const auto img = enve_cast<ImageBox*>(box);
-        if (!img) { skippedNotImage++; continue; }
-        if (img->skinBindChain(this)) bound++;
+        if (img && img->skinBindChain(this)) bound++;
     }
     qDebug() << "[SKIN] bind request on" << prp_getName()
              << "chainBones=" << chain.count()
+             << "targets=" << targets.count()
              << "bound=" << bound
              << "skippedNotImage=" << skippedNotImage;
     if (bound == 0) {
-        qWarning() << "[SKIN] nothing skin-bound: select the image/PSD"
-                      " layer(s) FIRST, then right-click this bone row";
+        qWarning() << "[SKIN] nothing skin-bound: no image/PSD layer"
+                      " selected and no image artwork inside this bone"
+                      " chain";
     }
     if (bound > 0 && Document::sInstance) {
         Document::sInstance->actionFinished();
