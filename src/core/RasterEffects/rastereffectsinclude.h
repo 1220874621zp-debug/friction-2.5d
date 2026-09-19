@@ -46,5 +46,6 @@
 #include "shattereffect.h"
 #include "smeareffect.h"
 #include "roughenedgeseffect.h"
+#include "particleeffect.h"
 
 #endif // RASTEREFFECTSINCLUDE_H

@@ -249,6 +249,8 @@ qsptr<RasterEffect> createRasterEffectForNonCustomType(const RasterEffectType ty
             return enve::make_shared<SmearEffect>();
         case(RasterEffectType::ROUGHEN_EDGES):
             return enve::make_shared<RoughenEdgesEffect>();
+        case(RasterEffectType::PARTICLE):
+            return enve::make_shared<ParticleEffect>();
         default: return nullptr;
     }
 }

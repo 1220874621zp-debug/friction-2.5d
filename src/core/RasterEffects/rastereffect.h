@@ -123,7 +123,9 @@ enum class RasterEffectType : short {
     LAYER_STYLES,
     SHATTER,
     SMEAR,
-    ROUGHEN_EDGES
+    ROUGHEN_EDGES,
+    // analytic particle emitter (stateless, per-frame deterministic)
+    PARTICLE
 };
 
 struct BoxRenderData;
