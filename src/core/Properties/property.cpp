@@ -65,7 +65,9 @@ void Property::prp_setupTreeViewMenu(PropertyMenu * const menu) {
     const auto clipboard = Document::sInstance->getPropertyClipboard();
     const bool compat = clipboard && clipboard->compatibleTarget(this);
     menu->addPlainAction(QIcon::fromTheme("paste"), tr("Paste"), [this, clipboard]() {
-        clipboard->paste(this);
+        // value-only: pasting a property never carries the copied
+        // keyframes along - copy keys explicitly for that
+        clipboard->paste(this, true);
     })->setEnabled(compat);
     menu->addPlainAction(QIcon::fromTheme("copy"), tr("Copy"), [this]() {
         const auto clipboard = enve::make_shared<PropertyClipboard>(this);

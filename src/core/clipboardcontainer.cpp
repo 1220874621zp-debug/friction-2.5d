@@ -33,7 +33,33 @@
 #include "RasterEffects/rastereffect.h"
 #include "RasterEffects/rastereffectcollection.h"
 #include "Animators/complexanimator.h"
+#include "Animators/qrealanimator.h"
+#include "Animators/qpointfanimator.h"
 #include "Private/document.h"
+
+namespace {
+// counterpart matcher shared by property and key pasting: the property
+// under 'node' with the exact runtime type and display name; both the
+// source and the target live in one session, so the translated
+// property names ("位置"/"Position") always agree
+Property* findPropByTypeAndName(Property * const node,
+                                const std::type_index& type,
+                                const QString& name) {
+    if(!node) return nullptr;
+    if(type == std::type_index(typeid(*node)) &&
+            node->prp_getName() == name) return node;
+    const auto ca = enve_cast<ComplexAnimator*>(node);
+    if(!ca) return nullptr;
+    const int n = ca->ca_getNumberOfChildren();
+    for(int i = 0; i < n; i++) {
+        const auto child = ca->ca_getChildAt(i);
+        if(const auto found = findPropByTypeAndName(child, type, name)) {
+            return found;
+        }
+    }
+    return nullptr;
+}
+}
 
 Clipboard::Clipboard(const ClipboardType type) : mType(type) {}
 
@@ -110,12 +136,43 @@ void BoxesClipboard::pasteTo(ContainerBox* const parent) {
 KeysClipboard::KeysClipboard() : Clipboard(ClipboardType::keys) {}
 
 void KeysClipboard::paste(const int pasteFrame, const bool merge,
-                          const std::function<void(Key*)>& selectAction) {
+                          const std::function<void(Key*)> &selectAction) {
+    pasteImpl(mAnimatorData, pasteFrame, merge, selectAction);
+}
+
+void KeysClipboard::pasteMapped(
+        const QList<AnimatorKeyDataPair> &targets,
+        const int pasteFrame, const bool merge,
+        const std::function<void(Key*)> &selectAction) {
+    pasteImpl(targets, pasteFrame, merge, selectAction);
+}
+
+QList<AnimatorKeyDataPair> KeysClipboard::mapToBox(
+        eBoxOrSound * const box) const {
+    QList<AnimatorKeyDataPair> mapped;
+    if(!box) return mapped;
+    for(const auto& pair : mAnimatorData) {
+        const auto srcAnim = pair.first.data();
+        if(!srcAnim) continue;
+        const auto counterpart = findPropByTypeAndName(
+                    box, std::type_index(typeid(*srcAnim)),
+                    srcAnim->prp_getName());
+        if(!counterpart) continue;
+        const auto animT = enve_cast<Animator*>(counterpart);
+        if(!animT) continue;
+        mapped.append({animT, pair.second});
+    }
+    return mapped;
+}
+
+void KeysClipboard::pasteImpl(const QList<AnimatorKeyDataPair> &targets,
+                              const int pasteFrame, const bool merge,
+                              const std::function<void(Key*)> &selectAction) {
     QList<Key*> rKeys;
     int firstKeyFrame = FrameRange::EMAX;
 
     QList<QList<stdsptr<Key>>> animatorKeys;
-    for(const auto &animData : mAnimatorData) {
+    for(const auto &animData : targets) {
         Animator * const animator = animData.first;
         if(!animator) continue;
         QList<stdsptr<Key>> keys;
@@ -138,7 +195,7 @@ void KeysClipboard::paste(const int pasteFrame, const bool merge,
     const int dFrame = pasteFrame - firstKeyFrame;
 
     int keysId = 0;
-    for(const auto &animData : mAnimatorData) {
+    for(const auto &animData : targets) {
         Animator * const animator = animData.first;
         if(!animator) continue;
         const auto& keys = animatorKeys.at(keysId);
@@ -203,22 +260,11 @@ Property* PropertyClipboard::findCounterpart(
 
 Property* PropertyClipboard::findMatchRecursive(
         Property * const node) const {
-    if(!node) return nullptr;
-    // type + display name: both layers live in one session, so the
-    // translated property names ("位置"/"Position") always agree
-    if(mContentType == std::type_index(typeid(*node)) &&
-            node->prp_getName() == mSourceName) return node;
-    const auto ca = enve_cast<ComplexAnimator*>(node);
-    if(!ca) return nullptr;
-    const int n = ca->ca_getNumberOfChildren();
-    for(int i = 0; i < n; i++) {
-        const auto child = ca->ca_getChildAt(i);
-        if(const auto found = findMatchRecursive(child)) return found;
-    }
-    return nullptr;
+    return findPropByTypeAndName(node, mContentType, mSourceName);
 }
 
-bool PropertyClipboard::paste(Property * const target) {
+bool PropertyClipboard::paste(Property * const target,
+                              const bool valueOnly) {
     if(mIsSingleEffect) {
         // the payload is a one-element collection stream - only an
         // effects collection accepts it (append); the same effect
@@ -232,6 +278,21 @@ bool PropertyClipboard::paste(Property * const target) {
         target->prp_readProperty(readStream);
     };
     read(reader);
+    // value-only paste: a plain value property (position/scale/
+    // rotation/opacity ...) keeps the value the copied property had
+    // at the current frame as a STATIC value - keyframes are copied
+    // by copying keys explicitly, never smuggled along
+    if(valueOnly && !mIsSingleEffect) {
+        if(const auto qra = enve_cast<QrealAnimator*>(target)) {
+            const qreal v = qra->getEffectiveValue();
+            qra->anim_removeAllKeys();
+            qra->setCurrentBaseValue(v);
+        } else if(const auto pfa = enve_cast<QPointFAnimator*>(target)) {
+            const QPointF v = pfa->getEffectiveValue();
+            pfa->anim_removeAllKeys();
+            pfa->setBaseValue(v);
+        }
+    }
     // prp_readProperty schedules expression creation via contexted
     // SimpleTasks - flush them now so pasted expressions attach at
     // paste time instead of detonating mid preview warm-up on the

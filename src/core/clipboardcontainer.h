@@ -100,8 +100,22 @@ public:
     void paste(const int pasteFrame, const bool merge,
                const std::function<void(Key*)> &selectAction = nullptr);
 
+    // cross-layer key paste: map every source animator to the
+    // same-type same-name animator under 'box' (AE-style property
+    // counterpart); returns the (targetAnimator, keyData) pairs for
+    // pasteMapped
+    QList<AnimatorKeyDataPair> mapToBox(eBoxOrSound * const box) const;
+
+    // paste an explicit animator/key-data mapping (mapToBox output)
+    void pasteMapped(const QList<AnimatorKeyDataPair> &targets,
+                     const int pasteFrame, const bool merge,
+                     const std::function<void(Key*)> &selectAction = nullptr);
+
     void addTargetAnimator(Animator *anim, const QByteArray& keyData);
 private:
+    void pasteImpl(const QList<AnimatorKeyDataPair> &targets,
+                   const int pasteFrame, const bool merge,
+                   const std::function<void(Key*)> &selectAction);
     QList<AnimatorKeyDataPair> mAnimatorData;
 };
 
@@ -141,7 +155,10 @@ class CORE_EXPORT PropertyClipboard : public Clipboard {
 protected:
     PropertyClipboard(const Property * const source);
 public:
-    bool paste(Property * const target);
+    // valueOnly: a plain value property (position/scale/rotation/
+    // opacity ...) takes the copied value as a STATIC value - never
+    // carries the copied keyframes along
+    bool paste(Property * const target, const bool valueOnly = false);
 
     template<typename T>
     bool hasType() {

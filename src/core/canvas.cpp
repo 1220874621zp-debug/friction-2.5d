@@ -1657,7 +1657,8 @@ void Canvas::pasteAction()
             if (!property->isEffectPayload()) {
                 for (const auto& box : mSelectedBoxes.getList()) {
                     const auto counterpart = property->findCounterpart(box);
-                    if (counterpart && property->paste(counterpart)) {
+                    if (counterpart &&
+                            property->paste(counterpart, true)) {
                         pastedCount++;
                     }
                 }
@@ -1673,8 +1674,37 @@ void Canvas::pasteAction()
                               " no layer is selected (or it does not fit)";
             }
         } else {
+            // keys payload: cross-layer paste - the copied keys go to
+            // the same-type same-name property of each selected layer
+            // (the timeline's KeysView route handles the same when it
+            // owns the key focus)
+            const auto keysClip = Document::sInstance->getKeysClipboard();
+            if (keysClip) {
+                if (!mSelectedBoxes.isEmpty()) {
+                    int pastedLayers = 0;
+                    const int frame = getCurrentFrame();
+                    for (const auto& box : mSelectedBoxes.getList()) {
+                        const auto mapped = keysClip->mapToBox(box);
+                        if (mapped.isEmpty()) continue;
+                        keysClip->pasteMapped(mapped, frame, true);
+                        pastedLayers++;
+                    }
+                    if (pastedLayers > 0) {
+                        qWarning() << "[PASTE] keys pasted onto"
+                                   << pastedLayers << "layer(s)";
+                        Document::sInstance->actionFinished();
+                        return;
+                    }
+                    qWarning() << "[PASTE] paste: keys clipboard found"
+                                  " no counterpart property";
+                } else {
+                    qWarning() << "[PASTE] paste: keys clipboard needs"
+                                  " a selected layer";
+                }
+                return;
+            }
             qWarning() << "[PASTE] paste: clipboard is empty or holds"
-                          " keys/paths - nothing to paste as layer/effects";
+                          " paths - nothing to paste as layer/effects";
         }
         return;
     }

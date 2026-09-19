@@ -2360,6 +2360,12 @@ void BoxSingleWidget::mouseReleaseEvent(QMouseEvent *event)
             boxTarget->selectionChangeTriggered(true);
         } else {
             boxTarget->selectionChangeTriggered(false);
+            // AE semantics: selecting a layer row drops the key
+            // selection, so a following key paste routes to the newly
+            // selected layer instead of the keys' original property
+            if (mParent && mParent->getKeysView()) {
+                mParent->getKeysView()->clearKeySelection();
+            }
             sLastClickedRow = this;
             sLastClickedAbs = mTarget;
         }

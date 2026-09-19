@@ -516,6 +516,30 @@ bool KeysView::KFT_keyPressEvent(QKeyEvent *event)
         if(!container) return false;
         if(!mCurrentScene) return false; // pasting needs a live scene
         clearKeySelection();
+        // cross-layer paste: with a layer selected the copied keys go
+        // to that layer's same-type same-name property (selecting the
+        // source's own layer degenerates to the old same-property
+        // paste); with no layer selected the plain paste runs
+        {
+            const auto sel = mCurrentScene->getSelectedBoxesList();
+            int pastedLayers = 0;
+            const int frame = mCurrentScene->getCurrentFrame();
+            for(const auto& box : sel) {
+                const auto mapped = container->mapToBox(box);
+                if(mapped.isEmpty()) continue;
+                container->pasteMapped(mapped, frame, true,
+                                       [this](Key* key) {
+                    addKeyToSelection(key);
+                });
+                pastedLayers++;
+            }
+            if(pastedLayers > 0) {
+                qWarning() << "[PASTE] keys pasted onto"
+                           << pastedLayers << "layer(s)";
+                update();
+                return true;
+            }
+        }
         container->paste(mCurrentScene->getCurrentFrame(), true,
                          [this](Key* key) { addKeyToSelection(key); });
     } else if(!mSelectedKeysAnimators.isEmpty()) {
