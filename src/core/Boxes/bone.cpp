@@ -151,11 +151,29 @@ qreal Bone::skinInfluenceRadius() const {
     return qMax(20., 0.6 * getLength());
 }
 
+QList<Bone*> Bone::chain(Bone* const root)
+{
+    QList<Bone*> chain;
+    if (!root) return chain;
+    QList<Bone*> stack{root};
+    while (!stack.isEmpty()) {
+        const auto bone = stack.takeLast();
+        if (!bone) continue;
+        chain.append(bone);
+        for (const auto& c : bone->getContained()) {
+            if (const auto child = enve_cast<Bone*>(c.data())) {
+                stack.append(child);
+            }
+        }
+    }
+    return chain;
+}
+
 void Bone::skinBindSelectedLayers() {
     const auto scene = getParentScene();
     if (!scene) return;
     // this bone and its whole child-bone chain form the palette
-    const auto chain = SkinMeshGen::collectChain(this);
+    const auto chain = Bone::chain(this);
     if (chain.isEmpty()) return;
 
     // bind targets. Right-clicking a bone row usually REPLACES the

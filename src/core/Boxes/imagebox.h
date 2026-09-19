@@ -33,6 +33,7 @@
 #include "Boxes/skinmesh.h"
 
 class BoxTargetProperty;
+class Bone;
 
 struct CORE_EXPORT ImageBoxRenderData : public ImageContainerRenderData {
     ImageBoxRenderData(ImageFileHandler * const cacheHandler,

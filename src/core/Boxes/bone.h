@@ -16,6 +16,10 @@ class CORE_EXPORT Bone : public ContainerBox {
 protected:
     Bone();
 public:
+    // depth-first list of root + its descendant bones (skin palette
+    // walk, shared by the skin-bind entry and the skinned layer)
+    static QList<Bone*> chain(Bone* const root);
+
     bool relPointInsidePath(const QPointF &relPos) const;
 
     // editing-time visual, drawn by Canvas for every visible bone

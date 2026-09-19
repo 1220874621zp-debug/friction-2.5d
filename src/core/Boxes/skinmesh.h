@@ -1,6 +1,7 @@
 #ifndef SKINMESH_H
 #define SKINMESH_H
 
+#include "core_global.h"
 #include "skia/skiaincludes.h"
 #include "include/core/SkPixmap.h"
 
@@ -8,7 +9,10 @@
 #include <QTransform>
 #include <QString>
 
-class Bone;
+// Driver-agnostic skin deformation core: mesh + weights + math.
+// Bones are ONE possible driver (resolved by the caller into
+// SkinDriverPose entries); direct mesh manipulation can drive the
+// same data without any bone involved.
 class BoundingBox;
 
 // per-vertex skin weights: up to 4 influencing bones referenced by
@@ -49,6 +53,16 @@ struct SkinBoneDef {
     qreal fRadius = 100.;   // influence radius in scene px at bind time
 };
 
+// resolved CURRENT pose of one palette slot, parallel to fDefs; the
+// caller maps whatever driver it uses onto these (a Bone fills them
+// from its frame transform, other drivers could fill them directly)
+struct SkinDriverPose {
+    bool fValid = false;
+    QPointF fHead;
+    qreal fAngle = 0.;
+    qreal fLen = 100.;
+};
+
 // all bind state of one skinned image layer; the palette bone pointers
 // are resolved per evaluation, the serialized part is name+pose only
 struct SkinBindData {
@@ -65,28 +79,29 @@ namespace SkinMeshGen {
 // (port of AnimeEffects GridMeshCreator: staggered triangular cells
 // whose existence follows alpha coverage, plus a simplified burr
 // reduction that pulls boundary vertices in towards opaque pixels)
-bool generate(const SkPixmap& pm, const int cellPx, SkinMesh& mesh);
+CORE_EXPORT bool generate(const SkPixmap& pm, const int cellPx, SkinMesh& mesh);
 
 // fallback when no pixels are available at bind time: a uniform grid
 // over the whole image rectangle
-void generateUniform(const int w, const int h, SkinMesh& mesh);
+CORE_EXPORT void generateUniform(const int w, const int h, SkinMesh& mesh);
 
 // compute per-vertex bone weights from the palette (capsule falloff
 // with the AnimeEffects root/tail angular twist suppression); call
 // after generate() with the palette captured at bind time
-void computeWeights(SkinBindData& skin);
-
-// collect the bone chain (root + bone descendants), depth-first
-QList<Bone*> collectChain(Bone* const root);
+CORE_EXPORT void computeWeights(SkinBindData& skin);
 
 // evaluate the deformed vertex positions (image/rel space) for the
-// frame; bones are matched by name from the live chain. Returns false
-// when no live bone matched (caller should draw undeformed)
-bool evaluate(const SkinBindData& skin,
-              Bone* const chainRoot,
-              const qreal relFrame,
-              const QTransform& boxTotal,
-              QVector<SkPoint>& outPos);
+// given driver poses (parallel to skin.fDefs). Returns false when no
+// slot is valid (caller should draw undeformed)
+CORE_EXPORT bool evaluate(const SkinBindData& skin,
+                          const QVector<SkinDriverPose>& poses,
+                          const QTransform& boxTotal,
+                          QVector<SkPoint>& outPos);
+
+// offline self-test of the whole core (mesh generation, weights,
+// deformation math AND the drawVertices render call path used by
+// ImageRenderData::drawSk); returns the number of failed checks
+CORE_EXPORT int selfTest();
 
 } // namespace SkinMeshGen
 

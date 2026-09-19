@@ -1,10 +1,12 @@
 #include "Boxes/skinmesh.h"
 
-#include "Boxes/bone.h"
+#include "include/core/SkVertices.h"
 
 #include <QtMath>
 #include <QVector2D>
 #include <QPointF>
+#include <QLineF>
+#include <QDebug>
 #include <algorithm>
 
 // ---------------------------------------------------------------------------
@@ -420,24 +422,6 @@ void generateUniform(const int w, const int h, SkinMesh& mesh)
     mesh.fImgH = h;
 }
 
-QList<Bone*> collectChain(Bone* const root)
-{
-    QList<Bone*> chain;
-    if (!root) return chain;
-    QList<Bone*> stack{root};
-    while (!stack.isEmpty()) {
-        const auto bone = stack.takeLast();
-        if (!bone) continue;
-        chain.append(bone);
-        for (const auto& c : bone->getContained()) {
-            if (const auto child = enve_cast<Bone*>(c.data())) {
-                stack.append(child);
-            }
-        }
-    }
-    return chain;
-}
-
 namespace {
 
 // angular falloff away from the bone axis (AnimeEffects BoneShape
@@ -473,13 +457,18 @@ float boneWeightAt(const RelBone& b, const QPointF& p)
                       float(p.y() - b.fStart.y()));
     if (d.isNull()) return 0.f;
 
-    // twist suppression at the root and the tail
+    // twist suppression at the root and the tail (AnimeEffects
+    // BoneShape: BOTH vectors point FROM the joint TO the point -
+    // reversing the tail one suppresses the whole bone interior,
+    // which blends overlapping bones 50/50 and dilutes deformation)
     float twist = 1.f;
     const float rootDiff = normalizeAngle(
                 float(std::atan2(d.y(), d.x())) - b.fAngle);
     twist *= wingOutness(rootDiff) * wingOutness(rootDiff);
-    const QVector2D e(float(b.fStart.x() + b.fDir.x() * b.fLen - p.x()),
-                      float(b.fStart.y() + b.fDir.y() * b.fLen - p.y()));
+    const QPointF tailPt(b.fStart.x() + b.fDir.x() * b.fLen,
+                         b.fStart.y() + b.fDir.y() * b.fLen);
+    const QVector2D e(float(p.x() - tailPt.x()),
+                      float(p.y() - tailPt.y()));
     if (!e.isNull()) {
         const float tailDiff = normalizeAngle(
                     float(std::atan2(e.y(), e.x())) - (b.fAngle + float(M_PI)));
@@ -607,52 +596,37 @@ void computeWeights(SkinBindData& skin)
 }
 
 bool evaluate(const SkinBindData& skin,
-              Bone* const chainRoot,
-              const qreal relFrame,
+              const QVector<SkinDriverPose>& poses,
               const QTransform& boxTotal,
               QVector<SkPoint>& outPos)
 {
     outPos = skin.fMesh.fPos;
-    if (!skin.fMesh.isValid() || !chainRoot) return false;
-
-    // resolve palette slots to live bones by name
-    const auto chain = collectChain(chainRoot);
-    QVector<Bone*> resolved(skin.fDefs.count(), nullptr);
+    if (!skin.fMesh.isValid()) return false;
+    if (poses.count() != skin.fDefs.count()) return false;
     int liveCount = 0;
-    for (int i = 0; i < skin.fDefs.count(); ++i) {
-        for (const auto bone : chain) {
-            if (bone && bone->prp_getName() == skin.fDefs[i].fName) {
-                resolved[i] = bone;
-                ++liveCount;
-                break;
-            }
-        }
+    for (const auto& pose : poses) {
+        if (pose.fValid) ++liveCount;
     }
     if (liveCount == 0) return false;
 
-    // per-bone rel-space skin matrix
+    // per-slot rel-space skin matrix
     // R_b = L_cur^-1 * M_b * L_bind, where M_b (scene space) is the
-    // AnimeEffects PosePalette 2D formula: rotate the bone's delta
+    // AnimeEffects PosePalette 2D formula: rotate the slot's delta
     // angle around its bind head, then move to the current head
     const QTransform invCur = boxTotal.inverted();
     QVector<QTransform> mats(skin.fDefs.count());
     for (int i = 0; i < skin.fDefs.count(); ++i) {
-        const auto bone = resolved[i];
-        if (!bone) continue;
+        const auto& pose = poses[i];
+        if (!pose.fValid) continue;
         const auto& def = skin.fDefs[i];
 
-        const QTransform cur = bone->getTotalTransformAtFrame(relFrame);
-        const QPointF head = cur.map(QPointF(0., 0.));
-        const QPointF tail = cur.map(QPointF(bone->getLength(), 0.));
-        const qreal ang = std::atan2(tail.y() - head.y(),
-                                     tail.x() - head.x());
-        const qreal dAng = ang - def.fBindAngle;
+        const qreal dAng = pose.fAngle - def.fBindAngle;
         const qreal c = std::cos(dAng);
         const qreal s = std::sin(dAng);
         const QPointF bh = def.fBindHead;
         const QTransform m(c, s, -s, c,
-                           head.x() - (c * bh.x() - s * bh.y()),
-                           head.y() - (s * bh.x() + c * bh.y()));
+                           pose.fHead.x() - (c * bh.x() - s * bh.y()),
+                           pose.fHead.y() - (s * bh.x() + c * bh.y()));
         mats[i] = invCur * m * skin.fBindBoxTotal;
     }
 
@@ -666,8 +640,7 @@ bool evaluate(const SkinBindData& skin,
         qreal y = 0.;
         qreal wsum = 0.;
         for (int k = 0; k < vw.fCount; ++k) {
-            const auto bone = resolved[vw.fIdx[k]];
-            if (!bone) continue;
+            if (!poses[vw.fIdx[k]].fValid) continue;
             const QPointF mp = mats[vw.fIdx[k]].map(p);
             x += mp.x() * vw.fW[k];
             y += mp.y() * vw.fW[k];
@@ -678,6 +651,183 @@ bool evaluate(const SkinBindData& skin,
         }
     }
     return true;
+}
+
+int selfTest()
+{
+    int fails = 0;
+    const auto check = [&fails](const bool cond, const char* what) {
+        if (!cond) {
+            ++fails;
+            qWarning() << "[SKINTEST] FAIL:" << what;
+        } else {
+            qDebug() << "[SKINTEST] ok:" << what;
+        }
+    };
+
+    // ---- 1. mesh generation from a synthetic alpha shape ----
+    const int W = 256, H = 256;
+    SkBitmap bmp;
+    bmp.allocN32Pixels(W, H);
+    bmp.eraseColor(SK_ColorTRANSPARENT);
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            const int dx = x - 128, dy = y - 128;
+            if (dx * dx + dy * dy <= 80 * 80) {
+                *bmp.getAddr32(x, y) = SkColorSetARGB(255, 200, 40, 40);
+            }
+        }
+    }
+    SkPixmap pm;
+    bmp.peekPixels(&pm);
+
+    SkinBindData skin;
+    check(generate(pm, 20, skin.fMesh), "generate ok");
+    check(skin.fMesh.fPos.count() > 50, "vertex count plausible");
+    check(skin.fMesh.fIndices.count() % 3 == 0, "index count multiple of 3");
+    bool inRange = true;
+    bool idxOk = true;
+    for (const auto& p : skin.fMesh.fPos) {
+        if (p.x() < -40.f || p.x() > 300.f ||
+            p.y() < -40.f || p.y() > 300.f) inRange = false;
+    }
+    for (const auto i : skin.fMesh.fIndices) {
+        if (i >= skin.fMesh.fPos.count()) idxOk = false;
+    }
+    check(inRange, "vertices within image bounds + margin");
+    check(idxOk, "indices in range");
+    float maxR = 0.f;
+    for (const auto& p : skin.fMesh.fPos) {
+        maxR = std::max(maxR,
+                        std::hypot(p.x() - 128.f, p.y() - 128.f));
+    }
+    check(maxR < 95.f, "mesh hugs alpha edge (burr reduction)");
+
+    // ---- 2. weights: two slots across the circle ----
+    skin.fBindBoxTotal = QTransform();
+    SkinBoneDef defA;
+    defA.fName = QStringLiteral("A");
+    defA.fBindHead = QPointF(48, 128);
+    defA.fBindTail = QPointF(128, 128);
+    defA.fBindAngle = 0.;
+    defA.fRadius = 60.;
+    SkinBoneDef defB;
+    defB.fName = QStringLiteral("B");
+    defB.fBindHead = QPointF(128, 128);
+    defB.fBindTail = QPointF(208, 128);
+    defB.fBindAngle = 0.;
+    defB.fRadius = 60.;
+    skin.fDefs = { defA, defB };
+    computeWeights(skin);
+
+    const auto nearestVtx = [&skin](const QPointF& p) {
+        int best = 0;
+        float bd = 1e9f;
+        for (int i = 0; i < skin.fMesh.fPos.count(); ++i) {
+            const float d = QLineF(p, QPointF(skin.fMesh.fPos[i].x(),
+                                              skin.fMesh.fPos[i].y())).length();
+            if (d < bd) { bd = d; best = i; }
+        }
+        return best;
+    };
+    const int iL = nearestVtx(QPointF(70, 128));
+    const int iR = nearestVtx(QPointF(186, 128));
+    const auto& wL = skin.fMesh.fW[iL];
+    const auto& wR = skin.fMesh.fW[iR];
+    check(wL.fIdx[0] == 0 && wL.fW[0] > 0.7f,
+          "left-half vertex dominated by slot A");
+    check(wR.fIdx[0] == 1 && wR.fW[0] > 0.7f,
+          "right-half vertex dominated by slot B");
+    bool sumsOk = true;
+    bool countsOk = true;
+    for (const auto& vw : skin.fMesh.fW) {
+        float sum = 0.f;
+        for (int k = 0; k < vw.fCount; ++k) {
+            sum += vw.fW[k];
+            if (vw.fIdx[k] < 0 || vw.fIdx[k] > 1) countsOk = false;
+        }
+        if (qAbs(sum - 1.f) > 0.02f) sumsOk = false;
+    }
+    check(sumsOk, "all vertex weights sum to 1");
+    check(countsOk, "all palette indices valid");
+
+    // ---- 3. deformation math: rotate slot B +90 deg around its head
+    QVector<SkinDriverPose> poses(2);
+    poses[0].fValid = true;
+    poses[0].fHead = QPointF(48, 128);
+    poses[0].fAngle = 0.;
+    poses[0].fLen = 80.;
+    poses[1].fValid = true;
+    poses[1].fHead = QPointF(128, 128);
+    poses[1].fAngle = M_PI / 2.;
+    poses[1].fLen = 80.;
+
+    QVector<SkPoint> out;
+    check(evaluate(skin, poses, QTransform(), out),
+          "evaluate ok (2 valid poses)");
+    const SkPoint bR = skin.fMesh.fPos[iR];
+    const SkPoint aR = out[iR];
+    // expected: rotation of (v - head) by +90 deg around head (128,128)
+    const float exR = 128.f - (bR.y() - 128.f);
+    const float eyR = 128.f + (bR.x() - 128.f);
+    check(qAbs(aR.x() - exR) < 6.f && qAbs(aR.y() - eyR) < 6.f,
+          "right vertex rotated 90deg to expected position");
+    const SkPoint bL = skin.fMesh.fPos[iL];
+    const SkPoint aL = out[iL];
+    check(QLineF(QPointF(aL.x(), aL.y()),
+                 QPointF(bL.x(), bL.y())).length() < 3.f,
+          "left vertex stays put (slot A unchanged)");
+    bool noNaN = true;
+    for (const auto& p : out) {
+        if (std::isnan(p.x()) || std::isnan(p.y())) noNaN = false;
+    }
+    check(noNaN, "no NaN in deformed positions");
+
+    // ---- 4. render path: the exact drawSk call sequence ----
+    const sk_sp<SkImage> img = SkImage::MakeFromBitmap(bmp);
+    check(img != nullptr, "source image from bitmap");
+    SkPaint paint;
+    paint.setAntiAlias(true);
+    paint.setFilterQuality(kMedium_SkFilterQuality);
+    paint.setShader(img->makeShader(SkTileMode::kClamp,
+                                    SkTileMode::kClamp,
+                                    nullptr));
+    const sk_sp<SkVertices> vertices = SkVertices::MakeCopy(
+                SkVertices::kTriangles_VertexMode,
+                out.count(), out.constData(),
+                skin.fMesh.fPos.constData(), nullptr,
+                skin.fMesh.fIndices.count(),
+                skin.fMesh.fIndices.constData());
+    const sk_sp<SkSurface> surf = SkSurface::MakeRasterN32Premul(W, H);
+    surf->getCanvas()->drawVertices(vertices.get(),
+                                    SkBlendMode::kModulate, paint);
+    SkPixmap dst;
+    surf->peekPixels(&dst);
+    const SkColor cMoved = dst.getColor(128, 186);
+    // the rotated half lands BELOW the pivot and spans x 48..208, so
+    // the old center row (186,128) is legitimately covered by content
+    // swept in from the top of the disc; the upper-right quadrant
+    // (e.g. 180,90) is outside every covered region
+    const SkColor cGone = dst.getColor(180, 90);
+    const SkColor cStay = dst.getColor(70, 128);
+    check(SkColorGetA(cMoved) > 200 && SkColorGetR(cMoved) > 150,
+          "rotated half renders opaque red at its new position");
+    if (SkColorGetA(cGone) >= 120) {
+        QString row;
+        for (int x = 140; x <= 210; x += 10) {
+            row += QStringLiteral(" %1:%2").arg(x)
+                    .arg(SkColorGetA(dst.getColor(x, 90)));
+        }
+        qWarning() << "[SKINTEST]   residue row y=90 (x:alpha):" << row;
+    }
+    check(SkColorGetA(cGone) < 120,
+          "upper-right quadrant empty after rotation");
+    check(SkColorGetA(cStay) > 200,
+          "unchanged left half still renders");
+
+    qDebug() << "[SKINTEST] ===" << (fails == 0 ? "ALL PASS" :
+          QString("%1 FAILED").arg(fails)) << "===";
+    return fails;
 }
 
 } // namespace SkinMeshGen

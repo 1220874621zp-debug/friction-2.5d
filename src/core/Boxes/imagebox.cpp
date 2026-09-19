@@ -294,7 +294,7 @@ void ImageBox::skinFinishBind() {
 
 bool ImageBox::skinBindChain(Bone* const chainRoot) {
     if(!chainRoot) return false;
-    const auto chain = SkinMeshGen::collectChain(chainRoot);
+    const auto chain = Bone::chain(chainRoot);
     if(chain.isEmpty()) return false;
     // A layer that still lives INSIDE a bone chain (from an earlier
     // rigid "Bind Selected Layers to This Bone") makes the skin
@@ -346,7 +346,7 @@ void ImageBox::skinRebindPose() {
     if(!mSkin.hasBind()) return;
     const auto root = enve_cast<Bone*>(mSkinRoot->getTarget());
     if(!root) return;
-    const auto chain = SkinMeshGen::collectChain(root);
+    const auto chain = Bone::chain(root);
     if(chain.isEmpty()) return;
     // regenerate the mesh when the image changed since the bind
     if(mSkin.fMesh.fImgW > 0 && mFileHandler && mFileHandler->hasImage()) {
@@ -367,7 +367,7 @@ void ImageBox::skinSetupFollowConns() {
     skinClearFollowConns();
     const auto root = enve_cast<Bone*>(mSkinRoot->getTarget());
     if(!root) return;
-    for(const auto bone : SkinMeshGen::collectChain(root)) {
+    for(const auto bone : Bone::chain(root)) {
         if(!bone) continue;
         mSkinFollowConns << connect(
                     bone, &BoundingBox::prp_absFrameRangeChanged,
@@ -506,11 +506,36 @@ void ImageBox::setupRenderData(const qreal relFrame, const QTransform& parentM,
 
     // skin bind: evaluate the deformed mesh HERE (GUI thread - bone
     // animator reads are unsafe off-thread); the raster path then only
-    // consumes the assembled payload
+    // consumes the assembled payload. The skin core is driver-agnostic:
+    // bones are resolved into plain driver poses before evaluate()
     if (mSkin.hasBind()) {
+        QVector<SkinDriverPose> poses(mSkin.fDefs.count());
         const auto root = enve_cast<Bone*>(mSkinRoot->getTarget());
+        if (root) {
+            const auto chain = Bone::chain(root);
+            for (int i = 0; i < mSkin.fDefs.count(); ++i) {
+                const Bone* bone = nullptr;
+                for (const auto b : chain) {
+                    if (b && b->prp_getName() == mSkin.fDefs[i].fName) {
+                        bone = b;
+                        break;
+                    }
+                }
+                if (!bone) continue;
+                const QTransform cur =
+                        bone->getTotalTransformAtFrame(relFrame);
+                auto& pose = poses[i];
+                pose.fHead = cur.map(QPointF(0., 0.));
+                const QPointF tail = cur.map(
+                            QPointF(bone->getLength(), 0.));
+                pose.fAngle = std::atan2(tail.y() - pose.fHead.y(),
+                                         tail.x() - pose.fHead.x());
+                pose.fLen = bone->getLength();
+                pose.fValid = true;
+            }
+        }
         QVector<SkPoint> pos;
-        const bool ok = SkinMeshGen::evaluate(mSkin, root, relFrame,
+        const bool ok = SkinMeshGen::evaluate(mSkin, poses,
                                               data->fTotalTransform, pos);
         if (ok && !pos.isEmpty()) {
             imgData->fSkinned = true;
