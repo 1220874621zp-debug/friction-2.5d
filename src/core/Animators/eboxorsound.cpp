@@ -186,6 +186,13 @@ void eBoxOrSound::prp_writeProperty_impl(eWriteStream& dst) const {
     if(hasDurRect) mDurationRectangle->writeDurationRectangle(dst);
 
     dst << prp_getName();
+
+    // AE-style layer markers; gated read below (files written today
+    // are v50+)
+    dst << int(mMarkers.size());
+    for(const auto& m : mMarkers) {
+        dst << m.title << m.enabled << m.frame;
+    }
 }
 
 void eBoxOrSound::prp_readProperty_impl(eReadStream& src) {
@@ -220,6 +227,14 @@ void eBoxOrSound::prp_readProperty_impl(eReadStream& src) {
     if(src.evFileVersion() >= 10) {
         QString name; src >> name;
         prp_setName(name);
+    }
+    if(src.evFileVersion() >= EvFormat::layerMarkers) {
+        int markerCount; src >> markerCount;
+        for(int i = 0; i < markerCount; i++) {
+            FrameMarker mark;
+            src >> mark.title >> mark.enabled >> mark.frame;
+            mMarkers.push_back(mark);
+        }
     }
 }
 
@@ -347,6 +362,21 @@ void eBoxOrSound::prp_drawTimelineControls(
         drawTrackClips(p, pixelsPerFrame, absFrameRange, rowHeight, this);
     }
     drawDurationRectangle(p, pixelsPerFrame, absFrameRange, rowHeight);
+    // AE-style layer markers: small triangles at the top of the row
+    // (on top of the duration bar)
+    if(!mMarkers.empty()) {
+        for(const auto& marker : mMarkers) {
+            if(!marker.enabled) continue;
+            if(marker.frame < absFrameRange.fMin ||
+               marker.frame > absFrameRange.fMax) continue;
+            const qreal x = (marker.frame - absFrameRange.fMin + 0.5)*pixelsPerFrame;
+            p->setPen(Qt::NoPen);
+            p->setBrush(ThemeSupport::getThemeFrameMarkerColor());
+            QPolygonF tri;
+            tri << QPointF(x - 4, 0) << QPointF(x + 4, 0) << QPointF(x, 7);
+            p->drawPolygon(tri);
+        }
+    }
     ComplexAnimator::prp_drawTimelineControls(
                 p, pixelsPerFrame, absFrameRange, rowHeight);
 }
@@ -890,6 +920,68 @@ void eBoxOrSound::setLabelColor(const QColor& color) {
     if(mLabelColor == color) return;
     mLabelColor = color;
     emit labelColorChanged(mLabelColor);
+}
+
+void eBoxOrSound::setLayerMarker(const int frame, const QString& title) {
+    const QString mark = title.isEmpty() ?
+                QString::number(mMarkers.size()) : title;
+    for(auto& m : mMarkers) {
+        if(m.frame == frame) {
+            m.title = mark;
+            m.enabled = true;
+            emit markersChanged();
+            return;
+        }
+    }
+    mMarkers.push_back({mark, true, frame});
+    emit markersChanged();
+    {
+        prp_pushUndoRedoName(tr("添加图层标记"));
+        UndoRedo ur;
+        ur.fUndo = [this, frame]() { removeLayerMarker(frame); };
+        ur.fRedo = [this, mark, frame]() { setLayerMarker(frame, mark); };
+        prp_addUndoRedo(ur);
+    }
+}
+
+bool eBoxOrSound::removeLayerMarker(const int frame) {
+    int index = 0;
+    for(const auto& m : mMarkers) {
+        if(m.frame == frame) {
+            const auto mark = m;
+            mMarkers.erase(mMarkers.begin() + index);
+            emit markersChanged();
+            {
+                prp_pushUndoRedoName(tr("移除图层标记"));
+                UndoRedo ur;
+                ur.fUndo = [this, mark]() {
+                    setLayerMarker(mark.frame, mark.title);
+                };
+                ur.fRedo = [this, frame]() { removeLayerMarker(frame); };
+                prp_addUndoRedo(ur);
+            }
+            return true;
+        }
+        index++;
+    }
+    return false;
+}
+
+void eBoxOrSound::clearLayerMarkers() {
+    if(mMarkers.empty()) return;
+    const auto oldMarkers = mMarkers;
+    mMarkers.clear();
+    emit markersChanged();
+    {
+        prp_pushUndoRedoName(tr("清除图层标记"));
+        UndoRedo ur;
+        ur.fUndo = [this, oldMarkers]() {
+            mMarkers = oldMarkers;
+            emit markersChanged();
+        };
+        ur.fRedo = [this]() { clearLayerMarkers(); };
+        prp_addUndoRedo(ur);
+    }
 }
 
 void eBoxOrSound::moveUp() {

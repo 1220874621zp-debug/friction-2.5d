@@ -132,6 +132,15 @@ public:
     void setSelectedBoxesInPoint();
     void setSelectedBoxesOutPoint();
     void trimSelectedSounds(const bool inPoint, const int absFrame);
+    // AE-style plain [ / ]: slide the whole layer (bar + keys) so its
+    // in/out point lands on the playhead; duration unchanged
+    void moveSelectedBoxesInPointToCurrent();
+    void moveSelectedBoxesOutPointToCurrent();
+    void moveSelectedSoundsPointToCurrent(const bool inPoint,
+                                          const int absFrame);
+    // AE "select same label color": replace the selection with every
+    // layer carrying the source layer's label color
+    void selectSameLabelColor(eBoxOrSound* const source);
     void moveSelectedPointsByAbs(const QPointF &by,
                                  const bool startTransform);
     void moveSelectedBoxesByAbs(const QPointF &by,

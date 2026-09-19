@@ -54,6 +54,10 @@ protected:
 public:
     void setFilePath(const QString &path);
 
+    // AE "Convert Audio to Keyframes": bake a per-frame mixed-channel
+    // peak (0..1) curve onto a new null layer, bindable by expressions
+    void convertAudioToKeyframesAction();
+
 private:
     void setFilePathNoRename(const QString &path);
 

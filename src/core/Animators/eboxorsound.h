@@ -188,6 +188,14 @@ public:
     void setLabelColor(const QColor& color);
     QColor getLabelColor() const { return mLabelColor; }
 
+    // AE-style per-layer timeline markers (row-local triangles);
+    // frames are absolute scene frames like the scene markers
+    void setLayerMarker(const int frame, const QString& title = QString());
+    bool removeLayerMarker(const int frame);
+    void clearLayerMarkers();
+    const std::vector<FrameMarker>& getLayerMarkers() const
+    { return mMarkers; }
+
     bool isVisibleAndUnlocked() const;
 
     void moveUp();
@@ -209,6 +217,7 @@ signals:
     void shyChanged(bool);
     void labelColorChanged(const QColor&);
     void trackIdChanged(const int id);
+    void markersChanged();
 private:
     void applyTrackId(const int id);
     void scheduleTrackEnforce() const;
@@ -230,6 +239,7 @@ private:
     int mZListIndex = 0;
     int mTrackId = -1; // -1 = own timeline row, >= 0 shared with siblings
     bool mHiddenByTrack = false;
+    std::vector<FrameMarker> mMarkers; // AE-style row-local markers
 
     bool mDurationRectangleLocked = false;
     ConnContextQSPtr<DurationRectangle> mDurationRectangle;

@@ -2081,6 +2081,42 @@ void BoxSingleWidget::mousePressEvent(QMouseEvent *event) {
             PropertyMenu pMenu(&menu, mParent->currentScene(), MainWindow::sGetInstance());
             pTarget->prp_setupTreeViewMenu(&pMenu);
         }
+        // AE-style per-layer timeline markers and "select same label
+        // color" for box/sound rows
+        if(const auto bosMk = enve_cast<eBoxOrSound*>(target)) {
+            const auto sceneMk = mParent->currentScene();
+            if(sceneMk) {
+                const auto bosQ = QPointer<eBoxOrSound>(bosMk);
+                const auto sceneQ = QPointer<Canvas>(sceneMk);
+                menu.addSeparator();
+                menu.addAction(tr("添加图层标记"), this,
+                               [bosQ, sceneQ]() {
+                    if(!bosQ || !sceneQ) return;
+                    bosQ->setLayerMarker(sceneQ->getCurrentFrame());
+                    Document::sInstance->actionFinished();
+                });
+                menu.addAction(tr("移除图层标记"), this,
+                               [bosQ, sceneQ]() {
+                    if(!bosQ || !sceneQ) return;
+                    bosQ->removeLayerMarker(sceneQ->getCurrentFrame());
+                    Document::sInstance->actionFinished();
+                });
+                menu.addAction(tr("清除图层标记"), this,
+                               [bosQ]() {
+                    if(!bosQ) return;
+                    bosQ->clearLayerMarkers();
+                    Document::sInstance->actionFinished();
+                });
+                if(bosMk->getLabelColor().isValid()) {
+                    menu.addAction(tr("选择同标签色图层"), this,
+                                   [bosQ, sceneQ]() {
+                        if(!bosQ || !sceneQ) return;
+                        sceneQ->selectSameLabelColor(bosQ.data());
+                        Document::sInstance->actionFinished();
+                    });
+                }
+            }
+        }
         // timeline tracks: sounds carry no BoundingBox context menu (the
         // regular Merge into Track action lives there), so selected
         // same-kind sibling sound rows can merge right from this menu.

@@ -66,6 +66,10 @@ public:
     void enableFrameRemappingAction();
     void disableFrameRemappingAction();
 
+    // AE "Freeze Frame": hold the frame sampled at the playhead for
+    // the whole layer (single constant remapping key)
+    void freezeFrameAction();
+
     qreal getStretch() const { return mStretch; }
 
     void reload();

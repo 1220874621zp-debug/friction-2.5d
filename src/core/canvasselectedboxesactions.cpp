@@ -896,6 +896,86 @@ void Canvas::trimSelectedSounds(const bool inPoint, const int absFrame) {
     }
 }
 
+// AE-style plain [ / ]: slide the whole layer (duration bar and every
+// key with it) so its in/out point lands on the playhead; unlike the
+// Alt+[ trim the layer duration is unchanged
+void Canvas::moveSelectedBoxesInPointToCurrent() {
+    const int absFrame = anim_getCurrentAbsFrame();
+    pushUndoRedoName(tr("移动图层入点"));
+    for(const auto &box : mSelectedBoxes) {
+        if(!box->hasDurationRectangle()) continue;
+        const auto dur = box->getDurationRectangle();
+        if(!dur) continue;
+        const int delta = absFrame - dur->getMinAbsFrame();
+        if(delta == 0) continue;
+        box->startShiftAllTransform();
+        box->moveShiftAllBy(delta);
+        box->finishShiftAllTransform();
+    }
+    moveSelectedSoundsPointToCurrent(true, absFrame);
+}
+
+void Canvas::moveSelectedBoxesOutPointToCurrent() {
+    const int absFrame = anim_getCurrentAbsFrame();
+    pushUndoRedoName(tr("移动图层出点"));
+    for(const auto &box : mSelectedBoxes) {
+        if(!box->hasDurationRectangle()) continue;
+        const auto dur = box->getDurationRectangle();
+        if(!dur) continue;
+        const int delta = absFrame - dur->getMaxAbsFrame();
+        if(delta == 0) continue;
+        box->startShiftAllTransform();
+        box->moveShiftAllBy(delta);
+        box->finishShiftAllTransform();
+    }
+    moveSelectedSoundsPointToCurrent(false, absFrame);
+}
+
+void Canvas::moveSelectedSoundsPointToCurrent(const bool inPoint,
+                                              const int absFrame) {
+    const auto comp = getSoundComposition();
+    if(!comp) return;
+    for(const auto& sound : comp->getSounds()) {
+        if(!sound->isSelected()) continue;
+        if(!sound->hasDurationRectangle()) continue;
+        const auto dur = sound->getDurationRectangle();
+        if(!dur) continue;
+        const int delta = inPoint ? absFrame - dur->getMinAbsFrame()
+                                  : absFrame - dur->getMaxAbsFrame();
+        if(delta == 0) continue;
+        sound->startShiftAllTransform();
+        sound->moveShiftAllBy(delta);
+        sound->finishShiftAllTransform();
+    }
+}
+
+// AE "select same label color": replace the selection with every layer
+// carrying the source layer's label color (boxes only - sound rows keep
+// their separate selection mechanism)
+static void collectSameLabelColor(ContainerBox* const group,
+                                  const QColor& color,
+                                  QList<BoundingBox*>& matches) {
+    for(const auto& child : group->getContainedBoxes()) {
+        if(!child) continue;
+        if(child->getLabelColor() == color) matches << child;
+        const auto childGroup = enve_cast<ContainerBox*>(child);
+        if(childGroup) collectSameLabelColor(childGroup, color, matches);
+    }
+}
+
+void Canvas::selectSameLabelColor(eBoxOrSound* const source) {
+    if(!source) return;
+    const auto color = source->getLabelColor();
+    if(!color.isValid()) return;
+    pushUndoRedoName(tr("选择同标签色图层"));
+    clearBoxesSelection();
+    QList<BoundingBox*> matches;
+    collectSameLabelColor(this, color, matches);
+    for(const auto& box : matches) {
+        addBoxToSelection(box);
+    }
+}
+
 void Canvas::cancelSelectedBoxesTransform() {
     for(const auto &box : mSelectedBoxes) {
         box->cancelTransform();

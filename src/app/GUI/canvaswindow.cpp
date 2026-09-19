@@ -864,12 +864,14 @@ bool CanvasWindow::handleZValueKeyPress(QKeyEvent *event)
 }
 
 // AE-style layer in/out points: Alt+[ (or Alt+{ on shifted layouts) trims
-// the layer start to the playhead, Alt+] / Alt+} trims the layer end
+// the layer start to the playhead, Alt+] / Alt+} trims the layer end;
+// plain [ / ] slide the whole layer so its in/out point lands on the
+// playhead (duration unchanged)
 bool CanvasWindow::handleInOutPointKeyPress(QKeyEvent *event)
 {
     if (!mCurrentCanvas) { return false; }
+    const int key = event->key();
     if (event->modifiers() & Qt::AltModifier) {
-        const int key = event->key();
         const bool setIn = (key == Qt::Key_BraceLeft ||
                             key == Qt::Key_BracketLeft);
         const bool setOut = (key == Qt::Key_BraceRight ||
@@ -879,6 +881,14 @@ bool CanvasWindow::handleInOutPointKeyPress(QKeyEvent *event)
         } else if (setOut) {
             mCurrentCanvas->setSelectedBoxesOutPoint();
         } else { return false; }
+    } else if (event->modifiers() == Qt::NoModifier &&
+               (key == Qt::Key_BracketLeft ||
+                key == Qt::Key_BracketRight)) {
+        if (key == Qt::Key_BracketLeft) {
+            mCurrentCanvas->moveSelectedBoxesInPointToCurrent();
+        } else {
+            mCurrentCanvas->moveSelectedBoxesOutPointToCurrent();
+        }
     } else { return false; }
     return true;
 }

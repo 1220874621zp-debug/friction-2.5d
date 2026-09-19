@@ -1746,18 +1746,22 @@ void Canvas::cutAction()
 
 void Canvas::splitAction()
 {
-    if (mSelectedBoxes.isEmpty() || mSelectedBoxes.count() > 1) { return; }
-
-    const auto bBox = enve_cast<BoundingBox*>(mSelectedBoxes.getList().at(0));
-    if (!bBox) { return; }
-
-    const auto dRect = bBox->getDurationRectangle();
-    if (!dRect) { return; }
+    if (mSelectedBoxes.isEmpty()) { return; }
 
     const auto frame = getCurrentFrame();
-    const auto range = dRect->getAbsFrameRange();
 
-    if (!range.inRange(frame)) { return; }
+    // AE-style multi split: every selected layer with a duration bar
+    // covering the playhead is split in place; per-layer copies go into
+    // each layer's own group so nested selections split correctly
+    QList<BoundingBox*> toSplit;
+    for (const auto& box : mSelectedBoxes) {
+        if (!box) { continue; }
+        const auto dRect = box->getDurationRectangle();
+        if (!dRect) { continue; }
+        if (!dRect->getAbsFrameRange().inRange(frame)) { continue; }
+        toSplit.append(box);
+    }
+    if (toSplit.isEmpty()) { return; }
 
     // one named undo set for the whole split: paste + both duration
     // trims; the trims go through the undoable transform path (same
@@ -1766,33 +1770,46 @@ void Canvas::splitAction()
     // original trimmed
     pushUndoRedoName(tr("Split Clip"));
 
-    copyAction();
-    pasteAction();
+    for (auto* bBox : toSplit) {
+        QList<BoundingBox*> singleList;
+        singleList.append(bBox);
+        const auto tempClipboard = enve::make_shared<BoxesClipboard>(singleList);
 
-    if (mCurrentContainer->getContainedBoxesCount() < 1) { return; }
+        auto parentGroup = bBox->getParentGroup();
+        if (!parentGroup) { parentGroup = mCurrentContainer; }
 
-    const auto box = mCurrentContainer->getContainedBoxes().at(0);
-    if (!box) { return; }
+        const int oldCount = parentGroup->getContainedBoxesCount();
+        tempClipboard->pasteTo(parentGroup);
+        if (parentGroup->getContainedBoxesCount() <= oldCount) { continue; }
 
-    const auto cRect = box->getDurationRectangle();
-    if (!cRect) { return; }
+        // the pasted copy sits on top of the group and is selected
+        const auto box = parentGroup->getContainedBoxes().at(0);
+        if (!box) { continue; }
 
-    bBox->startMinFramePosTransform();
-    dRect->setMinAbsFrame(frame);
-    bBox->finishMinFramePosTransform();
+        const auto cRect = box->getDurationRectangle();
+        if (!cRect) { continue; }
 
-    box->startMaxFramePosTransform();
-    cRect->setMaxAbsFrame(frame);
-    box->finishMaxFramePosTransform();
+        bBox->startMinFramePosTransform();
+        bBox->getDurationRectangle()->setMinAbsFrame(frame);
+        bBox->finishMinFramePosTransform();
 
-    for (int i = box->getZIndex(); i < bBox->getZIndex(); i = box->getZIndex()) {
-        box->moveDown();
+        box->startMaxFramePosTransform();
+        cRect->setMaxAbsFrame(frame);
+        box->finishMaxFramePosTransform();
+
+        for (int i = box->getZIndex(); i < bBox->getZIndex(); i = box->getZIndex()) {
+            box->moveDown();
+        }
+
+        mSelectedBoxes.removeObj(box);
+        box->setSelected(false);
+        // unlike the old copy+paste flow nothing cleared the selection,
+        // the original layer stayed in the list the whole time
+        if(!mSelectedBoxes.contains(bBox)) {
+            mSelectedBoxes.addObj(bBox);
+            bBox->setSelected(true);
+        }
     }
-
-    mSelectedBoxes.removeObj(box);
-    box->setSelected(false);
-    mSelectedBoxes.addObj(bBox);
-    bBox->setSelected(true);
 
     mDocument.actionFinished();
 }

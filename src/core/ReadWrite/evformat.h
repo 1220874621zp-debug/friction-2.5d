@@ -97,6 +97,10 @@ namespace EvFormat {
         // radius, softness); older files carry only 3 children and
         // must skip reading the 4th (positional child layout)
         skinPinSoftness = 49,
+        // AE-style per-layer timeline markers (eBoxOrSound tail:
+        // count + title/enabled/frame entries); older files lack the
+        // block and must skip it (positional)
+        layerMarkers = 50,
 
         nextVersion
     };

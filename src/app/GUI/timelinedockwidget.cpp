@@ -59,6 +59,7 @@
 #include "Animators/qrealanimator.h"
 #include "Expressions/expression.h"
 #include "Properties/property.h"
+#include "GUI/propertynamedialog.h"
 #include "swt_abstraction.h"
 
 #include "mainwindow.h"
@@ -1048,6 +1049,18 @@ bool TimelineDockWidget::processKeyPress(QKeyEvent *event)
             case Qt::Key_O: setOut(); break;
             default:;
         }
+    } else if ((key == Qt::Key_BracketLeft || key == Qt::Key_BracketRight) &&
+               mods == Qt::NoModifier) { // AE [/]: slide layer in/out point to the playhead
+        const auto scene = *mDocument.fActiveScene;
+        if (!scene) { return false; }
+        if (key == Qt::Key_BracketLeft) { scene->moveSelectedBoxesInPointToCurrent(); }
+        else { scene->moveSelectedBoxesOutPointToCurrent(); }
+    } else if (key == Qt::Key_F2) { // rename the last selected layer
+        const auto scene = *mDocument.fActiveScene;
+        if (!scene) { return false; }
+        const auto boxes = scene->getSelectedBoxesList();
+        if (boxes.isEmpty()) { return false; }
+        PropertyNameDialog::sRenameBox(boxes.last(), this);
     } else if (key == Qt::Key_Right && !(mods & Qt::ControlModifier)) {
         if (jumpFrame) { // jump to next scene quarter
             jumpToIntermediateFrame(true);

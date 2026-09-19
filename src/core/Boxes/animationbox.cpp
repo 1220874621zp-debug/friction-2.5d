@@ -150,6 +150,37 @@ void AnimationBox::disableFrameRemappingAction() {
     mFrameRemapping->disableAction();
 }
 
+void AnimationBox::freezeFrameAction() {
+    if(!mSrcFramesCache) return;
+    const auto durRect = getAnimationDurationRect();
+    if(!durRect) return;
+    const int absFrame = anim_getCurrentAbsFrame();
+    const int relFrame = prp_absFrameToRelFrame(absFrame);
+    if(relFrame < durRect->getMinRelFrame() ||
+       relFrame > durRect->getMaxRelFrame()) return;
+    const int animFrame = getAnimationFrameForRelFrame(relFrame);
+
+    // a single remapping key holds the playhead's frame value at every
+    // point in time: before/after a lone key the animator clamps to
+    // the key's value, which is exactly the freeze we want
+    prp_pushUndoRedoName(tr("冻结帧"));
+    if(!mFrameRemapping->enabled()) enableFrameRemappingAction();
+
+    QList<stdsptr<QrealKey>> oldKeys;
+    for(auto *key : mFrameRemapping->anim_getKeys()) {
+        if(key) oldKeys << key->ref<QrealKey>();
+    }
+    for(const auto& key : oldKeys) {
+        mFrameRemapping->anim_removeKeyAction(key);
+    }
+    const auto frozenKey = enve::make_shared<QrealKey>(
+                qreal(animFrame), durRect->getMinRelFrame(),
+                mFrameRemapping.get());
+    mFrameRemapping->anim_appendKeyAction(frozenKey);
+    updateAnimationRange();
+    prp_afterWholeInfluenceRangeChanged();
+}
+
 void AnimationBox::reload() {
     if(mSrcFramesCache) mSrcFramesCache->reload();
 }
@@ -247,6 +278,11 @@ void AnimationBox::setupCanvasMenu(PropertyMenu * const menu)
     };
     menu->addCheckableAction(tr("Frame Remapping"),
                              mFrameRemapping->enabled(), remapOp);
+
+    const PropertyMenu::PlainSelectedOp<AnimationBox> freezeOp =
+    [](AnimationBox * box) { box->freezeFrameAction(); };
+    menu->addPlainAction(QIcon::fromTheme("media-playback-stop"),
+                         tr("冻结帧"), freezeOp);
 
     const PropertyMenu::PlainSelectedOp<AnimationBox> stretchOp =
     [widget](AnimationBox * box) {

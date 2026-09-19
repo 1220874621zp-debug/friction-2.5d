@@ -31,6 +31,9 @@
 #include "typemenu.h"
 #include "Timeline/fixedlenanimationrect.h"
 #include "fileshandler.h"
+#include "Animators/qrealanimator.h"
+#include "Boxes/nullobject.h"
+#include "canvas.h"
 
 SoundFileHandler* soundFileHandlerGetter(const QString& path)
 {
@@ -100,12 +103,80 @@ void eIndependentSound::prp_setupTreeViewMenu(PropertyMenu * const menu)
                          tr("Stretch"),
                          stretchOp);
 
+    const PropertyMenu::PlainTriggeredOp audioKeysOp = [this]() {
+        convertAudioToKeyframesAction();
+    };
+    menu->addPlainAction(QIcon::fromTheme("audio-volume-high"),
+                         tr("音频转关键帧"),
+                         audioKeysOp);
+
     const PropertyMenu::PlainTriggeredOp deleteOp = [this]() {
         removeFromParent_k();
     };
     menu->addPlainAction(QIcon::fromTheme("trash"),
                          tr("Delete"),
                          deleteOp);
+}
+
+void eIndependentSound::convertAudioToKeyframesAction()
+{
+    const auto scene = getParentScene();
+    if (!scene) { return; }
+    const qreal fps = getCanvasFPS();
+    if (fps <= 0.) { return; }
+    const auto dur = getDurationRectangle();
+    if (!dur) { return; }
+    const int nFrames = dur->getFrameDuration();
+    if (nFrames <= 0) { return; }
+    const int startAbsFrame = dur->getMinAbsFrame();
+
+    // per-frame mixed-channel peak (0..1) across the sound's duration;
+    // stretched sounds sample every rel second overlapping each frame
+    QVector<qreal> peaks(nFrames, 0.);
+    for (int frame = 0; frame < nFrames; frame++) {
+        const qreal absSec = qreal(frame)/fps;
+        const int absSecond = int(absSec);
+        const auto relSecs = absSecondToRelSeconds(absSecond);
+        if (!relSecs.isValid()) { continue; }
+        const qreal fracInSecond = absSec - absSecond;
+        for (int relSec = relSecs.fMin; relSec <= relSecs.fMax; relSec++) {
+            const auto samples = getSamplesForSecond(relSec);
+            if (!samples) { continue; }
+            if (samples->fSampleSize != 4) { continue; } // float only
+            const int sr = samples->fSampleRate;
+            if (sr <= 0) { continue; }
+            const int nSamples = int(samples->fSampleRange.span());
+            const int i0 = qBound(0, qFloor(fracInSecond*sr), nSamples);
+            const int i1 = qBound(i0, qFloor((fracInSecond + 1./fps)*sr), nSamples);
+            for (int i = i0; i < i1; i++) {
+                for (uint ch = 0; ch < samples->fNChannels; ch++) {
+                    float v;
+                    if (samples->fPlanar) {
+                        v = reinterpret_cast<const float*>(
+                                    samples->fData[ch])[i];
+                    } else {
+                        v = reinterpret_cast<const float*>(
+                                    samples->fData[0])[i*samples->fNChannels + ch];
+                    }
+                    const qreal a = qAbs(qreal(v));
+                    if (a > peaks[frame]) { peaks[frame] = a; }
+                }
+            }
+        }
+    }
+
+    // deliver the curve on a null layer ("sound name 振幅") so any
+    // property/expression can bind to it by name
+    const auto amp = enve::make_shared<NullObject>();
+    amp->prp_setName(prp_getName() + QStringLiteral(" 振幅"));
+    const auto anim = enve::make_shared<QrealAnimator>(
+                0., 0., 1., 0.01, tr("振幅"));
+    amp->ca_addChild(anim);
+    scene->getCurrentGroup()->addContained(amp);
+    for (int frame = 0; frame < nFrames; frame++) {
+        anim->saveValueToKey(startAbsFrame + frame, peaks[frame]);
+    }
+    anim->prp_afterWholeInfluenceRangeChanged();
 }
 
 bool eIndependentSound::SWT_shouldBeVisible(const SWT_RulesCollection &rules,
