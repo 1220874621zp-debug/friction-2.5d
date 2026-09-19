@@ -383,8 +383,6 @@ bool generate(const SkPixmap& pm, const int cellPx, SkinMesh& mesh)
             }
         }
     }
-    mesh.fW.clear();
-    mesh.fW.resize(vtxCount);
     mesh.fCellPx = cellPx;
     mesh.fImgW = pm.width();
     mesh.fImgH = pm.height();
@@ -395,7 +393,6 @@ void generateUniform(const int w, const int h, SkinMesh& mesh)
 {
     mesh.fPos.clear();
     mesh.fIndices.clear();
-    mesh.fW.clear();
     const int nx = qMax(2, qMin(24, w / 32 + 2));
     const int ny = qMax(2, qMin(24, h / 32 + 2));
     for (int y = 0; y <= ny; ++y) {
@@ -416,245 +413,26 @@ void generateUniform(const int w, const int h, SkinMesh& mesh)
             mesh.fIndices.append(uint16_t(id(x, y + 1)));
         }
     }
-    mesh.fW.resize(mesh.fPos.count());
     mesh.fCellPx = -1;
     mesh.fImgW = w;
     mesh.fImgH = h;
 }
 
-namespace {
-
-// angular falloff away from the bone axis (AnimeEffects BoneShape
-// twist weight, fixed PI/4 wing variant): full within +-45 degrees of
-// the bone direction, linearly fading to zero directly behind it - a
-// joint area pixel then prefers the bone it points along
-float wingOutness(const float angleDiff)
+float pinWeight(const qreal dist, const qreal radius,
+                const qreal softness)
 {
-    const float kWing = float(M_PI * 0.25);
-    const float kWingInv = float(M_PI * 0.75);
-    const float outress = 1.f - std::max(std::abs(angleDiff) - kWing, 0.f) / kWingInv;
-    return outress;
-}
-
-float normalizeAngle(float a)
-{
-    while (a > M_PI) a -= float(2. * M_PI);
-    while (a < -M_PI) a += float(2. * M_PI);
-    return a;
-}
-
-struct RelBone {
-    QPointF fStart;
-    QPointF fDir;     // unit
-    float fLen;
-    float fAngle;     // radians
-    float fRadius;
-};
-
-float boneWeightAt(const RelBone& b, const QPointF& p)
-{
-    const QVector2D d(float(p.x() - b.fStart.x()),
-                      float(p.y() - b.fStart.y()));
-    if (d.isNull()) return 0.f;
-
-    // twist suppression at the root and the tail (AnimeEffects
-    // BoneShape: BOTH vectors point FROM the joint TO the point -
-    // reversing the tail one suppresses the whole bone interior,
-    // which blends overlapping bones 50/50 and dilutes deformation)
-    float twist = 1.f;
-    const float rootDiff = normalizeAngle(
-                float(std::atan2(d.y(), d.x())) - b.fAngle);
-    twist *= wingOutness(rootDiff) * wingOutness(rootDiff);
-    const QPointF tailPt(b.fStart.x() + b.fDir.x() * b.fLen,
-                         b.fStart.y() + b.fDir.y() * b.fLen);
-    const QVector2D e(float(p.x() - tailPt.x()),
-                      float(p.y() - tailPt.y()));
-    if (!e.isNull()) {
-        const float tailDiff = normalizeAngle(
-                    float(std::atan2(e.y(), e.x())) - (b.fAngle + float(M_PI)));
-        twist *= wingOutness(tailDiff) * wingOutness(tailDiff);
-    }
-
-    // capsule falloff
-    float nearness = 0.f;
-    if (b.fRadius >= 1.f) {
-        const float t = QVector2D::dotProduct(d, QVector2D(b.fDir)) / b.fLen;
-        float dist;
-        if (t < 0.f) {
-            dist = d.length();
-        } else if (t <= 1.f) {
-            const QVector2D proj = QVector2D(b.fDir) * (t * b.fLen);
-            dist = (d - proj).length();
-        } else {
-            dist = e.length();
-        }
-        nearness = std::max(1.f - dist / b.fRadius, 0.f);
-    }
-
-    const float ratio = 0.3f * nearness * nearness;
-    twist = ratio + (1.f - ratio) * twist;
-    return twist * nearness;
-}
-
-float boneDistAt(const RelBone& b, const QPointF& p)
-{
-    const QPointF d = p - b.fStart;
-    const float t = float(QPointF::dotProduct(d, QPointF(b.fDir))) / b.fLen;
-    const float tc = qBound(0.f, t, 1.f);
-    const QPointF proj(b.fStart.x() + b.fDir.x() * tc * b.fLen,
-                       b.fStart.y() + b.fDir.y() * tc * b.fLen);
-    return float(QLineF(p, proj).length());
-}
-
-} // namespace
-
-void computeWeights(SkinBindData& skin)
-{
-    const auto& defs = skin.fDefs;
-    auto& mesh = skin.fMesh;
-    if (!mesh.isValid() || defs.isEmpty()) return;
-
-    // map the bind-time bones into image/rel space
-    const QTransform invL = skin.fBindBoxTotal.inverted();
-    const qreal det = skin.fBindBoxTotal.determinant();
-    const qreal s = det != 0. ? std::sqrt(std::abs(det)) : 1.;
-    QVector<RelBone> rels;
-    rels.reserve(defs.count());
-    for (const auto& def : defs) {
-        RelBone rb;
-        rb.fStart = invL.map(def.fBindHead);
-        const QPointF tail = invL.map(def.fBindTail);
-        const QPointF dir = tail - rb.fStart;
-        rb.fLen = float(QLineF(rb.fStart, tail).length());
-        if (rb.fLen < 1.f) {
-            // degenerate bone: treat as a disc
-            rb.fDir = QPointF(1., 0.);
-            rb.fLen = 1.f;
-            rb.fAngle = 0.f;
-        } else {
-            rb.fDir = dir / rb.fLen;
-            rb.fAngle = float(std::atan2(dir.y(), dir.x()));
-        }
-        rb.fRadius = float(def.fRadius / (s > 1e-9 ? s : 1.));
-        rels.append(rb);
-    }
-
-    const bool single = rels.count() == 1;
-    for (int vi = 0; vi < mesh.fPos.count(); ++vi) {
-        const QPointF p(mesh.fPos[vi].x(), mesh.fPos[vi].y());
-        auto& vw = mesh.fW[vi];
-
-        int bestIdx[4] = {-1, -1, -1, -1};
-        float bestW[4] = {0.f, 0.f, 0.f, 0.f};
-        int bestCount = 0;
-
-        if (single) {
-            bestIdx[0] = 0;
-            bestW[0] = 1.f;
-            bestCount = 1;
-        } else {
-            for (int bi = 0; bi < rels.count(); ++bi) {
-                const float w = boneWeightAt(rels[bi], p);
-                if (w <= 0.0001f) continue;
-                // insert into the top-4 list
-                int slot = bestCount < 4 ? bestCount : 3;
-                if (bestCount < 4) ++bestCount;
-                else if (w <= bestW[3]) continue;
-                else slot = 3;
-                while (slot > 0 && bestW[slot - 1] < w) {
-                    bestIdx[slot] = bestIdx[slot - 1];
-                    bestW[slot] = bestW[slot - 1];
-                    --slot;
-                }
-                bestIdx[slot] = bi;
-                bestW[slot] = w;
-            }
-            if (bestCount == 0) {
-                // outside every influence: follow the nearest bone so
-                // stray vertices tear off instead of staying behind
-                int nearest = 0;
-                float nd = boneDistAt(rels[0], p);
-                for (int bi = 1; bi < rels.count(); ++bi) {
-                    const float d = boneDistAt(rels[bi], p);
-                    if (d < nd) { nd = d; nearest = bi; }
-                }
-                bestIdx[0] = nearest;
-                bestW[0] = 1.f;
-                bestCount = 1;
-            }
-        }
-
-        float sum = 0.f;
-        for (int k = 0; k < bestCount; ++k) sum += bestW[k];
-        if (sum <= 0.f) sum = 1.f;
-        for (int k = 0; k < bestCount; ++k) {
-            vw.fIdx[k] = bestIdx[k];
-            vw.fW[k] = bestW[k] / sum;
-        }
-        vw.fCount = bestCount;
-    }
-}
-
-bool evaluate(const SkinBindData& skin,
-              const QVector<SkinDriverPose>& poses,
-              const QTransform& boxTotal,
-              QVector<SkPoint>& outPos)
-{
-    outPos = skin.fMesh.fPos;
-    if (!skin.fMesh.isValid()) return false;
-    if (poses.count() != skin.fDefs.count()) return false;
-    int liveCount = 0;
-    for (const auto& pose : poses) {
-        if (pose.fValid) ++liveCount;
-    }
-    if (liveCount == 0) return false;
-
-    // per-slot rel-space skin matrix
-    // R_b = L_cur^-1 * M_b * L_bind, where M_b (scene space) is the
-    // AnimeEffects PosePalette 2D formula: rotate the slot's delta
-    // angle around its bind head, then move to the current head
-    const QTransform invCur = boxTotal.inverted();
-    QVector<QTransform> mats(skin.fDefs.count());
-    for (int i = 0; i < skin.fDefs.count(); ++i) {
-        const auto& pose = poses[i];
-        if (!pose.fValid) continue;
-        const auto& def = skin.fDefs[i];
-
-        const qreal dAng = pose.fAngle - def.fBindAngle;
-        const qreal c = std::cos(dAng);
-        const qreal s = std::sin(dAng);
-        const QPointF bh = def.fBindHead;
-        const QTransform m(c, s, -s, c,
-                           pose.fHead.x() - (c * bh.x() - s * bh.y()),
-                           pose.fHead.y() - (s * bh.x() + c * bh.y()));
-        // Qt row-vector convention: A*B applies A FIRST, so the
-        // chain is bind -> M -> invCur (rel -> bind scene -> current
-        // scene -> rel); the flipped order swaps axes whenever the
-        // layer/bone transforms carry rotation+translation
-        mats[i] = skin.fBindBoxTotal * m * invCur;
-    }
-
-    // linear blend skinning per vertex
-    for (int vi = 0; vi < skin.fMesh.fPos.count(); ++vi) {
-        const auto& vw = skin.fMesh.fW[vi];
-        if (vw.fCount <= 0) continue;
-        const QPointF p(skin.fMesh.fPos[vi].x(),
-                        skin.fMesh.fPos[vi].y());
-        qreal x = 0.;
-        qreal y = 0.;
-        qreal wsum = 0.;
-        for (int k = 0; k < vw.fCount; ++k) {
-            if (!poses[vw.fIdx[k]].fValid) continue;
-            const QPointF mp = mats[vw.fIdx[k]].map(p);
-            x += mp.x() * vw.fW[k];
-            y += mp.y() * vw.fW[k];
-            wsum += vw.fW[k];
-        }
-        if (wsum > 1e-6) {
-            outPos[vi] = SkPoint::Make(float(x / wsum), float(y / wsum));
-        }
-    }
-    return true;
+    if (radius <= 1. || dist >= radius) return 0.f;
+    // softness shapes BOTH the hold zone and the falloff exponent,
+    // anchored so 0.5 reproduces the validated default exactly:
+    //   hold = 0.4R*s    : 0     .. 0.2R  .. 0.4R
+    //   exp  = 1 + 4*s   : 1     .. 3     .. 5
+    // hard (0) = no hold + steep quintic (tight grip, quick release),
+    // soft (1) = wide 40% hold + linear spread (gradual, widest blend)
+    const qreal s = qBound(0., softness, 1.);
+    const qreal hold = 0.4 * radius * s;
+    if (dist <= hold) return 1.f;
+    const qreal t = (dist - hold) / (radius - hold);
+    return float(std::pow(1. - t, 5. - 4. * s));
 }
 
 int selfTest()
@@ -707,184 +485,11 @@ int selfTest()
     }
     check(maxR < 95.f, "mesh hugs alpha edge (burr reduction)");
 
-    // ---- 2. weights: two slots across the circle ----
-    skin.fBindBoxTotal = QTransform();
-    SkinBoneDef defA;
-    defA.fName = QStringLiteral("A");
-    defA.fBindHead = QPointF(48, 128);
-    defA.fBindTail = QPointF(128, 128);
-    defA.fBindAngle = 0.;
-    defA.fRadius = 60.;
-    SkinBoneDef defB;
-    defB.fName = QStringLiteral("B");
-    defB.fBindHead = QPointF(128, 128);
-    defB.fBindTail = QPointF(208, 128);
-    defB.fBindAngle = 0.;
-    defB.fRadius = 60.;
-    skin.fDefs = { defA, defB };
-    computeWeights(skin);
-
-    const auto nearestVtx = [&skin](const QPointF& p) {
-        int best = 0;
-        float bd = 1e9f;
-        for (int i = 0; i < skin.fMesh.fPos.count(); ++i) {
-            const float d = QLineF(p, QPointF(skin.fMesh.fPos[i].x(),
-                                              skin.fMesh.fPos[i].y())).length();
-            if (d < bd) { bd = d; best = i; }
-        }
-        return best;
-    };
-    const int iL = nearestVtx(QPointF(70, 128));
-    const int iR = nearestVtx(QPointF(186, 128));
-    const auto& wL = skin.fMesh.fW[iL];
-    const auto& wR = skin.fMesh.fW[iR];
-    check(wL.fIdx[0] == 0 && wL.fW[0] > 0.7f,
-          "left-half vertex dominated by slot A");
-    check(wR.fIdx[0] == 1 && wR.fW[0] > 0.7f,
-          "right-half vertex dominated by slot B");
-    bool sumsOk = true;
-    bool countsOk = true;
-    for (const auto& vw : skin.fMesh.fW) {
-        float sum = 0.f;
-        for (int k = 0; k < vw.fCount; ++k) {
-            sum += vw.fW[k];
-            if (vw.fIdx[k] < 0 || vw.fIdx[k] > 1) countsOk = false;
-        }
-        if (qAbs(sum - 1.f) > 0.02f) sumsOk = false;
-    }
-    check(sumsOk, "all vertex weights sum to 1");
-    check(countsOk, "all palette indices valid");
-
-    // ---- 3. deformation math: rotate slot B +90 deg around its head
-    QVector<SkinDriverPose> poses(2);
-    poses[0].fValid = true;
-    poses[0].fHead = QPointF(48, 128);
-    poses[0].fAngle = 0.;
-    poses[0].fLen = 80.;
-    poses[1].fValid = true;
-    poses[1].fHead = QPointF(128, 128);
-    poses[1].fAngle = M_PI / 2.;
-    poses[1].fLen = 80.;
-
-    QVector<SkPoint> out;
-    check(evaluate(skin, poses, QTransform(), out),
-          "evaluate ok (2 valid poses)");
-    const SkPoint bR = skin.fMesh.fPos[iR];
-    const SkPoint aR = out[iR];
-    // expected: rotation of (v - head) by +90 deg around head (128,128)
-    const float exR = 128.f - (bR.y() - 128.f);
-    const float eyR = 128.f + (bR.x() - 128.f);
-    check(qAbs(aR.x() - exR) < 6.f && qAbs(aR.y() - eyR) < 6.f,
-          "right vertex rotated 90deg to expected position");
-    const SkPoint bL = skin.fMesh.fPos[iL];
-    const SkPoint aL = out[iL];
-    check(QLineF(QPointF(aL.x(), aL.y()),
-                 QPointF(bL.x(), bL.y())).length() < 3.f,
-          "left vertex stays put (slot A unchanged)");
-    bool noNaN = true;
-    for (const auto& p : out) {
-        if (std::isnan(p.x()) || std::isnan(p.y())) noNaN = false;
-    }
-    check(noNaN, "no NaN in deformed positions");
-
-    // ---- 4. render path: the exact drawSk call sequence ----
-    const sk_sp<SkImage> img = SkImage::MakeFromBitmap(bmp);
-    check(img != nullptr, "source image from bitmap");
-    SkPaint paint;
-    paint.setAntiAlias(true);
-    paint.setFilterQuality(kMedium_SkFilterQuality);
-    paint.setShader(img->makeShader(SkTileMode::kClamp,
-                                    SkTileMode::kClamp,
-                                    nullptr));
-    const sk_sp<SkVertices> vertices = SkVertices::MakeCopy(
-                SkVertices::kTriangles_VertexMode,
-                out.count(), out.constData(),
-                skin.fMesh.fPos.constData(), nullptr,
-                skin.fMesh.fIndices.count(),
-                skin.fMesh.fIndices.constData());
-    const sk_sp<SkSurface> surf = SkSurface::MakeRasterN32Premul(W, H);
-    surf->getCanvas()->drawVertices(vertices.get(),
-                                    SkBlendMode::kModulate, paint);
-    SkPixmap dst;
-    surf->peekPixels(&dst);
-    const SkColor cMoved = dst.getColor(128, 186);
-    // the rotated half lands BELOW the pivot and spans x 48..208, so
-    // the old center row (186,128) is legitimately covered by content
-    // swept in from the top of the disc; the upper-right quadrant
-    // (e.g. 180,90) is outside every covered region
-    const SkColor cGone = dst.getColor(180, 90);
-    const SkColor cStay = dst.getColor(70, 128);
-    check(SkColorGetA(cMoved) > 200 && SkColorGetR(cMoved) > 150,
-          "rotated half renders opaque red at its new position");
-    if (SkColorGetA(cGone) >= 120) {
-        QString row;
-        for (int x = 140; x <= 210; x += 10) {
-            row += QStringLiteral(" %1:%2").arg(x)
-                    .arg(SkColorGetA(dst.getColor(x, 90)));
-        }
-        qWarning() << "[SKINTEST]   residue row y=90 (x:alpha):" << row;
-    }
-    check(SkColorGetA(cGone) < 120,
-          "upper-right quadrant empty after rotation");
-    check(SkColorGetA(cStay) > 200,
-          "unchanged left half still renders");
-
-    // ---- 4b. composition-order regression guard ----
-    // with a rotated+translated layer (and a bind-rotated bone) a
-    // flipped multiply order in evaluate() shows up as axis-swapped
-    // motion; ground truth is built from single-matrix maps only
-    {
-        // layer = rotation by 30deg about (300, 200) + skew-free
-        const double ra = M_PI / 6.;
-        const double rc = std::cos(ra), rs = std::sin(ra);
-        const double px = 300., py = 200.;
-        const QTransform L(rc, rs, -rs, rc,
-                           px - (rc * px - rs * py),
-                           py - (rs * px + rc * py));
-        SkinBindData s2;
-        s2.fMesh = skin.fMesh;
-        s2.fBindBoxTotal = L;
-        SkinBoneDef d;
-        d.fName = QStringLiteral("A");
-        d.fBindHead = L.map(QPointF(48, 128));
-        d.fBindTail = L.map(QPointF(128, 128));
-        d.fBindAngle = 0.;
-        d.fRadius = 60.;
-        s2.fDefs = { d };
-        computeWeights(s2);
-        // pose: the bone rotated +90deg around its (unchanged) head
-        SkinDriverPose pose;
-        pose.fValid = true;
-        pose.fHead = d.fBindHead;
-        pose.fAngle = M_PI / 2.;
-        pose.fLen = 80.;
-        QVector<SkinDriverPose> poses2 { pose };
-        QVector<SkPoint> out2;
-        check(evaluate(s2, poses2, L, out2),
-              "evaluate ok (transformed layer)");
-        // ground truth for the left-half vertex: rel -> scene (L),
-        // rotate 90 about the bind head (single-matrix M), back (L^-1)
-        const double hc = std::cos(M_PI / 2.), hs = std::sin(M_PI / 2.);
-        const QPointF bh = d.fBindHead;
-        const QTransform m(hc, hs, -hs, hc,
-                           bh.x() - (hc * bh.x() - hs * bh.y()),
-                           bh.y() - (hs * bh.x() + hc * bh.y()));
-        const QPointF v0(skin.fMesh.fPos[iL].x(),
-                         skin.fMesh.fPos[iL].y());
-        const QPointF expected = L.inverted().map(
-                    m.map(L.map(v0)));
-        const QPointF got(out2[iL].x(), out2[iL].y());
-        check(QLineF(got, expected).length() < 1.f,
-              "rotation under rotated/translated layer matches "
-              "single-map ground truth (composition order)");
-    }
-
-    // ---- 5. puppet-pin additive model ----
+    // ---- 2. puppet-pin falloff curve ----
     check(pinWeight(0., 800.) == 1.f, "pinWeight full at the pin");
     check(pinWeight(160., 800.) == 1.f, "pinWeight hold zone (20%)");
     check(pinWeight(800., 800.) <= 0.f, "pinWeight zero at the radius");
     check(pinWeight(900., 800.) == 0.f, "pinWeight zero beyond radius");
-    // softness shapes the curve; 0.5 stays the validated default
     check(qAbs(pinWeight(400., 800., 0.5) -
                std::pow(1. - 0.375, 3.)) < 1e-4,
           "pinWeight softness 0.5 = cubic default");
@@ -895,56 +500,84 @@ int selfTest()
     check(pinWeight(400., 800., 1.) > pinWeight(400., 800., 0.5) &&
           pinWeight(400., 800., 0.5) > pinWeight(400., 800., 0.),
           "higher softness = softer/wider influence");
+
+    // ---- 3. pin deformation math + render (the ImageBox loop) ----
     {
-        // single pin dragged by (60, 40): the vertex AT the pin must
-        // track exactly, far vertices must not move, mid vertices
-        // blend - the same loop ImageBox runs
+        // pin at the circle center, dragged by (60, 40), radius 150:
+        // content at the pin tracks exactly, far corners stay put
         const QPointF bind(128, 128);
         const QPointF delta(60, 40);
-        const double radius = 400.;
-        int vAt = -1;
-        float bestD = 1e9f;
-        for (int i = 0; i < skin.fMesh.fPos.count(); ++i) {
-            const float d = QLineF(bind, QPointF(skin.fMesh.fPos[i].x(),
-                                                 skin.fMesh.fPos[i].y())).length();
-            if (d < bestD) { bestD = d; vAt = i; }
+        const double radius = 150.;
+
+        const auto nearestVtx = [&skin](const QPointF& p) {
+            int best = 0;
+            float bd = 1e9f;
+            for (int i = 0; i < skin.fMesh.fPos.count(); ++i) {
+                const float d = QLineF(p, QPointF(skin.fMesh.fPos[i].x(),
+                                                  skin.fMesh.fPos[i].y())).length();
+                if (d < bd) { bd = d; best = i; }
+            }
+            return best;
+        };
+        const int vAt = nearestVtx(bind);
+        check(QLineF(bind, QPointF(skin.fMesh.fPos[vAt].x(),
+                                   skin.fMesh.fPos[vAt].y())).length()
+              < 12.f, "a lattice vertex sits near the pin");
+
+        QVector<SkPoint> pos = skin.fMesh.fPos;
+        for (int vi = 0; vi < pos.count(); ++vi) {
+            const auto& rest = skin.fMesh.fPos[vi];
+            const float w = pinWeight(
+                        QLineF(bind, QPointF(rest.x(), rest.y())).length(),
+                        radius, 0.5);
+            if (w <= 0.f) continue;
+            pos[vi] += SkPoint::Make(float(delta.x()) * w,
+                                     float(delta.y()) * w);
         }
-        check(bestD < 25.f, "a lattice vertex sits near the pin");
-        const SkPoint before = skin.fMesh.fPos[vAt];
-        SkPoint after = before;
-        {
-            const float w = pinWeight(bestD, radius);
-            after += SkPoint::Make(float(delta.x()) * w,
-                                   float(delta.y()) * w);
-        }
-        check(qAbs(after.x() - before.x() - 60.f) < 6.f &&
-              qAbs(after.y() - before.y() - 40.f) < 6.f,
+        const SkPoint bAt = skin.fMesh.fPos[vAt];
+        const SkPoint aAt = pos[vAt];
+        check(qAbs(aAt.x() - bAt.x() - 60.f) < 6.f &&
+              qAbs(aAt.y() - bAt.y() - 40.f) < 6.f,
               "pin vertex tracks the drag exactly (hold zone)");
-        // a vertex at the falloff edge (400px away, outside the
-        // r=80 circle there is none - use the function directly)
-        check(pinWeight(300., 400.) < 0.3f, "pinWeight falls off");
+        bool noNaN = true;
+        for (const auto& p : pos) {
+            if (std::isnan(p.x()) || std::isnan(p.y())) noNaN = false;
+        }
+        check(noNaN, "no NaN in deformed positions");
+
+        // render: the exact drawSk call sequence
+        const sk_sp<SkImage> img = SkImage::MakeFromBitmap(bmp);
+        check(img != nullptr, "source image from bitmap");
+        SkPaint paint;
+        paint.setAntiAlias(true);
+        paint.setFilterQuality(kMedium_SkFilterQuality);
+        paint.setShader(img->makeShader(SkTileMode::kClamp,
+                                        SkTileMode::kClamp,
+                                        nullptr));
+        const sk_sp<SkVertices> vertices = SkVertices::MakeCopy(
+                    SkVertices::kTriangles_VertexMode,
+                    pos.count(), pos.constData(),
+                    skin.fMesh.fPos.constData(), nullptr,
+                    skin.fMesh.fIndices.count(),
+                    skin.fMesh.fIndices.constData());
+        const sk_sp<SkSurface> surf = SkSurface::MakeRasterN32Premul(W, H);
+        surf->getCanvas()->drawVertices(vertices.get(),
+                                        SkBlendMode::kModulate, paint);
+        SkPixmap dst;
+        surf->peekPixels(&dst);
+        // center content dragged to (188, 168); the right edge of the
+        // canvas lies outside the pin radius and stays empty
+        const SkColor cMoved = dst.getColor(188, 168);
+        const SkColor cEmpty = dst.getColor(250, 128);
+        check(SkColorGetA(cMoved) > 200 && SkColorGetR(cMoved) > 150,
+              "pin-dragged content renders at its new position");
+        check(SkColorGetA(cEmpty) < 10,
+              "beyond-radius corner stays empty");
     }
 
     qDebug() << "[SKINTEST] ===" << (fails == 0 ? "ALL PASS" :
           QString("%1 FAILED").arg(fails)) << "===";
     return fails;
-}
-
-float pinWeight(const qreal dist, const qreal radius,
-                const qreal softness)
-{
-    if (radius <= 1. || dist >= radius) return 0.f;
-    // softness shapes BOTH the hold zone and the falloff exponent,
-    // anchored so 0.5 reproduces the validated default exactly:
-    //   hold = 0.4R*s    : 0     .. 0.2R  .. 0.4R
-    //   exp  = 1 + 4*s   : 1     .. 3     .. 5
-    // hard (0) = no hold + steep quintic (tight grip, quick release),
-    // soft (1) = wide 40% hold + linear spread (gradual, widest blend)
-    const qreal s = qBound(0., softness, 1.);
-    const qreal hold = 0.4 * radius * s;
-    if (dist <= hold) return 1.f;
-    const qreal t = (dist - hold) / (radius - hold);
-    return float(std::pow(1. - t, 5. - 4. * s));
 }
 
 void diagPng(const QString& path)

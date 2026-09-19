@@ -35,13 +35,9 @@
 #include "svgexporter.h"
 #include "svgexporthelpers.h"
 #include "appsupport.h"
-#include "Properties/boxtargetproperty.h"
 #include "canvas.h"
 #include "Boxes/bone.h"
 #include "Private/document.h"
-#include "simpletask.h"
-#include "ReadWrite/evformat.h"
-#include "Animators/animator.h"
 #include "Animators/complexanimator.h"
 #include "Animators/qrealanimator.h"
 #include "Animators/transformanimator.h"
@@ -257,16 +253,11 @@ public:
     }
 
     void prp_readProperty_impl(eReadStream& src) {
-        const auto& children = ca_getChildren();
-        const int n = src.evFileVersion() >= EvFormat::skinPinSoftness ?
-                    4 : 3;
-        for (int i = 0; i < n && i < children.count(); ++i) {
-            children.at(i)->prp_readProperty(src);
+        for (const auto& prop : ca_getChildren()) {
+            prop->prp_readProperty(src);
         }
         src >> mBindRel;
-        if (src.evFileVersion() >= EvFormat::skinPinBone) {
-            src >> mBoneName >> mBoneBindTotal >> mBindScene;
-        }
+        src >> mBoneName >> mBoneBindTotal >> mBindScene;
     }
 
     QDomElement prp_writePropertyXEV_impl(const XevExporter& exp) const {
@@ -453,20 +444,6 @@ ImageBox::ImageBox(const QString &name, const eBoxType type) :
                  [this](ConnContext& conn, ImageFileHandler* obj) {
                      fileHandlerConnector(conn, obj);
                  }) {
-    // skin bones chain root (mesh deformation driver); always present
-    // so the serialized children block stays positional
-    mSkinRoot = enve::make_shared<BoxTargetProperty>(
-                QStringLiteral("\u8499\u76AE\u9AA8\u9ABC\u94FE"));
-    mSkinRoot->setValidator<Bone>();
-    ca_addChild(mSkinRoot);
-    // manual retarget from the property panel: only rewire the live
-    // follow connections; use the layer menu to re-capture the pose
-    connect(mSkinRoot.data(), &BoxTargetProperty::targetSet,
-            this, [this](BoundingBox*) {
-        if(mSkinInternalSet) return;
-        skinSetupFollowConns();
-        if(mSkin.hasBind()) prp_afterWholeInfluenceRangeChanged();
-    });
     // puppet pins container (direct deformation, no bones); always a
     // child so the serialized property tree stays positional
     mSkinPins = enve::make_shared<SkinPinsProperty>(this);
@@ -494,20 +471,9 @@ void ImageBox::fileHandlerAfterAssigned(ImageFileHandler *obj) {
 void ImageBox::writeBoundingBox(eWriteStream& dst) const {
     BoundingBox::writeBoundingBox(dst);
     dst.writeFilePath(mFileHandler->path());
-    // skin bind block (positional, version-gated on read); the gate
-    // covers both drivers - puppet-pin-only layers carry the mesh here
-    // while the pins themselves serialize as animator children
+    // skin mesh block (positional): bind transform + lattice
     dst << (hasSkinBind() ? int(1) : int(0));
     if(!hasSkinBind()) return;
-    dst << int(mSkin.fDefs.count());
-    for(const auto& def : mSkin.fDefs) {
-        dst << def.fName;
-        dst << def.fBindTotal;
-        dst << def.fBindHead;
-        dst << def.fBindTail;
-        dst << def.fBindAngle;
-        dst << def.fRadius;
-    }
     dst << mSkin.fBindBoxTotal;
     dst << int(mSkin.fMesh.fCellPx)
         << int(mSkin.fMesh.fImgW) << int(mSkin.fMesh.fImgH);
@@ -518,76 +484,30 @@ void ImageBox::writeBoundingBox(eWriteStream& dst) const {
     dst << int(mSkin.fMesh.fIndices.count());
     dst.write(mSkin.fMesh.fIndices.constData(),
               qint64(mSkin.fMesh.fIndices.count()) * qint64(sizeof(uint16_t)));
-    for(const auto& vw : mSkin.fMesh.fW) {
-        dst << int(vw.fCount);
-        for(int k = 0; k < vw.fCount; ++k) {
-            dst << int(vw.fIdx[k]);
-            dst << qreal(vw.fW[k]);
-        }
-    }
 }
 
 void ImageBox::readBoundingBox(eReadStream& src) {
     BoundingBox::readBoundingBox(src);
     const QString path = src.readFilePath();
     setFilePathNoRename(path);
-    if(src.evFileVersion() < EvFormat::imageBoxSkinBind) return;
     int hasSkin; src >> hasSkin;
     if(!hasSkin) return;
-    int defCount; src >> defCount;
-    if(defCount < 0 || defCount > 512) return;
-    mSkin.fDefs.clear();
-    for(int i = 0; i < defCount; ++i) {
-        SkinBoneDef def;
-        src >> def.fName;
-        src >> def.fBindTotal;
-        src >> def.fBindHead;
-        src >> def.fBindTail;
-        src >> def.fBindAngle;
-        src >> def.fRadius;
-        mSkin.fDefs.append(def);
-    }
     src >> mSkin.fBindBoxTotal;
     int cellPx, imgW, imgH;
     src >> cellPx >> imgW >> imgH;
     int posCount; src >> posCount;
-    if(posCount < 3 || posCount >= 65536) {
-        mSkin.fDefs.clear();
-        return;
-    }
+    if(posCount < 3 || posCount >= 65536) return;
     mSkin.fMesh.fPos.resize(posCount);
     src.read(mSkin.fMesh.fPos.data(),
              qint64(posCount) * qint64(sizeof(SkPoint)));
     int idxCount; src >> idxCount;
-    if(idxCount < 3 || idxCount > posCount * 8) {
-        mSkin.fDefs.clear();
-        return;
-    }
+    if(idxCount < 3 || idxCount > posCount * 8) return;
     mSkin.fMesh.fIndices.resize(idxCount);
     src.read(mSkin.fMesh.fIndices.data(),
              qint64(idxCount) * qint64(sizeof(uint16_t)));
-    mSkin.fMesh.fW.resize(posCount);
-    for(int i = 0; i < posCount; ++i) {
-        auto& vw = mSkin.fMesh.fW[i];
-        int cnt; src >> cnt;
-        cnt = qBound(0, cnt, 4);
-        vw.fCount = cnt;
-        for(int k = 0; k < cnt; ++k) {
-            int idx; src >> idx;
-            qreal w; src >> w;
-            if(idx < 0 || idx >= defCount) continue;
-            vw.fIdx[k] = idx;
-            vw.fW[k] = float(w);
-        }
-    }
     mSkin.fMesh.fCellPx = cellPx;
     mSkin.fMesh.fImgW = imgW;
     mSkin.fMesh.fImgH = imgH;
-    // wire the live-follow connections once the event loop settles
-    // (the chain root may still be resolving from its write id)
-    SimpleTask::sScheduleContexted(this, [this]() {
-        skinSetupFollowConns();
-    });
 }
 
 QDomElement ImageBox::prp_writePropertyXEV_impl(const XevExporter& exp) const {
@@ -649,7 +569,7 @@ bool ImageBox::absPointInsideVisiblePixels(const QPointF &absPos) {
 // bone skin bind (AnimeEffects-style mesh deformation)
 
 bool ImageBox::hasSkinBind() const {
-    return mSkin.hasBind() || (mSkinPins && mSkinPins->pinCount() > 0);
+    return mSkinPins && mSkinPins->pinCount() > 0;
 }
 
 int ImageBox::skinPinCount() const {
@@ -792,150 +712,12 @@ bool ImageBox::skinGenerateMesh(SkinBindData& skin) {
     return true;
 }
 
-void ImageBox::skinCaptureDefs(const QList<Bone*>& chain) {
-    mSkin.fBindBoxTotal = getTotalTransform();
-    mSkin.fDefs.clear();
-    for(const auto bone : chain) {
-        if(!bone) continue;
-        SkinBoneDef def;
-        def.fName = bone->prp_getName();
-        def.fBindTotal = bone->getTotalTransform();
-        def.fBindHead = def.fBindTotal.map(QPointF(0., 0.));
-        def.fBindTail = def.fBindTotal.map(
-                    QPointF(bone->getLength(), 0.));
-        def.fBindAngle = std::atan2(def.fBindTail.y() - def.fBindHead.y(),
-                                    def.fBindTail.x() - def.fBindHead.x());
-        def.fRadius = bone->skinInfluenceRadius();
-        mSkin.fDefs.append(def);
-    }
-}
-
-void ImageBox::skinFinishBind() {
-    SkinMeshGen::computeWeights(mSkin);
-    mSkinWarnedNoBones = false;
-    skinSetupFollowConns();
-    prp_afterWholeInfluenceRangeChanged();
-}
-
-bool ImageBox::skinBindChain(Bone* const chainRoot) {
-    if(!chainRoot) return false;
-    const auto chain = Bone::chain(chainRoot);
-    if(chain.isEmpty()) return false;
-    // A layer that still lives INSIDE a bone chain (from an earlier
-    // rigid "Bind Selected Layers to This Bone") makes the skin
-    // matrices collapse to identity: the parenting already delivers
-    // the bone motion, and R = L_cur^-1 * M_b * L_bind cancels it
-    // exactly. Skin bind REPLACES rigid bind - move the layer out to
-    // the nearest non-bone ancestor first, keeping its world pose.
-    bool movedOutOfBone = false;
-    if(const auto parentBone = enve_cast<Bone*>(getParentGroup())) {
-        // bone-side unbind: moves the layer out of the chain to the
-        // nearest non-bone ancestor, keeping its world appearance
-        parentBone->unbindLayer(this);
-        movedOutOfBone = true;
-    }
-    skinCaptureDefs(chain);
-    if(!skinGenerateMesh(mSkin)) {
-        mSkin.fDefs.clear();
-        qWarning() << "[SKIN]" << prp_getName()
-                   << "mesh generation failed - bind aborted";
-        return false;
-    }
-    mSkinInternalSet = true;
-    mSkinRoot->setTargetAction(chainRoot);
-    mSkinInternalSet = false;
-    skinFinishBind();
-    qDebug() << "[SKIN]" << prp_getName() << "bound:"
-             << "bones=" << mSkin.fDefs.count()
-             << "verts=" << mSkin.fMesh.fPos.count()
-             << "tris=" << mSkin.fMesh.fIndices.count() / 3
-             << "cellPx=" << mSkin.fMesh.fCellPx
-             << "uniformFallback=" << (mSkin.fMesh.fCellPx < 0)
-             << "movedOutOfBone=" << movedOutOfBone;
-    return true;
-}
-
 void ImageBox::skinUnbind() {
     if(!hasSkinBind()) return;
-    mSkin.fDefs.clear();
     mSkin.fMesh = SkinMesh();
-    skinClearFollowConns();
     clearSkinPins();
-    mSkinInternalSet = true;
-    mSkinRoot->setTargetAction(nullptr);
-    mSkinInternalSet = false;
     prp_afterWholeInfluenceRangeChanged();
     if(Document::sInstance) Document::sInstance->actionFinished();
-}
-
-void ImageBox::skinRebindPose() {
-    if(!mSkin.hasBind()) return;
-    const auto root = enve_cast<Bone*>(mSkinRoot->getTarget());
-    if(!root) return;
-    const auto chain = Bone::chain(root);
-    if(chain.isEmpty()) return;
-    // regenerate the mesh when the image changed since the bind
-    if(mSkin.fMesh.fImgW > 0 && mFileHandler && mFileHandler->hasImage()) {
-        const auto img = mFileHandler->getImage();
-        if(img && (img->width() != mSkin.fMesh.fImgW ||
-                   img->height() != mSkin.fMesh.fImgH)) {
-            skinGenerateMesh(mSkin);
-        }
-    }
-    skinCaptureDefs(chain);
-    skinFinishBind();
-    if(Document::sInstance) Document::sInstance->actionFinished();
-}
-
-void ImageBox::skinSetupFollowConns() {
-    // live follow: any bound bone change re-renders this layer
-    // (coalesced through SimpleTask - the proven BoneWarp pattern)
-    skinClearFollowConns();
-    const auto root = enve_cast<Bone*>(mSkinRoot->getTarget());
-    if(!root) return;
-    for(const auto bone : Bone::chain(root)) {
-        if(!bone) continue;
-        mSkinFollowConns << connect(
-                    bone, &BoundingBox::prp_absFrameRangeChanged,
-                    this, [this](const FrameRange& abs) {
-            SimpleTask::sScheduleContexted(this, [this, abs]() {
-                prp_afterChangedAbsRange(abs);
-            });
-        });
-        // live influence radius: the slider captures into the bind
-        // defs, so a later edit re-reads the bone's radius, rebuilds
-        // the weights and re-renders (no manual re-bind needed)
-        const auto radiusAnim = bone->skinRadiusAnimator();
-        if(radiusAnim) {
-            const qptr<Bone> bonePtr = bone;
-            mSkinFollowConns << connect(
-                        radiusAnim, &Animator::prp_absFrameRangeChanged,
-                        this, [this, bonePtr](const FrameRange&) {
-                SimpleTask::sScheduleContexted(this, [this, bonePtr]() {
-                    if(!bonePtr || !mSkin.hasBind()) return;
-                    bool changed = false;
-                    const QString name = bonePtr->prp_getName();
-                    const qreal radius = bonePtr->skinInfluenceRadius();
-                    for(auto& def : mSkin.fDefs) {
-                        if(def.fName != name) continue;
-                        if(qAbs(def.fRadius - radius) > 0.01) {
-                            def.fRadius = radius;
-                            changed = true;
-                        }
-                    }
-                    if(changed) {
-                        SkinMeshGen::computeWeights(mSkin);
-                        prp_afterWholeInfluenceRangeChanged();
-                    }
-                });
-            });
-        }
-    }
-}
-
-void ImageBox::skinClearFollowConns() {
-    for(const auto& c : mSkinFollowConns) QObject::disconnect(c);
-    mSkinFollowConns.clear();
 }
 
 void ImageBox::setupCanvasMenu(PropertyMenu * const menu)
@@ -969,11 +751,6 @@ void ImageBox::setupCanvasMenu(PropertyMenu * const menu)
                          QStringLiteral("\u8499\u76AE\u9489\u7ED1\u5B9A\u9AA8\u67B6\uFF08\u6CBF\u9AA8\u9ABC\u81EA\u52A8\u5E03\u9489\uFF09"),
                          bindSkelOp);
 
-    const PropertyMenu::PlainSelectedOp<ImageBox> skinRebindOp =
-    [](ImageBox * box) { box->skinRebindPose(); };
-    menu->addPlainAction(QIcon::fromTheme("loop"),
-                         QStringLiteral("\u8499\u76AE\u91CD\u7ED1\u59FF\u6001\uFF08\u4EE5\u5F53\u524D\u9AA8\u9ABC\u59FF\u6001\u4E3A\u57FA\u51C6\uFF09"),
-                         skinRebindOp);
 
     const PropertyMenu::PlainSelectedOp<ImageBox> skinUnbindOp =
     [](ImageBox * box) { box->skinUnbind(); };
@@ -1059,49 +836,12 @@ void ImageBox::setupRenderData(const qreal relFrame, const QTransform& parentM,
     // skin bind: evaluate the deformed mesh HERE (GUI thread - bone
     // animator reads are unsafe off-thread); the raster path then only
     // consumes the assembled payload. Two driver families share the
-    // mesh: bones (normalized LBS over the palette) and puppet pins
-    // (additive offset blending, see below)
+    // mesh: puppet pins (additive offset blending). Bone-bound pins
+    // contribute their EFFECTIVE position: the bone's rigid motion
+    // (evaluated at this frame) plus the pin's manual x/y offset
     if (hasSkinBind()) {
-        QVector<SkinDriverPose> poses(mSkin.fDefs.count());
-        const auto root = enve_cast<Bone*>(mSkinRoot->getTarget());
-        if (root) {
-            const auto chain = Bone::chain(root);
-            for (int i = 0; i < mSkin.fDefs.count(); ++i) {
-                const Bone* bone = nullptr;
-                for (const auto b : chain) {
-                    if (b && b->prp_getName() == mSkin.fDefs[i].fName) {
-                        bone = b;
-                        break;
-                    }
-                }
-                if (!bone) continue;
-                const QTransform cur =
-                        bone->getTotalTransformAtFrame(relFrame);
-                auto& pose = poses[i];
-                pose.fHead = cur.map(QPointF(0., 0.));
-                const QPointF tail = cur.map(
-                            QPointF(bone->getLength(), 0.));
-                pose.fAngle = std::atan2(tail.y() - pose.fHead.y(),
-                                         tail.x() - pose.fHead.x());
-                pose.fLen = bone->getLength();
-                pose.fValid = true;
-            }
-        }
+        QVector<SkPoint> pos = mSkin.fMesh.fPos;
         const int pinCount = skinPinCount();
-        QVector<SkPoint> pos;
-        bool ok = false;
-        if (mSkin.fDefs.count() > 0) {
-            ok = SkinMeshGen::evaluate(mSkin, poses,
-                                       data->fTotalTransform, pos);
-        }
-        if (!ok) pos = mSkin.fMesh.fPos;
-        // puppet pins: ADDITIVE offset blending (not the normalized
-        // bone LBS): the hold zone around a pin tracks it exactly, the
-        // cubic falloff decays to zero, overlapping pins sum. This is
-        // what keeps the grabbed artwork glued to the cursor.
-        // Bone-bound pins contribute their EFFECTIVE position: the
-        // bone's rigid motion (evaluated at this frame) plus the pin's
-        // manual x/y offset on top
         for (int pi = 0; pi < pinCount; ++pi) {
             const auto pin = mSkinPins->pinAt(pi);
             if (!pin) continue;
@@ -1144,10 +884,8 @@ void ImageBox::setupRenderData(const qreal relFrame, const QTransform& parentM,
                                          float(delta.y()) * w);
             }
         }
-        ok = ok || pinCount > 0;
-        if (ok && !pos.isEmpty()) {
+        if (!pos.isEmpty()) {
             imgData->fSkinned = true;
-            mSkinWarnedNoBones = false;
             SkRect bounds;
             bounds.setBoundsCheck(pos.constData(), pos.count());
             bounds.outset(2.f, 2.f);
@@ -1162,12 +900,6 @@ void ImageBox::setupRenderData(const qreal relFrame, const QTransform& parentM,
                         nullptr,
                         mSkin.fMesh.fIndices.count(),
                         mSkin.fMesh.fIndices.constData());
-        } else if(!mSkinWarnedNoBones) {
-            mSkinWarnedNoBones = true;
-            qWarning() << "[SKIN]" << prp_getName()
-                       << "evaluate: no live bone matched (chain root"
-                          " unset or bone names changed) - drawing"
-                          " undeformed";
         }
     }
 }

@@ -16,10 +16,6 @@ class CORE_EXPORT Bone : public ContainerBox {
 protected:
     Bone();
 public:
-    // depth-first list of root + its descendant bones (skin palette
-    // walk, shared by the skin-bind entry and the skinned layer)
-    static QList<Bone*> chain(Bone* const root);
-
     bool relPointInsidePath(const QPointF &relPos) const;
 
     // editing-time visual, drawn by Canvas for every visible bone
@@ -28,10 +24,6 @@ public:
 
     qreal getLength() const;
     QrealAnimator* lengthAnimator() const { return mLength.get(); }
-    // skin influence radius in scene px (0 = auto: 0.6 * bone length,
-    // resolved at skin-bind time)
-    qreal skinInfluenceRadius() const;
-    QrealAnimator* skinRadiusAnimator() const { return mSkinRadius.get(); }
     // local-space tail position (length, 0)
     QPointF getTailRelPos() const;
     // world-space head/tail at the current frame
@@ -78,7 +70,6 @@ public:
     void prp_setupTreeViewMenu(PropertyMenu * const menu) override;
 private:
     qsptr<QrealAnimator> mLength;
-    qsptr<QrealAnimator> mSkinRadius;
     qsptr<Property> mOverlay;
 };
 

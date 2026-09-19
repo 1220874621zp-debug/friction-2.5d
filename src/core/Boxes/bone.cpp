@@ -125,11 +125,6 @@ Bone::Bone() : ContainerBox(QObject::tr("Bone"),
     mLength = enve::make_shared<QrealAnimator>(100, 10, 2000, 1,
                                                QObject::tr("Length"));
     ca_addChild(mLength);
-    // skinning falloff radius (scene px); 0 = auto-resolved to 0.6 of
-    // the bone length when the layer is skin-bound
-    mSkinRadius = enve::make_shared<QrealAnimator>(0, 0, 10000, 1,
-                                                   QStringLiteral("\u8499\u76AE\u5F71\u54CD\u534A\u5F84"));
-    ca_addChild(mSkinRadius);
 
     connect(this, &BoundingBox::prp_sceneChanged,
             this, [this](Canvas* const oldS, Canvas* const newS) {
@@ -140,30 +135,6 @@ Bone::Bone() : ContainerBox(QObject::tr("Bone"),
 
 qreal Bone::getLength() const {
     return mLength->getEffectiveValue();
-}
-
-qreal Bone::skinInfluenceRadius() const {
-    const qreal r = mSkinRadius->getEffectiveValue();
-    if (r > 0.1) return r;
-    return qMax(20., 0.6 * getLength());
-}
-
-QList<Bone*> Bone::chain(Bone* const root)
-{
-    QList<Bone*> chain;
-    if (!root) return chain;
-    QList<Bone*> stack{root};
-    while (!stack.isEmpty()) {
-        const auto bone = stack.takeLast();
-        if (!bone) continue;
-        chain.append(bone);
-        for (const auto& c : bone->getContained()) {
-            if (const auto child = enve_cast<Bone*>(c.data())) {
-                stack.append(child);
-            }
-        }
-    }
-    return chain;
 }
 
 QPointF Bone::getTailRelPos() const {

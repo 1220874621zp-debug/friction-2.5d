@@ -82,16 +82,8 @@ public:
 
     const QString& filePath() const { return mPath; }
 
-    // ---- bone skin bind (AnimeEffects-style mesh deformation) ----
-    // the layer STAYS where it is (no reparent): a triangular mesh
-    // generated from the image alpha follows the blended transforms of
-    // the bone chain; returns false when the chain is empty
-    bool skinBindChain(Bone* const chainRoot);
-    // drop the bind and render as a plain image again
+    // drop all skinning (pins + mesh) and render as a plain image
     void skinUnbind();
-    // re-capture the bind pose from the CURRENT bone pose (and
-    // regenerate the mesh when the image dimensions changed)
-    void skinRebindPose();
     bool hasSkinBind() const;
 
     // ---- puppet pins (direct mesh deformation, NO bones needed) ----
@@ -129,20 +121,12 @@ private:
     void fileHandlerConnector(ConnContext& conn, ImageFileHandler* obj);
     void fileHandlerAfterAssigned(ImageFileHandler* obj);
 
-    // skin bind internals
+    // skin internals
     bool skinGenerateMesh(SkinBindData& skin);
-    void skinCaptureDefs(const QList<Bone*>& chain);
-    void skinFinishBind();
-    void skinSetupFollowConns();
-    void skinClearFollowConns();
 
     QString mPath;
-    qsptr<BoxTargetProperty> mSkinRoot;
     qsptr<SkinPinsProperty> mSkinPins;
     SkinBindData mSkin;
-    QList<QMetaObject::Connection> mSkinFollowConns;
-    bool mSkinInternalSet = false;
-    bool mSkinWarnedNoBones = false;
 };
 
 #endif // IMAGEBOX_H
