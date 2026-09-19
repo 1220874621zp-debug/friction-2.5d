@@ -69,6 +69,11 @@ public:
     QPointF getRelativePos() const override;
     void setRelativePos(const QPointF &relPos) override;
 
+    // pins stay visible in the object/point modes AND in the skin pin
+    // tool itself - placing more pins while seeing the existing ones
+    // is the whole point of the tool
+    bool isVisible(const CanvasMode mode) const override;
+
     void startTransform() override;
     void finishTransform() override;
 
@@ -184,6 +189,12 @@ private:
 };
 
 QPointF SkinPinPoint::getRelativePos() const { return mPin->getRelPos(); }
+
+bool SkinPinPoint::isVisible(const CanvasMode mode) const {
+    return mode == CanvasMode::pointTransform ||
+           mode == CanvasMode::boxTransform ||
+           mode == CanvasMode::skinPin;
+}
 
 void SkinPinPoint::setRelativePos(const QPointF &relPos) {
     mPin->setRelPos(relPos);

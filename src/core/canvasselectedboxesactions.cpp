@@ -828,7 +828,8 @@ MovablePoint *Canvas::getPointAtAbsPos(const QPointF &absPos,
         }
     }
     if(mode == CanvasMode::pointTransform || mode == CanvasMode::pathCreate ||
-       mode == CanvasMode::drawPath || mode == CanvasMode::boxTransform) {
+       mode == CanvasMode::drawPath || mode == CanvasMode::boxTransform ||
+       mode == CanvasMode::skinPin) {
         for(const auto &box : mSelectedBoxes) {
             const auto pointAtPos = box->getPointAtAbsPos(absPos, mode, invScale);
             if(pointAtPos) return pointAtPos;
