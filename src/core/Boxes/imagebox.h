@@ -97,11 +97,19 @@ public:
     // ---- puppet pins (direct mesh deformation, NO bones needed) ----
     // a pin is a degenerate skin driver: place it on the artwork,
     // drag it (standard animator undo/auto-key), the mesh follows
-    // with a radial falloff - PS/AE puppet-warp workflow
+    // with a radial falloff - PS/AE puppet-warp workflow.
+    // A pin can also RIDE a bone (rigid passenger + manual offset on
+    // top), which turns a whole skeleton into mesh drivers
     SkinPin* addSkinPin(const QPointF& relPos);
     void removeSkinPin(SkinPin* const pin);
     void clearSkinPins();
     int skinPinCount() const;
+    // one-click full-skeleton bind: pins along every scene bone, each
+    // bound to its own bone
+    void skinPinsBindSkeleton();
+    // refresh the render cache after an out-of-animator pin change
+    // (bone bind / unbind)
+    void skinChangedNotify();
     // pixel-in-RAM state for diagnostics (blank canvas investigation):
     // false = pixels evicted/not loaded yet; the next render schedules
     // an async reload

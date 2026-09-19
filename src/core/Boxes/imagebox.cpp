@@ -82,6 +82,18 @@ private:
     SkinPin * const mPin;
 };
 
+// scene-space distance from a point to a bone's head-tail segment
+static qreal distPointToBone(const Bone* const b, const QPointF& p) {
+    const QPointF h = b->getHeadAbsPos();
+    const QPointF t = b->getTailAbsPos();
+    const QPointF d = t - h;
+    const qreal len2 = d.x() * d.x() + d.y() * d.y();
+    const qreal u = len2 > 0. ?
+                qBound(0., ((p.x() - h.x()) * d.x() +
+                            (p.y() - h.y()) * d.y()) / len2, 1.) : 0.;
+    return QLineF(p, h + u * d).length();
+}
+
 class SkinPin : public ComplexAnimator {
 public:
     SkinPin(const QString& name, ImageBox * const box)
@@ -121,6 +133,81 @@ public:
     QPointF bindRel() const { return mBindRel; }
     void setBindRel(const QPointF& p) { mBindRel = p; }
 
+    // ---- bone attachment ----
+    // a bound pin rides its bone as a rigid passenger: the bone's
+    // current-vs-bind rigid transform carries the pin's bind scene
+    // position; the x/y animators stay a MANUAL offset on top (bone
+    // animates the gross motion, pin keys add local accents)
+    bool hasBone() const { return !mBoneName.isEmpty(); }
+    const QString& boneName() const { return mBoneName; }
+    const QTransform& boneBindTotal() const { return mBoneBindTotal; }
+    const QPointF& bindScene() const { return mBindScene; }
+
+    void bindToBone(Bone * const bone) {
+        if (!bone || !mBox) return;
+        mBoneName = bone->prp_getName();
+        mBoneBindTotal = bone->getTotalTransform();
+        mBindScene = mBox->getTotalTransform().map(getRelPos());
+        qDebug() << "[SKIN] pin bound to bone" << mBoneName;
+    }
+
+    void unbindBone() {
+        if (mBoneName.isEmpty()) return;
+        mBoneName.clear();
+        qDebug() << "[SKIN] pin unbound";
+    }
+
+    // bind to the nearest bone in the scene (within reach); returns
+    // true when bound
+    bool tryBindNearestBone() {
+        if (!mBox) return false;
+        const auto scene = mBox->getParentScene();
+        if (!scene) return false;
+        const QPointF pScene =
+                mBox->getTotalTransform().map(effectiveRelPos());
+        Bone* best = nullptr;
+        qreal bestD = 1e12;
+        for (const auto b : scene->getBones()) {
+            if (!b) continue;
+            const qreal d = distPointToBone(b, pScene);
+            if (d < bestD) { bestD = d; best = b; }
+        }
+        if (best && bestD <= qMax(200., 1.5 * best->getLength())) {
+            bindToBone(best);
+            return true;
+        }
+        return false;
+    }
+
+    // bone-driven part of the position, in image rel space
+    QPointF drivenRelPos() const {
+        if (mBoneName.isEmpty() || !mBox) return QPointF();
+        const auto scene = mBox->getParentScene();
+        if (!scene) return QPointF();
+        Bone* bone = nullptr;
+        for (const auto b : scene->getBones()) {
+            if (b && b->prp_getName() == mBoneName) { bone = b; break; }
+        }
+        if (!bone) return QPointF();
+        const QTransform cur = bone->getTotalTransform();
+        const QPointF drivenScene =
+                (cur * mBoneBindTotal.inverted()).map(mBindScene);
+        return mBox->getTotalTransform().inverted().map(drivenScene);
+    }
+
+    // where the pin visually sits: bone-driven position plus the
+    // manual (x/y) offset relative to the bind
+    QPointF effectiveRelPos() const {
+        if (mBoneName.isEmpty()) return getRelPos();
+        return drivenRelPos() + (getRelPos() - mBindRel);
+    }
+
+    // drag target: solve x/y so the EFFECTIVE position equals p
+    void setEffectiveRelPos(const QPointF& p) {
+        if (mBoneName.isEmpty()) { setRelPos(p); return; }
+        setRelPos(p - drivenRelPos() + mBindRel);
+    }
+
     void startTransform() {
         mPosAtStart = getRelPos();
         mX->prp_startTransform();
@@ -142,13 +229,21 @@ public:
         if (mBox) mBox->removeSkinPin(this);
     }
 
+    // refresh the render cache after an out-of-animator change
+    // (bone bind / unbind)
+    void notifySkinChanged() {
+        if (mBox) mBox->skinChangedNotify();
+    }
+
     // serialization: the three child animators positionally (created
     // by the ctor, StaticComplexAnimator pattern), then the bind pos
+    // and the bone attachment (version-gated)
     void prp_writeProperty_impl(eWriteStream& dst) const {
         for (const auto& prop : ca_getChildren()) {
             prop->prp_writeProperty(dst);
         }
         dst << mBindRel;
+        dst << mBoneName << mBoneBindTotal << mBindScene;
     }
 
     void prp_readProperty_impl(eReadStream& src) {
@@ -156,6 +251,9 @@ public:
             prop->prp_readProperty(src);
         }
         src >> mBindRel;
+        if (src.evFileVersion() >= EvFormat::skinPinBone) {
+            src >> mBoneName >> mBoneBindTotal >> mBindScene;
+        }
     }
 
     QDomElement prp_writePropertyXEV_impl(const XevExporter& exp) const {
@@ -166,6 +264,9 @@ public:
                          mRadius->getEffectiveValue());
         ele.setAttribute(QStringLiteral("bindX"), mBindRel.x());
         ele.setAttribute(QStringLiteral("bindY"), mBindRel.y());
+        if (!mBoneName.isEmpty()) {
+            ele.setAttribute(QStringLiteral("bone"), mBoneName);
+        }
         return ele;
     }
 
@@ -177,6 +278,7 @@ public:
         mBindRel = QPointF(ele.attribute(QStringLiteral("bindX")).toDouble(),
                            ele.attribute(QStringLiteral("bindY")).toDouble());
         setRadiusValue(ele.attribute(QStringLiteral("radius")).toDouble());
+        mBoneName = ele.attribute(QStringLiteral("bone"));
     }
 
 private:
@@ -186,9 +288,13 @@ private:
     qsptr<QrealAnimator> mRadius;
     QPointF mBindRel;
     QPointF mPosAtStart;
+    // bone attachment (empty name = free pin)
+    QString mBoneName;
+    QTransform mBoneBindTotal;
+    QPointF mBindScene;
 };
 
-QPointF SkinPinPoint::getRelativePos() const { return mPin->getRelPos(); }
+QPointF SkinPinPoint::getRelativePos() const { return mPin->effectiveRelPos(); }
 
 bool SkinPinPoint::isVisible(const CanvasMode mode) const {
     return mode == CanvasMode::pointTransform ||
@@ -197,7 +303,7 @@ bool SkinPinPoint::isVisible(const CanvasMode mode) const {
 }
 
 void SkinPinPoint::setRelativePos(const QPointF &relPos) {
-    mPin->setRelPos(relPos);
+    mPin->setEffectiveRelPos(relPos);
 }
 
 void SkinPinPoint::startTransform() {
@@ -221,6 +327,23 @@ void SkinPinPoint::canvasContextMenu(PointTypeMenu * const menu) {
             [pin = mPin](SkinPinPoint *) { pin->removeFromPins(); };
     menu->addPlainAction(QIcon::fromTheme("trash"),
                          QStringLiteral("\u5220\u9664\u6B64\u9489"), delOp);
+    menu->addSeparator();
+    const PointTypeMenu::PlainSelectedOp<SkinPinPoint> bindOp =
+            [pin = mPin](SkinPinPoint *) {
+        if (pin->tryBindNearestBone()) pin->notifySkinChanged();
+        else qWarning() << "[SKIN] no bone near enough to bind";
+    };
+    menu->addPlainAction(QIcon::fromTheme("group"),
+                         QStringLiteral("\u7ED1\u5B9A\u5230\u6700\u8FD1\u9AA8\u9ABC"),
+                         bindOp);
+    const PointTypeMenu::PlainSelectedOp<SkinPinPoint> unbindOp =
+            [pin = mPin](SkinPinPoint *) {
+        pin->unbindBone();
+        pin->notifySkinChanged();
+    };
+    menu->addPlainAction(QIcon::fromTheme("edit-clear"),
+                         QStringLiteral("\u89E3\u9664\u9AA8\u9ABC\u7ED1\u5B9A"),
+                         unbindOp);
 }
 
 class SkinPinsProperty : public ComplexAnimator {
@@ -527,13 +650,76 @@ SkinPin* ImageBox::addSkinPin(const QPointF& relPos) {
                            : 500.;
     const qreal radius = qBound(40., 0.3 * diag, 800.);
     const auto pin = mSkinPins->addPin(relPos, radius);
+    // auto-adopt: with a skeleton in the scene a fresh pin binds to
+    // its nearest bone right away (a free pin when nothing is close)
+    pin->tryBindNearestBone();
     qDebug() << "[SKIN]" << prp_getName() << "pin added at"
              << relPos << "radius" << radius
+             << "bone=" << (pin->hasBone() ? pin->boneName()
+                                           : QStringLiteral("(free)"))
              << "mesh verts=" << mSkin.fMesh.fPos.count();
     prp_updateCanvasProps();
     prp_afterWholeInfluenceRangeChanged();
     if (Document::sInstance) Document::sInstance->actionFinished();
     return pin;
+}
+
+void ImageBox::skinChangedNotify() {
+    prp_afterWholeInfluenceRangeChanged();
+    if (Document::sInstance) Document::sInstance->actionFinished();
+}
+
+// one-click full-skeleton bind: place pins along every bone in the
+// scene (head/middle/tail, deduplicated at the joints) and bind each
+// to its own bone - the whole rig drives the mesh through the pin
+// layer, no chain/layer semantics needed
+void ImageBox::skinPinsBindSkeleton() {
+    const auto scene = getParentScene();
+    if (!scene) return;
+    const auto bones = scene->getBones();
+    if (bones.isEmpty()) {
+        qWarning() << "[SKIN] skinPinsBindSkeleton: no bones in the scene";
+        return;
+    }
+    if (!mSkin.fMesh.isValid()) {
+        mSkin.fBindBoxTotal = getTotalTransform();
+        skinGenerateMesh(mSkin);
+    }
+    const QTransform invL = getTotalTransform().inverted();
+    QList<QPointF> placed;   // joint dedup (chain heads == parent tails)
+    int added = 0;
+    int skipped = 0;
+    for (const auto bone : bones) {
+        if (!bone) continue;
+        const QTransform bt = bone->getTotalTransform();
+        const QPointF headS = bt.map(QPointF(0., 0.));
+        const QPointF tailS = bt.map(QPointF(bone->getLength(), 0.));
+        const QPointF midS((headS.x() + tailS.x()) * 0.5,
+                           (headS.y() + tailS.y()) * 0.5);
+        const QPointF headR = invL.map(headS);
+        const QPointF tailR = invL.map(tailS);
+        const qreal lenR = QLineF(headR, tailR).length();
+        const qreal radius = qBound(40., 0.75 * lenR, 2000.);
+        for (const auto& ps : { headS, midS, tailS }) {
+            const QPointF rel = invL.map(ps);
+            bool dup = false;
+            for (const auto& q : placed) {
+                if (QLineF(q, rel).length() < 2.) { dup = true; break; }
+            }
+            if (dup) { skipped++; continue; }
+            placed.append(rel);
+            const auto pin = mSkinPins->addPin(rel, radius);
+            pin->bindToBone(bone);
+            added++;
+        }
+    }
+    qDebug() << "[SKIN]" << prp_getName()
+             << "skeleton bind: bones=" << bones.count()
+             << "pins=" << added << "jointDups=" << skipped
+             << "mesh verts=" << mSkin.fMesh.fPos.count();
+    prp_updateCanvasProps();
+    prp_afterWholeInfluenceRangeChanged();
+    if (Document::sInstance) Document::sInstance->actionFinished();
 }
 
 void ImageBox::removeSkinPin(SkinPin * const pin) {
@@ -758,6 +944,12 @@ void ImageBox::setupCanvasMenu(PropertyMenu * const menu)
                          QStringLiteral("\u6E05\u9664\u5168\u90E8\u8499\u76AE\u9489"),
                          clearPinsOp);
 
+    const PropertyMenu::PlainSelectedOp<ImageBox> bindSkelOp =
+    [](ImageBox * box) { box->skinPinsBindSkeleton(); };
+    menu->addPlainAction(QIcon::fromTheme("group"),
+                         QStringLiteral("\u8499\u76AE\u9489\u7ED1\u5B9A\u9AA8\u67B6\uFF08\u6CBF\u9AA8\u9ABC\u81EA\u52A8\u5E03\u9489\uFF09"),
+                         bindSkelOp);
+
     const PropertyMenu::PlainSelectedOp<ImageBox> skinRebindOp =
     [](ImageBox * box) { box->skinRebindPose(); };
     menu->addPlainAction(QIcon::fromTheme("loop"),
@@ -887,12 +1079,37 @@ void ImageBox::setupRenderData(const qreal relFrame, const QTransform& parentM,
         // puppet pins: ADDITIVE offset blending (not the normalized
         // bone LBS): the hold zone around a pin tracks it exactly, the
         // cubic falloff decays to zero, overlapping pins sum. This is
-        // what keeps the grabbed artwork glued to the cursor
+        // what keeps the grabbed artwork glued to the cursor.
+        // Bone-bound pins contribute their EFFECTIVE position: the
+        // bone's rigid motion (evaluated at this frame) plus the pin's
+        // manual x/y offset on top
         for (int pi = 0; pi < pinCount; ++pi) {
             const auto pin = mSkinPins->pinAt(pi);
             if (!pin) continue;
             const QPointF bind = pin->bindRel();
-            const QPointF delta = pin->getRelPos() - bind;
+            QPointF eff = pin->getRelPos();
+            if (pin->hasBone()) {
+                const Bone* bone = nullptr;
+                const auto scene = getParentScene();
+                if (scene) {
+                    for (const auto b : scene->getBones()) {
+                        if (b && b->prp_getName() == pin->boneName()) {
+                            bone = b;
+                            break;
+                        }
+                    }
+                }
+                if (bone) {
+                    const QTransform curB =
+                            bone->getTotalTransformAtFrame(relFrame);
+                    const QPointF drivenScene =
+                            (curB * pin->boneBindTotal().inverted())
+                                .map(pin->bindScene());
+                    eff = data->fTotalTransform.inverted().map(drivenScene)
+                            + (pin->getRelPos() - bind);
+                }
+            }
+            const QPointF delta = eff - bind;
             if (QLineF(QPointF(), delta).length() < 0.01) continue;
             const qreal radius = pin->getRadius();
             for (int vi = 0; vi < pos.count(); ++vi) {

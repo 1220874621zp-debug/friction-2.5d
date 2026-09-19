@@ -89,6 +89,10 @@ namespace EvFormat {
         // path in writeBoundingBox: palette defs, mesh, weights);
         // older files lack the block and must skip it (positional)
         imageBoxSkinBind = 47,
+        // SkinPin bone attachment (bone name + bone bind transform +
+        // pin bind scene pos, appended in the pin's property block);
+        // older files lack the fields and must skip them (positional)
+        skinPinBone = 48,
 
         nextVersion
     };
