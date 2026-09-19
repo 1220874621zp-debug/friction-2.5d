@@ -24,7 +24,13 @@ public:
 
     bool forceMargin() const override { return true; }
     QMargins getMargin() const override;
+
+    // world-space anchor the emitter position is relative to:
+    // the scene center for adjustment layers (AE comp space),
+    // the content-bounds center for regular layers
+    QPointF emitterAnchorAbs() const;
 private:
+    friend class EmitterPoint;
     // 发射器
     qsptr<ComboBoxProperty> mEmitterType;
     qsptr<QrealAnimator> mEmitterX;

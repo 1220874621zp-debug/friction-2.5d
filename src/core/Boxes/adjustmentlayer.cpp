@@ -16,6 +16,8 @@
 #include "canvas.h"
 #include "Private/document.h"
 
+static QPointF backdropWorldAnchor(const BoxRenderData& data);
+
 // ---------------------------------------------------------------------------
 // AdjustmentRenderData
 
@@ -35,8 +37,20 @@ void AdjustmentRenderData::drawSk(SkCanvas* const canvas) {
 void AdjustmentRenderData::drawOnParentLayer(SkCanvas * const canvas,
                                              SkPaint &paint) {
     Q_UNUSED(paint)
-    adjustmentApplyBackdrop(canvas, fCallers,
-                            fScaledTransform.map(QPointF(0, 0)));
+    adjustmentApplyBackdrop(canvas, fCallers, backdropWorldAnchor(*this));
+}
+
+// AE comp-space anchor: the scene's canvas center (resolution-scaled
+// world), NOT the layer's own transform origin - the adjustment
+// layer's position stays irrelevant, like AE adjustment layers
+static QPointF backdropWorldAnchor(const BoxRenderData& data) {
+    const auto box = data.fParentBox.data();
+    const auto scene = box ? box->getParentScene() : nullptr;
+    if (scene) {
+        return QPointF(scene->getCanvasWidth() * 0.5 * data.fResolution,
+                       scene->getCanvasHeight() * 0.5 * data.fResolution);
+    }
+    return data.fScaledTransform.map(QPointF(0, 0));
 }
 
 // ---------------------------------------------------------------------------
@@ -142,5 +156,5 @@ void AdjustmentLayer::drawPixmapSk(SkCanvas * const canvas,
                 static_cast<const AdjustmentRenderData*>(data) : nullptr;
     if(!adData) return;
     adjustmentApplyBackdrop(canvas, adData->fCallers,
-                            adData->fScaledTransform.map(QPointF(0, 0)));
+                            backdropWorldAnchor(*adData));
 }

@@ -15,6 +15,12 @@
 #include "appsupport.h"
 #include "skia/skqtconversions.h"
 
+#include "MovablePoints/movablepoint.h"
+#include "MovablePoints/pointshandler.h"
+#include "Private/document.h"
+#include "themesupport.h"
+#include "canvas.h"
+
 #include <QtMath>
 #include <QMargins>
 #include <vector>
@@ -283,6 +289,91 @@ private:
     mutable SkIRect fBaseRect = SkIRect::MakeEmpty();
 };
 
+// AE-style crosshair handle: draggable on the canvas, edits the
+// emitter position animators; lives in absolute world coordinates
+// (the points handler is deliberately left transform-less)
+class EmitterPoint final : public MovablePoint {
+    e_OBJECT
+public:
+    EmitterPoint(ParticleEffect * const effect) :
+        MovablePoint(TYPE_PIVOT_POINT), mEffect(effect) {
+        disableSelection();
+        setRadius(8);
+    }
+
+    QPointF getRelativePos() const override {
+        const auto e = mEffect.data();
+        if (!e) return {};
+        return e->emitterAnchorAbs() +
+                QPointF(e->mEmitterX->getEffectiveValue(),
+                        e->mEmitterY->getEffectiveValue());
+    }
+
+    void setRelativePos(const QPointF &relPos) override {
+        const auto e = mEffect.data();
+        if (!e) return;
+        const auto anchor = e->emitterAnchorAbs();
+        e->mEmitterX->setCurrentBaseValue(relPos.x() - anchor.x());
+        e->mEmitterY->setCurrentBaseValue(relPos.y() - anchor.y());
+    }
+
+    void startTransform() override {
+        mSavedPos = getRelativePos();
+        MovablePoint::startTransform();
+        const auto e = mEffect.data();
+        if (!e) return;
+        e->mEmitterX->prp_startTransform();
+        e->mEmitterY->prp_startTransform();
+    }
+
+    void finishTransform() override {
+        const auto e = mEffect.data();
+        if (e) {
+            e->mEmitterX->prp_finishTransform();
+            e->mEmitterY->prp_finishTransform();
+        }
+        if (Document::sInstance) Document::sInstance->actionFinished();
+    }
+
+    void cancelTransform() override {
+        const auto e = mEffect.data();
+        if (e) {
+            e->mEmitterX->prp_cancelTransform();
+            e->mEmitterY->prp_cancelTransform();
+        }
+        setRelativePos(mSavedPos);
+    }
+
+    // AE-like: editable with the regular transform tool
+    bool isVisible(const CanvasMode mode) const override {
+        return mode == CanvasMode::boxTransform ||
+               mode == CanvasMode::pointTransform;
+    }
+
+    void drawSk(SkCanvas * const canvas, const CanvasMode mode,
+                const float invScale, const bool keyOnCurrent,
+                const bool ctrlPressed) override {
+        Q_UNUSED(mode) Q_UNUSED(keyOnCurrent) Q_UNUSED(ctrlPressed)
+        const auto pos = toSkPoint(getAbsolutePos());
+        SkPaint paint;
+        paint.setAntiAlias(true);
+        paint.setStyle(SkPaint::kStroke_Style);
+        paint.setColor(toSkColor(ThemeSupport::getThemeColorYellow()));
+        paint.setStrokeWidth(toSkScalar(1.5 * invScale));
+        const SkScalar arm = toSkScalar(9.0 * invScale);
+        const SkScalar gap = toSkScalar(3.0 * invScale);
+        canvas->drawLine(pos.x() - arm, pos.y(), pos.x() - gap, pos.y(), paint);
+        canvas->drawLine(pos.x() + gap, pos.y(), pos.x() + arm, pos.y(), paint);
+        canvas->drawLine(pos.x(), pos.y() - arm, pos.x(), pos.y() - gap, paint);
+        canvas->drawLine(pos.x(), pos.y() + gap, pos.x(), pos.y() + arm, paint);
+        paint.setStrokeWidth(toSkScalar(1.0 * invScale));
+        canvas->drawCircle(pos.x(), pos.y(), toSkScalar(1.5 * invScale), paint);
+    }
+private:
+    const QPointer<ParticleEffect> mEffect;
+    QPointF mSavedPos;
+};
+
 ParticleEffect::ParticleEffect() :
     RasterEffect(QObject::tr("粒子"),
                  AppSupport::getRasterEffectHardwareSupport("Particle",
@@ -444,6 +535,14 @@ ParticleEffect::ParticleEffect() :
     wireMargin(mEndSize.get());
     wireMargin(mSizeVar.get());
     wireMargin(mTimeScale.get());
+
+    // canvas crosshair handle for the emitter position (AE-style);
+    // the handler must stay transform-less so the point works in
+    // absolute world coordinates
+    const auto points = enve::make_shared<PointsHandler>();
+    points->appendPt(enve::make_shared<EmitterPoint>(this));
+    setPointsHandler(points);
+    points->setTransform(nullptr);
 }
 
 stdsptr<RasterEffectCaller> ParticleEffect::getEffectCaller(
@@ -608,9 +707,25 @@ stdsptr<RasterEffectCaller> ParticleEffect::getEffectCaller(
                 f, std::move(spawns), spriteSample);
 }
 
-QMargins ParticleEffect::getMargin() const
+QPointF ParticleEffect::emitterAnchorAbs() const
 {
-    const qreal lifeMax = mLife->getEffectiveValue()
+    const auto box = getFirstAncestor<BoundingBox>();
+    if (!box) return {};
+    if (box->getBoxType() == eBoxType::adjustmentLayer) {
+        // AE comp-space semantics: anchor at the scene center
+        const auto scene = box->getParentScene();
+        if (scene) {
+            return QPointF(scene->getCanvasWidth() * 0.5,
+                           scene->getCanvasHeight() * 0.5);
+        }
+        return {};
+    }
+    return box->getTotalTransform().map(
+                box->getRelBoundingRect().center());
+}
+
+QMargins ParticleEffect::getMargin() const
+{    const qreal lifeMax = mLife->getEffectiveValue()
             * (1.0 + mLifeVar->getEffectiveValue() / 100.0);
     const qreal vMax = mSpeed->getEffectiveValue()
             * (1.0 + mSpeedVar->getEffectiveValue() / 100.0);
