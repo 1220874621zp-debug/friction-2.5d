@@ -37,7 +37,8 @@ void AdjustmentRenderData::drawSk(SkCanvas* const canvas) {
 void AdjustmentRenderData::drawOnParentLayer(SkCanvas * const canvas,
                                              SkPaint &paint) {
     Q_UNUSED(paint)
-    adjustmentApplyBackdrop(canvas, fCallers, backdropWorldAnchor(*this));
+    adjustmentApplyBackdrop(canvas, fCallers,
+                            backdropWorldAnchor(*this), false, fResolution);
 }
 
 // AE comp-space anchor: the scene's canvas center (resolution-scaled
@@ -47,8 +48,22 @@ static QPointF backdropWorldAnchor(const BoxRenderData& data) {
     const auto box = data.fParentBox.data();
     const auto scene = box ? box->getParentScene() : nullptr;
     if (scene) {
-        return QPointF(scene->getCanvasWidth() * 0.5 * data.fResolution,
-                       scene->getCanvasHeight() * 0.5 * data.fResolution);
+        const auto anchor = QPointF(
+                    scene->getCanvasWidth() * 0.5 * data.fResolution,
+                    scene->getCanvasHeight() * 0.5 * data.fResolution);
+        static QElapsedTimer sProbeT;
+        static bool sProbeIni = false;
+        if (!sProbeIni) { sProbeT.start(); sProbeIni = true; }
+        if (sProbeT.elapsed() > 500) {
+            sProbeT.restart();
+            qWarning() << "[PTCL anchor] box" << (box ? box->prp_getName() : QString("?"))
+                       << "scene" << (scene ? scene->prp_getName() : QString("?"))
+                       << "WxH" << scene->getCanvasWidth() << scene->getCanvasHeight()
+                       << "res" << data.fResolution
+                       << "anchor" << anchor
+                       << "scaledOrigin" << data.fScaledTransform.map(QPointF(0, 0));
+        }
+        return anchor;
     }
     return data.fScaledTransform.map(QPointF(0, 0));
 }
@@ -59,7 +74,9 @@ static QPointF backdropWorldAnchor(const BoxRenderData& data) {
 void adjustmentApplyBackdrop(
         SkCanvas* const canvas,
         const QList<stdsptr<RasterEffectCaller>>& callers,
-        const QPointF& worldAnchor) {
+        const QPointF& worldAnchor,
+        const bool rawWorldCanvas,
+        const qreal resolution) {
     if(callers.isEmpty() || !canvas) return;
     const SkIRect dev = canvas->getDeviceClipBounds();
     if(dev.isEmpty()) return;
@@ -91,6 +108,15 @@ void adjustmentApplyBackdrop(
     // particles) stay anchored to the scene instead of the viewport
     cdata.fDeviceSpace = true;
     cdata.fDevMatrix = canvas->getTotalMatrix();
+    if (rawWorldCanvas && resolution > 0. && resolution != 1.) {
+        // the live-view canvas maps RAW world -> device, while the
+        // effect data is resolution-scaled; pre-scale by 1/res so the
+        // res-world coordinates land at their true world positions
+        SkMatrix resScale;
+        resScale.setScale(static_cast<SkScalar>(1.0 / resolution),
+                          static_cast<SkScalar>(1.0 / resolution));
+        cdata.fDevMatrix = SkMatrix::Concat(cdata.fDevMatrix, resScale);
+    }
     cdata.fWorldAnchor = worldAnchor;
 
     bool hasProcessed = false;
@@ -156,5 +182,6 @@ void AdjustmentLayer::drawPixmapSk(SkCanvas * const canvas,
                 static_cast<const AdjustmentRenderData*>(data) : nullptr;
     if(!adData) return;
     adjustmentApplyBackdrop(canvas, adData->fCallers,
-                            backdropWorldAnchor(*adData));
+                            backdropWorldAnchor(*adData), true,
+                            adData->fResolution);
 }

@@ -127,6 +127,23 @@ public:
                         tile.left(), tile.top(),
                         tile.width(), tile.height()));
             invDev.mapRect(&worldClip);
+            static QElapsedTimer sProbeT;
+            static bool sProbeIni = false;
+            if (!sProbeIni) { sProbeT.start(); sProbeIni = true; }
+            if (sProbeT.elapsed() > 500) {
+                sProbeT.restart();
+                qreal x0 = 0, y0 = 0;
+                if (!mSpawns.empty()) { x0 = mSpawns.front().x0; y0 = mSpawns.front().y0; }
+                qWarning() << "[PTCL dev] anchor" << data.fWorldAnchor
+                           << "matTx" << data.fDevMatrix.getTranslateX()
+                           << data.fDevMatrix.getTranslateY()
+                           << "matSx" << data.fDevMatrix.getScaleX()
+                           << "matSy" << data.fDevMatrix.getScaleY()
+                           << "tile" << tile.width() << tile.height()
+                           << "spawns" << mSpawns.size()
+                           << "firstSpawnXY" << x0 << y0
+                           << "relFrame" << mF.relFrame;
+            }
         }
 
         // anchor: center of the pre-expansion base rect mapped into the
@@ -715,8 +732,18 @@ QPointF ParticleEffect::emitterAnchorAbs() const
         // AE comp-space semantics: anchor at the scene center
         const auto scene = box->getParentScene();
         if (scene) {
-            return QPointF(scene->getCanvasWidth() * 0.5,
-                           scene->getCanvasHeight() * 0.5);
+            const auto anchor = QPointF(scene->getCanvasWidth() * 0.5,
+                                        scene->getCanvasHeight() * 0.5);
+            static QElapsedTimer sProbeT;
+            static bool sProbeIni = false;
+            if (!sProbeIni) { sProbeT.start(); sProbeIni = true; }
+            if (sProbeT.elapsed() > 500) {
+                sProbeT.restart();
+                qWarning() << "[PTCL cross] anchor" << anchor
+                           << "emitter" << QPointF(mEmitterX->getEffectiveValue(),
+                                                   mEmitterY->getEffectiveValue());
+            }
+            return anchor;
         }
         return {};
     }

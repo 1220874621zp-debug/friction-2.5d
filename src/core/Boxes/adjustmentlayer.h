@@ -29,13 +29,18 @@ public:
 };
 
 // snapshot the canvas, run the callers on it (CPU) and draw the result
-// back over the same device region; worldAnchor is the layer's local
-// origin in (resolution-scaled) world coordinates, passed to callers so
-// content-placing effects can anchor to the scene instead of the viewport
+// back over the same device region; worldAnchor is the scene center in
+// resolution-scaled world coordinates. rawWorldCanvas selects the
+// coordinate contract of the incoming canvas: true when it maps RAW
+// world -> device (the live view path, which needs a 1/res pre-scale
+// for the res-scaled effect data), false when it is an identity render
+// canvas addressed directly in res-world pixels
 void CORE_EXPORT adjustmentApplyBackdrop(
         SkCanvas* const canvas,
         const QList<stdsptr<RasterEffectCaller>>& callers,
-        const QPointF& worldAnchor);
+        const QPointF& worldAnchor,
+        const bool rawWorldCanvas,
+        const qreal resolution);
 
 // render data for the adjustment layer: collects the callers during
 // setup and applies them against the parent canvas at draw time
