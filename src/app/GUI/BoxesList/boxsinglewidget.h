@@ -34,6 +34,7 @@
 #include <QMimeData>
 #include <QComboBox>
 #include <QPointer>
+#include <functional>
 #include "skia/skiaincludes.h"
 #include "smartPointers/ememory.h"
 #include "framerange.h"
@@ -216,6 +217,15 @@ private:
     void switchRecordingAction();
     void switchBoxLockedAction();
     void resetPropertyAction();
+
+    // AE-style multi-select batch for row toggle buttons: when 'self'
+    // belongs to the current selection (boxes list or a selected sound),
+    // runs setter(target, enable) on every selected row - the whole set
+    // converges to one state instead of flipping individually; returns
+    // true when the batch path ran (caller skips the single-row path)
+    bool toggleSelectedRows(
+            eBoxOrSound * const self, const bool enable,
+            const std::function<void(eBoxOrSound *, bool)>& setter);
 
     void switchBoxVisibleAction();
     void setCompositionMode(const int id);

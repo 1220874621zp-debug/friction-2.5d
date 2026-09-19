@@ -726,27 +726,18 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
         if (!mTarget) { return; }
         const auto ebs = enve_cast<eBoxOrSound*>(mTarget->getTarget());
         if (!ebs) { return; }
-        const bool enable = !ebs->isSolo();
         // multi-selection: AE-style switch semantics - when this row's
         // layer/sound belongs to the selection, every selected row
         // follows, unified to the new state (same pattern as the 3D
         // switch); sounds live outside the boxes list, so they are
         // collected separately
-        const auto scene = mParent ? mParent->currentScene() : nullptr;
-        if (scene && ebs->isSelected()) {
-            const auto sel = scene->getSelectedBoxesList();
-            for (const auto& selBox : sel) {
-                if (selBox && selBox->isSolo() != enable) {
-                    selBox->setSolo(enable);
-                }
-            }
-            scene->forEachSelectedSound([enable](eBoxOrSound* s) {
-                if (s && s->isSolo() != enable) { s->setSolo(enable); }
-            });
-            Document::sInstance->actionFinished();
-            return;
+        const bool enable = !ebs->isSolo();
+        if(!toggleSelectedRows(ebs, enable,
+                [](eBoxOrSound * const b, const bool en) {
+            b->setSolo(en);
+        })) {
+            ebs->switchSolo();
         }
-        ebs->switchSolo();
         Document::sInstance->actionFinished();
     });
 
@@ -765,7 +756,15 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
         if (!mTarget) { return; }
         const auto ebs = enve_cast<eBoxOrSound*>(mTarget->getTarget());
         if (!ebs) { return; }
-        ebs->switchShy();
+        // multi-selection batch (toggleSelectedRows): applies to layer
+        // and sound rows alike, unified to the new state
+        const bool enable = !ebs->isShy();
+        if(!toggleSelectedRows(ebs, enable,
+                [](eBoxOrSound * const b, const bool en) {
+            b->setShy(en);
+        })) {
+            ebs->switchShy();
+        }
         Document::sInstance->actionFinished();
     });
 
@@ -834,7 +833,17 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
         if (!mTarget) { return; }
         const auto box = enve_cast<BoundingBox*>(mTarget->getTarget());
         if (!box) { return; }
-        box->switchEffectsEnabled();
+        // multi-selection batch (toggleSelectedRows); setter guards to
+        // boxes - the fx column is not shown on sound rows
+        const bool enable = !box->getEffectsEnabled();
+        if(!toggleSelectedRows(box, enable,
+                [](eBoxOrSound * const b, const bool en) {
+            if(const auto bb = enve_cast<BoundingBox*>(b)) {
+                bb->setEffectsEnabled(en);
+            }
+        })) {
+            box->switchEffectsEnabled();
+        }
         Document::sInstance->actionFinished();
     });
 
@@ -854,7 +863,17 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
         if (!mTarget) { return; }
         const auto box = enve_cast<BoundingBox*>(mTarget->getTarget());
         if (!box) { return; }
-        box->switchMbEnabled();
+        // multi-selection batch (toggleSelectedRows); setter guards to
+        // boxes - the mb column is not shown on sound rows
+        const bool enable = !box->isMbEnabled();
+        if(!toggleSelectedRows(box, enable,
+                [](eBoxOrSound * const b, const bool en) {
+            if(const auto bb = enve_cast<BoundingBox*>(b)) {
+                bb->setMbEnabled(en);
+            }
+        })) {
+            box->switchMbEnabled();
+        }
         Document::sInstance->actionFinished();
         mMbButton->update();
     });
@@ -873,7 +892,17 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
         if (!mTarget) { return; }
         const auto box = enve_cast<BoundingBox*>(mTarget->getTarget());
         if (!box) { return; }
-        box->switchPreserveAlpha();
+        // multi-selection batch (toggleSelectedRows); setter guards to
+        // boxes - the T column is not shown on sound rows
+        const bool enable = !box->getPreserveAlpha();
+        if(!toggleSelectedRows(box, enable,
+                [](eBoxOrSound * const b, const bool en) {
+            if(const auto bb = enve_cast<BoundingBox*>(b)) {
+                bb->setPreserveAlpha(en);
+            }
+        })) {
+            box->switchPreserveAlpha();
+        }
         Document::sInstance->actionFinished();
     });
 
@@ -2893,36 +2922,40 @@ void BoxSingleWidget::switchRecordingAction() {
     }
 }
 
+bool BoxSingleWidget::toggleSelectedRows(
+        eBoxOrSound * const self, const bool enable,
+        const std::function<void(eBoxOrSound *, bool)>& setter) {
+    const auto scene = mParent ? mParent->currentScene() : nullptr;
+    if (!scene || !self || !self->isSelected()) return false;
+    // iterate a copy: locking a selected box drops it from the live
+    // selection list while the batch is still running
+    const auto sel = scene->getSelectedBoxesList();
+    for (const auto& box : sel) {
+        if (box) setter(box, enable);
+    }
+    // sounds keep their own selected flag outside the boxes list
+    scene->forEachSelectedSound([&setter, enable](eBoxOrSound* s) {
+        if (s) setter(s, enable);
+    });
+    return true;
+}
+
 void BoxSingleWidget::switchBoxVisibleAction() {
     if(!mTarget) return;
     const auto target = mTarget->getTarget();
     if(!target) return;
     if(const auto ebos = enve_cast<eBoxOrSound*>(target)) {
-        // multi-selection: when this row's layer belongs to the
-        // selection, every selected layer follows this toggle -
-        // unified to the new state instead of individually flipped,
-        // so a mixed selection converges instead of swapping states
-        const auto scene = ebos->getParentScene();
-        bool multiApplied = false;
-        if(scene) {
-            const auto sel = scene->getSelectedBoxesList();
-            if(sel.count() > 1) {
-                bool inSel = false;
-                for(const auto& box : sel) {
-                    if(box == ebos) { inSel = true; break; }
-                }
-                if(inSel) {
-                    const bool newVis = !ebos->isVisible();
-                    for(const auto& box : sel) {
-                        if(box && box->isVisible() != newVis) {
-                            box->setVisible(newVis);
-                        }
-                    }
-                    multiApplied = true;
-                }
-            }
+        // multi-selection: when this row's layer/sound belongs to the
+        // selection, every selected row follows this toggle - unified
+        // to the new state instead of individually flipped, so a mixed
+        // selection converges instead of swapping states
+        const bool newVis = !ebos->isVisible();
+        if(!toggleSelectedRows(ebos, newVis,
+                [](eBoxOrSound * const b, const bool en) {
+            b->setVisible(en);
+        })) {
+            ebos->switchVisible();
         }
-        if(!multiApplied) ebos->switchVisible();
     } else if(const auto eEff = enve_cast<eEffect*>(target)) {
         eEff->switchVisible();
     } /*else if(const auto graph = enve_cast<GraphAnimator*>(target)) {
@@ -2943,7 +2976,20 @@ void BoxSingleWidget::switchBoxVisibleAction() {
 
 void BoxSingleWidget::switchBoxLockedAction() {
     if(!mTarget) return;
-    static_cast<BoundingBox*>(mTarget->getTarget())->switchLocked();
+    const auto box = enve_cast<BoundingBox*>(mTarget->getTarget());
+    if(!box) return;
+    const bool enable = !box->isLocked();
+    // lock column: boxes only - sound rows show no lock button, so a
+    // batch must not lock selected sounds with no button to undo it
+    if(toggleSelectedRows(box, enable,
+            [](eBoxOrSound * const b, const bool en) {
+        if(const auto bb = enve_cast<BoundingBox*>(b)) bb->setLocked(en);
+    })) {
+        Document::sInstance->actionFinished();
+        update();
+        return;
+    }
+    box->switchLocked();
     Document::sInstance->actionFinished();
     update();
 }
