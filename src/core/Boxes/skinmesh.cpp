@@ -825,9 +825,103 @@ int selfTest()
     check(SkColorGetA(cStay) > 200,
           "unchanged left half still renders");
 
+    // ---- 5. puppet-pin additive model ----
+    check(pinWeight(0., 800.) == 1.f, "pinWeight full at the pin");
+    check(pinWeight(160., 800.) == 1.f, "pinWeight hold zone (20%)");
+    check(pinWeight(800., 800.) <= 0.f, "pinWeight zero at the radius");
+    check(pinWeight(900., 800.) == 0.f, "pinWeight zero beyond radius");
+    {
+        // single pin dragged by (60, 40): the vertex AT the pin must
+        // track exactly, far vertices must not move, mid vertices
+        // blend - the same loop ImageBox runs
+        const QPointF bind(128, 128);
+        const QPointF delta(60, 40);
+        const double radius = 400.;
+        int vAt = -1;
+        float bestD = 1e9f;
+        for (int i = 0; i < skin.fMesh.fPos.count(); ++i) {
+            const float d = QLineF(bind, QPointF(skin.fMesh.fPos[i].x(),
+                                                 skin.fMesh.fPos[i].y())).length();
+            if (d < bestD) { bestD = d; vAt = i; }
+        }
+        check(bestD < 25.f, "a lattice vertex sits near the pin");
+        const SkPoint before = skin.fMesh.fPos[vAt];
+        SkPoint after = before;
+        {
+            const float w = pinWeight(bestD, radius);
+            after += SkPoint::Make(float(delta.x()) * w,
+                                   float(delta.y()) * w);
+        }
+        check(qAbs(after.x() - before.x() - 60.f) < 6.f &&
+              qAbs(after.y() - before.y() - 40.f) < 6.f,
+              "pin vertex tracks the drag exactly (hold zone)");
+        // a vertex at the falloff edge (400px away, outside the
+        // r=80 circle there is none - use the function directly)
+        check(pinWeight(300., 400.) < 0.3f, "pinWeight falls off");
+    }
+
     qDebug() << "[SKINTEST] ===" << (fails == 0 ? "ALL PASS" :
           QString("%1 FAILED").arg(fails)) << "===";
     return fails;
+}
+
+float pinWeight(const qreal dist, const qreal radius)
+{
+    if (radius <= 1. || dist >= radius) return 0.f;
+    // hold zone: vertices right around the pin follow it EXACTLY so
+    // the grabbed content tracks the cursor (mesh lattice points can
+    // sit a cell away from the pin itself)
+    const qreal hold = 0.2 * radius;
+    if (dist <= hold) return 1.f;
+    const qreal t = (dist - hold) / (radius - hold);
+    return float(std::pow(1. - t, 3.));
+}
+
+void diagPng(const QString& path)
+{
+    const auto data = SkData::MakeFromFileName(path.toStdString().c_str());
+    if (!data) {
+        qWarning() << "[SKINDIAG] cannot read" << path;
+        return;
+    }
+    const sk_sp<SkImage> encoded = SkImage::MakeFromEncoded(data);
+    if (!encoded) {
+        qWarning() << "[SKINDIAG] decode failed" << path;
+        return;
+    }
+    // MakeFromEncoded returns a lazy codec image - materialize like
+    // ImageBox::skinGenerateMesh does
+    const sk_sp<SkImage> img = encoded->makeRasterImage();
+    qDebug() << "[SKINDIAG]" << path
+             << "size" << img->width() << "x" << img->height();
+    SkPixmap pm;
+    if (!img->peekPixels(&pm)) {
+        qWarning() << "[SKINDIAG] peekPixels FAILED (texture-backed?)"
+                   << "colorType" << int(img->colorType());
+        return;
+    }
+    qDebug() << "[SKINDIAG] colorType" << int(pm.colorType())
+             << "alphaType" << int(pm.alphaType());
+    for (const auto& pt : {QPoint(1, 1),
+                           QPoint(pm.width() / 2, pm.height() / 2),
+                           QPoint(pm.width() - 2, pm.height() - 2)}) {
+        qDebug() << "[SKINDIAG]   alpha at" << pt << "="
+                 << SkColorGetA(pm.getColor(pt.x(), pt.y()));
+    }
+    for (int cellPx = 20; cellPx <= 320; cellPx *= 2) {
+        SkinMesh mesh;
+        const bool ok = generate(pm, cellPx, mesh);
+        qDebug() << "[SKINDIAG]   cellPx" << cellPx
+                 << (ok ? "OK" : "FAIL")
+                 << "verts" << mesh.fPos.count()
+                 << "tris" << mesh.fIndices.count() / 3;
+        if (ok) break;
+    }
+}
+
+void diagPngA(const char* path)
+{
+    diagPng(QString::fromLocal8Bit(path));
 }
 
 } // namespace SkinMeshGen

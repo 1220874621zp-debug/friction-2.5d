@@ -534,15 +534,31 @@ void ImageBox::clearSkinPins() {
 }
 
 bool ImageBox::skinGenerateMesh(SkinBindData& skin) {
-    const sk_sp<SkImage> img = mFileHandler ?
+    sk_sp<SkImage> img = mFileHandler ?
                 mFileHandler->getImage() : nullptr;
+    if (img) {
+        // lazy/codec-backed images do not expose pixels: peekPixels
+        // fails on them and every real-world image silently degraded
+        // to the coarse uniform fallback grid (625 verts = 24x24) -
+        // materialize a raster copy first
+        img = img->makeRasterImage();
+    }
     SkPixmap pm;
-    if(img && img->peekPixels(&pm)) {
+    if (img && img->peekPixels(&pm)) {
         // coarsen until the vertex count fits SkVertices' uint16
         // indices (a fully covered 8k image at 20px needs two steps)
-        for(int cellPx = 20; cellPx < 400; cellPx *= 2) {
-            if(SkinMeshGen::generate(pm, cellPx, skin.fMesh)) return true;
+        for (int cellPx = 20; cellPx < 400; cellPx *= 2) {
+            if (SkinMeshGen::generate(pm, cellPx, skin.fMesh)) {
+                return true;
+            }
         }
+        qWarning() << "[SKIN]" << prp_getName()
+                   << "alpha lattice failed at every cell size -"
+                      " falling back to the uniform grid";
+    } else if (img) {
+        qWarning() << "[SKIN]" << prp_getName()
+                   << "image pixels unavailable (peek failed) -"
+                      " falling back to the uniform grid";
     }
     const int w = img ? img->width() : 640;
     const int h = img ? img->height() : 480;
@@ -810,9 +826,9 @@ void ImageBox::setupRenderData(const qreal relFrame, const QTransform& parentM,
 
     // skin bind: evaluate the deformed mesh HERE (GUI thread - bone
     // animator reads are unsafe off-thread); the raster path then only
-    // consumes the assembled payload. The skin core is driver-agnostic:
-    // bones are resolved into plain driver poses before evaluate(),
-    // puppet pins are appended as degenerate (translation-only) drivers
+    // consumes the assembled payload. Two driver families share the
+    // mesh: bones (normalized LBS over the palette) and puppet pins
+    // (additive offset blending, see below)
     if (hasSkinBind()) {
         QVector<SkinDriverPose> poses(mSkin.fDefs.count());
         const auto root = enve_cast<Bone*>(mSkinRoot->getTarget());
@@ -840,38 +856,35 @@ void ImageBox::setupRenderData(const qreal relFrame, const QTransform& parentM,
             }
         }
         const int pinCount = skinPinCount();
-        const SkinBindData* evalData = &mSkin;
-        SkinBindData combined;
-        if (pinCount > 0) {
-            // append the pins after the bone palette (defs and poses
-            // in the same order) and recompute the weights over the
-            // combined driver list; QVector COW keeps the mesh vertex
-            // buffer shared with the bind data
-            combined = mSkin;
-            const QTransform& L = data->fTotalTransform;
-            for (int i = 0; i < pinCount; ++i) {
-                const auto pin = mSkinPins->pinAt(i);
-                if (!pin) continue;
-                SkinBoneDef def;
-                def.fName = pin->prp_getName();
-                def.fBindHead = mSkin.fBindBoxTotal.map(pin->bindRel());
-                def.fBindTail = def.fBindHead;
-                def.fBindAngle = 0.;
-                def.fRadius = pin->getRadius();
-                combined.fDefs.append(def);
-                SkinDriverPose pose;
-                pose.fHead = L.map(pin->getRelPos());
-                pose.fAngle = 0.;
-                pose.fLen = 1.;
-                pose.fValid = true;
-                poses.append(pose);
-            }
-            SkinMeshGen::computeWeights(combined);
-            evalData = &combined;
-        }
         QVector<SkPoint> pos;
-        const bool ok = SkinMeshGen::evaluate(*evalData, poses,
-                                              data->fTotalTransform, pos);
+        bool ok = false;
+        if (mSkin.fDefs.count() > 0) {
+            ok = SkinMeshGen::evaluate(mSkin, poses,
+                                       data->fTotalTransform, pos);
+        }
+        if (!ok) pos = mSkin.fMesh.fPos;
+        // puppet pins: ADDITIVE offset blending (not the normalized
+        // bone LBS): the hold zone around a pin tracks it exactly, the
+        // cubic falloff decays to zero, overlapping pins sum. This is
+        // what keeps the grabbed artwork glued to the cursor
+        for (int pi = 0; pi < pinCount; ++pi) {
+            const auto pin = mSkinPins->pinAt(pi);
+            if (!pin) continue;
+            const QPointF bind = pin->bindRel();
+            const QPointF delta = pin->getRelPos() - bind;
+            if (QLineF(QPointF(), delta).length() < 0.01) continue;
+            const qreal radius = pin->getRadius();
+            for (int vi = 0; vi < pos.count(); ++vi) {
+                const auto& rest = mSkin.fMesh.fPos[vi];
+                const float w = SkinMeshGen::pinWeight(
+                            QLineF(bind, QPointF(rest.x(), rest.y())).length(),
+                            radius);
+                if (w <= 0.f) continue;
+                pos[vi] += SkPoint::Make(float(delta.x()) * w,
+                                         float(delta.y()) * w);
+            }
+        }
+        ok = ok || pinCount > 0;
         if (ok && !pos.isEmpty()) {
             imgData->fSkinned = true;
             mSkinWarnedNoBones = false;

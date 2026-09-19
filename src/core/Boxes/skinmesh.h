@@ -98,10 +98,22 @@ CORE_EXPORT bool evaluate(const SkinBindData& skin,
                           const QTransform& boxTotal,
                           QVector<SkPoint>& outPos);
 
+// puppet-pin falloff weight: full within 20% of the radius (exact
+// tracking around the pin), then a cubic fall-off to zero at the
+// radius - additive offset blending, NOT normalized like bones
+CORE_EXPORT float pinWeight(const qreal dist, const qreal radius);
+
 // offline self-test of the whole core (mesh generation, weights,
 // deformation math AND the drawVertices render call path used by
 // ImageRenderData::drawSk); returns the number of failed checks
 CORE_EXPORT int selfTest();
+
+// load an image from disk and report what generate() does with it
+// (color type, alpha samples, per-cellPx results) - diagnoses why
+// the alpha lattice falls back to the uniform grid on real files
+CORE_EXPORT void diagPng(const QString& path);
+// narrow-char variant for external diagnostic runners
+CORE_EXPORT void diagPngA(const char* path);
 
 } // namespace SkinMeshGen
 
