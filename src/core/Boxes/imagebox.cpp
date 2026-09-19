@@ -189,9 +189,19 @@ void SkinPinPoint::setRelativePos(const QPointF &relPos) {
     mPin->setRelPos(relPos);
 }
 
-void SkinPinPoint::startTransform() { mPin->startTransform(); }
+void SkinPinPoint::startTransform() {
+    // the BASE startTransform records mSavedRelPos - the anchor the
+    // generic drag pipeline (moveByAbs) positions the point from;
+    // skipping it teleports the pin to the image origin + drag delta
+    // on the first mouse move
+    MovablePoint::startTransform();
+    mPin->startTransform();
+}
 
-void SkinPinPoint::finishTransform() { mPin->finishTransform(); }
+void SkinPinPoint::finishTransform() {
+    mPin->finishTransform();
+    MovablePoint::finishTransform();
+}
 
 void SkinPinPoint::canvasContextMenu(PointTypeMenu * const menu) {
     if (menu->hasActionsForType<SkinPinPoint>()) return;
