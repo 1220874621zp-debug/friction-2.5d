@@ -4428,6 +4428,11 @@ you can create a new one by clicking on the '+' button.</source>
             <translation>骨骼选择（只选中骨骼）</translation>
         </message>
         <message>
+            <location filename="../../ui/widgets/toolbox.cpp" line="422" />
+            <source>Skin Pin (place pins on images to deform)</source>
+            <translation>图钉工具（点击图片放置蒙皮钉，拖钉变形）</translation>
+        </message>
+        <message>
             <location filename="../../ui/widgets/toolbox.cpp" line="424" />
             <source>Camera</source>
             <translation>摄像机（左键拖动=轨道倾斜，Shift+左键=平移，Ctrl+左键=缩放）</translation>

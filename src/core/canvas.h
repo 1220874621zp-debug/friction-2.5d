@@ -960,6 +960,9 @@ public:
     // bone select tool: clicking picks ONLY bones (graphics are
     // transparent to the pick)
     void boneSelectPress(const class eMouseEvent& e);
+    // skin pin tool: clicking an image layer places a puppet pin on
+    // it (direct mesh deformation, no bones needed)
+    void skinPinPress(const class eMouseEvent& e);
     // scene camera tool (Blender-flavoured): LMB drag orbits (tilt),
     // Shift+LMB pans, Ctrl+LMB drags zoom
     void cameraPress(const class eMouseEvent& e);

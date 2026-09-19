@@ -207,6 +207,9 @@ void ToolBox::setupMainAction(const QIcon &icon,
         case CanvasMode::boneSelect:
             mActions.setBoneSelectMode();
             break;
+        case CanvasMode::skinPin:
+            mActions.setSkinPinMode();
+            break;
         case CanvasMode::camera:
             mActions.setCameraMode();
             break;
@@ -415,6 +418,16 @@ void ToolBox::setupMainActions()
                                                          "boneSelect",
                                                          "K").toString()),
                     {CanvasMode::boneSelect},
+                    false);
+    // puppet pin: click an image on the canvas to place a skin pin
+    // (direct mesh deformation, no bones needed)
+    setupMainAction(svgToolIcon(QStringLiteral(":/icons/pin_tool.svg"),
+                              ThemeSupport::getIconSize(64).width()),
+                    tr("Skin Pin (place pins on images to deform)"),
+                    QKeySequence(AppSupport::getSettings("shortcuts",
+                                                         "skinPin",
+                                                         "P").toString()),
+                    {CanvasMode::skinPin},
                     false);
     addMainSeparator();
     // scene camera (AE-like): orbit/pan/zoom the whole composition -

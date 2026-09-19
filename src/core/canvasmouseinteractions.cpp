@@ -372,6 +372,29 @@ void Canvas::boneSelectPress(const eMouseEvent& e) {
     }
 }
 
+// skin pin tool: click an image layer to place a puppet pin right
+// there (direct mesh deformation, no bones needed); the layer becomes
+// the selection so the fresh pin is immediately visible and draggable
+void Canvas::skinPinPress(const eMouseEvent& e) {
+    // pixel-accurate pick with the camera-projected fallback the
+    // object tool uses (transparent pixels of a top image fall
+    // through to the image actually seen there)
+    auto box = mCurrentContainer->getBoxAtPixel(e.fPos);
+    if(!box && sceneHasActiveCamera()) {
+        box = mCurrentContainer->getBoxAtPixel(
+                    mapCameraScreenToWorld(e.fPos));
+    }
+    if(!box) box = mCurrentContainer->getBoxAt(e.fPos);
+    if(!box) return;
+    const auto img = enve_cast<ImageBox*>(box);
+    if(!img) return;
+    if(!img->isSelected()) {
+        clearBoxesSelection();
+        addBoxToSelection(img);
+    }
+    img->addSkinPin(img->mapAbsPosToRel(e.fPos));
+}
+
 // scene camera tool (AE-like, Blender-flavoured): LMB drag orbits the
 // composition (tilt X/Y), Shift+LMB pans, Ctrl+LMB drags zoom. AE
 // flow: a camera LAYER must exist - auto-created on first use; the
@@ -662,6 +685,8 @@ void Canvas::handleLeftButtonMousePress(const eMouseEvent& e)
         boneParentPress(e);
     } else if (mCurrentMode == CanvasMode::boneSelect) {
         boneSelectPress(e);
+    } else if (mCurrentMode == CanvasMode::skinPin) {
+        skinPinPress(e);
     } else if (mCurrentMode == CanvasMode::camera) {
         cameraPress(e);
     } else if (mCurrentMode == CanvasMode::circleCreate) {

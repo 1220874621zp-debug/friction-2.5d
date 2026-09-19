@@ -1026,6 +1026,10 @@ void Actions::setCameraMode() {
     mDocument.setCanvasMode(CanvasMode::camera);
 }
 
+void Actions::setSkinPinMode() {
+    mDocument.setCanvasMode(CanvasMode::skinPin);
+}
+
 
 void Actions::finishSmoothChange() {
     mSmoothChange = false;

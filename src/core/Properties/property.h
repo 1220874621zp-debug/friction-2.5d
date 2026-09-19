@@ -63,7 +63,11 @@ enum class CanvasMode : short {
     boneParent,
     boneSelect,
 
-    camera
+    camera,
+
+    // puppet-pin tool: click an image on the canvas to place a skin
+    // pin (direct mesh deformation, no bones needed)
+    skinPin
 };
 
 enum class UpdateReason {
