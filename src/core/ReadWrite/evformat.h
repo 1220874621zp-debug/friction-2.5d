@@ -85,6 +85,10 @@ namespace EvFormat {
         psdClippingMask = 45,
         // Text animation preset physics curves & easing parameters
         textPhysicsEasing = 46,
+        // bone skin bind block on ImageBox (appended after the file
+        // path in writeBoundingBox: palette defs, mesh, weights);
+        // older files lack the block and must skip it (positional)
+        imageBoxSkinBind = 47,
 
         nextVersion
     };

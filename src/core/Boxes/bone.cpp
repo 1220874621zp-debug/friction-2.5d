@@ -4,6 +4,8 @@
 #include "Animators/qpointfanimator.h"
 #include "MovablePoints/pointshandler.h"
 #include "bonelayer.h"
+#include "Boxes/imagebox.h"
+#include "Boxes/skinmesh.h"
 #include <QDebug>
 #include <QDebug>
 #include <QFile>
@@ -126,6 +128,11 @@ Bone::Bone() : ContainerBox(QObject::tr("Bone"),
     mLength = enve::make_shared<QrealAnimator>(100, 10, 2000, 1,
                                                QObject::tr("Length"));
     ca_addChild(mLength);
+    // skinning falloff radius (scene px); 0 = auto-resolved to 0.6 of
+    // the bone length when the layer is skin-bound
+    mSkinRadius = enve::make_shared<QrealAnimator>(0, 0, 10000, 1,
+                                                   QStringLiteral("\u8499\u76AE\u5F71\u54CD\u534A\u5F84"));
+    ca_addChild(mSkinRadius);
 
     connect(this, &BoundingBox::prp_sceneChanged,
             this, [this](Canvas* const oldS, Canvas* const newS) {
@@ -136,6 +143,33 @@ Bone::Bone() : ContainerBox(QObject::tr("Bone"),
 
 qreal Bone::getLength() const {
     return mLength->getEffectiveValue();
+}
+
+qreal Bone::skinInfluenceRadius() const {
+    const qreal r = mSkinRadius->getEffectiveValue();
+    if (r > 0.1) return r;
+    return qMax(20., 0.6 * getLength());
+}
+
+void Bone::skinBindSelectedLayers() {
+    const auto scene = getParentScene();
+    if (!scene) return;
+    // this bone and its whole child-bone chain form the palette
+    const auto chain = SkinMeshGen::collectChain(this);
+    if (chain.isEmpty()) return;
+    int bound = 0;
+    for (const auto box : scene->getSelectedBoxesList()) {
+        if (!box || box == this) continue;
+        if (enve_cast<Bone*>(box) || enve_cast<BoneLayer*>(box)) continue;
+        // mesh skinning is an image-layer feature (PsdImageBox is an
+        // ImageBox, so PSD parts skin-bind as well)
+        const auto img = enve_cast<ImageBox*>(box);
+        if (!img) continue;
+        if (img->skinBindChain(this)) bound++;
+    }
+    if (bound > 0 && Document::sInstance) {
+        Document::sInstance->actionFinished();
+    }
 }
 
 QPointF Bone::getTailRelPos() const {
@@ -542,6 +576,10 @@ void Bone::prp_setupTreeViewMenu(PropertyMenu * const menu) {
                 // file (lupdate and runtime then agree on "QObject")
                 QObject::tr("Bind Selected Layers to This Bone"),
                 [](Bone* const bone) { bone->bindSelectedLayers(); });
+    menu->addPlainAction<Bone>(
+                icon,
+                QStringLiteral("\u8499\u76AE\u7ED1\u5B9A\u6240\u9009\u56FE\u5C42\u5230\u9AA8\u9ABC\u94FE\uFF08\u7F51\u683C\u5E73\u6ED1\u53D8\u5F62\uFF09"),
+                [](Bone* const bone) { bone->skinBindSelectedLayers(); });
     menu->addPlainAction<Bone>(
                 icon,
                 QObject::tr("Unbind Layers"),

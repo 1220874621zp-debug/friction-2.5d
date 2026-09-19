@@ -30,6 +30,9 @@
 #include "FileCacheHandlers/imagecachehandler.h"
 #include "imagerenderdata.h"
 #include "FileCacheHandlers/filehandlerobjref.h"
+#include "Boxes/skinmesh.h"
+
+class BoxTargetProperty;
 
 struct CORE_EXPORT ImageBoxRenderData : public ImageContainerRenderData {
     ImageBoxRenderData(ImageFileHandler * const cacheHandler,
@@ -75,6 +78,18 @@ public:
     void setFilePath(const QString &path);
 
     const QString& filePath() const { return mPath; }
+
+    // ---- bone skin bind (AnimeEffects-style mesh deformation) ----
+    // the layer STAYS where it is (no reparent): a triangular mesh
+    // generated from the image alpha follows the blended transforms of
+    // the bone chain; returns false when the chain is empty
+    bool skinBindChain(Bone* const chainRoot);
+    // drop the bind and render as a plain image again
+    void skinUnbind();
+    // re-capture the bind pose from the CURRENT bone pose (and
+    // regenerate the mesh when the image dimensions changed)
+    void skinRebindPose();
+    bool hasSkinBind() const { return mSkin.hasBind(); }
     // pixel-in-RAM state for diagnostics (blank canvas investigation):
     // false = pixels evicted/not loaded yet; the next render schedules
     // an async reload
@@ -94,7 +109,18 @@ private:
     void fileHandlerConnector(ConnContext& conn, ImageFileHandler* obj);
     void fileHandlerAfterAssigned(ImageFileHandler* obj);
 
+    // skin bind internals
+    bool skinGenerateMesh(SkinBindData& skin);
+    void skinCaptureDefs(const QList<Bone*>& chain);
+    void skinFinishBind();
+    void skinSetupFollowConns();
+    void skinClearFollowConns();
+
     QString mPath;
+    qsptr<BoxTargetProperty> mSkinRoot;
+    SkinBindData mSkin;
+    QList<QMetaObject::Connection> mSkinFollowConns;
+    bool mSkinInternalSet = false;
 };
 
 #endif // IMAGEBOX_H

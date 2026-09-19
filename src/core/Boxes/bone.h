@@ -24,6 +24,10 @@ public:
 
     qreal getLength() const;
     QrealAnimator* lengthAnimator() const { return mLength.get(); }
+    // skin influence radius in scene px (0 = auto: 0.6 * bone length,
+    // resolved at skin-bind time)
+    qreal skinInfluenceRadius() const;
+    QrealAnimator* skinRadiusAnimator() const { return mSkinRadius.get(); }
     // local-space tail position (length, 0)
     QPointF getTailRelPos() const;
     // world-space head/tail at the current frame
@@ -37,6 +41,11 @@ public:
     // become children and follow its transform; world position is
     // preserved - the bind pose is the current pose)
     void bindSelectedLayers();
+    // skin bind: bind the selected image layers to this bone and its
+    // whole child-bone chain with smooth mesh deformation (the layers
+    // stay where they are; a lattice mesh is generated from the image
+    // alpha and follows the blended bone transforms)
+    void skinBindSelectedLayers();
     // move every non-bone child layer back to this bone's parent
     void unbindLayers();
     // unbind a single layer (layer-side menu entry): move it back to
@@ -70,6 +79,7 @@ public:
     void prp_setupTreeViewMenu(PropertyMenu * const menu) override;
 private:
     qsptr<QrealAnimator> mLength;
+    qsptr<QrealAnimator> mSkinRadius;
     qsptr<Property> mOverlay;
 };
 

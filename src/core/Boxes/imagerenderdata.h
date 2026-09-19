@@ -27,6 +27,7 @@
 #define IMAGERENDERDATA_H
 #include "Boxes/boxrenderdata.h"
 #include "CacheHandlers/imagecachecontainer.h"
+#include "include/core/SkVertices.h"
 
 struct CORE_EXPORT ImageRenderData : public BoxRenderData {
     ImageRenderData(BoundingBox * const parentBoxT);
@@ -37,6 +38,14 @@ struct CORE_EXPORT ImageRenderData : public BoxRenderData {
     void setupRenderData() final;
 
     sk_sp<SkImage> fImage;
+
+    // ---- bone skin bind (mesh deformation) ----
+    // built on the GUI thread in ImageBox::setupRenderData: the
+    // assembled drawVertices payload plus the deformed bounds;
+    // updateRelBoundingRect/drawSk only read them
+    sk_sp<SkVertices> fSkinVertices;
+    SkRect fSkinBounds = SkRect::MakeEmpty();
+    bool fSkinned = false;
 
     // true when the image data is ready; a null image here means the
     // container was evicted to tmp (or dropped) and the caller must

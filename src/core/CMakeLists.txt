@@ -237,6 +237,7 @@ set(
     Boxes/cameralayer.cpp
     Boxes/bone.cpp
     Boxes/bonelayer.cpp
+    Boxes/skinmesh.cpp
     RasterEffects/noisefadeeffect.cpp
     RasterEffects/openglrastereffectcaller.cpp
     RasterEffects/rastereffect.cpp
