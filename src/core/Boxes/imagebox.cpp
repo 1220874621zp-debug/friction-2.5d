@@ -37,6 +37,7 @@
 #include "appsupport.h"
 #include "canvas.h"
 #include "Boxes/bone.h"
+#include "Boxes/bonelayer.h"
 #include "Private/document.h"
 #include "Animators/complexanimator.h"
 #include "Animators/qrealanimator.h"
@@ -163,13 +164,11 @@ public:
     // true when bound
     bool tryBindNearestBone() {
         if (!mBox) return false;
-        const auto scene = mBox->getParentScene();
-        if (!scene) return false;
         const QPointF pScene =
                 mBox->getTotalTransform().map(effectiveRelPos());
         Bone* best = nullptr;
         qreal bestD = 1e12;
-        for (const auto b : scene->getBones()) {
+        for (const auto b : mBox->skinCandidateBones()) {
             if (!b) continue;
             const qreal d = distPointToBone(b, pScene);
             if (d < bestD) { bestD = d; best = b; }
@@ -184,10 +183,8 @@ public:
     // bone-driven part of the position, in image rel space
     QPointF drivenRelPos() const {
         if (mBoneName.isEmpty() || !mBox) return QPointF();
-        const auto scene = mBox->getParentScene();
-        if (!scene) return QPointF();
         Bone* bone = nullptr;
-        for (const auto b : scene->getBones()) {
+        for (const auto b : mBox->skinCandidateBones()) {
             if (b && b->prp_getName() == mBoneName) { bone = b; break; }
         }
         if (!bone) return QPointF();
@@ -615,7 +612,7 @@ void ImageBox::skinChangedNotify() {
 void ImageBox::skinPinsBindSkeleton() {
     const auto scene = getParentScene();
     if (!scene) return;
-    const auto bones = scene->getBones();
+    const auto bones = skinCandidateBones();
     if (bones.isEmpty()) {
         qWarning() << "[SKIN] skinPinsBindSkeleton: no bones in the scene";
         return;
@@ -677,6 +674,39 @@ void ImageBox::clearSkinPins() {
     prp_updateCanvasProps();
     prp_afterWholeInfluenceRangeChanged();
     if (Document::sInstance) Document::sInstance->actionFinished();
+}
+
+// bones under a container, recursively (bones nest inside bones and
+// live inside bone layers)
+static void collectBones(ContainerBox* const c, QList<Bone*>& out) {
+    if (!c) return;
+    for (const auto& child : c->getContained()) {
+        if (const auto bone = enve_cast<Bone*>(child.data())) {
+            out.append(bone);
+            collectBones(bone, out);
+        } else if (const auto group =
+                   enve_cast<ContainerBox*>(child.data())) {
+            collectBones(group, out);
+        }
+    }
+}
+
+QList<Bone*> ImageBox::skinCandidateBones() {
+    // the rig that owns this image: the nearest bone LAYER wrapping
+    // it (a character lives inside one). Bones under that layer are
+    // the only bind candidates - both for nearest-bone adoption and
+    // for name resolution, so multi-character scenes never cross rigs
+    // and duplicate bone names cannot resolve to the wrong skeleton.
+    // Fallback (image not inside any bone layer): all scene bones.
+    for (auto p = getParentGroup(); p; p = p->getParentGroup()) {
+        if (enve_cast<BoneLayer*>(p)) {
+            QList<Bone*> bones;
+            collectBones(p, bones);
+            return bones;
+        }
+    }
+    const auto scene = getParentScene();
+    return scene ? scene->getBones() : QList<Bone*>();
 }
 
 bool ImageBox::skinGenerateMesh(SkinBindData& skin) {
@@ -849,13 +879,10 @@ void ImageBox::setupRenderData(const qreal relFrame, const QTransform& parentM,
             QPointF eff = pin->getRelPos();
             if (pin->hasBone()) {
                 const Bone* bone = nullptr;
-                const auto scene = getParentScene();
-                if (scene) {
-                    for (const auto b : scene->getBones()) {
-                        if (b && b->prp_getName() == pin->boneName()) {
-                            bone = b;
-                            break;
-                        }
+                for (const auto b : skinCandidateBones()) {
+                    if (b && b->prp_getName() == pin->boneName()) {
+                        bone = b;
+                        break;
                     }
                 }
                 if (bone) {

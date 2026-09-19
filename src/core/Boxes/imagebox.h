@@ -102,6 +102,9 @@ public:
     // refresh the render cache after an out-of-animator pin change
     // (bone bind / unbind)
     void skinChangedNotify();
+    // bone candidates for pin binding: the bone LAYER wrapping this
+    // image (its own rig), or every scene bone as a fallback
+    QList<Bone*> skinCandidateBones();
     // pixel-in-RAM state for diagnostics (blank canvas investigation):
     // false = pixels evicted/not loaded yet; the next render schedules
     // an async reload
