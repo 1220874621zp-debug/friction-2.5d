@@ -80,6 +80,18 @@ struct CORE_EXPORT CpuRenderData {
     //! @brief Texture size
     uint fWidth;
     uint fHeight;
+
+    //! @brief True for the adjustment-layer backdrop path, where the
+    //! tile is a device-space snapshot of the canvas viewport; effects
+    //! that place content must anchor it in world coordinates instead
+    bool fDeviceSpace = false;
+
+    //! @brief world(=pre-view) -> device matrix, valid when fDeviceSpace
+    SkMatrix fDevMatrix;
+
+    //! @brief world-space anchor (the layer's local origin) for
+    //! content-placing effects, valid when fDeviceSpace
+    QPointF fWorldAnchor;
 };
 
 #endif // GLHELPERS_H

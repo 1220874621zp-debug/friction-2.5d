@@ -35,7 +35,8 @@ void AdjustmentRenderData::drawSk(SkCanvas* const canvas) {
 void AdjustmentRenderData::drawOnParentLayer(SkCanvas * const canvas,
                                              SkPaint &paint) {
     Q_UNUSED(paint)
-    adjustmentApplyBackdrop(canvas, fCallers);
+    adjustmentApplyBackdrop(canvas, fCallers,
+                            fScaledTransform.map(QPointF(0, 0)));
 }
 
 // ---------------------------------------------------------------------------
@@ -43,7 +44,8 @@ void AdjustmentRenderData::drawOnParentLayer(SkCanvas * const canvas,
 
 void adjustmentApplyBackdrop(
         SkCanvas* const canvas,
-        const QList<stdsptr<RasterEffectCaller>>& callers) {
+        const QList<stdsptr<RasterEffectCaller>>& callers,
+        const QPointF& worldAnchor) {
     if(callers.isEmpty() || !canvas) return;
     const SkIRect dev = canvas->getDeviceClipBounds();
     if(dev.isEmpty()) return;
@@ -70,6 +72,12 @@ void adjustmentApplyBackdrop(
     cdata.fTexTile = SkIRect::MakeSize(info.dimensions());
     cdata.fWidth = static_cast<uint>(dev.width());
     cdata.fHeight = static_cast<uint>(dev.height());
+    // the tile is a device-space viewport snapshot; hand callers the
+    // view matrix and a world anchor so content-placing effects (e.g.
+    // particles) stay anchored to the scene instead of the viewport
+    cdata.fDeviceSpace = true;
+    cdata.fDevMatrix = canvas->getTotalMatrix();
+    cdata.fWorldAnchor = worldAnchor;
 
     bool hasProcessed = false;
     for(const auto& caller : callers) {
@@ -133,5 +141,6 @@ void AdjustmentLayer::drawPixmapSk(SkCanvas * const canvas,
     const auto adData = data ?
                 static_cast<const AdjustmentRenderData*>(data) : nullptr;
     if(!adData) return;
-    adjustmentApplyBackdrop(canvas, adData->fCallers);
+    adjustmentApplyBackdrop(canvas, adData->fCallers,
+                            adData->fScaledTransform.map(QPointF(0, 0)));
 }

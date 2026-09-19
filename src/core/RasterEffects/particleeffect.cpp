@@ -107,6 +107,22 @@ public:
                               SkIntToScalar(-tile.top()));
         }
 
+        // adjustment-layer backdrop path: the tile is a device-space
+        // viewport snapshot; concat the view matrix and draw in world
+        // coordinates so particles follow pan/zoom instead of sticking
+        // to the screen
+        bool useWorld = false;
+        SkRect worldClip = SkRect::MakeEmpty();
+        SkMatrix invDev;
+        if (data.fDeviceSpace && data.fDevMatrix.invert(&invDev)) {
+            useWorld = true;
+            canvas.concat(data.fDevMatrix);
+            worldClip = SkRect::Make(SkIRect::MakeXYWH(
+                        tile.left(), tile.top(),
+                        tile.width(), tile.height()));
+            invDev.mapRect(&worldClip);
+        }
+
         // anchor: center of the pre-expansion base rect mapped into the
         // final (possibly clamped) image; when the margin allocation or
         // clamping changes, particles stay put relative to the content
@@ -172,14 +188,26 @@ public:
             const qreal op = mF.startOp + (mF.endOp - mF.startOp) * t;
             if (op <= 0.001) continue;
 
-            const qreal gx = ox + px;
-            const qreal gy = oy + py;
+            qreal gx, gy;
+            if (useWorld) {
+                gx = data.fWorldAnchor.x() + px;
+                gy = data.fWorldAnchor.y() + py;
+            } else {
+                gx = ox + px;
+                gy = oy + py;
+            }
 
-            // cull against this tile; pad covers rotated squares and
-            // velocity-line tails (up to ~6x the particle size)
+            // cull against this tile (world clip in backdrop mode); pad
+            // covers rotated squares and velocity-line tails (up to ~6x
+            // the particle size)
             const int pad = int(size * 8.0) + 4;
-            if (gx < tile.left() - pad || gx > tile.right() + pad ||
-                gy < tile.top() - pad || gy > tile.bottom() + pad) continue;
+            if (useWorld) {
+                if (gx < worldClip.left() - pad || gx > worldClip.right() + pad ||
+                    gy < worldClip.top() - pad || gy > worldClip.bottom() + pad) continue;
+            } else if (gx < tile.left() - pad || gx > tile.right() + pad ||
+                       gy < tile.top() - pad || gy > tile.bottom() + pad) {
+                continue;
+            }
 
             const qreal cr = sr + (er - sr) * t;
             const qreal cg = sg + (eg - sg) * t;
@@ -188,8 +216,10 @@ public:
                     uchar(qBound(0.0, op, 1.0) * 255.0),
                     uchar(cr * 255.0), uchar(cg * 255.0), uchar(cb * 255.0)));
 
-            const SkScalar lx = toSkScalar(gx - tile.left());
-            const SkScalar ly = toSkScalar(gy - tile.top());
+            const SkScalar lx = useWorld ? toSkScalar(gx)
+                                         : toSkScalar(gx - tile.left());
+            const SkScalar ly = useWorld ? toSkScalar(gy)
+                                         : toSkScalar(gy - tile.top());
 
             if (mF.shape == 2) {
                 // velocity line: stretched along current velocity
