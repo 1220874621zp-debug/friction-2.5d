@@ -145,6 +145,10 @@ private:
     void rubberUpdateRect(const QPoint& pos);
     void rubberFinish(const QPoint& pos);
     void rubberReset();
+    // a plain click on a gesture-dead spot (empty area below the rows, a
+    // row's blank zone) drops the layer multi-selection, mirroring the
+    // keys view's empty-area click
+    void plainClickDeselect();
 
     // parent-link drag visual state
     static bool  sPlActive;

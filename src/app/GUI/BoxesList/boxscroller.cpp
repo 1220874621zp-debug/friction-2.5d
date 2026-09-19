@@ -212,7 +212,12 @@ void BoxScroller::mouseMoveEvent(QMouseEvent *e) {
 
 void BoxScroller::mouseReleaseEvent(QMouseEvent *e) {
     if(mRubberStarted) rubberFinish(e->pos());
-    else mRubberPotential = false;
+    else if(mRubberPotential && e->button() == Qt::LeftButton) {
+        mRubberPotential = false;
+        // plain click on the empty area below the rows: drop the
+        // multi-selection instead of being a dead gesture
+        plainClickDeselect();
+    }
 }
 
 bool BoxScroller::eventFilter(QObject *obj, QEvent *event) {
@@ -241,7 +246,10 @@ bool BoxScroller::eventFilter(QObject *obj, QEvent *event) {
             rubberFinish(static_cast<QWidget*>(obj)->mapTo(this, me->pos()));
             return true; // the gesture was a band, not a click
         } else if(mRubberPotential) {
-            mRubberPotential = false; // blank-zone click: dead anyway
+            mRubberPotential = false; // blank-zone click: dead for rows
+            if(static_cast<QMouseEvent*>(event)->button() == Qt::LeftButton) {
+                plainClickDeselect();
+            }
         }
     }
     return QWidget::eventFilter(obj, event);
@@ -293,6 +301,21 @@ void BoxScroller::rubberFinish(const QPoint& pos) {
 void BoxScroller::rubberReset() {
     mRubberPotential = false;
     mRubberStarted = false;
+}
+
+void BoxScroller::plainClickDeselect() {
+    const auto scene = currentScene();
+    if(!scene) return;
+    // sounds keep their own selected flag outside the boxes list
+    bool anySelected = !scene->getSelectedBoxesList().isEmpty();
+    if(!anySelected) {
+        scene->forEachSelectedSound([&anySelected](eBoxOrSound*) {
+            anySelected = true;
+        });
+    }
+    if(!anySelected) return;
+    scene->clearBoxesSelection();
+    Document::sInstance->actionFinished();
 }
 
 void BoxScroller::keyPressEvent(QKeyEvent *e) {
