@@ -318,6 +318,8 @@ qsptr<RasterEffect> createRasterEffectForNonCustomType(const RasterEffectType ty
             return enve::make_shared<RoughenEdgesEffect>();
         case(RasterEffectType::PARTICLE):
             return enve::make_shared<ParticleEffect>();
+        case(RasterEffectType::PAGE_CURL):
+            return enve::make_shared<PageCurlEffect>();
         case(RasterEffectType::LATTICE_WARP):
             return enve::make_shared<LatticeWarpEffect>();
         default: return nullptr;

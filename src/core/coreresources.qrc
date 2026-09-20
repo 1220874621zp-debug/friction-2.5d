@@ -15,6 +15,7 @@
         <file alias="directionalblureffect.frag">RasterEffects/directionalblureffect.frag</file>
         <file alias="radialblureffect.frag">RasterEffects/radialblureffect.frag</file>
         <file alias="wavewarpeffect.frag">RasterEffects/wavewarpeffect.frag</file>
+        <file alias="pagecurleffect.frag">RasterEffects/pagecurleffect.frag</file>
         <file alias="raineffect.frag">RasterEffects/raineffect.frag</file>
         <file alias="edgedetecteffect.frag">RasterEffects/edgedetecteffect.frag</file>
         <file alias="inverteffect.frag">RasterEffects/inverteffect.frag</file>

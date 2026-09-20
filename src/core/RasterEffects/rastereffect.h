@@ -126,6 +126,8 @@ enum class RasterEffectType : short {
     ROUGHEN_EDGES,
     // analytic particle emitter (stateless, per-frame deterministic)
     PARTICLE,
+    // cylindrical page curl with N.L shading (Foldspace-style roll)
+    PAGE_CURL,
     // AE Putty-style lattice (FFD) deformation - appended last,
     // never reorder, serialized ids must stay stable
     LATTICE_WARP

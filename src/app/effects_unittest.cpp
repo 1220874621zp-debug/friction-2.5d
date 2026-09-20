@@ -44,6 +44,9 @@
 #include "GUI/mainwindow.h"
 #include "GUI/canvaswindow.h"
 #include "GUI/timelinedockwidget.h"
+#include "GUI/RenderWidgets/renderwidget.h"
+#include "GUI/RenderWidgets/renderinstancewidget.h"
+#include "renderinstancesettings.h"
 #include "renderhandler.h"
 
 // Headless test stubs for McpDispatcher GUI references
@@ -53,6 +56,18 @@ void TimelineDockWidget::spaceToggle() {}
 Canvas *CanvasWindow::getCurrentCanvas() { return nullptr; }
 void CanvasWindow::fitCanvasToSize(const bool&) {}
 void CanvasWindow::setRulersVisible(bool) {}
+RenderInstanceWidget *RenderWidget::addCanvasRenderInstance(Canvas *) { return nullptr; }
+void RenderWidget::renderOnly(RenderInstanceWidget *) {}
+int RenderWidget::count() { return 0; }
+RenderWidget *MainWindow::renderWidget() const { return nullptr; }
+// never actually dereferenced: addCanvasRenderInstance returns nullptr,
+// so the dispatcher render path bails before touching the settings
+RenderInstanceSettings &RenderInstanceWidget::getSettings() {
+    static alignas(RenderInstanceSettings) char buf[sizeof(RenderInstanceSettings)];
+    return reinterpret_cast<RenderInstanceSettings&>(buf);
+}
+void MainWindow::toggleTopViewWindow() {}
+bool MainWindow::isTopViewVisible() const { return false; }
 const QMetaObject MainWindow::staticMetaObject = QMainWindow::staticMetaObject;
 const QMetaObject CanvasWindow::staticMetaObject = GLWindow::staticMetaObject;
 
@@ -128,7 +143,8 @@ int main(int argc, char *argv[])
             RasterEffectType::LIQUID_GLASS,
             RasterEffectType::PIXEL_ART,
             RasterEffectType::CHROMA_KEY,
-            RasterEffectType::LAYER_STYLES
+            RasterEffectType::LAYER_STYLES,
+            RasterEffectType::PAGE_CURL
         };
 
         for (const auto t : types) {
@@ -182,7 +198,8 @@ int main(int argc, char *argv[])
             RasterEffectType::FILM_GRAIN,
             RasterEffectType::BLACK_WHITE_FLASH,
             RasterEffectType::LIQUID_GLASS,
-            RasterEffectType::PIXEL_ART
+            RasterEffectType::PIXEL_ART,
+            RasterEffectType::PAGE_CURL
         };
 
         SkBitmap srcBtmp;
@@ -566,6 +583,85 @@ int main(int argc, char *argv[])
         if (!loaded) {
             throw std::runtime_error("Failed to load :/translations/friction_zh_CN.qm resource");
         }
+    });
+
+    // Test 7: Page Curl CPU math (identity at zero progress, curl at mid)
+    runTest("Test 7: Page Curl CPU math", [&]() {
+        const auto eff = createRasterEffectForNonCustomType(
+                RasterEffectType::PAGE_CURL);
+        if (!eff) { throw std::runtime_error("Factory returned null"); }
+
+        SkBitmap src;
+        src.allocN32Pixels(128, 128);
+        src.eraseARGB(255, 200, 100, 50);
+
+        const auto render = [&](SkBitmap& dst) {
+            dst.allocN32Pixels(128, 128);
+            dst.eraseARGB(0, 0, 0, 0);
+            const auto caller = eff->getEffectCaller(0.0, 1.0, 1.0, nullptr);
+            if (!caller) { throw std::runtime_error("null caller"); }
+            CpuRenderTools tools{src, dst};
+            CpuRenderData data;
+            data.fTexTile = SkIRect::MakeXYWH(0, 0, 128, 128);
+            caller->processCpu(tools, data);
+        };
+
+        // identity: progress 0 must be an exact passthrough
+        {
+            SkBitmap dst;
+            render(dst);
+            for (int y = 0; y < 128; y += 5) {
+                for (int x = 0; x < 128; x += 5) {
+                    const SkColor c = dst.getColor(x, y);
+                    if (SkColorGetA(c) != 255 ||
+                        qAbs(int(SkColorGetR(c)) - 200) > 2 ||
+                        qAbs(int(SkColorGetG(c)) - 100) > 2 ||
+                        qAbs(int(SkColorGetB(c)) - 50) > 2) {
+                        throw std::runtime_error("progress 0 is not identity");
+                    }
+                }
+            }
+        }
+
+        // mid progress, default direction (right edge rolls leftward):
+        // the consumed far-right side empties, the kept left side stays
+        // opaque and shaded, and the back face shows near the tube
+        const auto prog = eff->ca_getChildAt<QrealAnimator>(0);
+        if (!prog) { throw std::runtime_error("no progress animator"); }
+        prog->setCurrentBaseValue(50.0);
+        {
+            SkBitmap dst;
+            render(dst);
+            // far right: page has left
+            if (SkColorGetA(dst.getColor(126, 64)) != 0) {
+                throw std::runtime_error("consumed side is not transparent");
+            }
+            // far left: still opaque, shaded darker than the source
+            const SkColor c = dst.getColor(6, 64);
+            if (SkColorGetA(c) != 255) {
+                throw std::runtime_error("kept side lost opacity");
+            }
+            if (SkColorGetR(c) >= 200 || SkColorGetR(c) < 60) {
+                throw std::runtime_error("kept side not lit/shaded");
+            }
+            // near the tube the flipped back face (gray) must show:
+            // some pixel there has blue >= red, unlike the orange front
+            bool sawBack = false;
+            for (int y = 20; y < 108 && !sawBack; y += 4) {
+                for (int x = 30; x < 66; x += 2) {
+                    const SkColor b = dst.getColor(x, y);
+                    if (SkColorGetA(b) > 200 &&
+                        SkColorGetB(b) >= SkColorGetR(b)) {
+                        sawBack = true;
+                        break;
+                    }
+                }
+            }
+            if (!sawBack) {
+                throw std::runtime_error("back face never visible");
+            }
+        }
+        prog->setCurrentBaseValue(0.0);
     });
 
     // Test 5: ThemeSupport presets, accents and style generation test
