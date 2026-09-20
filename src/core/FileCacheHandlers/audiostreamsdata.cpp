@@ -56,15 +56,26 @@ void AudioStreamsData::updateSwrContext() {
     const auto sampleFormat = static_cast<AVSampleFormat>(audCodecPars->format);
 
     if(fSwrContext) swr_free(&fSwrContext);
-    fSwrContext = swr_alloc();
-    av_opt_set_int(fSwrContext, "in_channel_count",  audCodecPars->channels, 0);
-    av_opt_set_int(fSwrContext, "out_channel_count", eSoundSettings::sChannelCount(), 0);
-    av_opt_set_int(fSwrContext, "in_channel_layout",  audCodecPars->channel_layout, 0);
-    av_opt_set_int(fSwrContext, "out_channel_layout", eSoundSettings::sChannelLayout(), 0);
-    av_opt_set_int(fSwrContext, "in_sample_rate", audCodecPars->sample_rate, 0);
-    av_opt_set_int(fSwrContext, "out_sample_rate", eSoundSettings::sSampleRate(), 0);
-    av_opt_set_sample_fmt(fSwrContext, "in_sample_fmt", sampleFormat, 0);
-    av_opt_set_sample_fmt(fSwrContext, "out_sample_fmt", eSoundSettings::sSampleFormat(),  0);
+    AVChannelLayout inLayout;
+    if(audCodecPars->ch_layout.order == AV_CHANNEL_ORDER_UNSPEC) {
+        av_channel_layout_default(&inLayout,
+                                  qMax(audCodecPars->ch_layout.nb_channels, 1));
+    } else {
+        av_channel_layout_copy(&inLayout, &audCodecPars->ch_layout);
+    }
+    AVChannelLayout outLayout;
+    if(av_channel_layout_from_mask(&outLayout,
+                                   eSoundSettings::sChannelLayout()) < 0) {
+        RuntimeThrow("Unsupported audio channel layout");
+    }
+    const int swrRet = swr_alloc_set_opts2(&fSwrContext,
+                                           &outLayout,
+                                           eSoundSettings::sSampleFormat(),
+                                           eSoundSettings::sSampleRate(),
+                                           &inLayout, sampleFormat,
+                                           audCodecPars->sample_rate,
+                                           0, nullptr);
+    if(swrRet < 0) RuntimeThrow("Error allocating the resampling context");
     swr_init(fSwrContext);
     if(!swr_is_initialized(fSwrContext)) {
         RuntimeThrow("Resampler has not been properly initialized");
@@ -105,10 +116,7 @@ void AudioStreamsData::close() {
     if(fDecodedFrame) av_frame_free(&fDecodedFrame);
     if(fPacket) av_packet_free(&fPacket);
     if(fSwrContext) swr_free(&fSwrContext);
-    if(fCodecContext) {
-        avcodec_close(fCodecContext);
-        avcodec_free_context(&fCodecContext);
-    }
+    if(fCodecContext) avcodec_free_context(&fCodecContext);
     if(fFormatContext) avformat_close_input(&fFormatContext);
 
     fAudioStreamIndex = -1;

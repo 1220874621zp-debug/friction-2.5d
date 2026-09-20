@@ -363,17 +363,20 @@ void SoundMerger::process() {
 
             const AVSampleFormat sampleFormat = mSettings.fSampleFormat;
             const uint64_t chLayout = mSettings.fChannelLayout;
-            const int chCount = av_get_channel_layout_nb_channels(chLayout);
+            const int chCount = eChannelCountFromMask(chLayout);
 
-            struct SwrContext * swrContext = swr_alloc();
-            av_opt_set_int(swrContext, "in_channel_count", chCount, 0);
-            av_opt_set_int(swrContext, "out_channel_count", chCount, 0);
-            av_opt_set_int(swrContext, "in_channel_layout", chLayout, 0);
-            av_opt_set_int(swrContext, "out_channel_layout", chLayout, 0);
-            av_opt_set_int(swrContext, "in_sample_rate", srcSampleRate, 0);
-            av_opt_set_int(swrContext, "out_sample_rate", dstSampleRate, 0);
-            av_opt_set_sample_fmt(swrContext, "in_sample_fmt", sampleFormat, 0);
-            av_opt_set_sample_fmt(swrContext, "out_sample_fmt", sampleFormat,  0);
+            AVChannelLayout avLayout;
+            if(av_channel_layout_from_mask(&avLayout, chLayout) < 0) {
+                RuntimeThrow("Unsupported audio channel layout");
+            }
+            struct SwrContext * swrContext = nullptr;
+            const int swrRet = swr_alloc_set_opts2(&swrContext,
+                                                   &avLayout, sampleFormat,
+                                                   dstSampleRate,
+                                                   &avLayout, sampleFormat,
+                                                   srcSampleRate,
+                                                   0, nullptr);
+            if(swrRet < 0) RuntimeThrow("Error allocating the resampling context");
             swr_init(swrContext);
             if(!swr_is_initialized(swrContext))
                 RuntimeThrow("Resampler has not been properly initialized");

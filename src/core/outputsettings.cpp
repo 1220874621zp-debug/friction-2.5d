@@ -92,8 +92,7 @@ const std::map<uint64_t, QString> gChannelLayouts = {
     {AV_CH_WIDE_RIGHT, "Wide right"},
     {AV_CH_SURROUND_DIRECT_LEFT, "Surround direct left"},
     {AV_CH_SURROUND_DIRECT_RIGHT, "Surround direct right"},
-    {AV_CH_LOW_FREQUENCY_2, "Low frequency 2"},
-    {AV_CH_LAYOUT_NATIVE, "Native"}
+    {AV_CH_LOW_FREQUENCY_2, "Low frequency 2"}
 };
 
 QString OutputSettings::sGetChannelsLayoutName(const uint64_t &layout)
@@ -297,7 +296,7 @@ void OutputSettingsProfile::load(const QString &path)
                                                          .data());
             mSettings.fVideoBitrate = profile.value(QString::fromUtf8("video_bitrate")).toInt();
             mSettings.fVideoProfile = profile.value(QString::fromUtf8("video_profile"),
-                                                    FF_PROFILE_UNKNOWN).toInt();
+                                                    AV_PROFILE_UNKNOWN).toInt();
 
             const auto options = FormatOptionsList{profile.value("video_options_types").toStringList(),
                                                    profile.value("video_options_keys").toStringList(),

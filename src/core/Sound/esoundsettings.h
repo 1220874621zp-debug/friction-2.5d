@@ -34,6 +34,15 @@ extern "C" {
 
 #include "../core_global.h"
 
+// av_get_channel_layout_nb_channels() was removed in FFmpeg 7;
+// layouts are still stored as native-order masks in settings and
+// project files, so convert at the libav boundary.
+inline int eChannelCountFromMask(const uint64_t mask) {
+    AVChannelLayout layout;
+    if(av_channel_layout_from_mask(&layout, mask) < 0) return 0;
+    return layout.nb_channels;
+}
+
 struct CORE_EXPORT eSoundSettingsData {
 #ifdef Q_OS_MAC
     int fSampleRate = 22050;
@@ -48,7 +57,7 @@ struct CORE_EXPORT eSoundSettingsData {
     }
 
     int channelCount() const {
-        return av_get_channel_layout_nb_channels(fChannelLayout);
+        return eChannelCountFromMask(fChannelLayout);
     }
 
     int bytesPerSample() const {

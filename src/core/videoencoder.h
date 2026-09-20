@@ -70,7 +70,8 @@ public:
     }
 
     void fillFrame(AVFrame* const frame) {
-        Q_ASSERT(frame->channel_layout == mCurrentSamples->fChannelLayout);
+        Q_ASSERT(frame->ch_layout.order == AV_CHANNEL_ORDER_NATIVE &&
+                 frame->ch_layout.u.mask == mCurrentSamples->fChannelLayout);
         Q_ASSERT(frame->format == mCurrentSamples->fFormat);
         Q_ASSERT(frame->sample_rate == mCurrentSamples->fSampleRate);
         const int nChannels = static_cast<int>(mCurrentSamples->fNChannels);

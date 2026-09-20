@@ -51,10 +51,7 @@ void VideoStreamsData::close() {
     if(fPacket) av_packet_free(&fPacket);
     if(fSwsContext) sws_freeContext(fSwsContext);
     fSwsContext = nullptr;
-    if(fCodecContext) {
-        avcodec_close(fCodecContext);
-        avcodec_free_context(&fCodecContext);
-    }
+    if(fCodecContext) avcodec_free_context(&fCodecContext);
     if(fFormatContext) avformat_close_input(&fFormatContext);
 
     fVideoStreamIndex = -1;

@@ -356,6 +356,41 @@ OutputSettings OutputSettingsDialog::getSettings() {
     return settings;
 }
 
+// AVCodec::pix_fmts / sample_fmts / supported_samplerates / channel_layouts
+// were removed in FFmpeg 9; avcodec_get_supported_config() returns
+// sentinel-terminated arrays when out_num_configs is NULL.
+static const AVPixelFormat *codecPixFormats(const AVCodec * const codec) {
+    const void *cfg = nullptr;
+    if(avcodec_get_supported_config(nullptr, codec,
+                                    AV_CODEC_CONFIG_PIX_FORMAT,
+                                    0, &cfg, nullptr) < 0) return nullptr;
+    return static_cast<const AVPixelFormat*>(cfg);
+}
+
+static const AVSampleFormat *codecSampleFormats(const AVCodec * const codec) {
+    const void *cfg = nullptr;
+    if(avcodec_get_supported_config(nullptr, codec,
+                                    AV_CODEC_CONFIG_SAMPLE_FORMAT,
+                                    0, &cfg, nullptr) < 0) return nullptr;
+    return static_cast<const AVSampleFormat*>(cfg);
+}
+
+static const int *codecSampleRates(const AVCodec * const codec) {
+    const void *cfg = nullptr;
+    if(avcodec_get_supported_config(nullptr, codec,
+                                    AV_CODEC_CONFIG_SAMPLE_RATE,
+                                    0, &cfg, nullptr) < 0) return nullptr;
+    return static_cast<const int*>(cfg);
+}
+
+static const AVChannelLayout *codecChannelLayouts(const AVCodec * const codec) {
+    const void *cfg = nullptr;
+    if(avcodec_get_supported_config(nullptr, codec,
+                                    AV_CODEC_CONFIG_CHANNEL_LAYOUT,
+                                    0, &cfg, nullptr) < 0) return nullptr;
+    return static_cast<const AVChannelLayout*>(cfg);
+}
+
 void OutputSettingsDialog::updateAvailablePixelFormats() {
     const QString currentFormatName = mPixelFormatsComboBox->currentText();
     const AVCodec *currentCodec = nullptr;
@@ -365,7 +400,7 @@ void OutputSettingsDialog::updateAvailablePixelFormats() {
     mPixelFormatsComboBox->clear();
     mPixelFormatsList.clear();
     if(currentCodec) {
-        const AVPixelFormat *format = currentCodec->pix_fmts;
+        const AVPixelFormat *format = codecPixFormats(currentCodec);
         if(!format) return;
         while(*format != -1) {
             mPixelFormatsList << *format;
@@ -384,7 +419,7 @@ void OutputSettingsDialog::addVideoCodec(const AVCodec* const codec,
     if(!codec) return;
     if(codec->type != AVMEDIA_TYPE_VIDEO) return;
     if(codec->capabilities & AV_CODEC_CAP_EXPERIMENTAL) return;
-    if(codec->pix_fmts == nullptr) return;
+    if(codecPixFormats(codec) == nullptr) return;
     if(avformat_query_codec(outputFormat, codec->id, COMPLIANCE) == 0) return;
     mVideoCodecsList << codec;
     const QString codecName = AppSupport::filterFormatsName(QString(codec->long_name));
@@ -401,7 +436,7 @@ void OutputSettingsDialog::addAudioCodec(const AVCodecID &codecId,
     if(!currentCodec) return;
     if(currentCodec->type != AVMEDIA_TYPE_AUDIO) return;
     if(currentCodec->capabilities & AV_CODEC_CAP_EXPERIMENTAL) return;
-    if(currentCodec->sample_fmts == nullptr) return;
+    if(codecSampleFormats(currentCodec) == nullptr) return;
     if(avformat_query_codec(outputFormat, codecId, COMPLIANCE) == 0) return;
     mAudioCodecsList << currentCodec;
     const QString codecName = AppSupport::filterFormatsName(QString(currentCodec->long_name));
@@ -598,7 +633,7 @@ void OutputSettingsDialog::updateAvailableVideoCodecs() {
               if(iCodec->capabilities & AV_CODEC_CAP_EXPERIMENTAL) {
                   continue;
               }
-              if(iCodec->pix_fmts == nullptr) continue;
+              if(codecPixFormats(iCodec) == nullptr) continue;
               addVideoCodec(iCodec, outputFormat, currentCodecName);
           }
         }
@@ -611,7 +646,7 @@ void OutputSettingsDialog::updateAvailableVideoCodecs() {
             if (!iCodec) { continue; }
             if (iCodec->type != AVMEDIA_TYPE_VIDEO) { continue; }
             if (iCodec->capabilities & AV_CODEC_CAP_EXPERIMENTAL) { continue; }
-            if (iCodec->pix_fmts == nullptr) { continue; }
+            if (codecPixFormats(iCodec) == nullptr) { continue; }
             addVideoCodec(iCodec, outputFormat, currentCodecName);
         }
     }
@@ -640,7 +675,7 @@ void OutputSettingsDialog::updateAvailableAudioCodecs() {
                 if(currentCodec->capabilities & AV_CODEC_CAP_EXPERIMENTAL) {
                     continue;
                 }
-                if(currentCodec->sample_fmts == nullptr) continue;
+                if(codecSampleFormats(currentCodec) == nullptr) continue;
                 addAudioCodec(currentCodec->id,
                               outputFormat,
                               currentCodecName);
@@ -656,7 +691,7 @@ void OutputSettingsDialog::updateAvailableAudioCodecs() {
             if(currentCodec->capabilities & AV_CODEC_CAP_EXPERIMENTAL) {
                 continue;
             }
-            if(currentCodec->sample_fmts == nullptr) continue;
+            if(codecSampleFormats(currentCodec) == nullptr) continue;
             addAudioCodec(currentCodec->id,
                           outputFormat,
                           currentCodecName);
@@ -745,7 +780,7 @@ void OutputSettingsDialog::updateAvailableSampleFormats() {
         currentCodec = mAudioCodecsList.at(codecId);
     }
     if(!currentCodec) return;
-    const AVSampleFormat *sampleFormats = currentCodec->sample_fmts;
+    const AVSampleFormat *sampleFormats = codecSampleFormats(currentCodec);
     if(!sampleFormats) return;
     while(*sampleFormats != -1) {
         mSampleFormatsList << *sampleFormats;
@@ -768,7 +803,7 @@ void OutputSettingsDialog::updateAvailableSampleFormats() {
 void OutputSettingsDialog::updateAvailableVideoProfiles()
 {
     mVideoProfileComboBox->clear();
-    mVideoProfileComboBox->addItem(tr("Default"), FF_PROFILE_UNKNOWN);
+    mVideoProfileComboBox->addItem(tr("Default"), AV_PROFILE_UNKNOWN);
 
     const AVCodec *currentCodec = nullptr;
     if (mVideoCodecsComboBox->count() > 0) {
@@ -777,39 +812,39 @@ void OutputSettingsDialog::updateAvailableVideoProfiles()
     if (!currentCodec) { return; }
     switch (currentCodec->id) {
     case AV_CODEC_ID_H264:
-        mVideoProfileComboBox->addItem(tr("Baseline"), FF_PROFILE_H264_BASELINE);
-        mVideoProfileComboBox->addItem(tr("Main"), FF_PROFILE_H264_MAIN);
-        mVideoProfileComboBox->addItem(tr("High"), FF_PROFILE_H264_HIGH);
+        mVideoProfileComboBox->addItem(tr("Baseline"), AV_PROFILE_H264_BASELINE);
+        mVideoProfileComboBox->addItem(tr("Main"), AV_PROFILE_H264_MAIN);
+        mVideoProfileComboBox->addItem(tr("High"), AV_PROFILE_H264_HIGH);
         break;
     case AV_CODEC_ID_PRORES:
-        mVideoProfileComboBox->addItem(tr("Proxy"), FF_PROFILE_PRORES_PROXY);
-        mVideoProfileComboBox->addItem(tr("LT"), FF_PROFILE_PRORES_LT);
-        mVideoProfileComboBox->addItem(tr("Standard"), FF_PROFILE_PRORES_STANDARD);
-        mVideoProfileComboBox->addItem(tr("HQ"), FF_PROFILE_PRORES_HQ);
-        mVideoProfileComboBox->addItem(tr("4444"), FF_PROFILE_PRORES_4444);
-        mVideoProfileComboBox->addItem(tr("XQ"), FF_PROFILE_PRORES_XQ);
+        mVideoProfileComboBox->addItem(tr("Proxy"), AV_PROFILE_PRORES_PROXY);
+        mVideoProfileComboBox->addItem(tr("LT"), AV_PROFILE_PRORES_LT);
+        mVideoProfileComboBox->addItem(tr("Standard"), AV_PROFILE_PRORES_STANDARD);
+        mVideoProfileComboBox->addItem(tr("HQ"), AV_PROFILE_PRORES_HQ);
+        mVideoProfileComboBox->addItem(tr("4444"), AV_PROFILE_PRORES_4444);
+        mVideoProfileComboBox->addItem(tr("XQ"), AV_PROFILE_PRORES_XQ);
         break;
     case AV_CODEC_ID_AV1:
-        mVideoProfileComboBox->addItem(tr("Main"), FF_PROFILE_AV1_MAIN);
-        mVideoProfileComboBox->addItem(tr("High"), FF_PROFILE_AV1_HIGH);
-        mVideoProfileComboBox->addItem(tr("Professional"), FF_PROFILE_AV1_PROFESSIONAL);
+        mVideoProfileComboBox->addItem(tr("Main"), AV_PROFILE_AV1_MAIN);
+        mVideoProfileComboBox->addItem(tr("High"), AV_PROFILE_AV1_HIGH);
+        mVideoProfileComboBox->addItem(tr("Professional"), AV_PROFILE_AV1_PROFESSIONAL);
         break;
     case AV_CODEC_ID_VP9:
-        mVideoProfileComboBox->addItem(tr("0"), FF_PROFILE_VP9_0);
-        mVideoProfileComboBox->addItem(tr("1"), FF_PROFILE_VP9_1);
-        mVideoProfileComboBox->addItem(tr("2"), FF_PROFILE_VP9_2);
-        mVideoProfileComboBox->addItem(tr("3"), FF_PROFILE_VP9_3);
+        mVideoProfileComboBox->addItem(tr("0"), AV_PROFILE_VP9_0);
+        mVideoProfileComboBox->addItem(tr("1"), AV_PROFILE_VP9_1);
+        mVideoProfileComboBox->addItem(tr("2"), AV_PROFILE_VP9_2);
+        mVideoProfileComboBox->addItem(tr("3"), AV_PROFILE_VP9_3);
         break;
     case AV_CODEC_ID_MPEG4:
-        mVideoProfileComboBox->addItem(tr("Simple"), FF_PROFILE_MPEG4_SIMPLE);
-        mVideoProfileComboBox->addItem(tr("Core"), FF_PROFILE_MPEG4_CORE);
-        mVideoProfileComboBox->addItem(tr("Main"), FF_PROFILE_MPEG4_MAIN);
+        mVideoProfileComboBox->addItem(tr("Simple"), AV_PROFILE_MPEG4_SIMPLE);
+        mVideoProfileComboBox->addItem(tr("Core"), AV_PROFILE_MPEG4_CORE);
+        mVideoProfileComboBox->addItem(tr("Main"), AV_PROFILE_MPEG4_MAIN);
         break;
     case AV_CODEC_ID_VC1:
-        mVideoProfileComboBox->addItem(tr("Simple"), FF_PROFILE_VC1_SIMPLE);
-        mVideoProfileComboBox->addItem(tr("Main"), FF_PROFILE_VC1_MAIN);
-        mVideoProfileComboBox->addItem(tr("Complex"), FF_PROFILE_VC1_COMPLEX);
-        mVideoProfileComboBox->addItem(tr("Advanced"), FF_PROFILE_VC1_ADVANCED);
+        mVideoProfileComboBox->addItem(tr("Simple"), AV_PROFILE_VC1_SIMPLE);
+        mVideoProfileComboBox->addItem(tr("Main"), AV_PROFILE_VC1_MAIN);
+        mVideoProfileComboBox->addItem(tr("Complex"), AV_PROFILE_VC1_COMPLEX);
+        mVideoProfileComboBox->addItem(tr("Advanced"), AV_PROFILE_VC1_ADVANCED);
         break;
     default:;
     }
@@ -854,7 +889,7 @@ void OutputSettingsDialog::updateAvailableSampleRates() {
         currentCodec = mAudioCodecsList.at(codecId);
     }
     if(!currentCodec) return;
-    const int *sampleRates = currentCodec->supported_samplerates;
+    const int *sampleRates = codecSampleRates(currentCodec);
     if(!sampleRates) {
         QList<int> rates = { 96000, 88200, 64000, 48000, 44100,
                              32000, 22050, 11025, 8000 };
@@ -892,20 +927,27 @@ void OutputSettingsDialog::updateAvailableAudioChannelLayouts() {
         currentCodec = mAudioCodecsList.at(codecId);
     }
     if(!currentCodec) return;
-    const uint64_t *layouts = currentCodec->channel_layouts;
+    const AVChannelLayout *layouts = codecChannelLayouts(currentCodec);
     if(!layouts) {
         mAudioChannelLayoutsList << AV_CH_LAYOUT_MONO;
         mAudioChannelLayoutsList << AV_CH_LAYOUT_STEREO;
         mAudioChannelLayoutsComboBox->addItem(tr("Mono"));
         mAudioChannelLayoutsComboBox->addItem(tr("Stereo"));
     } else {
-        uint64_t layout = *layouts;
-        while(layout != 0) {
+        while(layouts->nb_channels != 0 || layouts->u.mask != 0) {
+            // codec lists AVChannelLayout structs; the settings/UI work in
+            // native-order masks, so convert unspecified orders to the
+            // default mask for the channel count
+            AVChannelLayout def;
+            const uint64_t layout =
+                    layouts->order == AV_CHANNEL_ORDER_NATIVE ?
+                        layouts->u.mask :
+                        (av_channel_layout_default(&def, layouts->nb_channels),
+                         def.u.mask);
             const QString layoutName = OutputSettings::sGetChannelsLayoutName(layout);
             mAudioChannelLayoutsList << layout;
             mAudioChannelLayoutsComboBox->addItem(layoutName);
             layouts++;
-            layout = *layouts;
         }
     }
     if(mAudioChannelLayoutsComboBox->findText(lastSet) != -1) {
