@@ -21,16 +21,19 @@
 #
 */
 
-// Page curl: analytic cylindrical inverse mapping of the layer image.
-// The CPU path mirrors pagecurleffect.frag step by step; the source is
-// premultiplied N32 (little-endian BGRA byte order), colors stay
-// premultiplied end to end (a scalar shade multiplies cleanly).
+// Page curl / wave, rendered the lattice-warp way: a forward-warped
+// mesh redrawn with SkCanvas::drawVertices (skin-mesh style) - the
+// source bitmap is the texture, N.L lighting and the cast shadow are
+// baked into vertex colors, and the same mesh is drawn twice (textured
+// front pass with a cos(phi)>=0 alpha mask, solid-color back pass with
+// the complementary mask). CPU-only like LatticeWarpEffect; no
+// per-pixel inversion, no GL shader pipeline.
 
 #include "pagecurleffect.h"
 
-#include "gpurendertools.h"
-#include "openglrastereffectcaller.h"
-#include "Boxes/boxrenderdata.h"
+#include "cpurendertools.h"
+#include "skia/skiaincludes.h"
+#include "include/core/SkVertices.h"
 
 #include "Animators/coloranimator.h"
 #include "Properties/comboboxproperty.h"
@@ -49,223 +52,12 @@ float smooth01(const float t) {
     return c * c * (3.f - 2.f * c);
 }
 
-struct Vec4 { float r, g, b, a; };
-
-// manual bilinear over the premultiplied N32 source (bytes: B, G, R, A)
-Vec4 sampleBilinear(const SkBitmap& btmp, const int w, const int h,
-                    const float u, const float v)
-{
-    float fx = u * float(w) - 0.5f;
-    float fy = v * float(h) - 0.5f;
-    fx = std::min(std::max(fx, 0.f), float(w - 1));
-    fy = std::min(std::max(fy, 0.f), float(h - 1));
-    const int x0 = int(fx);
-    const int y0 = int(fy);
-    const int x1 = std::min(x0 + 1, w - 1);
-    const int y1 = std::min(y0 + 1, h - 1);
-    const float tx = fx - float(x0);
-    const float ty = fy - float(y0);
-    const auto px = [&](const int x, const int y) {
-        const uchar* q = static_cast<const uchar*>(btmp.getAddr(x, y));
-        return Vec4 { q[2] / 255.f, q[1] / 255.f, q[0] / 255.f, q[3] / 255.f };
-    };
-    const auto mixv = [](const Vec4& lo, const Vec4& hi, const float t) {
-        return Vec4 { lo.r + (hi.r - lo.r) * t,
-                      lo.g + (hi.g - lo.g) * t,
-                      lo.b + (hi.b - lo.b) * t,
-                      lo.a + (hi.a - lo.a) * t };
-    };
-    const Vec4 a = px(x0, y0);
-    const Vec4 b = px(x1, y0);
-    const Vec4 c = px(x0, y1);
-    const Vec4 e = px(x1, y1);
-    return mixv(mixv(a, b, tx), mixv(c, e, tx), ty);
-}
-
-// mirrors main() in pagecurleffect.frag step by step
-Vec4 evalPageCurl(const PageCurlEffectData& d,
-                  const SkBitmap& srcBtmp,
-                  const float u, const float v)
-{
-    const float kPi = 3.14159265359f;
-    const float kTwoPi = 6.28318530718f;
-
-    int w = d.mTexW;
-    int h = d.mTexH;
-    if (w <= 0) w = srcBtmp.width();
-    if (h <= 0) h = srcBtmp.height();
-    if (w <= 0 || h <= 0) return Vec4 { 0.f, 0.f, 0.f, 0.f };
-    const float aspect = float(w) / float(h);
-
-    const float px = u * aspect;
-    const float py = v;
-    const float radDir = d.mDirection * kPi / 180.f;
-    const float dirX = std::cos(radDir);
-    const float dirY = std::sin(radDir);
-    const float perpX = -dirY;
-    const float perpY = dirX;
-
-    // page extent along dir (contact line travel range)
-    const float c01 = aspect * dirX;
-    const float c10 = dirY;
-    const float c11 = aspect * dirX + dirY;
-    const float cMax = std::max(std::max(0.f, c01), std::max(c10, c11));
-
-    // light (image-space y points down; 225 deg = from the upper left)
-    const float la = d.mLightAngle * kPi / 180.f;
-    const float el = d.mLightElev * kPi / 180.f;
-    const float cel = std::cos(el);
-    const float lX = std::cos(la) * cel;
-    const float lY = std::sin(la) * cel;
-    const float Lz = std::sin(el);
-    // half vector with the orthographic view direction (0,0,1)
-    float hX = lX, hY = lY;
-    float Hz = Lz + 1.f;
-    const float hLen = std::max(std::sqrt(hX * hX + hY * hY + Hz * Hz), 0.0001f);
-    hX /= hLen; hY /= hLen; Hz /= hLen;
-
-    if (d.mMode == 1) {
-        // wave: the image stays fully visible, only a traveling ripple
-        // of N.L shading rolls across it (the Foldspace rainbow-sheet look)
-        const float A = d.mWaveAmp;
-        const float rep = 100.f / std::max(d.mWaveLen, 1.f); // wavelengths over the extent
-        const float omega = kTwoPi * rep / std::max(cMax, 0.001f);
-        const float s = px * dirX + py * dirY;
-        const float slope = A * omega * std::cos(omega * s + d.mWavePhase);
-        float nX = -slope * dirX;
-        float nY = -slope * dirY;
-        float nZ = 1.f;
-        const float nLen = std::max(std::sqrt(nX * nX + nY * nY + nZ * nZ), 0.0001f);
-        nX /= nLen; nY /= nLen; nZ /= nLen;
-        const float nDotL = nX * lX + nY * lY + nZ * Lz;
-        const float nDotH = nX * hX + nY * hY + nZ * Hz;
-        float shade = d.mAmbient + (1.f - d.mAmbient) * std::max(0.f, nDotL);
-        float spec = d.mSpecular * std::pow(std::max(0.f, nDotH), 32.f);
-        // fade the whole effect in with amplitude so amp 0 = passthrough
-        const float t = smooth01(A / 0.03f);
-        shade = 1.f + (shade - 1.f) * t;
-        spec *= t;
-        const Vec4 src = sampleBilinear(srcBtmp, w, h, u, v);
-        Vec4 out;
-        out.r = sat1(src.r * shade + spec * src.a);
-        out.g = sat1(src.g * shade + spec * src.a);
-        out.b = sat1(src.b * shade + spec * src.a);
-        out.a = sat1(src.a);
-        return out;
-    }
-
-    const float c = (1.f - d.mProgress) * cMax;
-    const float R = std::max(d.mRadius, 0.002f);
-
-    const float dd = (px * dirX + py * dirY) - c; // signed distance from contact line
-    const float m = px * perpX + py * perpY;      // position along the curl axis
-
-    // wrapped page lands at -R*sin(phi): solve for every turn, keep the
-    // frontmost (largest height R*(1-cos(phi))); a solution counts only
-    // if its source point stays on the page - checking the UV after
-    // picking the max lets an off-page solution shadow a valid one
-    // (leaves holes and 1px stripes across the tube). Wrapped material
-    // only ever lands within +-R of the contact line; outside that band
-    // there is no solution (clamping -dd/R would fabricate a phantom
-    // phi=pi/2 one that overwrites the flat page above the tube)
-    float bestZ = -1.f;
-    float bestPhi = -1.f;
-    float bestU = 0.f;
-    float bestV = 0.f;
-    if (std::abs(dd) <= R) {
-        const float q = -dd / R;
-        const float phi0 = std::asin(q);
-        const float phiCap = 11.5f * kPi;
-        const auto consider = [&](const float phi) {
-            if (phi < 0.f || phi > phiCap) return;
-            const float z = R * (1.f - std::cos(phi));
-            if (z <= bestZ) return;
-            const float s0 = c + R * phi;
-            const float p0x = dirX * s0 + perpX * m;
-            const float p0y = dirY * s0 + perpY * m;
-            const float u0 = p0x / aspect;
-            const float v0 = p0y;
-            if (u0 < 0.f || u0 > 1.f || v0 < 0.f || v0 > 1.f) return;
-            bestZ = z; bestPhi = phi; bestU = u0; bestV = v0;
-        };
-        for (int k = 0; k < 8; k++) {
-            const float base = kTwoPi * float(k);
-            consider(phi0 + base);
-            consider(kPi - phi0 + base);
-            if (phi0 + base > phiCap) break;
-        }
-    }
-
-    const bool useWrap = bestPhi >= 0.f;
-    float uvX = u, uvY = v;
-    if (useWrap) { uvX = bestU; uvY = bestV; }
-
-    // no tube above and not on the flat side: the page has left
-    if (!useWrap && dd > 0.f) {
-        return Vec4 { 0.f, 0.f, 0.f, 0.f };
-    }
-
-    const float Ls = lX * dirX + lY * dirY;
-    const float Hs = hX * dirX + hY * dirY;
-
-    const Vec4 src = sampleBilinear(srcBtmp, w, h, uvX, uvY);
-
-    float shade;
-    float spec = 0.f;
-    bool backFace = false;
-    if (useWrap) {
-        const float sinPhi = std::sin(bestPhi);
-        const float cosPhi = std::cos(bestPhi);
-        float nDotL = sinPhi * Ls + cosPhi * Lz;
-        float nDotH = sinPhi * Hs + cosPhi * Hz;
-        backFace = cosPhi < 0.f; // the flipped side faces the camera
-        if (backFace) { nDotL = -nDotL; nDotH = -nDotH; }
-        shade = d.mAmbient + (1.f - d.mAmbient) * std::max(0.f, nDotL);
-        spec = d.mSpecular * std::pow(std::max(0.f, nDotH), 32.f);
-    } else {
-        // flat part: fade the lighting in with the amount of wrapped
-        // material so progress 0 is an exact passthrough
-        const float arcAvail = (cMax - c) / R;
-        const float active = smooth01(arcAvail / kPi);
-        const float litFlat = d.mAmbient + (1.f - d.mAmbient) * std::max(0.f, Lz);
-        shade = 1.f + (litFlat - 1.f) * active;
-        // the raised tube shades the flat part behind the contact line
-        if (active > 0.f) {
-            const float A = Ls * dd - Lz * R;
-            const float disc = A * A - dd * dd;
-            if (disc > 0.f) {
-                const float sd = std::sqrt(disc);
-                if (sd > A) { // a positive ray parameter exists
-                    const float pen = std::min(std::max(0.2f * R, 0.004f), 0.05f);
-                    const float occ = 1.f - smooth01(sd / pen);
-                    shade *= 1.f - d.mShadow * active * occ;
-                }
-            }
-        }
-    }
-
-    Vec4 out;
-    if (backFace) {
-        const float a = src.a;
-        out.r = sat1(d.mBackR * (a * shade) + spec * a);
-        out.g = sat1(d.mBackG * (a * shade) + spec * a);
-        out.b = sat1(d.mBackB * (a * shade) + spec * a);
-        out.a = sat1(a);
-    } else {
-        out.r = sat1(src.r * shade + spec * src.a);
-        out.g = sat1(src.g * shade + spec * src.a);
-        out.b = sat1(src.b * shade + spec * src.a);
-        out.a = sat1(src.a);
-    }
-    return out;
-}
-
 } // namespace
 
 PageCurlEffect::PageCurlEffect() :
     RasterEffect(QObject::tr("卷页 (Page Curl)"),
                  AppSupport::getRasterEffectHardwareSupport("PageCurl",
-                                                            HardwareSupport::gpuPreffered),
+                                                            HardwareSupport::cpuOnly),
                  true,
                  RasterEffectType::PAGE_CURL)
 {
@@ -327,98 +119,49 @@ PageCurlEffect::PageCurlEffect() :
     ca_addChild(mWaveSpeed);
 }
 
-class PageCurlEffectCaller : public OpenGLRasterEffectCaller {
+namespace {
+
+// light basis shared by both modes
+struct LightBasis {
+    float lX, lY, Lz;   // light direction (x,y in pixel space, z up)
+    float hX, hY, Hz;   // half vector with the view direction (0,0,1)
+};
+
+LightBasis makeLight(const PageCurlEffectData& d)
+{
+    const float kPi = 3.14159265359f;
+    const float la = d.mLightAngle * kPi / 180.f;
+    const float el = d.mLightElev * kPi / 180.f;
+    const float cel = std::cos(el);
+    LightBasis lb;
+    lb.lX = std::cos(la) * cel;
+    lb.lY = std::sin(la) * cel;
+    lb.Lz = std::sin(el);
+    float hx = lb.lX, hy = lb.lY;
+    float hz = lb.Lz + 1.f;
+    const float hl = std::max(std::sqrt(hx * hx + hy * hy + hz * hz), 0.0001f);
+    lb.hX = hx / hl; lb.hY = hy / hl; lb.Hz = hz / hl;
+    return lb;
+}
+
+} // namespace
+
+class PageCurlEffectCaller : public RasterEffectCaller {
 public:
-    PageCurlEffectCaller(const HardwareSupport hwSupport,
-                         const PageCurlEffectData& data) :
-        OpenGLRasterEffectCaller(sInitialized, sProgramId,
-                                 ":/shaders/pagecurleffect.frag",
-                                 hwSupport),
-        mData(data) {}
+    PageCurlEffectCaller(const PageCurlEffectData& data) :
+        RasterEffectCaller(HardwareSupport::cpuOnly), mData(data) {}
 
     void processCpu(CpuRenderTools& renderTools,
                     const CpuRenderData& data);
-protected:
-    void iniVars(QGL33 * const gl) const {
-        sModeU = gl->glGetUniformLocation(sProgramId, "uMode");
-        sProgressU = gl->glGetUniformLocation(sProgramId, "uProgress");
-        sDirectionU = gl->glGetUniformLocation(sProgramId, "uDirection");
-        sRadiusU = gl->glGetUniformLocation(sProgramId, "uRadius");
-        sBackColorU = gl->glGetUniformLocation(sProgramId, "uBackColor");
-        sLightAngleU = gl->glGetUniformLocation(sProgramId, "uLightAngle");
-        sLightElevU = gl->glGetUniformLocation(sProgramId, "uLightElev");
-        sAmbientU = gl->glGetUniformLocation(sProgramId, "uAmbient");
-        sShadowU = gl->glGetUniformLocation(sProgramId, "uShadow");
-        sSpecularU = gl->glGetUniformLocation(sProgramId, "uSpecular");
-        sWaveAmpU = gl->glGetUniformLocation(sProgramId, "uWaveAmp");
-        sWaveLenU = gl->glGetUniformLocation(sProgramId, "uWaveLen");
-        sWavePhaseU = gl->glGetUniformLocation(sProgramId, "uWavePhase");
-        sTexSizeU = gl->glGetUniformLocation(sProgramId, "uTexSize");
-    }
-
-    void setVars(QGL33 * const gl) const {
-        gl->glUseProgram(sProgramId);
-        gl->glUniform1i(sModeU, mData.mMode);
-        gl->glUniform1f(sProgressU, mData.mProgress);
-        gl->glUniform1f(sDirectionU, mData.mDirection);
-        gl->glUniform1f(sRadiusU, mData.mRadius);
-        gl->glUniform3f(sBackColorU, mData.mBackR, mData.mBackG, mData.mBackB);
-        gl->glUniform1f(sLightAngleU, mData.mLightAngle);
-        gl->glUniform1f(sLightElevU, mData.mLightElev);
-        gl->glUniform1f(sAmbientU, mData.mAmbient);
-        gl->glUniform1f(sShadowU, mData.mShadow);
-        gl->glUniform1f(sSpecularU, mData.mSpecular);
-        gl->glUniform1f(sWaveAmpU, mData.mWaveAmp);
-        gl->glUniform1f(sWaveLenU, mData.mWaveLen);
-        gl->glUniform1f(sWavePhaseU, mData.mWavePhase);
-        gl->glUniform2f(sTexSizeU,
-                        static_cast<GLfloat>(std::max(mData.mTexW, 1)),
-                        static_cast<GLfloat>(std::max(mData.mTexH, 1)));
-    }
 private:
-    static bool sInitialized;
-    static GLuint sProgramId;
-
-    static GLint sModeU;
-    static GLint sProgressU;
-    static GLint sDirectionU;
-    static GLint sRadiusU;
-    static GLint sBackColorU;
-    static GLint sLightAngleU;
-    static GLint sLightElevU;
-    static GLint sAmbientU;
-    static GLint sShadowU;
-    static GLint sSpecularU;
-    static GLint sWaveAmpU;
-    static GLint sWaveLenU;
-    static GLint sWavePhaseU;
-    static GLint sTexSizeU;
-
     const PageCurlEffectData mData;
 };
-
-bool PageCurlEffectCaller::sInitialized = false;
-GLuint PageCurlEffectCaller::sProgramId = 0;
-
-GLint PageCurlEffectCaller::sModeU = -1;
-GLint PageCurlEffectCaller::sProgressU = -1;
-GLint PageCurlEffectCaller::sDirectionU = -1;
-GLint PageCurlEffectCaller::sRadiusU = -1;
-GLint PageCurlEffectCaller::sBackColorU = -1;
-GLint PageCurlEffectCaller::sLightAngleU = -1;
-GLint PageCurlEffectCaller::sLightElevU = -1;
-GLint PageCurlEffectCaller::sAmbientU = -1;
-GLint PageCurlEffectCaller::sShadowU = -1;
-GLint PageCurlEffectCaller::sSpecularU = -1;
-GLint PageCurlEffectCaller::sWaveAmpU = -1;
-GLint PageCurlEffectCaller::sWaveLenU = -1;
-GLint PageCurlEffectCaller::sWavePhaseU = -1;
-GLint PageCurlEffectCaller::sTexSizeU = -1;
 
 stdsptr<RasterEffectCaller> PageCurlEffect::getEffectCaller(
         const qreal relFrame, const qreal resolution,
         const qreal influence, BoxRenderData * const data) const {
     Q_UNUSED(resolution)
+    Q_UNUSED(data)
 
     PageCurlEffectData effData;
     effData.mMode = mMode->getCurrentValue();
@@ -439,48 +182,238 @@ stdsptr<RasterEffectCaller> PageCurlEffect::getEffectCaller(
     effData.mWaveLen = static_cast<float>(mWaveLen->getEffectiveValue(relFrame));
     effData.mWavePhase = static_cast<float>(
                 relFrame * mWaveSpeed->getEffectiveValue(relFrame) * 0.05);
-    if (data) {
-        effData.mTexW = data->fGlobalRect.width();
-        effData.mTexH = data->fGlobalRect.height();
-    }
 
-    return enve::make_shared<PageCurlEffectCaller>(
-                instanceHwSupport(), effData);
+    return enve::make_shared<PageCurlEffectCaller>(effData);
 }
 
 void PageCurlEffectCaller::processCpu(CpuRenderTools& renderTools,
                                       const CpuRenderData& data)
 {
     const auto& srcBtmp = renderTools.fSrcBtmp;
-    const auto& dstBtmp = renderTools.fDstBtmp;
-
+    auto& dstBtmp = renderTools.fDstBtmp;
     if (srcBtmp.empty() || srcBtmp.getPixels() == nullptr ||
         dstBtmp.empty() || dstBtmp.getPixels() == nullptr) {
         return;
     }
+    const int w = srcBtmp.width();
+    const int h = srcBtmp.height();
+    if (w <= 0 || h <= 0) return;
 
-    const int imgWidth = srcBtmp.width();
-    const int imgHeight = srcBtmp.height();
-    if (imgWidth <= 0 || imgHeight <= 0) return;
+    const float kPi = 3.14159265359f;
+    const float kTwoPi = 6.28318530718f;
 
-    const int xMin = std::max(0, data.fTexTile.left());
-    const int xMax = std::min((int)data.fTexTile.right(), imgWidth - 1);
-    const int yMin = std::max(0, data.fTexTile.top());
-    const int yMax = std::min((int)data.fTexTile.bottom(), imgHeight - 1);
+    const float radDir = mData.mDirection * kPi / 180.f;
+    const float dirX = std::cos(radDir);
+    const float dirY = std::sin(radDir);
+    const float perpX = -dirY;
+    const float perpY = dirX;
 
-    for (int yi = yMin; yi <= yMax; yi++) {
-        auto dst = static_cast<uchar*>(dstBtmp.getAddr(0, yi - yMin));
-        const float v = (float(yi) + 0.5f) / float(imgHeight);
+    // material range in (s, m) pixel coordinates (s along dir)
+    const float cornersX[4] = {0.f, float(w), 0.f, float(w)};
+    const float cornersY[4] = {0.f, 0.f, float(h), float(h)};
+    float sMin = 1e30f, sMax = -1e30f, mMin = 1e30f, mMax = -1e30f;
+    for (int i = 0; i < 4; i++) {
+        const float s = cornersX[i] * dirX + cornersY[i] * dirY;
+        const float m = cornersX[i] * perpX + cornersY[i] * perpY;
+        sMin = std::min(sMin, s); sMax = std::max(sMax, s);
+        mMin = std::min(mMin, m); mMax = std::max(mMax, m);
+    }
 
-        for (int xi = xMin; xi <= xMax; xi++) {
-            const float u = (float(xi) + 0.5f) / float(imgWidth);
-            const Vec4 out = evalPageCurl(mData, srcBtmp, u, v);
+    const LightBasis lb = makeLight(mData);
 
-            // N32 on little-endian is BGRA in memory
-            *dst++ = static_cast<uchar>(out.b * 255.f + 0.5f);
-            *dst++ = static_cast<uchar>(out.g * 255.f + 0.5f);
-            *dst++ = static_cast<uchar>(out.r * 255.f + 0.5f);
-            *dst++ = static_cast<uchar>(out.a * 255.f + 0.5f);
+    // mesh density: fine along s (the curl is curved), coarser across
+    int nS = std::max(64, std::min(220, int((sMax - sMin) / 4.f) + 1));
+    int nM = std::max(8, std::min(120, int((mMax - mMin) / 8.f) + 1));
+    while ((nS + 1) * (nM + 1) > 65000) { nS = nS * 3 / 4; nM = nM * 3 / 4; }
+
+    const int nVx = (nS + 1) * (nM + 1);
+    QVector<SkPoint> pos(nVx);
+    QVector<SkPoint> tex(nVx);
+    QVector<SkColor> colFront(nVx);
+    QVector<SkColor> colBack(nVx);
+
+    const float c = (1.f - mData.mProgress) * sMax;
+    const float R = std::max(mData.mRadius * float(h), 1.f);
+    const float edgeFade = std::max(4.f, 0.02f * float(std::max(w, h)));
+
+    // flat-part lighting fades in with the wrapped arc so progress 0 is
+    // an exact passthrough (vertex colors = opaque white)
+    const float arcAvail = (sMax - c) / R;
+    const float active = smooth01(arcAvail / kPi);
+    const float litFlat = mData.mAmbient +
+            (1.f - mData.mAmbient) * std::max(0.f, lb.Lz);
+    const float flatShade0 = 1.f + (litFlat - 1.f) * active;
+
+    for (int b = 0; b <= nM; b++) {
+        const float m = mMin + (mMax - mMin) * float(b) / float(nM);
+        for (int a = 0; a <= nS; a++) {
+            const float s0 = sMin + (sMax - sMin) * float(a) / float(nS);
+            const int id = b * (nS + 1) + a;
+
+            const float px = dirX * s0 + perpX * m;
+            const float py = dirY * s0 + perpY * m;
+            tex[id] = SkPoint::Make(px, py);
+
+            float sx = px;
+            float sy = py;
+            float frontA = 1.f;
+            float frontShade = flatShade0;
+            float backA = 0.f;
+            float backShade = 0.f;
+
+            if (mData.mMode == 1) {
+                // wave: no displacement, a traveling N.L ripple in the
+                // vertex colors; fade the whole effect in with amplitude
+                const float A = mData.mWaveAmp * float(h);
+                const float rep = 100.f / std::max(mData.mWaveLen, 1.f);
+                const float omega = kTwoPi * rep / std::max(sMax - sMin, 1.f);
+                const float slope = A * omega *
+                        std::cos(omega * s0 + mData.mWavePhase);
+                float nX = -slope * dirX;
+                float nY = -slope * dirY;
+                const float nLen = std::max(std::sqrt(nX * nX + nY * nY + 1.f),
+                                            0.0001f);
+                nX /= nLen; nY /= nLen;
+                const float nZ = 1.f / nLen;
+                float nDotL = nX * lb.lX + nY * lb.lY + nZ * lb.Lz;
+                float nDotH = nX * lb.hX + nY * lb.hY + nZ * lb.Hz;
+                float shade = mData.mAmbient +
+                        (1.f - mData.mAmbient) * std::max(0.f, nDotL);
+                float spec = mData.mSpecular *
+                        std::pow(std::max(0.f, nDotH), 32.f);
+                const float t = smooth01(mData.mWaveAmp / 0.03f);
+                shade = 1.f + (shade - 1.f) * t;
+                spec *= t;
+                frontShade = sat1(shade + spec * 0.5f);
+            } else if (s0 > c) {
+                // wrapped around the cylinder
+                const float phi = (s0 - c) / R;
+                const float sinPhi = std::sin(phi);
+                const float cosPhi = std::cos(phi);
+                const float screenS = c - R * sinPhi;
+                sx = dirX * screenS + perpX * m;
+                sy = dirY * screenS + perpY * m;
+                float nDotL = sinPhi * (dirX * lb.lX + dirY * lb.lY) +
+                             cosPhi * lb.Lz;
+                float nDotH = sinPhi * (dirX * lb.hX + dirY * lb.hY) +
+                              cosPhi * lb.Hz;
+                if (cosPhi >= 0.f) {
+                    const float shade = mData.mAmbient +
+                            (1.f - mData.mAmbient) * std::max(0.f, nDotL);
+                    const float spec = mData.mSpecular *
+                            std::pow(std::max(0.f, nDotH), 32.f);
+                    frontShade = sat1(shade + spec * 0.5f);
+                } else {
+                    // the flipped side faces the camera: solid back pass
+                    frontA = 0.f;
+                    const float shade = mData.mAmbient +
+                            (1.f - mData.mAmbient) * std::max(0.f, -nDotL);
+                    backA = 1.f;
+                    backShade = shade;
+                }
+            } else if (mData.mMode == 0 && active > 0.f) {
+                // flat part under the raised tube: cast-shadow test
+                // (ray from the pixel toward the light vs the cylinder)
+                const float d = s0 - c;
+                const float Ls = dirX * lb.lX + dirY * lb.lY;
+                const float A2 = Ls * d - lb.Lz * R;
+                const float disc = A2 * A2 - d * d;
+                if (disc > 0.f) {
+                    const float sd = std::sqrt(disc);
+                    if (sd > A2) {
+                        const float pen = std::min(std::max(0.2f * R, 1.f),
+                                                    float(h) * 0.05f + 1.f);
+                        const float occ = 1.f - smooth01(sd / pen);
+                        frontShade *= 1.f - mData.mShadow * active * occ;
+                    }
+                }
+            }
+
+            // fade alpha where the vertex samples outside the bitmap
+            const float dxo = std::max(0.f, std::max(-px, px - float(w)));
+            const float dyo = std::max(0.f, std::max(-py, py - float(h)));
+            const float dOut = std::max(dxo, dyo);
+            float edgeA = 1.f;
+            if (dOut > 0.f) {
+                edgeA = 1.f - sat1(dOut / edgeFade);
+            }
+
+            pos[id] = SkPoint::Make(sx, sy);
+            const int shadeByte = qRound(sat1(frontShade) * 255.f);
+            colFront[id] = SkColorSetARGB(
+                        qRound(sat1(frontA * edgeA) * 255.f),
+                        shadeByte, shadeByte, shadeByte);
+            const int backByte = qRound(sat1(backShade) * 255.f);
+            colBack[id] = SkColorSetARGB(
+                        qRound(sat1(backA * edgeA) * 255.f),
+                        backByte, backByte, backByte);
         }
+    }
+
+    // grid indices; later s (outer wraps) draw over earlier ones, which
+    // approximates the outer turn occluding the inner turns
+    QVector<uint16_t> idx;
+    idx.reserve(nS * nM * 6);
+    for (int b = 0; b < nM; b++) {
+        for (int a = 0; a < nS; a++) {
+            const int i0 = b * (nS + 1) + a;
+            const int i1 = i0 + 1;
+            const int i2 = i0 + (nS + 1);
+            const int i3 = i2 + 1;
+            idx << uint16_t(i0) << uint16_t(i2) << uint16_t(i1)
+                << uint16_t(i1) << uint16_t(i2) << uint16_t(i3);
+        }
+    }
+
+    const sk_sp<SkImage> img = SkImage::MakeFromBitmap(srcBtmp);
+    if (!img) return;
+
+    SkCanvas canvas(dstBtmp);
+    canvas.clear(SK_ColorTRANSPARENT);
+    canvas.translate(-data.fTexTile.left(), -data.fTexTile.top());
+
+    SkPaint paint;
+    paint.setAntiAlias(true);
+    paint.setFilterQuality(kMedium_SkFilterQuality);
+
+    if (mData.mMode == 1) {
+        // wave: one textured pass, all front
+        paint.setShader(img->makeShader(SkTileMode::kClamp,
+                                        SkTileMode::kClamp,
+                                        nullptr));
+        const sk_sp<SkVertices> vertices = SkVertices::MakeCopy(
+                    SkVertices::kTriangles_VertexMode,
+                    pos.count(), pos.constData(), tex.constData(),
+                    colFront.constData(),
+                    idx.count(), idx.constData());
+        canvas.drawVertices(vertices.get(), SkBlendMode::kModulate, paint);
+        return;
+    }
+
+    // curl: textured front pass masked by cos(phi)>=0, then a solid
+    // back pass with the complementary mask
+    paint.setShader(img->makeShader(SkTileMode::kClamp,
+                                    SkTileMode::kClamp,
+                                    nullptr));
+    sk_sp<SkVertices> front = SkVertices::MakeCopy(
+                SkVertices::kTriangles_VertexMode,
+                pos.count(), pos.constData(), tex.constData(),
+                colFront.constData(),
+                idx.count(), idx.constData());
+    canvas.drawVertices(front.get(), SkBlendMode::kModulate, paint);
+
+    if (mData.mProgress > 0.f) {
+        SkPaint backPaint;
+        backPaint.setAntiAlias(true);
+        backPaint.setColor(SkColorSetRGB(
+                    qRound(mData.mBackR * 255.f),
+                    qRound(mData.mBackG * 255.f),
+                    qRound(mData.mBackB * 255.f)));
+        const sk_sp<SkVertices> back = SkVertices::MakeCopy(
+                    SkVertices::kTriangles_VertexMode,
+                    pos.count(), pos.constData(), tex.constData(),
+                    colBack.constData(),
+                    idx.count(), idx.constData());
+        canvas.drawVertices(back.get(), SkBlendMode::kModulate, backPaint);
     }
 }
