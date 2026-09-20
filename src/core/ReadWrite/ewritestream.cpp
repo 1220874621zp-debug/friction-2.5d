@@ -106,7 +106,7 @@ eWriteStream &eWriteStream::operator<<(const int64_t val)
     return *this;
 }
 
-#ifndef _MSC_VER
+#if !defined(_MSC_VER) && !defined(__APPLE__)
 eWriteStream &eWriteStream::operator<<(const long long val)
 {
     int32_t safeVal = static_cast<int32_t>(val);

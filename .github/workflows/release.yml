@@ -125,7 +125,7 @@ jobs:
           submodules: recursive
       - name: Install Qt6 + QScintilla2
         run: |
-          brew install qt@6
+          brew install qt@6 ffmpeg
           curl -sL -o /tmp/qsci.tar.gz https://www.riverbankcomputing.com/static/Downloads/QScintilla/2.14.1/QScintilla_src-2.14.1.tar.gz
           tar xf /tmp/qsci.tar.gz -C /tmp
           cd /tmp/QScintilla_src-2.14.1/src
@@ -136,6 +136,7 @@ jobs:
           export QT6_PREFIX="$(brew --prefix qt@6)"
           export QSCINTILLA_DIR=/tmp/QScintilla_src-2.14.1/src
           export PATH="$QT6_PREFIX/bin:$PATH"
+          export PKG_CONFIG_PATH="$(brew --prefix)/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
           BUILD_INTEL=0 BUILD_UNIVERSAL=0 REL=ON ./src/scripts/build_mac_ci.sh
       - name: Prepare Artifact
         run: |

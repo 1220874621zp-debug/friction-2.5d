@@ -35,7 +35,7 @@ SDK=${SDK:-"${CWD}/sdk/${CPU}"}
 BUILD_DIR=${BUILD_DIR:-"${CWD}/build-release-${CPU}"}
 
 export PATH="${SDK}/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-export PKG_CONFIG_PATH="${SDK}/lib/pkgconfig"
+export PKG_CONFIG_PATH="${SDK}/lib/pkgconfig:${PKG_CONFIG_PATH}"
 
 whereis python
 python --version

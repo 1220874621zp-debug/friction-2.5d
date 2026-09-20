@@ -48,7 +48,7 @@ rem runtime DLLs staged below - the official SDK only ships 4.2 which the
 rem code no longer compiles against (avcodec_get_supported_config etc.)
 set FFMPEG9_ZIP=ffmpeg-n9.0-latest-win64-gpl-shared-9.0.zip
 if not exist "sdk\ffmpeg-win\libavutil\avutil.h" (
-    curl -L -o "%FFMPEG9_ZIP%" "https://github.com/BtbN/FFmpeg-Builds/releases/download/392441569/ffmpeg-n9.0-latest-win64-gpl-shared-9.0.zip"
+    curl -L -o "%FFMPEG9_ZIP%" "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n9.0-latest-win64-gpl-shared-9.0.zip"
     7z x "%FFMPEG9_ZIP%" -osdk
     ren "sdk\ffmpeg-n9.0-latest-win64-gpl-shared-9.0" ffmpeg9
     robocopy "sdk\ffmpeg9\include" "sdk\ffmpeg-win" /E /NFL /NDL /NJH /NJS >nul

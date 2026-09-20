@@ -64,7 +64,7 @@ RenderWidget *MainWindow::renderWidget() const { return nullptr; }
 // never actually dereferenced: addCanvasRenderInstance returns nullptr,
 // so the dispatcher render path bails before touching the settings
 RenderInstanceSettings &RenderInstanceWidget::getSettings() {
-    static alignas(RenderInstanceSettings) char buf[sizeof(RenderInstanceSettings)];
+    static alignas(alignof(RenderInstanceSettings)) char buf[sizeof(RenderInstanceSettings)];
     return reinterpret_cast<RenderInstanceSettings&>(buf);
 }
 void MainWindow::toggleTopViewWindow() {}
