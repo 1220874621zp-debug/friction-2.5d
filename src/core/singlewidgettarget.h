@@ -115,6 +115,11 @@ public:
         Q_UNUSED(bT)
     }
 
+    // expand/collapse this target's rows in every tree it appears in
+    // (timeline, properties panel); no-op before any abstraction is
+    // registered (e.g. a freshly added, not yet shown, effect)
+    void SWT_setContentVisible(const bool visible);
+
     virtual bool SWT_visibleOnlyIfParentDescendant() const {
         return true;
     }    

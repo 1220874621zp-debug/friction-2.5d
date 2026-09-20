@@ -1197,11 +1197,12 @@ bool CanvasWindow::handleEffectDrop(QDropEvent * const event)
     if (!apply || !mCurrentCanvas) { return true; }
     // the layer under the drop point receives the effect; dropping
     // on empty canvas applies to the current box (same as the
-    // panel's double-click)
+    // panel's double-click fallback)
     const QPointF pos = mapToCanvasCoord(event->posF());
-    const auto box = mCurrentCanvas->getBoxAt(pos);
-    if (box) { mCurrentCanvas->setCurrentBox(box); }
-    apply();
+    const auto hitBox = mCurrentCanvas->getBoxAt(pos);
+    const auto target = hitBox ? hitBox : mCurrentCanvas->getCurrentBox();
+    if (hitBox) { mCurrentCanvas->setCurrentBox(hitBox); }
+    apply(target);
     return true;
 }
 

@@ -109,6 +109,9 @@ public:
 
 public slots:
     void refreshSelection();
+    // scroll the pipeline end into view (call one layout pass after
+    // a refresh, when a freshly applied effect card sits at the bottom)
+    void scrollToEnd();
     void refreshValues();
 
 protected:

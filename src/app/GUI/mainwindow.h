@@ -38,6 +38,7 @@
 #include <QToolBar>
 #include <QComboBox>
 #include <QTimer>
+#include <functional>
 
 
 #include "Private/Tasks/taskscheduler.h"
@@ -189,13 +190,28 @@ public:
     const QString checkBeforeExportSVG();
     void exportSVG(const bool &preview = false);
 
-    void addRasterEffect(const qsptr<RasterEffect> &effect);
-    void addBlendEffect(const qsptr<BlendEffect> &effect);
-    void addTransformEffect(const qsptr<TransformEffect> &effect);
-    void addPathEffect(const qsptr<PathEffect> &effect);
-    void addFillPathEffect(const qsptr<PathEffect> &effect);
-    void addOutlineBasePathEffect(const qsptr<PathEffect> &effect);
-    void addOutlinePathEffect(const qsptr<PathEffect> &effect);
+    // AE-style effect application: a null target applies the effect
+    // to every selected layer (menu / double-click / Enter), an
+    // explicit target applies to just that layer (drag & drop)
+    QList<BoundingBox*> effectApplyTargets(BoundingBox* const target);
+    void addRasterEffectToTarget(const std::function<qsptr<RasterEffect>()> &creator,
+                                 BoundingBox* const target);
+    void addBlendEffectToTarget(const std::function<qsptr<BlendEffect>()> &creator,
+                                BoundingBox* const target);
+    void addTransformEffectToTarget(const std::function<qsptr<TransformEffect>()> &creator,
+                                    BoundingBox* const target);
+    void addPathEffectToTarget(const std::function<qsptr<PathEffect>()> &creator,
+                               BoundingBox* const target);
+    void addFillPathEffectToTarget(const std::function<qsptr<PathEffect>()> &creator,
+                                   BoundingBox* const target);
+    void addOutlineBasePathEffectToTarget(const std::function<qsptr<PathEffect>()> &creator,
+                                          BoundingBox* const target);
+    void addOutlinePathEffectToTarget(const std::function<qsptr<PathEffect>()> &creator,
+                                      BoundingBox* const target);
+    // apply a serialized effect-stack stream (a user preset file) to
+    // the target layer(s)
+    void applyRasterEffectStreamToTargets(const QByteArray &streamData,
+                                          BoundingBox* const target);
     void showQuickEffectSearch();
 
     void updateLastOpenDir(const QString &path);

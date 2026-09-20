@@ -24,12 +24,16 @@
 #include "mainwindow.h"
 
 #include <QStatusBar>
+#include <QTimer>
+#include <QBuffer>
 
 #include "aepropertiesinspector.h"
 #include "RasterEffects/rastereffectmenucreator.h"
 #include "BlendEffects/blendeffectmenucreator.h"
 #include "TransformEffects/transformeffectmenucreator.h"
 #include "PathEffects/patheffectmenucreator.h"
+#include "ReadWrite/ereadstream.h"
+#include "exceptions.h"
 #include "quickeffectsearchdialog.h"
 
 void MainWindow::setupMenuEffects()
@@ -67,7 +71,7 @@ void MainWindow::setupMenuEffects()
             act->setData(QString(name).prepend(tr("Add ")).append(tr(" (Raster Effect)")));
             cmdAddAction(act);
             connect(act, &QAction::triggered, this, [this, creator]() {
-                addRasterEffect(creator());
+                addRasterEffectToTarget(creator, nullptr);
             });
         });
 
@@ -80,7 +84,7 @@ void MainWindow::setupMenuEffects()
             act->setData(QString(name).prepend(tr("Add ")).append(tr(" (Raster Effect)")));
             cmdAddAction(act);
             connect(act, &QAction::triggered, this, [this, creator]() {
-                addRasterEffect(creator());
+                addRasterEffectToTarget(creator, nullptr);
             });
         });
 
@@ -93,7 +97,7 @@ void MainWindow::setupMenuEffects()
             act->setData(QString(name).prepend(tr("Add ")).append(tr(" (Raster Effect)")));
             cmdAddAction(act);
             connect(act, &QAction::triggered, this, [this, creator]() {
-                addRasterEffect(creator());
+                addRasterEffectToTarget(creator, nullptr);
             });
         });
 
@@ -113,7 +117,7 @@ void MainWindow::setupMenuEffects()
                 act->setData(QString(name).prepend(tr("Add ")).append(tr(" (Path Effect)")));
                 cmdAddAction(act);
                 connect(act, &QAction::triggered, this, [this, creator]() {
-                    addPathEffect(creator());
+                    addPathEffectToTarget(creator, nullptr);
                 });
             }
             {
@@ -121,7 +125,7 @@ void MainWindow::setupMenuEffects()
                 act->setData(QString(name).prepend(tr("Add ")).append(tr(" (Fill Effect)")));
                 cmdAddAction(act);
                 connect(act, &QAction::triggered, this, [this, creator]() {
-                    addFillPathEffect(creator());
+                    addFillPathEffectToTarget(creator, nullptr);
                 });
             }
             {
@@ -129,7 +133,7 @@ void MainWindow::setupMenuEffects()
                 act->setData(QString(name).prepend(tr("Add ")).append(tr(" (Outline Base Effect)")));
                 cmdAddAction(act);
                 connect(act, &QAction::triggered, this, [this, creator]() {
-                    addOutlineBasePathEffect(creator());
+                    addOutlineBasePathEffectToTarget(creator, nullptr);
                 });
             }
             {
@@ -137,7 +141,7 @@ void MainWindow::setupMenuEffects()
                 act->setData(QString(name).prepend(tr("Add ")).append(tr(" (Outline Effect)")));
                 cmdAddAction(act);
                 connect(act, &QAction::triggered, this, [this, creator]() {
-                    addOutlinePathEffect(creator());
+                    addOutlinePathEffectToTarget(creator, nullptr);
                 });
             }
         };
@@ -154,7 +158,7 @@ void MainWindow::setupMenuEffects()
             act->setData(QString(name).prepend(tr("Add ")).append(tr(" (Blend Effect)")));
             cmdAddAction(act);
             connect(act, &QAction::triggered, this, [this, creator]() {
-                addBlendEffect(creator());
+                addBlendEffectToTarget(creator, nullptr);
             });
         };
         BlendEffectMenuCreator::forEveryEffect(adder);
@@ -170,93 +174,181 @@ void MainWindow::setupMenuEffects()
             act->setData(QString(name).prepend(tr("Add ")).append(tr(" (Transform Effect)")));
             cmdAddAction(act);
             connect(act, &QAction::triggered, this, [this, creator]() {
-                addTransformEffect(creator());
+                addTransformEffectToTarget(creator, nullptr);
             });
         };
         TransformEffectMenuCreator::forEveryEffect(adder);
     }
 }
 
-void MainWindow::addRasterEffect(const qsptr<RasterEffect> &effect)
+QList<BoundingBox*> MainWindow::effectApplyTargets(BoundingBox* const target)
 {
-    const auto box = getCurrentBox();
-    if (!box) {
+    if (target) { return {target}; }
+    const auto scene = *mDocument.fActiveScene;
+    if (!scene) { return {}; }
+    return scene->getSelectedBoxesList();
+}
+
+namespace {
+// shared tail for every apply path: finish the undo set, expand the
+// layer + effects rows so the new effect is immediately visible, and
+// refresh + scroll the AE inspector to the rebuilt pipeline
+void finishEffectApplication(MainWindow* const,
+                              AEPropertiesInspector* const inspector)
+{
+    if (inspector) {
+        inspector->refreshSelection();
+        // the scroll range settles one layout pass after the rebuild
+        QTimer::singleShot(0, inspector, &AEPropertiesInspector::scrollToEnd);
+    }
+}
+}
+
+void MainWindow::addRasterEffectToTarget(
+        const std::function<qsptr<RasterEffect>()> &creator,
+        BoundingBox* const target)
+{
+    const auto targets = effectApplyTargets(target);
+    if (targets.isEmpty()) {
         statusBar()->showMessage(tr("请先选中一个图层"), 3000);
         return;
     }
-
-    box->addRasterEffect(effect);
+    for (const auto& box : targets) {
+        const auto effect = creator();
+        box->addRasterEffect(effect);
+        if (effect) { effect->SWT_setContentVisible(true); }
+        box->SWT_setContentVisible(true);
+        if (const auto coll = box->rasterEffectsCollection()) {
+            coll->SWT_setContentVisible(true);
+        }
+    }
     mDocument.actionFinished();
-    // the inspector only listens to selection changes - applying an
-    // effect changes none, refresh it so the pipeline shows the new
-    // effect and its parameters right away
-    if (mPropertiesInspector) { mPropertiesInspector->refreshSelection(); }
+    finishEffectApplication(this, mPropertiesInspector);
 }
 
-void MainWindow::addBlendEffect(const qsptr<BlendEffect> &effect)
+void MainWindow::addBlendEffectToTarget(
+        const std::function<qsptr<BlendEffect>()> &creator,
+        BoundingBox* const target)
 {
-    const auto box = getCurrentBox();
-    if (!box) {
+    const auto targets = effectApplyTargets(target);
+    if (targets.isEmpty()) {
         statusBar()->showMessage(tr("请先选中一个图层"), 3000);
         return;
     }
-
-    box->addBlendEffect(effect);
+    for (const auto& box : targets) {
+        box->addBlendEffect(creator());
+        box->SWT_setContentVisible(true);
+    }
     mDocument.actionFinished();
-    if (mPropertiesInspector) { mPropertiesInspector->refreshSelection(); }
+    finishEffectApplication(this, mPropertiesInspector);
 }
 
-void MainWindow::addTransformEffect(const qsptr<TransformEffect> &effect)
+void MainWindow::addTransformEffectToTarget(
+        const std::function<qsptr<TransformEffect>()> &creator,
+        BoundingBox* const target)
 {
-    const auto box = getCurrentBox();
-    if (!box) {
+    const auto targets = effectApplyTargets(target);
+    if (targets.isEmpty()) {
         statusBar()->showMessage(tr("请先选中一个图层"), 3000);
         return;
     }
-
-    box->addTransformEffect(effect);
+    for (const auto& box : targets) {
+        box->addTransformEffect(creator());
+        box->SWT_setContentVisible(true);
+    }
     mDocument.actionFinished();
-    if (mPropertiesInspector) { mPropertiesInspector->refreshSelection(); }
+    finishEffectApplication(this, mPropertiesInspector);
 }
 
-void MainWindow::addPathEffect(const qsptr<PathEffect> &effect)
+void MainWindow::addPathEffectToTarget(
+        const std::function<qsptr<PathEffect>()> &creator,
+        BoundingBox* const target)
 {
-    const auto box = getCurrentBox();
-    if (!box) {
+    const auto targets = effectApplyTargets(target);
+    if (targets.isEmpty()) {
         statusBar()->showMessage(tr("请先选中一个图层"), 3000);
         return;
     }
-
-    box->addPathEffect(effect);
+    for (const auto& box : targets) {
+        box->addPathEffect(creator());
+        box->SWT_setContentVisible(true);
+    }
     mDocument.actionFinished();
-    if (mPropertiesInspector) { mPropertiesInspector->refreshSelection(); }
+    finishEffectApplication(this, mPropertiesInspector);
 }
 
-void MainWindow::addFillPathEffect(const qsptr<PathEffect> &effect)
+void MainWindow::addFillPathEffectToTarget(
+        const std::function<qsptr<PathEffect>()> &creator,
+        BoundingBox* const target)
 {
-    const auto box = getCurrentBox();
-    if (!box) { return; }
-
-    box->addFillPathEffect(effect);
+    const auto targets = effectApplyTargets(target);
+    if (targets.isEmpty()) { return; }
+    for (const auto& box : targets) {
+        box->addFillPathEffect(creator());
+    }
     mDocument.actionFinished();
+    finishEffectApplication(this, mPropertiesInspector);
 }
 
-void MainWindow::addOutlineBasePathEffect(const qsptr<PathEffect> &effect)
+void MainWindow::addOutlineBasePathEffectToTarget(
+        const std::function<qsptr<PathEffect>()> &creator,
+        BoundingBox* const target)
 {
-    const auto box = getCurrentBox();
-    if (!box) { return; }
-
-    box->addOutlineBasePathEffect(effect);
+    const auto targets = effectApplyTargets(target);
+    if (targets.isEmpty()) { return; }
+    for (const auto& box : targets) {
+        box->addOutlineBasePathEffect(creator());
+    }
     mDocument.actionFinished();
+    finishEffectApplication(this, mPropertiesInspector);
 }
 
-void MainWindow::addOutlinePathEffect(const qsptr<PathEffect> &effect)
+void MainWindow::addOutlinePathEffectToTarget(
+        const std::function<qsptr<PathEffect>()> &creator,
+        BoundingBox* const target)
 {
-    const auto box = getCurrentBox();
-    if (!box) { return; }
-
-    box->addOutlinePathEffect(effect);
+    const auto targets = effectApplyTargets(target);
+    if (targets.isEmpty()) { return; }
+    for (const auto& box : targets) {
+        box->addOutlinePathEffect(creator());
+    }
     mDocument.actionFinished();
+    finishEffectApplication(this, mPropertiesInspector);
+}
+
+void MainWindow::applyRasterEffectStreamToTargets(const QByteArray &streamData,
+                                                  BoundingBox* const target)
+{
+    if (streamData.isEmpty()) { return; }
+    const auto targets = effectApplyTargets(target);
+    if (targets.isEmpty()) {
+        statusBar()->showMessage(tr("请先选中一个图层"), 3000);
+        return;
+    }
+    int applied = 0;
+    for (const auto& box : targets) {
+        const auto coll = box->rasterEffectsCollection();
+        if (!coll) { continue; }
+        QByteArray data = streamData;
+        QBuffer buffer(&data);
+        buffer.open(QIODevice::ReadOnly);
+        eReadStream readStream(&buffer);
+        try {
+            coll->prp_readProperty(readStream);
+            applied++;
+        } catch (const std::exception& e) {
+            gPrintExceptionCritical(e);
+        }
+        buffer.close();
+        box->SWT_setContentVisible(true);
+        coll->SWT_setContentVisible(true);
+    }
+    if (applied == 0) {
+        statusBar()->showMessage(tr("预设应用失败：效果不可用"), 4000);
+        return;
+    }
+    mDocument.actionFinished();
+    finishEffectApplication(this, mPropertiesInspector);
 }
 
 void MainWindow::showQuickEffectSearch()

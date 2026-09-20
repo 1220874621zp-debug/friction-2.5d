@@ -40,6 +40,12 @@ SWT_Abstraction* SingleWidgetTarget::SWT_createAbstraction(
     return abs.get();
 }
 
+void SingleWidgetTarget::SWT_setContentVisible(const bool visible) {
+    for(const auto& abs : SWT_mAllAbstractions) {
+        abs.second->setContentVisible(visible);
+    }
+}
+
 void SingleWidgetTarget::SWT_removeAbstractionForWidget(const int visiblePartWidgetId) {
     SWT_mAllAbstractions.erase(visiblePartWidgetId);
 }

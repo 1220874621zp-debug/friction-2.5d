@@ -727,6 +727,14 @@ const QString AppSupport::getAppUserExPresetsPath()
     return path;
 }
 
+const QString AppSupport::getAppUserFxPresetsPath()
+{
+    const QString path = QString::fromUtf8("%1/FxPresets").arg(getAppConfigPath());
+    QDir dir(path);
+    if (!dir.exists()) { dir.mkpath(path); }
+    return path;
+}
+
 const QString AppSupport::getFileMimeType(const QString &path)
 {
     QMimeDatabase db;

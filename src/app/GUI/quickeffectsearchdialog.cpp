@@ -205,7 +205,7 @@ void QuickEffectSearchDialog::populateEffects()
                const RasterEffectMenuCreator::EffectCreator &creator) {
             const QString category = cat.isEmpty() ? tr("General") : cat;
             mAllEffects.append({name, category, name, buildKeys(name, cat), [this, creator]() {
-                if (mMainWindow) mMainWindow->addRasterEffect(creator());
+                if (mMainWindow) mMainWindow->addRasterEffectToTarget(creator, nullptr);
             }});
         });
 
@@ -214,7 +214,7 @@ void QuickEffectSearchDialog::populateEffects()
                const RasterEffectMenuCreator::EffectCreator &creator) {
             const QString category = cat.isEmpty() ? tr("Custom") : cat;
             mAllEffects.append({name, category, name, buildKeys(name, cat), [this, creator]() {
-                if (mMainWindow) mMainWindow->addRasterEffect(creator());
+                if (mMainWindow) mMainWindow->addRasterEffectToTarget(creator, nullptr);
             }});
         });
 
@@ -223,7 +223,7 @@ void QuickEffectSearchDialog::populateEffects()
                const RasterEffectMenuCreator::EffectCreator &creator) {
             const QString category = cat.isEmpty() ? tr("Shader") : cat;
             mAllEffects.append({name, category, name, buildKeys(name, cat), [this, creator]() {
-                if (mMainWindow) mMainWindow->addRasterEffect(creator());
+                if (mMainWindow) mMainWindow->addRasterEffectToTarget(creator, nullptr);
             }});
         });
 
@@ -232,7 +232,7 @@ void QuickEffectSearchDialog::populateEffects()
         [this](const QString &name,
                const PathEffectMenuCreator::EffectCreator &creator) {
             mAllEffects.append({name, tr("Path Effects"), name, buildKeys(name, QString()), [this, creator]() {
-                if (mMainWindow) mMainWindow->addPathEffect(creator());
+                if (mMainWindow) mMainWindow->addPathEffectToTarget(creator, nullptr);
             }});
         });
 
@@ -241,7 +241,7 @@ void QuickEffectSearchDialog::populateEffects()
         [this](const QString &name,
                const BlendEffectMenuCreator::EffectCreator &creator) {
             mAllEffects.append({name, tr("Blend Effects"), name, buildKeys(name, QString()), [this, creator]() {
-                if (mMainWindow) mMainWindow->addBlendEffect(creator());
+                if (mMainWindow) mMainWindow->addBlendEffectToTarget(creator, nullptr);
             }});
         });
 
@@ -250,7 +250,7 @@ void QuickEffectSearchDialog::populateEffects()
         [this](const QString &name,
                const TransformEffectMenuCreator::EffectCreator &creator) {
             mAllEffects.append({name, tr("Transform Effects"), name, buildKeys(name, QString()), [this, creator]() {
-                if (mMainWindow) mMainWindow->addTransformEffect(creator());
+                if (mMainWindow) mMainWindow->addTransformEffectToTarget(creator, nullptr);
             }});
         });
 

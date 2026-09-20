@@ -155,6 +155,10 @@ public:
     void writeIdentifier(eWriteStream& dst) const;
     void writeIdentifierXEV(QDomElement& ele) const;
 
+    // AE-style reset: rebuild a factory-default instance of this
+    // effect's type and copy its parameter values over (undoable)
+    void resetToDefault();
+
     RasterEffectType getEffectType() const {
         return mType;
     }

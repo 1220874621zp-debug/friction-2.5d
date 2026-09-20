@@ -9,6 +9,8 @@
 */
 
 #include "aepropertiesinspector.h"
+
+#include <QScrollBar>
 #include "canvas.h"
 #include "Boxes/boundingbox.h"
 #include "Boxes/pathbox.h"
@@ -289,6 +291,13 @@ void AEPropertiesInspector::changeEvent(QEvent *event)
         refreshSelection();
     }
     QScrollArea::changeEvent(event);
+}
+
+void AEPropertiesInspector::scrollToEnd()
+{
+    if (const auto bar = verticalScrollBar()) {
+        bar->setValue(bar->maximum());
+    }
 }
 
 void AEPropertiesInspector::refreshSelection()

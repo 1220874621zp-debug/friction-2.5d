@@ -75,6 +75,8 @@
 
 #include "boxscroller.h"
 
+#include "GUI/effectspresetspanel.h"
+
 
 #include "boxsinglewidget.h"
 
@@ -941,6 +943,30 @@ void BoxScroller::dropEvent(QDropEvent *event) {
 
     mDragModifiers = event->keyboardModifiers();
 
+
+    // effects-panel drag: apply the dragged effect (or a user effect
+    // preset) to the layer row under the cursor; a property row maps
+    // to its owning layer
+    if(event->mimeData()->hasFormat(EffectsPresetsPanel::sMimeFormat())) {
+        const auto apply = EffectsPresetsPanel::takeEffectDrag(
+                    event->mimeData()->data(EffectsPresetsPanel::sMimeFormat()));
+        const auto& wids = widgets();
+        const int idAtPos = event->pos().y() / eSizesUI::widget;
+        event->acceptProposedAction();
+        if(apply && idAtPos >= 0 && idAtPos < wids.count()) {
+            const auto bsw = static_cast<BoxSingleWidget*>(wids.at(idAtPos));
+            const auto dropAbs = bsw->getTargetAbstraction();
+            auto prop = dropAbs ? static_cast<Property*>(dropAbs->getTarget()) : nullptr;
+            BoundingBox* targetBox = nullptr;
+            while(prop) {
+                targetBox = enve_cast<BoundingBox*>(prop);
+                if(targetBox) break;
+                prop = prop->getParent<Property>();
+            }
+            if(targetBox) apply(targetBox);
+        }
+        return;
+    }
 
     // node-link parenting drag: link the source layer to the layer row
 

@@ -28,31 +28,41 @@
 #include <QTreeWidget>
 #include <QLineEdit>
 #include <QByteArray>
+#include <QMap>
 #include <functional>
 
 class MainWindow;
+class BoundingBox;
 
 // AE-style Effects & Presets panel with live search filtering,
-// category tree, and double-click / Enter instant application.
-// Effect items can also be dragged onto the canvas: the layer under
-// the drop point receives the effect.
+// category tree, and double-click / Enter application to every
+// selected layer. Effect items can also be dragged: dropping on the
+// canvas applies to the layer under the cursor, dropping on a
+// timeline layer row applies to that layer. User-saved effect-stack
+// presets (".ffp" files) appear under the 我的效果预设 category.
 class EffectsPresetsPanel : public QWidget {
     Q_OBJECT
 public:
+    // a null target applies to every selected layer (AE double-click
+    // semantics); an explicit target applies to just that layer
+    // (drag & drop)
+    using EffectApplyFn = std::function<void(BoundingBox*)>;
+
     explicit EffectsPresetsPanel(MainWindow * const mainWindow,
                                 QWidget * const parent = nullptr);
 
     void populateEffects();
     void focusSearch();
+    void showTreeContextMenu(const QPoint& globalPos);
 
     // drag registry: the apply closure cannot travel through
     // QMimeData, so it is parked here and the mime payload carries
     // only a generation token validated on drop (same process)
     static const QString& sMimeFormat();
-    static QByteArray beginEffectDrag(const std::function<void()> &apply);
-    static std::function<void()> takeEffectDrag(const QByteArray &token);
+    static QByteArray beginEffectDrag(const EffectApplyFn &apply);
+    static EffectApplyFn takeEffectDrag(const QByteArray &token);
 
-    std::function<void()> effectCallback(QTreeWidgetItem *item) const
+    EffectApplyFn effectCallback(QTreeWidgetItem *item) const
     { return mApplyCallbacks.value(item); }
 
 private slots:
@@ -67,16 +77,19 @@ private:
     void addEffectItem(const QString &categoryName,
                        const QString &effectName,
                        const QString &desc,
-                       const std::function<void()> &applyFunc);
+                       const EffectApplyFn &applyFunc);
+    void populateUserPresets();
 
     MainWindow *mMainWindow = nullptr;
     QLineEdit *mSearchEdit = nullptr;
     QTreeWidget *mTreeWidget = nullptr;
     QMap<QString, QTreeWidgetItem*> mCategoryItems;
-    QMap<QTreeWidgetItem*, std::function<void()>> mApplyCallbacks;
+    QMap<QTreeWidgetItem*, EffectApplyFn> mApplyCallbacks;
+    // user preset items -> ".ffp" file path (context menu: delete)
+    QMap<QTreeWidgetItem*, QString> mUserPresetPaths;
 
     static quint64 sDragGeneration;
-    static std::function<void()> sDragCallback;
+    static EffectApplyFn sDragCallback;
 };
 
 #endif // EFFECTSPRESETSPANEL_H

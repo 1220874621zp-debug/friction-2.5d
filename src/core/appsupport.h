@@ -124,6 +124,8 @@ public:
     static const QString getAppScriptsPath();
     static const QString getAppExPresetsPath();
     static const QString getAppUserExPresetsPath();
+    // user effect-stack presets (".ffp" JSON files, Effects panel)
+    static const QString getAppUserFxPresetsPath();
     static const QString getFileMimeType(const QString &path);
     static const QString getFileIcon(const QString &path);
     static const QPair<QString,QString> getShaderID(const QString &path);

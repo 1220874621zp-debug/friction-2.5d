@@ -39,7 +39,11 @@
 #include <QShortcut>
 #include <QDrag>
 #include <QMimeData>
+#include <QMenu>
+#include <QJsonDocument>
+#include <QJsonObject>
 
+#include "Boxes/boundingbox.h"
 #include "RasterEffects/rastereffectmenucreator.h"
 #include "BlendEffects/blendeffectmenucreator.h"
 #include "TransformEffects/transformeffectmenucreator.h"
@@ -76,13 +80,28 @@ protected:
         drag.exec(Qt::CopyAction);
     }
 
+    void contextMenuEvent(QContextMenuEvent* event) {
+        if (mPanel) { mPanel->showTreeContextMenu(event->globalPos()); }
+    }
+
 private:
     EffectsPresetsPanel* mPanel = nullptr;
 };
+
+QByteArray readUserPresetStream(const QString& path)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) { return QByteArray(); }
+    const auto doc = QJsonDocument::fromJson(file.readAll());
+    file.close();
+    const QString data = doc.object().value("data").toString();
+    if (data.isEmpty()) { return QByteArray(); }
+    return QByteArray::fromBase64(data.toLatin1());
+}
 }
 
 quint64 EffectsPresetsPanel::sDragGeneration = 0;
-std::function<void()> EffectsPresetsPanel::sDragCallback;
+EffectsPresetsPanel::EffectApplyFn EffectsPresetsPanel::sDragCallback;
 
 const QString& EffectsPresetsPanel::sMimeFormat()
 {
@@ -92,13 +111,13 @@ const QString& EffectsPresetsPanel::sMimeFormat()
 }
 
 QByteArray EffectsPresetsPanel::beginEffectDrag(
-        const std::function<void()> &apply)
+        const EffectApplyFn &apply)
 {
     sDragCallback = apply;
     return QByteArray::number(++sDragGeneration);
 }
 
-std::function<void()> EffectsPresetsPanel::takeEffectDrag(
+EffectsPresetsPanel::EffectApplyFn EffectsPresetsPanel::takeEffectDrag(
         const QByteArray &token)
 {
     if (token != QByteArray::number(sDragGeneration)) { return nullptr; }
@@ -132,6 +151,7 @@ EffectsPresetsPanel::EffectsPresetsPanel(MainWindow * const mainWindow,
     mTreeWidget->setDragEnabled(true);
     mTreeWidget->setDragDropMode(QAbstractItemView::DragOnly);
     mTreeWidget->setDefaultDropAction(Qt::CopyAction);
+    mTreeWidget->setContextMenuPolicy(Qt::DefaultContextMenu);
     connect(mTreeWidget, &QTreeWidget::itemDoubleClicked,
             this, &EffectsPresetsPanel::onItemDoubleClicked);
     mainLayout->addWidget(mTreeWidget);
@@ -183,7 +203,7 @@ void EffectsPresetsPanel::focusSearch()
 void EffectsPresetsPanel::addEffectItem(const QString &categoryName,
                                         const QString &effectName,
                                         const QString &desc,
-                                        const std::function<void()> &applyFunc)
+                                        const EffectApplyFn &applyFunc)
 {
     QTreeWidgetItem *catItem = mCategoryItems.value(categoryName, nullptr);
     if (!catItem) {
@@ -205,19 +225,55 @@ void EffectsPresetsPanel::addEffectItem(const QString &categoryName,
     mApplyCallbacks[item] = applyFunc;
 }
 
+void EffectsPresetsPanel::populateUserPresets()
+{
+    // user-saved effect stacks (".ffp"): layer right-click
+    // "保存为效果预设..." writes them; double-click / Enter / drag
+    // applies the whole stack (appending) to the target layer(s)
+    const QString dirPath = AppSupport::getAppUserFxPresetsPath();
+    const QDir dir(dirPath, QStringLiteral("*.ffp"),
+                   QDir::Name | QDir::IgnoreCase, QDir::Files);
+    const auto entries = dir.entryInfoList();
+    for (const auto& fi : entries) {
+        QString name;
+        {
+            QFile file(fi.absoluteFilePath());
+            if (file.open(QIODevice::ReadOnly)) {
+                name = QJsonDocument::fromJson(file.readAll()).object()
+                        .value("name").toString();
+                file.close();
+            }
+        }
+        const auto apply = [this, path = fi.absoluteFilePath()](
+                BoundingBox* const target) {
+            if (!mMainWindow) { return; }
+            mMainWindow->applyRasterEffectStreamToTargets(
+                        readUserPresetStream(path), target);
+        };
+        addEffectItem(tr("我的效果预设"),
+                      name.isEmpty() ? fi.completeBaseName() : name,
+                      tr("效果栈预设（双击应用到全部选中图层，拖拽到指定图层）"),
+                      apply);
+        mUserPresetPaths[mApplyCallbacks.lastKey()] = fi.absoluteFilePath();
+    }
+}
+
 void EffectsPresetsPanel::populateEffects()
 {
     mTreeWidget->clear();
     mCategoryItems.clear();
     mApplyCallbacks.clear();
+    mUserPresetPaths.clear();
+
+    populateUserPresets();
 
     // 1. Raster Effects
     RasterEffectMenuCreator::forEveryEffectCore(
         [this](const QString &name, const QString &cat,
                const RasterEffectMenuCreator::EffectCreator &creator) {
             QString category = cat.isEmpty() ? tr("General") : cat;
-            addEffectItem(category, name, QString(), [this, creator]() {
-                if (mMainWindow) mMainWindow->addRasterEffect(creator());
+            addEffectItem(category, name, QString(), [this, creator](BoundingBox* target) {
+                if (mMainWindow) mMainWindow->addRasterEffectToTarget(creator, target);
             });
         });
 
@@ -225,8 +281,8 @@ void EffectsPresetsPanel::populateEffects()
         [this](const QString &name, const QString &cat,
                const RasterEffectMenuCreator::EffectCreator &creator) {
             QString category = cat.isEmpty() ? tr("Custom") : cat;
-            addEffectItem(category, name, QString(), [this, creator]() {
-                if (mMainWindow) mMainWindow->addRasterEffect(creator());
+            addEffectItem(category, name, QString(), [this, creator](BoundingBox* target) {
+                if (mMainWindow) mMainWindow->addRasterEffectToTarget(creator, target);
             });
         });
 
@@ -234,8 +290,8 @@ void EffectsPresetsPanel::populateEffects()
         [this](const QString &name, const QString &cat,
                const RasterEffectMenuCreator::EffectCreator &creator) {
             QString category = cat.isEmpty() ? tr("Shader") : cat;
-            addEffectItem(category, name, QString(), [this, creator]() {
-                if (mMainWindow) mMainWindow->addRasterEffect(creator());
+            addEffectItem(category, name, QString(), [this, creator](BoundingBox* target) {
+                if (mMainWindow) mMainWindow->addRasterEffectToTarget(creator, target);
             });
         });
 
@@ -243,8 +299,8 @@ void EffectsPresetsPanel::populateEffects()
     PathEffectMenuCreator::forEveryEffect(
         [this](const QString &name,
                const PathEffectMenuCreator::EffectCreator &creator) {
-            addEffectItem(tr("Path Effects"), name, QString(), [this, creator]() {
-                if (mMainWindow) mMainWindow->addPathEffect(creator());
+            addEffectItem(tr("Path Effects"), name, QString(), [this, creator](BoundingBox* target) {
+                if (mMainWindow) mMainWindow->addPathEffectToTarget(creator, target);
             });
         });
 
@@ -252,8 +308,8 @@ void EffectsPresetsPanel::populateEffects()
     BlendEffectMenuCreator::forEveryEffect(
         [this](const QString &name,
                const BlendEffectMenuCreator::EffectCreator &creator) {
-            addEffectItem(tr("Blend Effects"), name, QString(), [this, creator]() {
-                if (mMainWindow) mMainWindow->addBlendEffect(creator());
+            addEffectItem(tr("Blend Effects"), name, QString(), [this, creator](BoundingBox* target) {
+                if (mMainWindow) mMainWindow->addBlendEffectToTarget(creator, target);
             });
         });
 
@@ -261,12 +317,28 @@ void EffectsPresetsPanel::populateEffects()
     TransformEffectMenuCreator::forEveryEffect(
         [this](const QString &name,
                const TransformEffectMenuCreator::EffectCreator &creator) {
-            addEffectItem(tr("Transform Effects"), name, QString(), [this, creator]() {
-                if (mMainWindow) mMainWindow->addTransformEffect(creator());
+            addEffectItem(tr("Transform Effects"), name, QString(), [this, creator](BoundingBox* target) {
+                if (mMainWindow) mMainWindow->addTransformEffectToTarget(creator, target);
             });
         });
 
     mTreeWidget->expandAll();
+}
+
+void EffectsPresetsPanel::showTreeContextMenu(const QPoint &globalPos)
+{
+    const auto item = mTreeWidget->itemAt(
+                mTreeWidget->mapFromGlobal(globalPos));
+    if (!item) { return; }
+    const auto it = mUserPresetPaths.find(item);
+    if (it == mUserPresetPaths.end()) { return; }
+    QMenu menu(this);
+    const auto delAct = menu.addAction(tr("删除预设"), this, [this, path = it.value()]() {
+        if (QFile::exists(path)) { QFile::remove(path); }
+        populateEffects();
+    });
+    Q_UNUSED(delAct)
+    menu.exec(globalPos);
 }
 
 void EffectsPresetsPanel::onSearchTextChanged(const QString &text)
@@ -300,7 +372,7 @@ void EffectsPresetsPanel::onItemDoubleClicked(QTreeWidgetItem *item, int column)
     Q_UNUSED(column)
     if (!item) { return; }
     if (mApplyCallbacks.contains(item)) {
-        mApplyCallbacks[item]();
+        mApplyCallbacks[item](nullptr);
     }
 }
 
@@ -308,7 +380,7 @@ void EffectsPresetsPanel::onApplyPressed()
 {
     const auto item = mTreeWidget->currentItem();
     if (item && mApplyCallbacks.contains(item)) {
-        mApplyCallbacks[item]();
+        mApplyCallbacks[item](nullptr);
     }
 }
 

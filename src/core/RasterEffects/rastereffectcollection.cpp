@@ -30,6 +30,67 @@
 #include "RasterEffects/rastereffectsinclude.h"
 #include "RasterEffects/customrastereffectcreator.h"
 #include "rastereffectmenucreator.h"
+#include "ReadWrite/ewritestream.h"
+#include "appsupport.h"
+#include <QInputDialog>
+#include <QMessageBox>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QDateTime>
+#include <QBuffer>
+#include <QFile>
+#include <QDir>
+#include <QRegularExpression>
+
+namespace {
+// save the layer's whole effect stack (effect types + every
+// parameter) as a user preset file; the Effects panel lists these
+// under "我的效果预设" (scanned from getAppUserFxPresetsPath())
+void saveRasterEffectStackPreset(RasterEffectCollection* const coll)
+{
+    if (!coll || !coll->ca_hasChildren()) { return; }
+    bool ok = false;
+    const QString name = QInputDialog::getText(
+                nullptr, QObject::tr("保存效果预设"),
+                QObject::tr("预设名称:"), QLineEdit::Normal,
+                QString(), &ok).trimmed();
+    if (!ok || name.isEmpty()) { return; }
+
+    QByteArray data;
+    QBuffer buffer(&data);
+    buffer.open(QIODevice::WriteOnly);
+    eWriteStream writeStream(&buffer);
+    coll->prp_writeProperty(writeStream);
+    buffer.close();
+
+    QJsonObject obj;
+    obj.insert("name", name);
+    obj.insert("kind", QStringLiteral("effectStack"));
+    obj.insert("fxVersion", 1);
+    obj.insert("data", QString::fromLatin1(data.toBase64()));
+
+    QString sanitized = name;
+    sanitized.remove(QRegularExpression(QStringLiteral("[\\\\/:*?\"<>|]")));
+    if (sanitized.isEmpty()) { sanitized = QStringLiteral("preset"); }
+    const QString path = QStringLiteral("%1/%2-%3.ffp").arg(
+                AppSupport::getAppUserFxPresetsPath(), sanitized,
+                QString::number(QDateTime::currentMSecsSinceEpoch()));
+
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly)) {
+        QMessageBox::warning(nullptr, QObject::tr("保存失败"),
+                             QObject::tr("无法写入预设文件:\n%1").arg(path));
+        return;
+    }
+    file.write(QJsonDocument(obj).toJson(QJsonDocument::Compact));
+    file.close();
+    QMessageBox::information(
+                nullptr, QObject::tr("已保存"),
+                QObject::tr("效果预设「%1」已保存。\n"
+                            "在效果面板的「我的效果预设」分类中(可点刷新)。")
+                             .arg(name));
+}
+}
 
 RasterEffectCollection::RasterEffectCollection() :
     RasterEffectCollectionBase("raster effects") {
@@ -47,6 +108,12 @@ void RasterEffectCollection::prp_setupTreeViewMenu(PropertyMenu * const menu) {
     const auto rasterEffectsMenu = menu->addMenu(QIcon::fromTheme("effect"), "Add Effect");
     RasterEffectMenuCreator::addEffects(
                 rasterEffectsMenu, &RasterEffectCollection::addChild);
+    const PropertyMenu::PlainSelectedOp<RasterEffectCollection> saveOp =
+            [](RasterEffectCollection* const coll) {
+        saveRasterEffectStackPreset(coll);
+    };
+    menu->addPlainAction(QIcon::fromTheme("document-save"),
+                         tr("保存为效果预设..."), saveOp);
     menu->addSeparator();
     RasterEffectCollectionBase::prp_setupTreeViewMenu(menu);
 }
