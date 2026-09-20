@@ -39,6 +39,8 @@
 #include "Boxes/bone.h"
 #include "Boxes/bonelayer.h"
 #include "Private/document.h"
+#include "simpletask.h"
+#include "Animators/animator.h"
 #include "Animators/complexanimator.h"
 #include "Animators/qrealanimator.h"
 #include "Animators/transformanimator.h"
@@ -146,17 +148,48 @@ public:
     const QTransform& boneBindTotal() const { return mBoneBindTotal; }
     const QPointF& bindScene() const { return mBindScene; }
 
+    void attachBoneFollow(Bone * const bone) {
+        if (mBoneFollowConn) QObject::disconnect(mBoneFollowConn);
+        mBoneFollowConn = QMetaObject::Connection();
+        if (!bone) return;
+        // context = this pin: the connection dies with it
+        mBoneFollowConn = connect(
+                    bone, &Animator::prp_absFrameRangeChanged,
+                    this, [this](const FrameRange& abs) {
+            SimpleTask::sScheduleContexted(this, [this, abs]() {
+                if (mBox) mBox->prp_afterChangedAbsRange(abs);
+            });
+        });
+    }
+
+    // re-establish the follow connection for a pin restored from a
+    // file (the bone object only resolves after the whole load)
+    void reconnectBoneFollow() {
+        if (mBoneName.isEmpty() || !mBox) return;
+        for (const auto b : mBox->skinCandidateBones()) {
+            if (b && b->prp_getName() == mBoneName) {
+                attachBoneFollow(b);
+                break;
+            }
+        }
+    }
+
     void bindToBone(Bone * const bone) {
         if (!bone || !mBox) return;
         mBoneName = bone->prp_getName();
         mBoneBindTotal = bone->getTotalTransform();
         mBindScene = mBox->getTotalTransform().map(getRelPos());
+        attachBoneFollow(bone);
         qDebug() << "[SKIN] pin bound to bone" << mBoneName;
     }
 
     void unbindBone() {
         if (mBoneName.isEmpty()) return;
         mBoneName.clear();
+        if (mBoneFollowConn) {
+            QObject::disconnect(mBoneFollowConn);
+            mBoneFollowConn = QMetaObject::Connection();
+        }
         qDebug() << "[SKIN] pin unbound";
     }
 
@@ -304,6 +337,10 @@ private:
     QString mBoneName;
     QTransform mBoneBindTotal;
     QPointF mBindScene;
+    // bone-motion follow: the pin x/y animators do NOT change when
+    // the bone moves, so without this connection the skinned image
+    // never re-renders on bone animation
+    QMetaObject::Connection mBoneFollowConn;
 };
 
 QPointF SkinPinPoint::getRelativePos() const { return mPin->effectiveRelPos(); }
@@ -510,6 +547,15 @@ void ImageBox::readBoundingBox(eReadStream& src) {
     mSkin.fMesh.fCellPx = cellPx;
     mSkin.fMesh.fImgW = imgW;
     mSkin.fMesh.fImgH = imgH;
+    // re-establish the bone follow connections once the event loop
+    // settles (bones may load after this image)
+    SimpleTask::sScheduleContexted(this, [this]() {
+        for (int i = 0; i < skinPinCount(); ++i) {
+            if (const auto pin = mSkinPins->pinAt(i)) {
+                pin->reconnectBoneFollow();
+            }
+        }
+    });
 }
 
 QDomElement ImageBox::prp_writePropertyXEV_impl(const XevExporter& exp) const {
