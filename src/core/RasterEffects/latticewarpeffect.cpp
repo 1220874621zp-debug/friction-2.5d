@@ -44,16 +44,26 @@ namespace {
 // Axis weights for the tensor-product lattice surface, written into
 // w[0..n] for the param t in [0,1] over n cells (n+1 controls).
 // smooth = false: bilinear FFD (C0, hard creases per cell).
-// smooth = true: clamped uniform cubic B-spline (C2 - the "soft
-// rubber" feel: influence spreads over 4 controls with smooth
-// falloff). Falls back to bilinear when there are too few controls.
+// smooth = true: clamped uniform B-spline of degree min(3, n)
+// (C2 - the "soft rubber" feel: influence spreads over degree+1
+// controls with smooth falloff; ends interpolate the corner points).
+// Clamped knot vector: p+1 zeros, interior knots i-p, then p+1
+// copies of n-p+1, domain [0, n-p+1] (NOT [0, n-p] - the latter
+// collapses the vector to all-zeros when n == p and blanks the
+// render: every mesh vertex falls onto (0,0)).
 void axisWeights(const int n, const bool smooth, const qreal t,
                  qreal * const w)
 {
     for(int i = 0; i <= n; i++) w[i] = 0.0;
     if(n < 1) { w[0] = 1.0; return; }
-    if(!smooth || n < 3) {
-        const qreal s = qBound(0.0, t, 1.0) * n;
+    int p = 1;
+    if(smooth) p = qMin(3, n);
+    // clamped ends: exact interpolation of the corner controls;
+    // also sidesteps the empty-support seed at the domain end
+    if(t <= 0.0) { w[0] = 1.0; return; }
+    if(t >= 1.0) { w[n] = 1.0; return; }
+    if(p == 1) {
+        const qreal s = t * n;
         int i = int(std::floor(s));
         if(i > n - 1) i = n - 1;
         const qreal f = s - i;
@@ -61,18 +71,17 @@ void axisWeights(const int n, const bool smooth, const qreal t,
         w[i + 1] = f;
         return;
     }
-    const int p = 3;
-    // clamped uniform knots over the domain [0, n-p]
     const auto knot = [n, p](const int i) -> qreal {
         if(i <= p) return 0.0;
-        if(i > n) return qreal(n - p);
+        if(i >= n + 1) return qreal(n - p + 1);
         return qreal(i - p);
     };
-    const qreal x = qBound(0.0, t, 1.0) * (n - p);
+    const qreal x = t * (n - p + 1);
     // span: greatest j in [p, n] with knot(j) <= x
-    int j = n;
-    for(int k = p; k <= n; k++) {
-        if(knot(k) > x) { j = k - 1; break; }
+    int j = p;
+    for(int k = p + 1; k <= n; k++) {
+        if(knot(k) <= x) j = k;
+        else break;
     }
     // Piegl & Tiller A2.3 basis functions for span j
     qreal N[4]; qreal left[4]; qreal right[4];
@@ -663,13 +672,18 @@ void LatticeWarpEffectCaller::processCpu(CpuRenderTools& renderTools,
     const int rn = mData.mRows + 1;  // controls vertically
     const int cn = mData.mCols + 1;  // controls horizontally
 
-    // current control positions (bitmap space)
-    QVector<QPointF> P(cn * rn);
+    // control displacements from the uniform rest grid (bitmap
+    // space); the surface is evaluated as rest + weighted
+    // displacement so an untouched lattice is EXACTLY the identity
+    // (a bare B-spline over uniform control points is not)
+    QVector<QPointF> D(cn * rn);
     for(int j = 0; j < rn; j++) {
         for(int i = 0; i < cn; i++) {
             const QPointF& uv = mData.mUV[j * cn + i];
-            P[j * cn + i] = QPointF(restL + uv.x() * restW,
-                                    restT + uv.y() * restH);
+            const QPointF restP(restL + qreal(i) / mData.mCols * restW,
+                                restT + qreal(j) / mData.mRows * restH);
+            D[j * cn + i] = QPointF(restL + uv.x() * restW - restP.x(),
+                                    restT + uv.y() * restH - restP.y());
         }
     }
 
@@ -689,16 +703,16 @@ void LatticeWarpEffectCaller::processCpu(CpuRenderTools& renderTools,
         for(int a = 0; a < nvx; a++) {
             const qreal u = nvx > 1 ? qreal(a) / (nvx - 1) : 0.0;
             axisWeights(mData.mCols, mData.mSmooth, u, wu);
-            qreal x = 0.0;
-            qreal y = 0.0;
+            qreal x = restL + u * restW;
+            qreal y = restT + v * restH;
             for(int j = 0; j < rn; j++) {
                 if(wv[j] == 0.0) continue;
                 for(int i = 0; i < cn; i++) {
                     if(wu[i] == 0.0) continue;
                     const qreal wgt = wu[i] * wv[j];
-                    const QPointF& p = P[j * cn + i];
-                    x += wgt * p.x();
-                    y += wgt * p.y();
+                    const QPointF& d = D[j * cn + i];
+                    x += wgt * d.x();
+                    y += wgt * d.y();
                 }
             }
             const int id = b * nvx + a;
