@@ -1540,7 +1540,10 @@ void AppSupport::checkFFmpeg(const bool &isRenderer)
     const QString warning = QObject::tr("Friction is using an unsupported FFmpeg version, "
                                         "video and/or image export will not work properly. "
                                         "Use at own risk and don't report any issues upstream.");
-    if (version < 3600000 || version >= 3700000) {
+    // avutil major 55/56 = FFmpeg 4.x (Linux pkg-config builds),
+    // 61 = the 9.0.x build bundled with this fork on Windows
+    const unsigned int ffmpegMajor = AV_VERSION_MAJOR(version);
+    if (ffmpegMajor != 55 && ffmpegMajor != 56 && ffmpegMajor != 61) {
         if (isRenderer) { qWarning() << warning; }
         else {
             QMessageBox::critical(nullptr,
