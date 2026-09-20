@@ -56,6 +56,17 @@ if not exist "sdk\ffmpeg-win\libavutil\avutil.h" (
     if exist "sdk\ffmpeg-win\libavutil\avutil.h" echo ffmpeg 9.0.2 staged
 )
 
+rem vtracer (bitmap tracing) is a Rust FFI crate - build it and drop the
+rem dll into sdk\bin so the staging below finds it (official SDK has none;
+rem without this the feature silently ships dead, pencil-brush-style)
+if not exist "sdk\bin\vtracer.dll" (
+    cd "%CWD%\src\vtracer-ffi"
+    cargo build --release
+    copy "target\release\vtracer.dll" "%CWD%\sdk\bin\" >nul
+    cd "%CWD%"
+    if exist "sdk\bin\vtracer.dll" echo vtracer built
+)
+
 if exist "build\" (
     @RD /S /Q build
 )
@@ -86,6 +97,9 @@ mkdir "%OUTPUT_DIR%"
 copy "%CWD%\build\src\core\%BDIR%\frictioncore.dll" "%OUTPUT_DIR%\"
 copy "%CWD%\build\src\ui\%BDIR%\frictionui.dll" "%OUTPUT_DIR%\"
 copy "%CWD%\build\src\app\%BDIR%\friction.exe" "%OUTPUT_DIR%\"
+
+rem Lottie playback FFI library (runtime QLibrary load)
+copy "%CWD%\build\src\skottie-ffi\%BDIR%\frictionskottie.dll" "%OUTPUT_DIR%\"
 
 rem skia from SDK (Qt-independent)
 copy "%SDK_DIR%\bin\skia.dll" "%OUTPUT_DIR%\"
