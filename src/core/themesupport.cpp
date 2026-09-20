@@ -781,6 +781,14 @@ const QPalette ThemeSupport::getDefaultPalette(const QColor &highlight)
     palette.setColor(QPalette::HighlightedText, Qt::white);
     palette.setColor(QPalette::Disabled, QPalette::Text, getThemeColorTextDisabled());
     palette.setColor(QPalette::Disabled, QPalette::ButtonText, getThemeColorTextDisabled());
+    // Fusion draws native widget borders from the 3D frame roles; unset
+    // roles fall through to the system color scheme (white frames on dark UI)
+    const QColor base = getThemeBaseColor();
+    palette.setColor(QPalette::Light, base.lighter(160));
+    palette.setColor(QPalette::Midlight, base.lighter(120));
+    palette.setColor(QPalette::Mid, getThemeBaseDarkerColor());
+    palette.setColor(QPalette::Dark, getThemeBaseDarkerColor().darker(160));
+    palette.setColor(QPalette::Shadow, QColor(0, 0, 0));
     return palette;
 }
 
