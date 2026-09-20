@@ -457,10 +457,8 @@ int main(int argc, char *argv[])
         QWindowsWindowFunctions::setHasBorderInFullScreenDefault(true);
     }
 #endif
-    const bool showSplash = true;
-#else
-    const bool showSplash = false;
 #endif
+    const bool showSplash = true;
 
     // init splash
     QSplashScreen splash(QPixmap(":/icons/friction-splash.png"));

@@ -245,4 +245,12 @@ if(WIN32)
             $<TARGET_FILE:frictionskottie>
             ${CMAKE_BINARY_DIR}/src/app/$<CONFIG>/
     )
+elseif(UNIX AND NOT APPLE)
+    # QLibrary("frictionskottie") resolves against the application dir;
+    # with single-config generators (Ninja) the exe lands in src/app/
+    add_custom_command(TARGET frictionskottie POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:frictionskottie>
+            ${CMAKE_BINARY_DIR}/src/app/
+    )
 endif()
