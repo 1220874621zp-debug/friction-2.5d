@@ -23,7 +23,6 @@
 
 #include "latticewarpeffect.h"
 
-#include "Animators/qrealanimator.h"
 #include "Properties/comboboxproperty.h"
 #include "Boxes/boundingbox.h"
 #include "Boxes/boxrenderdata.h"
@@ -33,6 +32,8 @@
 #include "Animators/transformanimator.h"
 #include "appsupport.h"
 #include "XML/xmlexporthelpers.h"
+#include "ReadWrite/evformat.h"
+#include "typemenu.h"
 
 #include "include/core/SkVertices.h"
 
@@ -102,7 +103,97 @@ void axisWeights(const int n, const bool smooth, const qreal t,
     for(int r = 0; r <= p; r++) w[j - p + r] = N[r];
 }
 
+// default cage rest polygon: n vertices inscribed in the unit domain
+QPointF cageRestUV(const int i, const int n)
+{
+    const qreal ang = qreal(i) / n * 2.0 * M_PI;
+    return QPointF(0.5 + 0.5 * std::cos(ang),
+                   0.5 + 0.5 * std::sin(ang));
+}
+
+// Mean value coordinates (Floater 2003 / Hormann) of point p w.r.t.
+// the closed polygon V: normalized weights with partition of unity
+// inside, smooth extrapolation outside. Written into w[0..k-1].
+void cageWeights(const QVector<QPointF>& V, const QPointF &p,
+                 qreal * const w)
+{
+    const int k = V.count();
+    for(int i = 0; i < k; i++) w[i] = 0.0;
+    if(k < 3) { w[0] = 1.0; return; }
+    if(k > 64) { // absurdly dense cage: fall back to uniform
+        for(int i = 0; i < k; i++) w[i] = 1.0 / k;
+        return;
+    }
+    // on-vertex guard
+    for(int i = 0; i < k; i++) {
+        const QPointF d = V.at(i) - p;
+        if(d.x()*d.x() + d.y()*d.y() < 1e-12) { w[i] = 1.0; return; }
+    }
+    double tanA[64];
+    for(int i = 0; i < k; i++) {
+        const QPointF &a = V.at(i);
+        const QPointF &b = V.at((i + 1) % k);
+        const QPointF ra = a - p;
+        const QPointF rb = b - p;
+        const double cross = double(ra.x())*rb.y() - double(ra.y())*rb.x();
+        const double dot = double(ra.x())*rb.x() + double(ra.y())*rb.y();
+        const double alpha = std::atan2(cross, dot);
+        tanA[i] = qBound(-1e12, std::tan(0.5*alpha), 1e12);
+    }
+    double sum = 0.0;
+    for(int i = 0; i < k; i++) {
+        const QPointF r = V.at(i) - p;
+        const double len = std::sqrt(double(r.x())*r.x() +
+                                     double(r.y())*r.y());
+        if(len < 1e-9) { w[i] = 1.0; return; }
+        const double raw = (tanA[(i + k - 1) % k] + tanA[i]) / len;
+        w[i] = raw;
+        sum += raw;
+    }
+    if(std::abs(sum) < 1e-9) { w[0] = 1.0; return; }
+    for(int i = 0; i < k; i++) w[i] /= sum;
+}
+
+// falloff weight for a point dPx outside the domain boundary:
+// 1 inside, fading to 0 across fallPx
+qreal falloffWeight(const qreal dPx, const qreal fallPx,
+                    const bool smooth)
+{
+    if(fallPx <= 0.0) return dPx <= 0.0 ? 1.0 : 0.0;
+    const qreal t = 1.0 - qBound(0.0, dPx / fallPx, 1.0);
+    if(smooth) return t*t*(3.0 - 2.0*t);
+    return t;
+}
+
 } // namespace
+
+LatticePointValues::LatticePointValues(const QString &name,
+                                       qsptr<QrealAnimator> u,
+                                       qsptr<QrealAnimator> v,
+                                       qsptr<QrealAnimator> rot,
+                                       qsptr<QrealAnimator> scale) :
+    StaticComplexAnimator(name)
+{
+    if(!rot) rot = enve::make_shared<QrealAnimator>(
+                0.0, -1440.0, 1440.0, 0.1, QObject::tr("角度"));
+    if(!scale) scale = enve::make_shared<QrealAnimator>(
+                100.0, 1.0, 1000.0, 1.0, QObject::tr("缩放"));
+    ca_addChild(u);
+    ca_addChild(v);
+    ca_addChild(rot);
+    ca_addChild(scale);
+}
+
+void LatticePointValues::prp_readProperty_impl(eReadStream &src)
+{
+    const auto& children = ca_getChildren();
+    // files saved before the P1 degrees of freedom carry only X/Y
+    const int nRead = src.evFileVersion() < EvFormat::latticeWarpP1 ?
+                qMin(2, children.count()) : children.count();
+    for(int i = 0; i < nRead; i++) {
+        children.at(i)->prp_readProperty(src);
+    }
+}
 
 LatticePointsGroup::LatticePointsGroup() :
     ComplexAnimator(QObject::tr("控制点")) {}
@@ -147,10 +238,11 @@ QDomElement LatticePointsGroup::prp_writePropertyXEV_impl(
     return result;
 }
 
-// Draggable canvas handle for one lattice control point. Writes the
-// point's u/v pair (normalized over the rest lattice); the drag goes
-// through the standard transform protocol so it is single-step
-// undoable and keyframable like every other property.
+// Draggable canvas handle for one control point. Writes the point's
+// u/v pair (normalized over the rest domain); the drag goes through
+// the standard transform protocol so it is single-step undoable and
+// keyframable like every other property. In cage mode the point
+// carries a context menu to insert/delete polygon vertices.
 class LatticePoint : public MovablePoint {
     e_OBJECT
 protected:
@@ -195,6 +287,25 @@ public:
         const auto eff = mEffect.data();
         if(!eff) return;
         eff->cancelPointTransform(mId);
+    }
+
+    void canvasContextMenu(PointTypeMenu * const menu) override {
+        const auto eff = mEffect.data();
+        if(!eff || eff->latticeMode() != 1) return;
+        if(menu->hasActionsForType<LatticePoint>()) return;
+        menu->addedActionsForType<LatticePoint>();
+        const PointTypeMenu::PlainSelectedOp<LatticePoint> insOp =
+                [eff = mEffect, id = mId](LatticePoint *) {
+            if(eff) eff->insertPointAfter(id);
+        };
+        menu->addPlainAction(QIcon::fromTheme("plus"),
+                             QObject::tr("在此点后插入"), insOp);
+        const PointTypeMenu::PlainSelectedOp<LatticePoint> delOp =
+                [eff = mEffect, id = mId](LatticePoint *) {
+            if(eff) eff->removePoint(id);
+        };
+        menu->addPlainAction(QIcon::fromTheme("trash"),
+                             QObject::tr("删除此点"), delOp);
     }
 
     void drawSk(SkCanvas * const canvas,
@@ -253,6 +364,13 @@ LatticeWarpEffect::LatticeWarpEffect() :
                  false,
                  RasterEffectType::LATTICE_WARP)
 {
+    mMode = enve::make_shared<ComboBoxProperty>(
+                QObject::tr("变形模式"), QStringList()
+                << QObject::tr("晶格")
+                << QObject::tr("笼形"));
+    mMode->setCurrentValue(0);
+    ca_addChild(mMode);
+
     const QStringList dimList = QStringList()
             << QStringLiteral("1") << QStringLiteral("2")
             << QStringLiteral("3") << QStringLiteral("4")
@@ -276,6 +394,13 @@ LatticeWarpEffect::LatticeWarpEffect() :
     mSmooth->setCurrentValue(1);
     ca_addChild(mSmooth);
 
+    mFieldMode = enve::make_shared<ComboBoxProperty>(
+                QObject::tr("场模式"), QStringList()
+                << QObject::tr("跟随图层")
+                << QObject::tr("固定场（世界）"));
+    mFieldMode->setCurrentValue(0);
+    ca_addChild(mFieldMode);
+
     mDensity = enve::make_shared<QrealAnimator>(6.0, 1.0, 16.0, 1.0,
                                                 QObject::tr("渲染密度"));
     ca_addChild(mDensity);
@@ -284,15 +409,50 @@ LatticeWarpEffect::LatticeWarpEffect() :
                                                   QObject::tr("边距 %"));
     ca_addChild(mMarginPct);
 
+    mFalloff = enve::make_shared<QrealAnimator>(0.0, 0.0, 100.0, 1.0,
+                                                QObject::tr("衰减 %"));
+    ca_addChild(mFalloff);
+
+    mFalloffType = enve::make_shared<ComboBoxProperty>(
+                QObject::tr("衰减曲线"), QStringList()
+                << QObject::tr("线性")
+                << QObject::tr("平滑"));
+    mFalloffType->setCurrentValue(1);
+    ca_addChild(mFalloffType);
+
+    mFieldGroup = enve::make_shared<StaticComplexAnimator>(
+                QObject::tr("固定场"));
+    mFieldX = enve::make_shared<QrealAnimator>(0.0, -100000.0, 100000.0,
+                                               1.0, QObject::tr("场 X"));
+    mFieldY = enve::make_shared<QrealAnimator>(0.0, -100000.0, 100000.0,
+                                               1.0, QObject::tr("场 Y"));
+    mFieldW = enve::make_shared<QrealAnimator>(0.0, 0.0, 100000.0,
+                                               1.0, QObject::tr("场宽"));
+    mFieldH = enve::make_shared<QrealAnimator>(0.0, 0.0, 100000.0,
+                                               1.0, QObject::tr("场高"));
+    mFieldGroup->ca_addChild(mFieldX);
+    mFieldGroup->ca_addChild(mFieldY);
+    mFieldGroup->ca_addChild(mFieldW);
+    mFieldGroup->ca_addChild(mFieldH);
+    ca_addChild(mFieldGroup);
+
     mPoints = enve::make_shared<LatticePointsGroup>();
     ca_addChild(mPoints);
 
-    // the point grid is derived from the row/col counts - kept in
+    // the control set is derived from mode/row/col counts - kept in
     // sync on every change so saved structure and values agree
+    connect(mMode.get(), &ComboBoxProperty::valueChanged,
+            this, [this](const int) { rebuildPoints(); });
     connect(mRows.get(), &ComboBoxProperty::valueChanged,
             this, [this](const int) { rebuildPoints(); });
     connect(mCols.get(), &ComboBoxProperty::valueChanged,
             this, [this](const int) { rebuildPoints(); });
+    // switching to the fixed field captures the current world bounds
+    // once, so the field starts out covering the artwork
+    connect(mFieldMode.get(), &ComboBoxProperty::valueChanged,
+            this, [this](const int v) {
+        if(v == 1) captureFieldRect();
+    });
     rebuildPoints();
 
     prp_enabledDrawingOnCanvas();
@@ -300,18 +460,177 @@ LatticeWarpEffect::LatticeWarpEffect() :
     // Property::prp_drawCanvasControls draws the handler's points and
     // the canvas dispatches dragging through the same handler.
     setPointsHandler(enve::make_shared<PointsHandler>());
+    syncHandler();
+}
+
+int LatticeWarpEffect::latticeMode() const
+{
+    return mMode->getCurrentValue();
+}
+
+bool LatticeWarpEffect::isFixedField() const
+{
+    return mFieldMode->getCurrentValue() == 1;
+}
+
+QRectF LatticeWarpEffect::fieldRectScene() const
+{
+    return QRectF(QPointF(mFieldX->getEffectiveValue(),
+                          mFieldY->getEffectiveValue()),
+                  QSizeF(mFieldW->getEffectiveValue(),
+                         mFieldH->getEffectiveValue()));
+}
+
+void LatticeWarpEffect::captureFieldRect()
+{
+    if(fieldRectScene().width() > 1.0 &&
+       fieldRectScene().height() > 1.0) {
+        return; // already captured / user-edited
+    }
+    const auto box = getFirstAncestor<BoundingBox>();
+    if(!box) return;
+    const auto trans = box->getTransformAnimator();
+    if(!trans) return;
+    const QRectF world = trans->getTotalTransform().mapRect(
+                box->getRelBoundingRect());
+    const qreal m = mMarginPct->getEffectiveValue() / 100.0;
+    const QRectF out = world.adjusted(-world.width()*m, -world.height()*m,
+                                      world.width()*m, world.height()*m);
+    mFieldX->setCurrentBaseValue(out.left());
+    mFieldY->setCurrentBaseValue(out.top());
+    mFieldW->setCurrentBaseValue(out.width());
+    mFieldH->setCurrentBaseValue(out.height());
+}
+
+int LatticeWarpEffect::pointCount() const
+{
+    if(latticeMode() == 1) return mPoints->pts().count();
+    const int pRows = mRows->getCurrentValue() + 2;
+    const int pCols = mCols->getCurrentValue() + 2;
+    return pRows * pCols;
+}
+
+void LatticeWarpEffect::rebuildPoints()
+{
+    const bool cage = latticeMode() == 1;
+    const int count = cage ? 12 : (mRows->getCurrentValue() + 2) *
+                                 (mCols->getCurrentValue() + 2);
+
+    while(true) {
+        const auto& children = mPoints->pts();
+        if(children.count() <= count) break;
+        const auto last = children.last();
+        mPoints->removePt(last);
+    }
+    while(true) {
+        const auto& children = mPoints->pts();
+        if(children.count() >= count) break;
+        const int id = children.count();
+        qreal u0, v0;
+        if(cage) {
+            const QPointF r = cageRestUV(id, count);
+            u0 = r.x(); v0 = r.y();
+        } else {
+            const int pCols = mCols->getCurrentValue() + 2;
+            const int pRows = mRows->getCurrentValue() + 2;
+            u0 = qreal(id % pCols) / (pCols - 1);
+            v0 = qreal(id / pCols) / (pRows - 1);
+        }
+        const auto u = enve::make_shared<QrealAnimator>(
+                    u0, -5.0, 6.0, 0.001, QStringLiteral("X"));
+        const auto v = enve::make_shared<QrealAnimator>(
+                    v0, -5.0, 6.0, 0.001, QStringLiteral("Y"));
+        mPoints->addPt(enve::make_shared<LatticePointValues>(
+                    QObject::tr("点 %1").arg(id + 1), u, v));
+    }
+    syncHandler();
+}
+
+void LatticeWarpEffect::syncHandler()
+{
     const auto handler = getPointsHandler();
+    if(!handler) return;
+    handler->clear();
     const int count = pointCount();
     for(int i = 0; i < count; i++) {
         handler->appendPt(enve::make_shared<LatticePoint>(this, i));
     }
 }
 
-int LatticeWarpEffect::pointCount() const
+void LatticeWarpEffect::insertPointAfter(const int id)
 {
-    const int pRows = mRows->getCurrentValue() + 2;
-    const int pCols = mCols->getCurrentValue() + 2;
-    return pRows * pCols;
+    if(latticeMode() != 1) return;
+    const auto& children = mPoints->pts();
+    const int n = children.count();
+    if(id < 0 || id >= n) return;
+
+    // the rest polygon is index-based, so inserting shifts every
+    // rest position - rebase all displacements (uv - rest) onto the
+    // new n+1 polygon so nothing jumps
+    const int nextId = (id + 1) % n;
+    for(int k = 0; k < n; k++) {
+        const auto pt = enve_cast<LatticePointValues*>(
+                    children.at(k).get());
+        if(!pt) continue;
+        const auto uA = pt->uAnim();
+        const auto vA = pt->vAnim();
+        if(!uA || !vA) continue;
+        const QPointF cur(uA->getEffectiveValue(),
+                          vA->getEffectiveValue());
+        const QPointF restOld = cageRestUV(k, n);
+        const int kNew = k <= id ? k : k + 1;
+        const QPointF restNew = cageRestUV(kNew, n + 1);
+        uA->setCurrentBaseValue(cur.x() - restOld.x() + restNew.x());
+        vA->setCurrentBaseValue(cur.y() - restOld.y() + restNew.y());
+    }
+
+    // new vertex: midpoint of the two current neighbors
+    const auto a = enve_cast<LatticePointValues*>(children.at(id).get());
+    const auto b = enve_cast<LatticePointValues*>(children.at(nextId).get());
+    if(!a || !b) return;
+    const QPointF uvA(a->uAnim()->getEffectiveValue(),
+                      a->vAnim()->getEffectiveValue());
+    const QPointF uvB(b->uAnim()->getEffectiveValue(),
+                      b->vAnim()->getEffectiveValue());
+    const QPointF mid = (uvA + uvB) * 0.5;
+    const auto u = enve::make_shared<QrealAnimator>(
+                mid.x(), -5.0, 6.0, 0.001, QStringLiteral("X"));
+    const auto v = enve::make_shared<QrealAnimator>(
+                mid.y(), -5.0, 6.0, 0.001, QStringLiteral("Y"));
+    mPoints->insertPt(enve::make_shared<LatticePointValues>(
+                QObject::tr("点 %1").arg(id + 2), u, v), id + 1);
+    syncHandler();
+}
+
+void LatticeWarpEffect::removePoint(const int id)
+{
+    if(latticeMode() != 1) return;
+    const auto& children = mPoints->pts();
+    const int n = children.count();
+    if(n <= 4) return; // keep a minimal cage
+    if(id < 0 || id >= n) return;
+
+    // rebase displacements onto the n-1 rest polygon (skipping the
+    // removed index) so nothing jumps
+    for(int k = 0; k < n; k++) {
+        if(k == id) continue;
+        const auto pt = enve_cast<LatticePointValues*>(
+                    children.at(k).get());
+        if(!pt) continue;
+        const auto uA = pt->uAnim();
+        const auto vA = pt->vAnim();
+        if(!uA || !vA) continue;
+        const QPointF cur(uA->getEffectiveValue(),
+                          vA->getEffectiveValue());
+        const QPointF restOld = cageRestUV(k, n);
+        const int kNew = k < id ? k : k - 1;
+        const QPointF restNew = cageRestUV(kNew, n - 1);
+        uA->setCurrentBaseValue(cur.x() - restOld.x() + restNew.x());
+        vA->setCurrentBaseValue(cur.y() - restOld.y() + restNew.y());
+    }
+
+    mPoints->removePt(children.at(id));
+    syncHandler();
 }
 
 QrealAnimator *LatticeWarpEffect::pointU(const int id) const
@@ -332,48 +651,42 @@ QrealAnimator *LatticeWarpEffect::pointV(const int id) const
     return pt->vAnim();
 }
 
-void LatticeWarpEffect::rebuildPoints()
+QrealAnimator *LatticeWarpEffect::pointRot(const int id) const
 {
-    // cells per axis -> (cells+1) control points per axis
-    const int pCols = mCols->getCurrentValue() + 2;
-    const int pRows = mRows->getCurrentValue() + 2;
-    const int count = pRows * pCols;
+    const auto& children = mPoints->pts();
+    if(id < 0 || id >= children.count()) return nullptr;
+    const auto pt = enve_cast<LatticePointValues*>(children.at(id).get());
+    if(!pt) return nullptr;
+    return pt->rotAnim();
+}
 
-    while(true) {
-        const auto& children = mPoints->pts();
-        if(children.count() <= count) break;
-        const auto last = children.last();
-        mPoints->removePt(last);
-    }
-    while(true) {
-        const auto& children = mPoints->pts();
-        if(children.count() >= count) break;
-        const int id = children.count();
-        const int ix = id % pCols;
-        const int iy = id / pCols;
-        // rest params: uniform grid over [0,1]
-        const auto u = enve::make_shared<QrealAnimator>(
-                    qreal(ix) / (pCols - 1), -5.0, 6.0, 0.001,
-                    QStringLiteral("X"));
-        const auto v = enve::make_shared<QrealAnimator>(
-                    qreal(iy) / (pRows - 1), -5.0, 6.0, 0.001,
-                    QStringLiteral("Y"));
-        mPoints->addPt(enve::make_shared<LatticePointValues>(
-                    QObject::tr("点 %1").arg(id + 1), u, v));
-    }
-
-    // keep the canvas handler in sync with the animator grid
-    const auto handler = getPointsHandler();
-    if(handler) {
-        handler->clear();
-        for(int i = 0; i < count; i++) {
-            handler->appendPt(enve::make_shared<LatticePoint>(this, i));
-        }
-    }
+QrealAnimator *LatticeWarpEffect::pointScale(const int id) const
+{
+    const auto& children = mPoints->pts();
+    if(id < 0 || id >= children.count()) return nullptr;
+    const auto pt = enve_cast<LatticePointValues*>(children.at(id).get());
+    if(!pt) return nullptr;
+    return pt->scaleAnim();
 }
 
 QRectF LatticeWarpEffect::calcRestRectLocal() const
 {
+    if(isFixedField()) {
+        const QRectF f = fieldRectScene();
+        if(f.width() > 1.0 && f.height() > 1.0) {
+            const auto box = getFirstAncestor<BoundingBox>();
+            if(box) {
+                const auto trans = box->getTransformAnimator();
+                if(trans) {
+                    bool ok = false;
+                    const QTransform inv =
+                            trans->getTotalTransform().inverted(&ok);
+                    if(ok) return inv.mapRect(f);
+                }
+            }
+        }
+        // degenerate field or missing transform: follow the layer
+    }
     const auto box = getFirstAncestor<BoundingBox>();
     if(!box) return QRectF(0, 0, 100, 100);
     const QRectF b = box->getRelBoundingRect();
@@ -434,40 +747,45 @@ void LatticeWarpEffect::cancelPointTransform(const int id)
 QMargins LatticeWarpEffect::calcMargin(const qreal relFrame,
                                        const qreal resolution) const
 {
-    const auto box = getFirstAncestor<BoundingBox>();
-    if(!box) return QMargins(16, 16, 16, 16);
-    const QRectF b = box->getRelBoundingRect();
-    const qreal m = mMarginPct->getEffectiveValue(relFrame) / 100.0;
-    const qreal restW = b.width() * (1.0 + 2.0 * m);
-    const qreal restH = b.height() * (1.0 + 2.0 * m);
+    const QRectF rest = calcRestRectLocal();
+    if(rest.width() <= 0.0 || rest.height() <= 0.0) {
+        return QMargins(16, 16, 16, 16);
+    }
 
+    const bool cage = latticeMode() == 1;
+    const auto& children = mPoints->pts();
+    const int count = pointCount();
     const int pCols = mCols->getCurrentValue() + 2;
     const int pRows = mRows->getCurrentValue() + 2;
-    const int nCols = pCols - 1; // cells
-    const int nRows = pRows - 1;
     qreal maxU = 0.0;
     qreal maxV = 0.0;
-    const auto& children = mPoints->pts();
-    for(int j = 0; j < pRows; j++) {
-        for(int i = 0; i < pCols; i++) {
-            const int id = j * pCols + i;
-            if(id >= children.count()) break;
-            const auto pt = enve_cast<LatticePointValues*>(
-                        children.at(id).get());
-            if(!pt) continue;
-            const auto uA = pt->uAnim();
-            const auto vA = pt->vAnim();
-            if(!uA || !vA) continue;
-            const qreal du = std::abs(uA->getEffectiveValue(relFrame)
-                                      - qreal(i) / nCols);
-            const qreal dv = std::abs(vA->getEffectiveValue(relFrame)
-                                      - qreal(j) / nRows);
-            if(du > maxU) maxU = du;
-            if(dv > maxV) maxV = dv;
+    for(int id = 0; id < count && id < children.count(); id++) {
+        const auto pt = enve_cast<LatticePointValues*>(
+                    children.at(id).get());
+        if(!pt) continue;
+        const auto uA = pt->uAnim();
+        const auto vA = pt->vAnim();
+        if(!uA || !vA) continue;
+        const qreal u = uA->getEffectiveValue(relFrame);
+        const qreal v = vA->getEffectiveValue(relFrame);
+        QPointF restUV(u, v);
+        if(cage) {
+            restUV = cageRestUV(id, count);
+        } else if(count == pRows * pCols) {
+            restUV = QPointF(qreal(id % pCols) / (pCols - 1),
+                             qreal(id / pCols) / (pRows - 1));
         }
+        // rotation/scale DOF fling content beyond the displacement
+        const auto sA = pt->scaleAnim();
+        const qreal s = sA ? sA->getEffectiveValue(relFrame) / 100.0 : 1.0;
+        const qreal extra = 0.5 * std::abs(s - 1.0);
+        const qreal du = std::abs(u - restUV.x()) + extra;
+        const qreal dv = std::abs(v - restUV.y()) + extra;
+        if(du > maxU) maxU = du;
+        if(dv > maxV) maxV = dv;
     }
-    const int mx = qCeil(maxU * restW * resolution) + 2;
-    const int my = qCeil(maxV * restH * resolution) + 2;
+    const int mx = qCeil(maxU * rest.width() * resolution) + 4;
+    const int my = qCeil(maxV * rest.height() * resolution) + 4;
     return QMargins(mx, my, mx, my);
 }
 
@@ -485,23 +803,18 @@ void LatticeWarpEffect::prp_drawCanvasControls(
     const auto box = getFirstAncestor<BoundingBox>();
     if(box) {
         const auto trans = box->getTransformAnimator();
-        const int pCols = mCols->getCurrentValue() + 2;
-        const int pRows = mRows->getCurrentValue() + 2;
-
-        // current (deformed) control positions in canvas coordinates
-        QVector<SkPoint> abs(pRows * pCols);
+        const int count = pointCount();
+        QVector<SkPoint> abs(count);
         bool valid = true;
-        for(int j = 0; j < pRows && valid; j++) {
-            for(int i = 0; i < pCols; i++) {
-                const QPointF rel = pointLocalPos(j * pCols + i);
-                const QPointF mapped = trans ? trans->mapRelPosToAbs(rel)
-                                             : rel;
-                if(std::isnan(mapped.x()) || std::isnan(mapped.y())) {
-                    valid = false;
-                    break;
-                }
-                abs[j * pCols + i] = toSkPoint(mapped);
+        for(int i = 0; i < count && valid; i++) {
+            const QPointF rel = pointLocalPos(i);
+            const QPointF mapped = trans ? trans->mapRelPosToAbs(rel)
+                                         : rel;
+            if(std::isnan(mapped.x()) || std::isnan(mapped.y())) {
+                valid = false;
+                break;
             }
+            abs[i] = toSkPoint(mapped);
         }
 
         if(valid) {
@@ -513,21 +826,32 @@ void LatticeWarpEffect::prp_drawCanvasControls(
             line.setStrokeCap(SkPaint::kRound_Cap);
 
             SkPath path;
-            for(int j = 0; j < pRows; j++) {
-                path.moveTo(abs[j * pCols]);
-                for(int i = 1; i < pCols; i++) {
-                    path.lineTo(abs[j * pCols + i]);
+            if(latticeMode() == 1 && count >= 3) {
+                // closed deformed cage
+                path.moveTo(abs[0]);
+                for(int i = 1; i < count; i++) path.lineTo(abs[i]);
+                path.close();
+            } else if(latticeMode() == 0 &&
+                      count == (mRows->getCurrentValue() + 2) *
+                               (mCols->getCurrentValue() + 2)) {
+                const int pCols = mCols->getCurrentValue() + 2;
+                const int pRows = mRows->getCurrentValue() + 2;
+                for(int j = 0; j < pRows; j++) {
+                    path.moveTo(abs[j * pCols]);
+                    for(int i = 1; i < pCols; i++) {
+                        path.lineTo(abs[j * pCols + i]);
+                    }
                 }
-            }
-            for(int i = 0; i < pCols; i++) {
-                path.moveTo(abs[i]);
-                for(int j = 1; j < pRows; j++) {
-                    path.lineTo(abs[j * pCols + i]);
+                for(int i = 0; i < pCols; i++) {
+                    path.moveTo(abs[i]);
+                    for(int j = 1; j < pRows; j++) {
+                        path.lineTo(abs[j * pCols + i]);
+                    }
                 }
             }
             canvas->drawPath(path, line);
 
-            // rest lattice outline (faint) for reference
+            // rest domain outline (faint) for reference
             const QRectF rest = calcRestRectLocal();
             const QPointF tl = trans ? trans->mapRelPosToAbs(rest.topLeft())
                                      : rest.topLeft();
@@ -544,6 +868,25 @@ void LatticeWarpEffect::prp_drawCanvasControls(
                                           toSkScalar(br.x()),
                                           toSkScalar(br.y())));
             canvas->drawPath(rect, outline);
+
+            // fixed field: the world-anchored rect, drawn in scene
+            // (=canvas) coordinates so it stays put while the layer
+            // animates through it
+            if(isFixedField()) {
+                const QRectF f = fieldRectScene();
+                if(f.width() > 1.0 && f.height() > 1.0) {
+                    SkPaint fld;
+                    fld.setAntiAlias(true);
+                    fld.setColor(SkColorSetARGB(220, 255, 170, 60));
+                    fld.setStyle(SkPaint::kStroke_Style);
+                    fld.setStrokeWidth(1.5f * invScale);
+                    SkPath fr;
+                    fr.addRect(SkRect::MakeXYWH(
+                                toSkScalar(f.left()), toSkScalar(f.top()),
+                                toSkScalar(f.width()), toSkScalar(f.height())));
+                    canvas->drawPath(fr, fld);
+                }
+            }
         }
     }
     // default: draw the handler's draggable points
@@ -553,17 +896,24 @@ void LatticeWarpEffect::prp_drawCanvasControls(
 namespace {
 
 struct LatticeWarpData {
-    int mRows = 2;         // cells vertically
-    int mCols = 3;         // cells horizontally
-    int mDensity = 6;      // tessellation quads per cell edge
+    int mMode = 0;          // 0 lattice, 1 cage
+    int mRows = 2;          // cells vertically (lattice)
+    int mCols = 3;          // cells horizontally (lattice)
+    int mDensity = 6;       // tessellation quads per cell edge
     bool mSmooth = true;
     qreal mMarginPct = 10.0;
-    // content rect in the rendered bitmap: the bitmap may include
-    // transparent margin bands accumulated by margin effects, so the
-    // lattice cannot assume the content starts at (0,0)
+    qreal mFalloff = 0.0;   // fraction of domain min dim, 0 = off
+    bool mFalloffSmooth = true;
+    bool mFixedField = false;
+    // content rect in the rendered bitmap (the bitmap may include
+    // transparent margin bands accumulated by margin effects)
     QPointF mContentPos;
     QSizeF mContentSize;
-    QVector<QPointF> mUV;  // row-major (rows+1)x(cols+1)
+    // fixed field rect in RENDERED pixel scene coords (may be invalid)
+    QRectF mFieldRect;
+    QVector<QPointF> mUV;   // control u/v
+    QVector<qreal> mRot;    // degrees per control
+    QVector<qreal> mScale;  // percent per control
 };
 
 } // namespace
@@ -588,14 +938,16 @@ stdsptr<RasterEffectCaller> LatticeWarpEffect::getEffectCaller(
     Q_UNUSED(influence)
 
     LatticeWarpData effData;
+    effData.mMode = latticeMode();
     effData.mRows = mRows->getCurrentValue() + 1; // cells
     effData.mCols = mCols->getCurrentValue() + 1;
     effData.mDensity = qRound(mDensity->getEffectiveValue(relFrame));
     effData.mSmooth = mSmooth->getCurrentValue() != 0;
     effData.mMarginPct = mMarginPct->getEffectiveValue(relFrame);
+    effData.mFalloff = mFalloff->getEffectiveValue(relFrame) / 100.0;
+    effData.mFalloffSmooth = mFalloffType->getCurrentValue() != 0;
+    effData.mFixedField = isFixedField();
 
-    // scene position of the content top-left (margin-independent);
-    // resolved against the final global rect inside processCpu
     QPointF contentScene(0.0, 0.0);
     QSizeF contentSize(0.0, 0.0);
     if(data) {
@@ -608,25 +960,39 @@ stdsptr<RasterEffectCaller> LatticeWarpEffect::getEffectCaller(
     effData.mContentPos = contentScene;
     effData.mContentSize = contentSize;
 
-    const int cn = effData.mCols + 1; // controls horizontally
-    const int rn = effData.mRows + 1; // controls vertically
-    effData.mUV.resize(cn * rn);
-    const auto& children = mPoints->pts();
-    for(int j = 0; j < rn; j++) {
-        for(int i = 0; i < cn; i++) {
-            const int id = j * cn + i;
-            effData.mUV[id] = QPointF(qreal(i) / effData.mCols,
-                                      qreal(j) / effData.mRows);
-            if(id >= children.count()) continue;
-            const auto pt = enve_cast<LatticePointValues*>(
-                        children.at(id).get());
-            if(!pt) continue;
-            const auto uA = pt->uAnim();
-            const auto vA = pt->vAnim();
-            if(!uA || !vA) continue;
-            effData.mUV[id] = QPointF(uA->getEffectiveValue(relFrame),
-                                      vA->getEffectiveValue(relFrame));
+    if(effData.mFixedField) {
+        const QRectF f = fieldRectScene();
+        if(f.width() > 1.0 && f.height() > 1.0) {
+            effData.mFieldRect = QRectF(
+                        f.left() * resolution, f.top() * resolution,
+                        f.width() * resolution, f.height() * resolution);
+        } else {
+            effData.mFixedField = false; // degenerate: follow
         }
+    }
+
+    const int count = pointCount();
+    effData.mUV.resize(count);
+    effData.mRot.resize(count);
+    effData.mScale.resize(count);
+    const auto& children = mPoints->pts();
+    for(int i = 0; i < count; i++) {
+        effData.mUV[i] = QPointF(0.5, 0.5);
+        effData.mRot[i] = 0.0;
+        effData.mScale[i] = 100.0;
+        if(i >= children.count()) continue;
+        const auto pt = enve_cast<LatticePointValues*>(
+                    children.at(i).get());
+        if(!pt) continue;
+        const auto uA = pt->uAnim();
+        const auto vA = pt->vAnim();
+        const auto rA = pt->rotAnim();
+        const auto sA = pt->scaleAnim();
+        if(!uA || !vA) continue;
+        effData.mUV[i] = QPointF(uA->getEffectiveValue(relFrame),
+                                 vA->getEffectiveValue(relFrame));
+        if(rA) effData.mRot[i] = rA->getEffectiveValue(relFrame);
+        if(sA) effData.mScale[i] = sA->getEffectiveValue(relFrame);
     }
 
     return enve::make_shared<LatticeWarpEffectCaller>(
@@ -647,10 +1013,14 @@ void LatticeWarpEffectCaller::processCpu(CpuRenderTools& renderTools,
     const int h = srcBtmp.height();
     if(w <= 0 || h <= 0) return;
 
-    // content rect in bitmap coords: resolved from the scene position
-    // against the final global rect (data.fPos = bitmap origin in
-    // scene coords); fall back to the whole bitmap
+    // rest domain rect in bitmap coords. Fixed field: the captured
+    // world rect resolved against the final global rect origin (the
+    // warp stays anchored while the layer animates through it).
+    // Follow: content rect outset by the margin percentage (bitmap
+    // includes accumulated margin bands of earlier effects, so the
+    // lattice cannot assume content starts at (0,0))
     qreal cL = 0.0, cT = 0.0, cW = qreal(w), cH = qreal(h);
+    bool haveContent = false;
     if(mData.mContentSize.width() > 0.0 &&
        mData.mContentSize.height() > 0.0) {
         const QPointF origin = mData.mContentPos -
@@ -659,66 +1029,159 @@ void LatticeWarpEffectCaller::processCpu(CpuRenderTools& renderTools,
         cT = origin.y();
         cW = mData.mContentSize.width();
         cH = mData.mContentSize.height();
+        haveContent = true;
     }
+    qreal restL, restT, restW, restH;
+    if(mData.mFixedField && mData.mFieldRect.width() > 0.0) {
+        restL = mData.mFieldRect.left() - data.fPos.x();
+        restT = mData.mFieldRect.top() - data.fPos.y();
+        restW = mData.mFieldRect.width();
+        restH = mData.mFieldRect.height();
+    } else if(haveContent) {
+        const qreal mx = cW * mData.mMarginPct / 100.0;
+        const qreal my = cH * mData.mMarginPct / 100.0;
+        restL = cL - mx;
+        restT = cT - my;
+        restW = cW + 2.0 * mx;
+        restH = cH + 2.0 * my;
+    } else {
+        const qreal mx = qreal(w) * mData.mMarginPct / 100.0;
+        const qreal my = qreal(h) * mData.mMarginPct / 100.0;
+        restL = -mx;
+        restT = -my;
+        restW = w + 2.0 * mx;
+        restH = h + 2.0 * my;
+    }
+    if(restW <= 1.0 || restH <= 1.0) return;
 
-    // rest lattice: content rect outset by the margin percentage
-    const qreal mx = cW * mData.mMarginPct / 100.0;
-    const qreal my = cH * mData.mMarginPct / 100.0;
-    const qreal restL = cL - mx;
-    const qreal restT = cT - my;
-    const qreal restW = cW + 2.0 * mx;
-    const qreal restH = cH + 2.0 * my;
+    const int nPts = mData.mUV.count();
+    if(nPts < 1) return;
+    const int pCols = mData.mCols + 1;
+    const int pRows = mData.mRows + 1;
+    const bool useCage = mData.mMode == 1 && nPts >= 3 && nPts <= 64;
 
-    const int rn = mData.mRows + 1;  // controls vertically
-    const int cn = mData.mCols + 1;  // controls horizontally
-
-    // control displacements from the uniform rest grid (bitmap
-    // space); the surface is evaluated as rest + weighted
-    // displacement so an untouched lattice is EXACTLY the identity
-    // (a bare B-spline over uniform control points is not)
-    QVector<QPointF> D(cn * rn);
-    for(int j = 0; j < rn; j++) {
-        for(int i = 0; i < cn; i++) {
-            const QPointF& uv = mData.mUV[j * cn + i];
-            const QPointF restP(restL + qreal(i) / mData.mCols * restW,
-                                restT + qreal(j) / mData.mRows * restH);
-            D[j * cn + i] = QPointF(restL + uv.x() * restW - restP.x(),
-                                    restT + uv.y() * restH - restP.y());
+    // current control positions, rest positions, per-point DOF
+    // affine (R*S - I, applied around the CURRENT point position)
+    QVector<QPointF> Pcur(nPts);
+    QVector<QPointF> Prest(nPts);
+    struct Affine { qreal m00, m01, m10, m11; };
+    QVector<Affine> M(nPts);
+    for(int i = 0; i < nPts; i++) {
+        const QPointF& uv = mData.mUV[i];
+        Pcur[i] = QPointF(restL + uv.x() * restW,
+                          restT + uv.y() * restH);
+        QPointF restUV(uv);
+        if(useCage) {
+            restUV = cageRestUV(i, nPts);
+        } else if(nPts == pRows * pCols) {
+            restUV = QPointF(qreal(i % pCols) / mData.mCols,
+                             qreal(i / pCols) / mData.mRows);
         }
+        Prest[i] = QPointF(restL + restUV.x() * restW,
+                           restT + restUV.y() * restH);
+        const qreal ang = qDegreesToRadians(mData.mRot[i]);
+        const qreal s = mData.mScale[i] / 100.0;
+        const qreal cs = std::cos(ang) * s;
+        const qreal sn = std::sin(ang) * s;
+        M[i] = {cs - 1.0, -sn, sn, cs - 1.0};
     }
 
-    // render mesh: tessellate the lattice domain, evaluate the
+    // falloff ring: extend the mesh domain by the falloff distance
+    // so the displacement fades out smoothly instead of hard-stopping
+    const qreal minDim = qMin(restW, restH);
+    const qreal fallPx = mData.mFalloff * minDim;
+    const int rings = fallPx > 0.5 ? 6 : 0;
+    const qreal extU = rings > 0 ? fallPx / restW : 0.0;
+    const qreal extV = rings > 0 ? fallPx / restH : 0.0;
+
+    // render mesh: grid over the (extended) domain, evaluate the
     // surface at vertices only, redraw the source through it
     int md = qMax(1, mData.mDensity);
     while((mData.mRows * md + 1) * (mData.mCols * md + 1) > 65535) md--;
-    const int nvx = mData.mCols * md + 1;
-    const int nvy = mData.mRows * md + 1;
+    const int step = qMax(1, md / 2);
+    const int nvx = mData.mCols * md + 1 + 2 * rings * step;
+    const int nvy = mData.mRows * md + 1 + 2 * rings * step;
+    const qreal uMin = -extU, uMax = 1.0 + extU;
+    const qreal vMin = -extV, vMax = 1.0 + extV;
 
     QVector<SkPoint> pos(nvx * nvy);
     QVector<SkPoint> tex(nvx * nvy);
-    qreal wu[10]; qreal wv[10];
+    QVector<SkColor> col(nvx * nvy, SkColorSetARGB(255, 255, 255, 255));
+    // alpha fade width for texcoords sampling beyond the bitmap
+    // (kills edge-clamp smears); at least the falloff distance
+    const qreal fadePx = qMax(4.0, fallPx);
+
+    qreal wu[12]; qreal wv[12];
+    qreal wc[64];
+
     for(int b = 0; b < nvy; b++) {
-        const qreal v = nvy > 1 ? qreal(b) / (nvy - 1) : 0.0;
-        axisWeights(mData.mRows, mData.mSmooth, v, wv);
+        const qreal v = nvy > 1 ?
+                    vMin + (vMax - vMin) * qreal(b) / (nvy - 1) : 0.0;
+        const qreal dOutV = std::max(0.0, std::max(-v, v - 1.0));
         for(int a = 0; a < nvx; a++) {
-            const qreal u = nvx > 1 ? qreal(a) / (nvx - 1) : 0.0;
-            axisWeights(mData.mCols, mData.mSmooth, u, wu);
-            qreal x = restL + u * restW;
-            qreal y = restT + v * restH;
-            for(int j = 0; j < rn; j++) {
-                if(wv[j] == 0.0) continue;
-                for(int i = 0; i < cn; i++) {
-                    if(wu[i] == 0.0) continue;
-                    const qreal wgt = wu[i] * wv[j];
-                    const QPointF& d = D[j * cn + i];
-                    x += wgt * d.x();
-                    y += wgt * d.y();
+            const qreal u = nvx > 1 ?
+                        uMin + (uMax - uMin) * qreal(a) / (nvx - 1) : 0.0;
+            const int id = b * nvx + a;
+
+            // displacement falloff outside the [0,1] domain
+            const qreal dOutU = std::max(0.0, std::max(-u, u - 1.0));
+            const qreal dPx = std::max(dOutU * restW, dOutV * restH);
+            const qreal g = falloffWeight(dPx, fallPx,
+                                          mData.mFalloffSmooth);
+
+            const qreal tx = restL + u * restW;
+            const qreal ty = restT + v * restH;
+            qreal x = tx;
+            qreal y = ty;
+            if(g > 0.0) {
+                if(useCage) {
+                    // mean-value coordinates against the REST polygon
+                    // (weights constant while the cage deforms)
+                    cageWeights(Prest, QPointF(tx, ty), wc);
+                    for(int j = 0; j < nPts; j++) {
+                        const qreal wj = wc[j] * g;
+                        if(wj == 0.0) continue;
+                        const QPointF d = Pcur[j] - Prest[j];
+                        const qreal rx = tx - Pcur[j].x();
+                        const qreal ry = ty - Pcur[j].y();
+                        x += wj * (d.x() + M[j].m00*rx + M[j].m01*ry);
+                        y += wj * (d.y() + M[j].m10*rx + M[j].m11*ry);
+                    }
+                } else {
+                    axisWeights(mData.mRows, mData.mSmooth, v, wv);
+                    axisWeights(mData.mCols, mData.mSmooth, u, wu);
+                    for(int j = 0; j < pRows; j++) {
+                        if(wv[j] == 0.0) continue;
+                        for(int i = 0; i < pCols; i++) {
+                            if(wu[i] == 0.0) continue;
+                            const int idx = j * pCols + i;
+                            if(idx >= nPts) continue;
+                            const qreal wgt = wu[i] * wv[j] * g;
+                            const QPointF d = Pcur[idx] - Prest[idx];
+                            const qreal rx = tx - Pcur[idx].x();
+                            const qreal ry = ty - Pcur[idx].y();
+                            x += wgt * (d.x() + M[idx].m00*rx
+                                        + M[idx].m01*ry);
+                            y += wgt * (d.y() + M[idx].m10*rx
+                                        + M[idx].m11*ry);
+                        }
+                    }
                 }
             }
-            const int id = b * nvx + a;
+
             pos[id] = SkPoint::Make(toSkScalar(x), toSkScalar(y));
-            tex[id] = SkPoint::Make(toSkScalar(restL + u * restW),
-                                    toSkScalar(restT + v * restH));
+            tex[id] = SkPoint::Make(toSkScalar(tx), toSkScalar(ty));
+
+            // fade alpha where the texcoord samples outside the
+            // source bitmap (edge-clamp smear)
+            const qreal dxo = std::max(0.0, std::max(-tx, tx - w));
+            const qreal dyo = std::max(0.0, std::max(-ty, ty - h));
+            const qreal dOut = std::max(dxo, dyo);
+            if(dOut > 0.0) {
+                const qreal a = 1.0 - qBound(0.0, dOut / fadePx, 1.0);
+                col[id] = SkColorSetARGB(qRound(a * 255.0),
+                                         255, 255, 255);
+            }
         }
     }
 
@@ -745,11 +1208,14 @@ void LatticeWarpEffectCaller::processCpu(CpuRenderTools& renderTools,
                                     nullptr));
     const sk_sp<SkVertices> vertices = SkVertices::MakeCopy(
                 SkVertices::kTriangles_VertexMode,
-                pos.count(), pos.constData(), tex.constData(), nullptr,
+                pos.count(), pos.constData(), tex.constData(),
+                col.constData(),
                 idx.count(), idx.constData());
 
     SkCanvas canvas(dstBtmp);
     canvas.clear(SK_ColorTRANSPARENT);
     canvas.translate(-data.fTexTile.left(), -data.fTexTile.top());
-    canvas.drawVertices(vertices.get(), SkBlendMode::kSrcOver, paint);
+    // vertex colors modulate the shader (the alpha fades the falloff
+    // ring and out-of-bitmap regions)
+    canvas.drawVertices(vertices.get(), SkBlendMode::kModulate, paint);
 }

@@ -102,6 +102,11 @@ namespace EvFormat {
         // block and must skip it (positional)
         layerMarkers = 50,
 
+        // lattice warp P1: per-point DOF (rot/scale) children
+        // appended to each control point; older files carry only
+        // X/Y and must skip reading the new pair (positional)
+        latticeWarpP1 = 51,
+
         nextVersion
     };
 
