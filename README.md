@@ -51,6 +51,7 @@
 
 ### 📥 导入导出
 
+- **FFmpeg 9 视频引擎** — 内置 FFmpeg 由 4.2 整体升级至 **9.0.2**（全套新 API 移植：AVChannelLayout 声道布局、avcodec_get_supported_config 编码器能力查询、av_packet 全托管生命周期），视频导入 / 导出的编解码支持全面更新
 - **Lottie 支持** — Bodymovin JSON / .lottie 导入（DaVinci 式逐图层还原：变换/形状/混合全映射为原生图层，导入自动居中），可继续编辑
 - **PSD 分层导入** — 图层 / 组 / 混合模式 / 剪贴蒙版 / 图层样式
 - **Krita .kra 原生导入** — 绘画层静态 + 逐关键帧动画、组递归、混合模式、帧率画布

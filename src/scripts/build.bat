@@ -42,12 +42,18 @@ if not exist "sdk\" (
     7z x friction-sdk-%SDK_VERSION%%SDK_REV%-%SDK_SUFFIX%
 )
 
-rem assemble the isolated ffmpeg header dir friction-ffmpeg.cmake points at
-rem (sdk\include also carries the whole Qt5 header tree which would shadow
-rem the Qt6 headers, so only the libav* subdirs get copied out)
-if not exist "sdk\ffmpeg-win\libavutil\log.h" (
-    for %%D in (libavcodec libavdevice libavfilter libavformat libavresample libavutil libswresample libswscale) do robocopy "sdk\include\%%D" "sdk\ffmpeg-win\%%D" /E /NFL /NDL /NJH /NJS >nul
-    if exist "sdk\ffmpeg-win\libavutil\log.h" echo ffmpeg-win assembled
+rem FFmpeg 9.0.2 win64 gpl-shared (BtbN, pinned by immutable release id).
+rem Provides the headers (sdk\ffmpeg-win), import libs (sdk\bin) and the
+rem runtime DLLs staged below - the official SDK only ships 4.2 which the
+rem code no longer compiles against (avcodec_get_supported_config etc.)
+set FFMPEG9_ZIP=ffmpeg-n9.0-latest-win64-gpl-shared-9.0.zip
+if not exist "sdk\ffmpeg-win\libavutil\avutil.h" (
+    curl -L -o "%FFMPEG9_ZIP%" "https://github.com/BtbN/FFmpeg-Builds/releases/download/392441569/ffmpeg-n9.0-latest-win64-gpl-shared-9.0.zip"
+    7z x "%FFMPEG9_ZIP%" -osdk
+    ren "sdk\ffmpeg-n9.0-latest-win64-gpl-shared-9.0" ffmpeg9
+    robocopy "sdk\ffmpeg9\include" "sdk\ffmpeg-win" /E /NFL /NDL /NJH /NJS >nul
+    copy "sdk\ffmpeg9\lib\*.lib" "sdk\bin\" >nul
+    if exist "sdk\ffmpeg-win\libavutil\avutil.h" echo ffmpeg 9.0.2 staged
 )
 
 if exist "build\" (
@@ -93,18 +99,9 @@ if errorlevel 1 (
     echo ERROR: windeployqt failed & exit /b 1
 )
 
-copy "%SDK_DIR%\bin\avcodec-58.dll" "%OUTPUT_DIR%\"
-copy "%SDK_DIR%\bin\avdevice-58.dll" "%OUTPUT_DIR%\"
-copy "%SDK_DIR%\bin\avformat-58.dll" "%OUTPUT_DIR%\"
-copy "%SDK_DIR%\bin\avutil-56.dll" "%OUTPUT_DIR%\"
-copy "%SDK_DIR%\bin\swresample-3.dll" "%OUTPUT_DIR%\"
-copy "%SDK_DIR%\bin\swscale-5.dll" "%OUTPUT_DIR%\"
-
-rem avfilter chain + Qt5Concurrent (exe import-table hard deps, never staged before)
-copy "%SDK_DIR%\bin\avfilter-7.dll" "%OUTPUT_DIR%\"
-copy "%SDK_DIR%\bin\avresample-4.dll" "%OUTPUT_DIR%\"
-copy "%SDK_DIR%\bin\postproc-55.dll" "%OUTPUT_DIR%\"
-copy "%SDK_DIR%\bin\Qt5Concurrent.dll" "%OUTPUT_DIR%\"
+rem FFmpeg 9 runtime DLLs (avcodec-63/avutil-61/swscale-10/... from BtbN)
+copy "%CWD%\sdk\ffmpeg9\bin\av*.dll" "%OUTPUT_DIR%\"
+copy "%CWD%\sdk\ffmpeg9\bin\sw*.dll" "%OUTPUT_DIR%\"
 
 rem vector trace (QLibrary runtime-loaded)
 copy "%SDK_DIR%\bin\vtracer.dll" "%OUTPUT_DIR%\"

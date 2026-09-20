@@ -51,13 +51,8 @@ Source: "vcruntime140_1.dll"; DestDir: "{app}"; Components: friction ; Flags: ig
 Source: "onnxruntime.dll"; DestDir: "{app}"; Components: friction ; Flags: ignoreversion skipifsourcedoesntexist
 Source: "vtracer.dll"; DestDir: "{app}"; Components: friction ; Flags: ignoreversion skipifsourcedoesntexist
 
-Source: "avcodec-58.dll"; DestDir: "{app}"; Components: ffmpeg ; Flags: ignoreversion
-Source: "avdevice-58.dll"; DestDir: "{app}"; Components: ffmpeg ; Flags: ignoreversion
-Source: "avfilter-7.dll"; DestDir: "{app}"; Components: ffmpeg ; Flags: ignoreversion
-Source: "avformat-58.dll"; DestDir: "{app}"; Components: ffmpeg ; Flags: ignoreversion
-Source: "avutil-56.dll"; DestDir: "{app}"; Components: ffmpeg ; Flags: ignoreversion
-Source: "swresample-3.dll"; DestDir: "{app}"; Components: ffmpeg ; Flags: ignoreversion
-Source: "swscale-5.dll"; DestDir: "{app}"; Components: ffmpeg ; Flags: ignoreversion
+Source: "av*.dll"; DestDir: "{app}"; Components: ffmpeg ; Flags: ignoreversion skipifsourcedoesntexist
+Source: "sw*.dll"; DestDir: "{app}"; Components: ffmpeg ; Flags: ignoreversion skipifsourcedoesntexist
 
 Source: "qscintilla2_qt6.dll"; DestDir: "{app}"; Components: qt ; Flags: ignoreversion skipifsourcedoesntexist
 Source: "Qt6*.dll"; DestDir: "{app}"; Components: qt ; Flags: ignoreversion skipifsourcedoesntexist
