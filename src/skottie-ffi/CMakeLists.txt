@@ -206,8 +206,24 @@ elseif(APPLE)
         set(FRSK_SKIA_LIBRARIES_DIRS ${SKIA_LIB_PATH})
     endif()
 else()
-    set(FRSK_SKIA_LIBRARIES skia-friction)
-    set(FRSK_SKIA_LIBRARIES_DIRS ${CMAKE_BINARY_DIR}/src/skia)
+    # mirror friction-common: static builds produce libskia.a,
+    # shared builds produce libskia-friction.so
+    if(SKIA_STATIC)
+        set(FRSK_SKIA_LIBRARIES skia)
+    else()
+        set(FRSK_SKIA_LIBRARIES skia-friction)
+    endif()
+    if(BUILD_SKIA)
+        set(FRSK_SKIA_LIBRARIES_DIRS ${CMAKE_BINARY_DIR}/src/skia)
+    else()
+        set(FRSK_SKIA_LIBRARIES_DIRS ${SKIA_LIB_PATH})
+    endif()
+endif()
+
+# the skia lib is produced by the `skialib` custom target (gn/ninja);
+# without this dependency ninja may link frictionskottie before it exists
+if(BUILD_SKIA)
+    add_dependencies(frictionskottie skialib)
 endif()
 
 target_link_directories(frictionskottie PRIVATE ${FRSK_SKIA_LIBRARIES_DIRS})

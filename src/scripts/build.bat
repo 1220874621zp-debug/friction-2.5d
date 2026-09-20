@@ -37,9 +37,17 @@ for /f %%I in ('git rev-parse --abbrev-ref HEAD 2^> NUL') do set BRANCH=%%I
 set COMMIT=
 for /f %%i in ('git rev-parse --short^=8 HEAD') do set COMMIT=%%i
 
-if not exist "sdk\" ( 
+if not exist "sdk\" (
     curl -OL "https://github.com/friction2d/friction-sdk/releases/download/v%SDK_VERSION%/friction-sdk-%SDK_VERSION%%SDK_REV%-%SDK_SUFFIX%"
     7z x friction-sdk-%SDK_VERSION%%SDK_REV%-%SDK_SUFFIX%
+)
+
+rem assemble the isolated ffmpeg header dir friction-ffmpeg.cmake points at
+rem (sdk\include also carries the whole Qt5 header tree which would shadow
+rem the Qt6 headers, so only the libav* subdirs get copied out)
+if not exist "sdk\ffmpeg-win" (
+    robocopy sdk\include sdk\ffmpeg-win libavcodec libavdevice libavfilter libavformat libavresample libavutil libswresample libswscale /E /NFL /NDL /NJH /NJS >nul
+    if exist "sdk\ffmpeg-win\libavutil" echo ffmpeg-win assembled
 )
 
 if exist "build\" (
