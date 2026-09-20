@@ -23,7 +23,11 @@ uniform float uLightElev;  // light elevation above the page plane, degrees
 uniform float uAmbient;    // 0..1
 uniform float uShadow;     // 0..1 cast-shadow strength on the flat part
 uniform float uSpecular;   // 0..1
+uniform float uWaveAmp;    // wave mode: amplitude, fraction of image height
+uniform float uWaveLen;    // wave mode: wavelength, percent of the travel extent
+uniform float uWavePhase;  // wave mode: animation phase, radians
 uniform vec2  uTexSize;    // source size in pixels
+uniform int   uMode;       // 0 = page curl, 1 = wave
 
 const float PI = 3.14159265359;
 const float TWO_PI = 6.28318530718;
@@ -57,6 +61,39 @@ void main(void) {
                          dot(vec2(aspect, 0.0), dir)),
                      max(dot(vec2(0.0, 1.0), dir),
                          dot(vec2(aspect, 1.0), dir)));
+
+    // light (image-space y points down; 225 deg = from the upper left)
+    float la = radians(uLightAngle);
+    float el = radians(uLightElev);
+    vec2 Lxy = vec2(cos(la), sin(la)) * cos(el);
+    float Lz = sin(el);
+    // half vector with the orthographic view direction (0,0,1)
+    vec2 Hxy = Lxy;
+    float Hz = Lz + 1.0;
+    float hLen = max(sqrt(dot(Hxy, Hxy) + Hz * Hz), 0.0001);
+    Hxy /= hLen; Hz /= hLen;
+
+    if (uMode == 1) {
+        // wave: the image stays fully visible, only a traveling ripple
+        // of N.L shading rolls across it (the Foldspace rainbow-sheet look)
+        float rep = 100.0 / max(uWaveLen, 1.0); // wavelengths over the extent
+        float omega = TWO_PI * rep / max(cMax, 0.001);
+        float s = dot(p, dir);
+        float slope = uWaveAmp * omega * cos(omega * s + uWavePhase);
+        vec3 N = normalize(vec3(-slope * dir, 1.0));
+        float nDotL = dot(N, vec3(Lxy, Lz));
+        float nDotH = dot(N, vec3(Hxy, Hz));
+        float shade = uAmbient + (1.0 - uAmbient) * max(0.0, nDotL);
+        float spec = uSpecular * pow(max(0.0, nDotH), 32.0);
+        // fade the whole effect in with amplitude so amp 0 = passthrough
+        float tw = smoothstep(0.0, 1.0, clamp(uWaveAmp / 0.03, 0.0, 1.0));
+        shade = 1.0 + (shade - 1.0) * tw;
+        spec *= tw;
+        vec4 src = sampleTex(texCoord);
+        fragColor = vec4(src.rgb * shade + vec3(spec * src.a), src.a);
+        return;
+    }
+
     float c = (1.0 - uProgress) * cMax;
     float R = max(uRadius, 0.002);
 
@@ -117,17 +154,7 @@ void main(void) {
         return;
     }
 
-    // light (image-space y points down; 225 deg = from the upper left)
-    float la = radians(uLightAngle);
-    float el = radians(uLightElev);
-    vec2 Lxy = vec2(cos(la), sin(la)) * cos(el);
-    float Lz = sin(el);
     float Ls = dot(Lxy, dir);
-    // half vector with the orthographic view direction (0,0,1)
-    vec2 Hxy = Lxy;
-    float Hz = Lz + 1.0;
-    float hLen = max(sqrt(dot(Hxy, Hxy) + Hz * Hz), 0.0001);
-    Hxy /= hLen; Hz /= hLen;
     float Hs = dot(Hxy, dir);
 
     vec4 src = sampleTex(uvSrc);

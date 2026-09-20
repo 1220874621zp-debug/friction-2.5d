@@ -33,6 +33,7 @@
 #include "RasterEffects/rastereffectsinclude.h"
 #include "RasterEffects/rastereffectcollection.h"
 #include "RasterEffects/rastereffectmenucreator.h"
+#include "Properties/comboboxproperty.h"
 #include "Psd/psdfile.h"
 #include "include/core/SkBitmap.h"
 
@@ -626,7 +627,7 @@ int main(int argc, char *argv[])
         // mid progress, default direction (right edge rolls leftward):
         // the consumed far-right side empties, the kept left side stays
         // opaque and shaded, and the back face shows near the tube
-        const auto prog = eff->ca_getChildAt<QrealAnimator>(0);
+        const auto prog = eff->ca_getChildAt<QrealAnimator>(1);
         if (!prog) { throw std::runtime_error("no progress animator"); }
         prog->setCurrentBaseValue(50.0);
         {
@@ -662,6 +663,47 @@ int main(int argc, char *argv[])
             }
         }
         prog->setCurrentBaseValue(0.0);
+
+        // wave mode: the image must stay fully visible - amplitude 0 is
+        // an exact passthrough, amplitude 8 keeps every pixel opaque and
+        // shaded (no transparency anywhere)
+        const auto mode = eff->ca_getChildAt<ComboBoxProperty>(0);
+        const auto amp = eff->ca_getChildAt<QrealAnimator>(10);
+        if (!mode || !amp) { throw std::runtime_error("no mode/amp animator"); }
+        mode->setCurrentValue(1);
+        amp->setCurrentBaseValue(0.0);
+        {
+            SkBitmap dst;
+            render(dst);
+            const SkColor c = dst.getColor(64, 64);
+            if (SkColorGetA(c) != 255 ||
+                qAbs(int(SkColorGetR(c)) - 200) > 2 ||
+                qAbs(int(SkColorGetG(c)) - 100) > 2 ||
+                qAbs(int(SkColorGetB(c)) - 50) > 2) {
+                throw std::runtime_error("wave amp 0 is not identity");
+            }
+        }
+        amp->setCurrentBaseValue(8.0);
+        {
+            SkBitmap dst;
+            render(dst);
+            for (int y = 0; y < 128; y += 5) {
+                for (int x = 0; x < 128; x += 5) {
+                    const SkColor c = dst.getColor(x, y);
+                    if (SkColorGetA(c) != 255) {
+                        throw std::runtime_error("wave mode lost opacity");
+                    }
+                }
+            }
+            const SkColor a = dst.getColor(10, 64);
+            const SkColor b = dst.getColor(118, 64);
+            if (a == b) {
+                throw std::runtime_error("wave shading has no variation");
+            }
+        }
+        mode->setCurrentValue(0);
+        amp->setCurrentBaseValue(0.0);
+
     });
 
     // Test 5: ThemeSupport presets, accents and style generation test

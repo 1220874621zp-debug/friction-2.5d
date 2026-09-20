@@ -33,6 +33,7 @@
 #include "Boxes/boxrenderdata.h"
 
 #include "Animators/coloranimator.h"
+#include "Properties/comboboxproperty.h"
 
 #include "appsupport.h"
 
@@ -109,6 +110,50 @@ Vec4 evalPageCurl(const PageCurlEffectData& d,
     const float c10 = dirY;
     const float c11 = aspect * dirX + dirY;
     const float cMax = std::max(std::max(0.f, c01), std::max(c10, c11));
+
+    // light (image-space y points down; 225 deg = from the upper left)
+    const float la = d.mLightAngle * kPi / 180.f;
+    const float el = d.mLightElev * kPi / 180.f;
+    const float cel = std::cos(el);
+    const float lX = std::cos(la) * cel;
+    const float lY = std::sin(la) * cel;
+    const float Lz = std::sin(el);
+    // half vector with the orthographic view direction (0,0,1)
+    float hX = lX, hY = lY;
+    float Hz = Lz + 1.f;
+    const float hLen = std::max(std::sqrt(hX * hX + hY * hY + Hz * Hz), 0.0001f);
+    hX /= hLen; hY /= hLen; Hz /= hLen;
+
+    if (d.mMode == 1) {
+        // wave: the image stays fully visible, only a traveling ripple
+        // of N.L shading rolls across it (the Foldspace rainbow-sheet look)
+        const float A = d.mWaveAmp;
+        const float rep = 100.f / std::max(d.mWaveLen, 1.f); // wavelengths over the extent
+        const float omega = kTwoPi * rep / std::max(cMax, 0.001f);
+        const float s = px * dirX + py * dirY;
+        const float slope = A * omega * std::cos(omega * s + d.mWavePhase);
+        float nX = -slope * dirX;
+        float nY = -slope * dirY;
+        float nZ = 1.f;
+        const float nLen = std::max(std::sqrt(nX * nX + nY * nY + nZ * nZ), 0.0001f);
+        nX /= nLen; nY /= nLen; nZ /= nLen;
+        const float nDotL = nX * lX + nY * lY + nZ * Lz;
+        const float nDotH = nX * hX + nY * hY + nZ * Hz;
+        float shade = d.mAmbient + (1.f - d.mAmbient) * std::max(0.f, nDotL);
+        float spec = d.mSpecular * std::pow(std::max(0.f, nDotH), 32.f);
+        // fade the whole effect in with amplitude so amp 0 = passthrough
+        const float t = smooth01(A / 0.03f);
+        shade = 1.f + (shade - 1.f) * t;
+        spec *= t;
+        const Vec4 src = sampleBilinear(srcBtmp, w, h, u, v);
+        Vec4 out;
+        out.r = sat1(src.r * shade + spec * src.a);
+        out.g = sat1(src.g * shade + spec * src.a);
+        out.b = sat1(src.b * shade + spec * src.a);
+        out.a = sat1(src.a);
+        return out;
+    }
+
     const float c = (1.f - d.mProgress) * cMax;
     const float R = std::max(d.mRadius, 0.002f);
 
@@ -160,19 +205,7 @@ Vec4 evalPageCurl(const PageCurlEffectData& d,
         return Vec4 { 0.f, 0.f, 0.f, 0.f };
     }
 
-    // light (image-space y points down; 225 deg = from the upper left)
-    const float la = d.mLightAngle * kPi / 180.f;
-    const float el = d.mLightElev * kPi / 180.f;
-    const float cel = std::cos(el);
-    const float lX = std::cos(la) * cel;
-    const float lY = std::sin(la) * cel;
-    const float Lz = std::sin(el);
     const float Ls = lX * dirX + lY * dirY;
-    // half vector with the orthographic view direction (0,0,1)
-    float hX = lX, hY = lY;
-    float Hz = Lz + 1.f;
-    const float hLen = std::max(std::sqrt(hX * hX + hY * hY + Hz * Hz), 0.0001f);
-    hX /= hLen; hY /= hLen; Hz /= hLen;
     const float Hs = hX * dirX + hY * dirY;
 
     const Vec4 src = sampleBilinear(srcBtmp, w, h, uvX, uvY);
@@ -236,6 +269,12 @@ PageCurlEffect::PageCurlEffect() :
                  true,
                  RasterEffectType::PAGE_CURL)
 {
+    const auto modes = QStringList() <<
+            QObject::tr("卷页") <<
+            QObject::tr("波浪");
+    mMode = enve::make_shared<ComboBoxProperty>(QObject::tr("模式"), modes);
+    ca_addChild(mMode);
+
     mProgress = enve::make_shared<QrealAnimator>(0, 0, 100, 1,
                                                  QObject::tr("卷曲进度"));
     ca_addChild(mProgress);
@@ -244,7 +283,7 @@ PageCurlEffect::PageCurlEffect() :
                                                   QObject::tr("卷曲方向"));
     ca_addChild(mDirection);
 
-    mRadius = enve::make_shared<QrealAnimator>(12, 1, 50, 1,
+    mRadius = enve::make_shared<QrealAnimator>(8, 1, 50, 1,
                                                QObject::tr("卷曲半径"));
     ca_addChild(mRadius);
 
@@ -271,6 +310,18 @@ PageCurlEffect::PageCurlEffect() :
     mSpecular = enve::make_shared<QrealAnimator>(25, 0, 100, 1,
                                                  QObject::tr("高光强度"));
     ca_addChild(mSpecular);
+
+    mWaveAmp = enve::make_shared<QrealAnimator>(8, 0, 30, 1,
+                                                QObject::tr("波浪幅度"));
+    ca_addChild(mWaveAmp);
+
+    mWaveLen = enve::make_shared<QrealAnimator>(35, 5, 100, 1,
+                                                QObject::tr("波浪长度"));
+    ca_addChild(mWaveLen);
+
+    mWaveSpeed = enve::make_shared<QrealAnimator>(0, -100, 100, 1,
+                                                  QObject::tr("波浪速度"));
+    ca_addChild(mWaveSpeed);
 }
 
 class PageCurlEffectCaller : public OpenGLRasterEffectCaller {
@@ -286,6 +337,7 @@ public:
                     const CpuRenderData& data);
 protected:
     void iniVars(QGL33 * const gl) const {
+        sModeU = gl->glGetUniformLocation(sProgramId, "uMode");
         sProgressU = gl->glGetUniformLocation(sProgramId, "uProgress");
         sDirectionU = gl->glGetUniformLocation(sProgramId, "uDirection");
         sRadiusU = gl->glGetUniformLocation(sProgramId, "uRadius");
@@ -295,11 +347,15 @@ protected:
         sAmbientU = gl->glGetUniformLocation(sProgramId, "uAmbient");
         sShadowU = gl->glGetUniformLocation(sProgramId, "uShadow");
         sSpecularU = gl->glGetUniformLocation(sProgramId, "uSpecular");
+        sWaveAmpU = gl->glGetUniformLocation(sProgramId, "uWaveAmp");
+        sWaveLenU = gl->glGetUniformLocation(sProgramId, "uWaveLen");
+        sWavePhaseU = gl->glGetUniformLocation(sProgramId, "uWavePhase");
         sTexSizeU = gl->glGetUniformLocation(sProgramId, "uTexSize");
     }
 
     void setVars(QGL33 * const gl) const {
         gl->glUseProgram(sProgramId);
+        gl->glUniform1i(sModeU, mData.mMode);
         gl->glUniform1f(sProgressU, mData.mProgress);
         gl->glUniform1f(sDirectionU, mData.mDirection);
         gl->glUniform1f(sRadiusU, mData.mRadius);
@@ -309,6 +365,9 @@ protected:
         gl->glUniform1f(sAmbientU, mData.mAmbient);
         gl->glUniform1f(sShadowU, mData.mShadow);
         gl->glUniform1f(sSpecularU, mData.mSpecular);
+        gl->glUniform1f(sWaveAmpU, mData.mWaveAmp);
+        gl->glUniform1f(sWaveLenU, mData.mWaveLen);
+        gl->glUniform1f(sWavePhaseU, mData.mWavePhase);
         gl->glUniform2f(sTexSizeU,
                         static_cast<GLfloat>(std::max(mData.mTexW, 1)),
                         static_cast<GLfloat>(std::max(mData.mTexH, 1)));
@@ -317,6 +376,7 @@ private:
     static bool sInitialized;
     static GLuint sProgramId;
 
+    static GLint sModeU;
     static GLint sProgressU;
     static GLint sDirectionU;
     static GLint sRadiusU;
@@ -326,6 +386,9 @@ private:
     static GLint sAmbientU;
     static GLint sShadowU;
     static GLint sSpecularU;
+    static GLint sWaveAmpU;
+    static GLint sWaveLenU;
+    static GLint sWavePhaseU;
     static GLint sTexSizeU;
 
     const PageCurlEffectData mData;
@@ -334,6 +397,7 @@ private:
 bool PageCurlEffectCaller::sInitialized = false;
 GLuint PageCurlEffectCaller::sProgramId = 0;
 
+GLint PageCurlEffectCaller::sModeU = -1;
 GLint PageCurlEffectCaller::sProgressU = -1;
 GLint PageCurlEffectCaller::sDirectionU = -1;
 GLint PageCurlEffectCaller::sRadiusU = -1;
@@ -343,6 +407,9 @@ GLint PageCurlEffectCaller::sLightElevU = -1;
 GLint PageCurlEffectCaller::sAmbientU = -1;
 GLint PageCurlEffectCaller::sShadowU = -1;
 GLint PageCurlEffectCaller::sSpecularU = -1;
+GLint PageCurlEffectCaller::sWaveAmpU = -1;
+GLint PageCurlEffectCaller::sWaveLenU = -1;
+GLint PageCurlEffectCaller::sWavePhaseU = -1;
 GLint PageCurlEffectCaller::sTexSizeU = -1;
 
 stdsptr<RasterEffectCaller> PageCurlEffect::getEffectCaller(
@@ -351,6 +418,7 @@ stdsptr<RasterEffectCaller> PageCurlEffect::getEffectCaller(
     Q_UNUSED(resolution)
 
     PageCurlEffectData effData;
+    effData.mMode = mMode->getCurrentValue();
     effData.mProgress = static_cast<float>(
                 qBound(0.0, mProgress->getEffectiveValue(relFrame) * 0.01 * influence, 1.0));
     effData.mDirection = static_cast<float>(mDirection->getEffectiveValue(relFrame));
@@ -364,6 +432,10 @@ stdsptr<RasterEffectCaller> PageCurlEffect::getEffectCaller(
     effData.mAmbient = static_cast<float>(mAmbient->getEffectiveValue(relFrame) * 0.01);
     effData.mShadow = static_cast<float>(mShadow->getEffectiveValue(relFrame) * 0.01);
     effData.mSpecular = static_cast<float>(mSpecular->getEffectiveValue(relFrame) * 0.01);
+    effData.mWaveAmp = static_cast<float>(mWaveAmp->getEffectiveValue(relFrame) * 0.01);
+    effData.mWaveLen = static_cast<float>(mWaveLen->getEffectiveValue(relFrame));
+    effData.mWavePhase = static_cast<float>(
+                relFrame * mWaveSpeed->getEffectiveValue(relFrame) * 0.05);
     if (data) {
         effData.mTexW = data->fGlobalRect.width();
         effData.mTexH = data->fGlobalRect.height();
