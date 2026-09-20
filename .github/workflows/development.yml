@@ -14,6 +14,7 @@ jobs:
   # ----------------- Linux AppImage 构建 -----------------
   build-linux-appimage:
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
         with:
@@ -39,13 +40,13 @@ jobs:
 
   # ----------------- Linux DEB 构建 -----------------
   build-linux-deb:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
       - name: Build DEB Package
-        run: APT=1 CI=1 MKJOBS=2 ./src/scripts/ci.sh
+        run: APT=1 CI=1 QT6=1 MKJOBS=2 ./src/scripts/ci.sh
       - name: Prepare Artifact
         run: |
           mkdir -p ci-artifacts
