@@ -703,8 +703,90 @@ int main(int argc, char *argv[])
                 throw std::runtime_error("wave shading has no variation");
             }
         }
+        // crossed wave keeps everything opaque too
+        eff->ca_getChildAt<QrealAnimator>(16)->setCurrentBaseValue(50.0);
+        {
+            SkBitmap dst;
+            render(dst);
+            const SkColor c = dst.getColor(64, 10);
+            if (SkColorGetA(c) != 255) {
+                throw std::runtime_error("crossed wave lost opacity");
+            }
+        }
+        eff->ca_getChildAt<QrealAnimator>(16)->setCurrentBaseValue(0.0);
         mode->setCurrentValue(0);
         amp->setCurrentBaseValue(0.0);
+
+        // page turn (mode 2): mid progress shows the flipped back and
+        // keeps a large opaque area; full progress lies flat mirrored
+        mode->setCurrentValue(2);
+        eff->ca_getChildAt<QrealAnimator>(1)->setCurrentBaseValue(50.0); // progress
+        {
+            SkBitmap dst;
+            render(dst);
+            int opaque = 0;
+            int backish = 0;
+            for (int y = 0; y < 128; y += 6) {
+                for (int x = 0; x < 128; x += 6) {
+                    const SkColor c = dst.getColor(x, y);
+                    if (SkColorGetA(c) == 255) opaque++;
+                    if (SkColorGetA(c) == 255 &&
+                        qAbs(int(SkColorGetB(c)) - int(SkColorGetR(c))) < 12 &&
+                        SkColorGetR(c) > 100) backish++;
+                }
+            }
+            if (opaque < 100) {
+                throw std::runtime_error("page turn lost the image");
+            }
+            if (backish < 8) {
+                throw std::runtime_error("page turn back never visible");
+            }
+        }
+        eff->ca_getChildAt<QrealAnimator>(1)->setCurrentBaseValue(100.0);
+        {
+            SkBitmap dst;
+            render(dst);
+            int opaque = 0;
+            for (int y = 0; y < 128; y += 6) {
+                for (int x = 0; x < 128; x += 6) {
+                    if (SkColorGetA(dst.getColor(x, y)) == 255) opaque++;
+                }
+            }
+            if (opaque < 300) {
+                throw std::runtime_error("full turn does not lie flat");
+            }
+        }
+        eff->ca_getChildAt<QrealAnimator>(1)->setCurrentBaseValue(0.0);
+
+        // slant + perspective + spiral on curl mode: no crash, output
+        // stays bounded and the far side still empties
+        mode->setCurrentValue(0);
+        eff->ca_getChildAt<QrealAnimator>(1)->setCurrentBaseValue(50.0);
+        eff->ca_getChildAt<QrealAnimator>(13)->setCurrentBaseValue(60.0); // slant
+        eff->ca_getChildAt<QrealAnimator>(14)->setCurrentBaseValue(40.0); // perspective
+        eff->ca_getChildAt<QrealAnimator>(15)->setCurrentBaseValue(30.0); // spiral
+        {
+            SkBitmap dst;
+            render(dst);
+            int opaque = 0;
+            for (int y = 0; y < 128; y += 6) {
+                for (int x = 0; x < 128; x += 6) {
+                    const SkColor c = dst.getColor(x, y);
+                    if (SkColorGetA(c) == 255 &&
+                        (SkColorGetR(c) > 250 || SkColorGetG(c) > 250)) {
+                        throw std::runtime_error("slant/perspective/spline produced unclamped output");
+                    }
+                    if (SkColorGetA(c) == 255) opaque++;
+                }
+            }
+            if (opaque < 80) {
+                throw std::runtime_error("slant/perspective destroyed the image");
+            }
+        }
+        eff->ca_getChildAt<QrealAnimator>(13)->setCurrentBaseValue(0.0);
+        eff->ca_getChildAt<QrealAnimator>(14)->setCurrentBaseValue(0.0);
+        eff->ca_getChildAt<QrealAnimator>(15)->setCurrentBaseValue(0.0);
+        eff->ca_getChildAt<QrealAnimator>(1)->setCurrentBaseValue(0.0);
 
     });
 

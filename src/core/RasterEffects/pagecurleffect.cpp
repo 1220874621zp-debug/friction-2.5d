@@ -21,21 +21,34 @@
 #
 */
 
-// Page curl / wave, rendered the lattice-warp way: a forward-warped
-// mesh redrawn with SkCanvas::drawVertices (skin-mesh style) - the
-// source bitmap is the texture, N.L lighting and the cast shadow are
-// baked into vertex colors, and the same mesh is drawn twice (textured
-// front pass with a cos(phi)>=0 alpha mask, solid-color back pass with
-// the complementary mask). CPU-only like LatticeWarpEffect; no
-// per-pixel inversion, no GL shader pipeline.
+// Page curl / wave / page turn, rendered the lattice-warp way: a
+// forward-warped mesh redrawn with SkCanvas::drawVertices (skin-mesh
+// style). The source bitmap is the texture, N.L lighting and the cast
+// shadow are baked into vertex colors, and the mesh is drawn twice
+// (textured front pass with a cos(phi)>=0 alpha mask, solid back pass
+// with the complementary mask). CPU-only like LatticeWarpEffect.
+//
+// Modes:
+//  curl (0) - the page rolls up around a cylinder of radius R; the
+//             radius can grow per turn (spiral); the contact line can
+//             be slanted (corner-curl look)
+//  wave (1) - no displacement, a traveling N.L ripple in the vertex
+//             colors (optionally crossed with a second wave)
+//  turn (2) - like curl, but wrapping stops at half a turn and the
+//             rest of the page lies flat on top, flipped - the page
+//             turn transition end state
 
 #include "pagecurleffect.h"
 
 #include "cpurendertools.h"
 #include "skia/skiaincludes.h"
 #include "include/core/SkVertices.h"
+#include "Boxes/boxrenderdata.h"
+#include "MovablePoints/pointshandler.h"
+#include "RasterEffects/effectcanvaspoint.h"
 
 #include "Animators/coloranimator.h"
+#include "Animators/qpointfanimator.h"
 #include "Properties/comboboxproperty.h"
 
 #include "appsupport.h"
@@ -52,6 +65,46 @@ float smooth01(const float t) {
     return c * c * (3.f - 2.f * c);
 }
 
+// light basis shared by all modes
+struct LightBasis {
+    float lX, lY, Lz;   // light direction (x,y in pixel space, z up)
+    float hX, hY, Hz;   // half vector with the view direction (0,0,1)
+};
+
+LightBasis makeLight(const PageCurlEffectData& d)
+{
+    const float kPi = 3.14159265359f;
+    const float la = d.mLightAngle * kPi / 180.f;
+    const float el = d.mLightElev * kPi / 180.f;
+    const float cel = std::cos(el);
+    LightBasis lb;
+    lb.lX = std::cos(la) * cel;
+    lb.lY = std::sin(la) * cel;
+    lb.Lz = std::sin(el);
+    float hx = lb.lX, hy = lb.lY;
+    float hz = lb.Lz + 1.f;
+    const float hl = std::max(std::sqrt(hx * hx + hy * hy + hz * hz), 0.0001f);
+    lb.hX = hx / hl; lb.hY = hy / hl; lb.Hz = hz / hl;
+    return lb;
+}
+
+// spiral wrap: dR/dphi = R0*spiral/(2*pi), so the arc length obeys
+// t(phi) = R0*(phi + a*phi^2) with a = spiral/(4*pi) - invertible in
+// closed form
+float spiralRadius(const float R0, const float spiral, const float phi)
+{
+    return R0 * (1.f + spiral * phi / 6.28318530718f);
+}
+
+float spiralPhi(const float R0, const float spiral, const float t)
+{
+    if (spiral <= 0.0001f) return t / R0;
+    const float a = spiral / 12.56637061436f; // spiral/(4*pi)
+    const float arg = 1.f + 4.f * a * t / R0;
+    if (arg <= 0.f) return 0.f;
+    return (-1.f + std::sqrt(arg)) / (2.f * a);
+}
+
 } // namespace
 
 PageCurlEffect::PageCurlEffect() :
@@ -63,7 +116,8 @@ PageCurlEffect::PageCurlEffect() :
 {
     const auto modes = QStringList() <<
             QObject::tr("卷页") <<
-            QObject::tr("波浪");
+            QObject::tr("波浪") <<
+            QObject::tr("翻页");
     mMode = enve::make_shared<ComboBoxProperty>(QObject::tr("模式"), modes);
     // default to the wave: it keeps the whole image visible, so a fresh
     // effect never looks like it destroyed the layer
@@ -117,34 +171,39 @@ PageCurlEffect::PageCurlEffect() :
     mWaveSpeed = enve::make_shared<QrealAnimator>(15, -100, 100, 1,
                                                   QObject::tr("波浪速度"));
     ca_addChild(mWaveSpeed);
+
+    mSlant = enve::make_shared<QrealAnimator>(0, -100, 100, 1,
+                                              QObject::tr("前沿斜度"));
+    ca_addChild(mSlant);
+
+    mPerspective = enve::make_shared<QrealAnimator>(0, 0, 100, 1,
+                                                    QObject::tr("透视强度"));
+    ca_addChild(mPerspective);
+
+    mSpiral = enve::make_shared<QrealAnimator>(0, 0, 100, 1,
+                                               QObject::tr("螺旋递增"));
+    ca_addChild(mSpiral);
+
+    mCrossWave = enve::make_shared<QrealAnimator>(0, 0, 100, 1,
+                                                  QObject::tr("交叉波浪"));
+    ca_addChild(mCrossWave);
+
+    // canvas-handle control: the point's angle from the image center
+    // drives the roll direction, its distance drives the progress
+    const auto ctrlSrcs = QStringList() <<
+            QObject::tr("滑块") <<
+            QObject::tr("画布点");
+    mCtrlSrc = enve::make_shared<ComboBoxProperty>(QObject::tr("控制来源"), ctrlSrcs);
+    ca_addChild(mCtrlSrc);
+
+    mCtrlPoint = enve::make_shared<QPointFAnimator>(QObject::tr("卷曲控制点"));
+    mCtrlPoint->setBaseValue(0.5, 0.5);
+    ca_addChild(mCtrlPoint);
+
+    setPointsHandler(enve::make_shared<PointsHandler>());
+    getPointsHandler()->appendPt(enve::make_shared<EffectCanvasPoint>(
+                mCtrlPoint.get(), this, EffectCanvasPoint::Space::Normalized));
 }
-
-namespace {
-
-// light basis shared by both modes
-struct LightBasis {
-    float lX, lY, Lz;   // light direction (x,y in pixel space, z up)
-    float hX, hY, Hz;   // half vector with the view direction (0,0,1)
-};
-
-LightBasis makeLight(const PageCurlEffectData& d)
-{
-    const float kPi = 3.14159265359f;
-    const float la = d.mLightAngle * kPi / 180.f;
-    const float el = d.mLightElev * kPi / 180.f;
-    const float cel = std::cos(el);
-    LightBasis lb;
-    lb.lX = std::cos(la) * cel;
-    lb.lY = std::sin(la) * cel;
-    lb.Lz = std::sin(el);
-    float hx = lb.lX, hy = lb.lY;
-    float hz = lb.Lz + 1.f;
-    const float hl = std::max(std::sqrt(hx * hx + hy * hy + hz * hz), 0.0001f);
-    lb.hX = hx / hl; lb.hY = hy / hl; lb.Hz = hz / hl;
-    return lb;
-}
-
-} // namespace
 
 class PageCurlEffectCaller : public RasterEffectCaller {
 public:
@@ -161,7 +220,6 @@ stdsptr<RasterEffectCaller> PageCurlEffect::getEffectCaller(
         const qreal relFrame, const qreal resolution,
         const qreal influence, BoxRenderData * const data) const {
     Q_UNUSED(resolution)
-    Q_UNUSED(data)
 
     PageCurlEffectData effData;
     effData.mMode = mMode->getCurrentValue();
@@ -182,6 +240,33 @@ stdsptr<RasterEffectCaller> PageCurlEffect::getEffectCaller(
     effData.mWaveLen = static_cast<float>(mWaveLen->getEffectiveValue(relFrame));
     effData.mWavePhase = static_cast<float>(
                 relFrame * mWaveSpeed->getEffectiveValue(relFrame) * 0.05);
+    effData.mSlant = static_cast<float>(mSlant->getEffectiveValue(relFrame) * 0.01);
+    effData.mPerspective = static_cast<float>(mPerspective->getEffectiveValue(relFrame) * 0.01);
+    effData.mSpiral = static_cast<float>(mSpiral->getEffectiveValue(relFrame) * 0.01);
+    effData.mCrossWave = static_cast<float>(mCrossWave->getEffectiveValue(relFrame) * 0.01);
+
+    if (mCtrlSrc->getCurrentValue() == 1) {
+        // canvas-handle drive: angle from the image center = direction,
+        // distance (aspect-corrected, image-height units) = progress
+        const QPointF p = mCtrlPoint->getEffectiveValue(relFrame);
+        double aspect = 1.0;
+        if (data && data->fGlobalRect.height() > 0) {
+            aspect = double(data->fGlobalRect.width()) /
+                     double(data->fGlobalRect.height());
+        }
+        const double vx = (p.x() - 0.5) * aspect;
+        const double vy = p.y() - 0.5;
+        const double len = std::sqrt(vx * vx + vy * vy);
+        double ang = std::atan2(vy, vx) * 180.0 / M_PI;
+        if (ang < 0.0) ang += 360.0;
+        effData.mDirection = static_cast<float>(ang);
+        effData.mProgress = static_cast<float>(qBound(0.0, len / 0.55, 1.0));
+    }
+
+    if (data) {
+        effData.mTexW = data->fGlobalRect.width();
+        effData.mTexH = data->fGlobalRect.height();
+    }
 
     return enve::make_shared<PageCurlEffectCaller>(effData);
 }
@@ -218,8 +303,11 @@ void PageCurlEffectCaller::processCpu(CpuRenderTools& renderTools,
         sMin = std::min(sMin, s); sMax = std::max(sMax, s);
         mMin = std::min(mMin, m); mMax = std::max(mMax, m);
     }
+    const float mMid = 0.5f * (mMin + mMax);
 
     const LightBasis lb = makeLight(mData);
+    const float Ls = dirX * lb.lX + dirY * lb.lY;
+    const float Hs = dirX * lb.hX + dirY * lb.hY;
 
     // mesh density: fine along s (the curl is curved), coarser across
     int nS = std::max(64, std::min(220, int((sMax - sMin) / 4.f) + 1));
@@ -236,6 +324,13 @@ void PageCurlEffectCaller::processCpu(CpuRenderTools& renderTools,
     const float R = std::max(mData.mRadius * float(h), 1.f);
     const float edgeFade = std::max(4.f, 0.02f * float(std::max(w, h)));
 
+    // perspective: f in image-height units; 0 strength ~ orthographic
+    const float fPersp = mData.mPerspective > 0.001f
+            ? float(h) * (0.3f + 20.f * (1.f - mData.mPerspective))
+            : -1.f;
+    const float cx0 = 0.5f * float(w);
+    const float cy0 = 0.5f * float(h);
+
     // flat-part lighting fades in with the wrapped arc so progress 0 is
     // an exact passthrough (vertex colors = opaque white)
     const float arcAvail = (sMax - c) / R;
@@ -244,8 +339,14 @@ void PageCurlEffectCaller::processCpu(CpuRenderTools& renderTools,
             (1.f - mData.mAmbient) * std::max(0.f, lb.Lz);
     const float flatShade0 = 1.f + (litFlat - 1.f) * active;
 
+    const bool isWave = mData.mMode == 1;
+    const bool isTurn = mData.mMode == 2;
+    const float tCapHalfTurn = R * kPi; // turn mode: wrap stops at half a turn
+
     for (int b = 0; b <= nM; b++) {
         const float m = mMin + (mMax - mMin) * float(b) / float(nM);
+        // slanted contact line: per-row offset (corner-curl look)
+        const float cLocal = isWave ? c : c + mData.mSlant * (m - mMid);
         for (int a = 0; a <= nS; a++) {
             const float s0 = sMin + (sMax - sMin) * float(a) / float(nS);
             const int id = b * (nS + 1) + a;
@@ -256,21 +357,31 @@ void PageCurlEffectCaller::processCpu(CpuRenderTools& renderTools,
 
             float sx = px;
             float sy = py;
+            float z = 0.f;
             float frontA = 1.f;
             float frontShade = flatShade0;
             float backA = 0.f;
             float backShade = 0.f;
 
-            if (mData.mMode == 1) {
-                // wave: no displacement, a traveling N.L ripple in the
-                // vertex colors; fade the whole effect in with amplitude
+            const float t = s0 - cLocal;
+
+            if (isWave) {
+                // wave: no in-plane displacement, a traveling N.L ripple
+                // in the vertex colors (optionally crossed across m);
+                // fade the whole effect in with amplitude
                 const float A = mData.mWaveAmp * float(h);
                 const float rep = 100.f / std::max(mData.mWaveLen, 1.f);
-                const float omega = kTwoPi * rep / std::max(sMax - sMin, 1.f);
-                const float slope = A * omega *
-                        std::cos(omega * s0 + mData.mWavePhase);
-                float nX = -slope * dirX;
-                float nY = -slope * dirY;
+                const float omegaS = kTwoPi * rep / std::max(sMax - sMin, 1.f);
+                const float omegaM = kTwoPi * rep / std::max(mMax - mMin, 1.f);
+                const float zslope = A * omegaS *
+                        std::cos(omegaS * s0 + mData.mWavePhase);
+                const float mslope = A * mData.mCrossWave * omegaM *
+                        std::cos(omegaM * m + mData.mWavePhase + 1.57f);
+                z = A * std::sin(omegaS * s0 + mData.mWavePhase) +
+                    A * mData.mCrossWave *
+                        std::sin(omegaM * m + mData.mWavePhase + 1.57f);
+                float nX = -zslope * dirX - mslope * perpX;
+                float nY = -zslope * dirY - mslope * perpY;
                 const float nLen = std::max(std::sqrt(nX * nX + nY * nY + 1.f),
                                             0.0001f);
                 nX /= nLen; nY /= nLen;
@@ -281,41 +392,57 @@ void PageCurlEffectCaller::processCpu(CpuRenderTools& renderTools,
                         (1.f - mData.mAmbient) * std::max(0.f, nDotL);
                 float spec = mData.mSpecular *
                         std::pow(std::max(0.f, nDotH), 32.f);
-                const float t = smooth01(mData.mWaveAmp / 0.03f);
-                shade = 1.f + (shade - 1.f) * t;
-                spec *= t;
+                const float tFade = smooth01(mData.mWaveAmp / 0.03f);
+                shade = 1.f + (shade - 1.f) * tFade;
+                spec *= tFade;
                 frontShade = sat1(shade + spec * 0.5f);
-            } else if (s0 > c) {
-                // wrapped around the cylinder
-                const float phi = (s0 - c) / R;
-                const float sinPhi = std::sin(phi);
-                const float cosPhi = std::cos(phi);
-                const float screenS = c - R * sinPhi;
-                sx = dirX * screenS + perpX * m;
-                sy = dirY * screenS + perpY * m;
-                float nDotL = sinPhi * (dirX * lb.lX + dirY * lb.lY) +
-                             cosPhi * lb.Lz;
-                float nDotH = sinPhi * (dirX * lb.hX + dirY * lb.hY) +
-                              cosPhi * lb.Hz;
-                if (cosPhi >= 0.f) {
-                    const float shade = mData.mAmbient +
-                            (1.f - mData.mAmbient) * std::max(0.f, nDotL);
-                    const float spec = mData.mSpecular *
-                            std::pow(std::max(0.f, nDotH), 32.f);
-                    frontShade = sat1(shade + spec * 0.5f);
-                } else {
-                    // the flipped side faces the camera: solid back pass
+            } else if (t > 0.f) {
+                if (isTurn && t > tCapHalfTurn) {
+                    // page turn: past half a turn the rest lies flat on
+                    // top, flipped - the transition end state
+                    const float L = t - tCapHalfTurn;
+                    const float screenS = cLocal + L;
+                    sx = dirX * screenS + perpX * m;
+                    sy = dirY * screenS + perpY * m;
+                    z = 2.f * R;
+                    const float nDotL = -lb.Lz;
+                    const float nDotH = -lb.Hz;
                     frontA = 0.f;
-                    const float shade = mData.mAmbient +
-                            (1.f - mData.mAmbient) * std::max(0.f, -nDotL);
                     backA = 1.f;
-                    backShade = shade;
+                    backShade = mData.mAmbient +
+                            (1.f - mData.mAmbient) * std::max(0.f, nDotL);
+                } else {
+                    // wrapped around the (possibly growing) cylinder
+                    const float phi = isTurn ? t / R :
+                            spiralPhi(R, mData.mSpiral, t);
+                    const float Rw = isTurn ? R :
+                            spiralRadius(R, mData.mSpiral, phi);
+                    const float sinPhi = std::sin(phi);
+                    const float cosPhi = std::cos(phi);
+                    const float screenS = cLocal - Rw * sinPhi;
+                    sx = dirX * screenS + perpX * m;
+                    sy = dirY * screenS + perpY * m;
+                    z = Rw * (1.f - cosPhi);
+                    float nDotL = sinPhi * Ls + cosPhi * lb.Lz;
+                    float nDotH = sinPhi * Hs + cosPhi * lb.Hz;
+                    if (cosPhi >= 0.f) {
+                        const float shade = mData.mAmbient +
+                                (1.f - mData.mAmbient) * std::max(0.f, nDotL);
+                        const float spec = mData.mSpecular *
+                                std::pow(std::max(0.f, nDotH), 32.f);
+                        frontShade = sat1(shade + spec * 0.5f);
+                    } else {
+                        // the flipped side faces the camera: back pass
+                        frontA = 0.f;
+                        backA = 1.f;
+                        backShade = mData.mAmbient +
+                                (1.f - mData.mAmbient) * std::max(0.f, -nDotL);
+                    }
                 }
-            } else if (mData.mMode == 0 && active > 0.f) {
+            } else if (active > 0.f) {
                 // flat part under the raised tube: cast-shadow test
                 // (ray from the pixel toward the light vs the cylinder)
-                const float d = s0 - c;
-                const float Ls = dirX * lb.lX + dirY * lb.lY;
+                const float d = t;
                 const float A2 = Ls * d - lb.Lz * R;
                 const float disc = A2 * A2 - d * d;
                 if (disc > 0.f) {
@@ -336,6 +463,14 @@ void PageCurlEffectCaller::processCpu(CpuRenderTools& renderTools,
             float edgeA = 1.f;
             if (dOut > 0.f) {
                 edgeA = 1.f - sat1(dOut / edgeFade);
+            }
+
+            // perspective divide (orthographic when disabled): pulls
+            // raised geometry toward the viewer, opening up the tube
+            if (fPersp > 0.f && z > 0.001f) {
+                const float scale = fPersp / (fPersp + z);
+                sx = cx0 + (sx - cx0) * scale;
+                sy = cy0 + (sy - cy0) * scale;
             }
 
             pos[id] = SkPoint::Make(sx, sy);
@@ -376,7 +511,7 @@ void PageCurlEffectCaller::processCpu(CpuRenderTools& renderTools,
     paint.setAntiAlias(true);
     paint.setFilterQuality(kMedium_SkFilterQuality);
 
-    if (mData.mMode == 1) {
+    if (isWave) {
         // wave: one textured pass, all front
         paint.setShader(img->makeShader(SkTileMode::kClamp,
                                         SkTileMode::kClamp,
@@ -390,8 +525,8 @@ void PageCurlEffectCaller::processCpu(CpuRenderTools& renderTools,
         return;
     }
 
-    // curl: textured front pass masked by cos(phi)>=0, then a solid
-    // back pass with the complementary mask
+    // curl / turn: textured front pass masked by cos(phi)>=0, then a
+    // solid back pass with the complementary mask
     paint.setShader(img->makeShader(SkTileMode::kClamp,
                                     SkTileMode::kClamp,
                                     nullptr));

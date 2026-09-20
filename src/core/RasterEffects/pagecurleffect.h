@@ -29,9 +29,10 @@
 
 class ColorAnimator;
 class ComboBoxProperty;
+class QPointFAnimator;
 
 struct PageCurlEffectData {
-    int mMode = 0;           // 0 = page curl, 1 = wave (image fully visible)
+    int mMode = 0;           // 0 = page curl, 1 = wave, 2 = page turn (fold)
     float mProgress = 0.f;   // 0..1, 0 = flat passthrough
     float mDirection = 0.f;  // roll travel direction, degrees
     float mRadius = 0.12f;   // cylinder radius, fraction of image height
@@ -46,6 +47,10 @@ struct PageCurlEffectData {
     float mWaveAmp = 0.08f;  // wave mode: amplitude, fraction of image height
     float mWaveLen = 35.f;   // wave mode: wavelength, percent of the travel extent
     float mWavePhase = 0.f;  // wave mode: animation phase, radians
+    float mSlant = 0.f;      // curl: contact-line slant (-1..1), corner-curl look
+    float mPerspective = 0.f;// 0 = orthographic, 1 = strong perspective
+    float mSpiral = 0.f;     // curl: radius growth per turn (0..1)
+    float mCrossWave = 0.f;  // wave: second wave across the axis (0..1)
     int mTexW = 0;           // source size in pixels (0 = unknown)
     int mTexH = 0;
 };
@@ -71,6 +76,12 @@ private:
     qsptr<QrealAnimator> mWaveAmp;
     qsptr<QrealAnimator> mWaveLen;
     qsptr<QrealAnimator> mWaveSpeed;
+    qsptr<QrealAnimator> mSlant;
+    qsptr<QrealAnimator> mPerspective;
+    qsptr<QrealAnimator> mSpiral;
+    qsptr<QrealAnimator> mCrossWave;
+    qsptr<ComboBoxProperty> mCtrlSrc;   // 0 = sliders, 1 = canvas point
+    qsptr<QPointFAnimator> mCtrlPoint;  // canvas handle: angle+progress
 };
 
 #endif // PAGECURLEFFECT_H
