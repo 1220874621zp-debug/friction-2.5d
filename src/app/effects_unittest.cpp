@@ -591,6 +591,8 @@ int main(int argc, char *argv[])
         const auto eff = createRasterEffectForNonCustomType(
                 RasterEffectType::PAGE_CURL);
         if (!eff) { throw std::runtime_error("Factory returned null"); }
+        // the effect defaults to wave mode; pin curl mode for these checks
+        eff->ca_getChildAt<ComboBoxProperty>(0)->setCurrentValue(0);
 
         SkBitmap src;
         src.allocN32Pixels(128, 128);

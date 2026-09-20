@@ -273,6 +273,9 @@ PageCurlEffect::PageCurlEffect() :
             QObject::tr("卷页") <<
             QObject::tr("波浪");
     mMode = enve::make_shared<ComboBoxProperty>(QObject::tr("模式"), modes);
+    // default to the wave: it keeps the whole image visible, so a fresh
+    // effect never looks like it destroyed the layer
+    mMode->setCurrentValue(1);
     ca_addChild(mMode);
 
     mProgress = enve::make_shared<QrealAnimator>(0, 0, 100, 1,
@@ -311,7 +314,7 @@ PageCurlEffect::PageCurlEffect() :
                                                  QObject::tr("高光强度"));
     ca_addChild(mSpecular);
 
-    mWaveAmp = enve::make_shared<QrealAnimator>(8, 0, 30, 1,
+    mWaveAmp = enve::make_shared<QrealAnimator>(12, 0, 30, 1,
                                                 QObject::tr("波浪幅度"));
     ca_addChild(mWaveAmp);
 
@@ -319,7 +322,7 @@ PageCurlEffect::PageCurlEffect() :
                                                 QObject::tr("波浪长度"));
     ca_addChild(mWaveLen);
 
-    mWaveSpeed = enve::make_shared<QrealAnimator>(0, -100, 100, 1,
+    mWaveSpeed = enve::make_shared<QrealAnimator>(15, -100, 100, 1,
                                                   QObject::tr("波浪速度"));
     ca_addChild(mWaveSpeed);
 }
