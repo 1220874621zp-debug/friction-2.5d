@@ -25,7 +25,7 @@ jobs:
           echo "COMMIT=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
           echo "BRANCH=NONE" >> $GITHUB_ENV
       - name: Build with Qt6
-        run: APT=1 CI=1 QT6=1 MKJOBS=2 ./src/scripts/ci.sh
+        run: APT=1 CI=1 QT6=ON MKJOBS=2 ./src/scripts/ci.sh
       - name: Install to AppDir
         run: |
           mkdir -p AppDir
@@ -57,7 +57,7 @@ jobs:
         with:
           submodules: recursive
       - name: Build DEB Package
-        run: APT=1 CI=1 QT6=1 MKJOBS=2 ./src/scripts/ci.sh
+        run: APT=1 CI=1 QT6=ON MKJOBS=2 ./src/scripts/ci.sh
       - name: Prepare Artifact
         run: |
           mkdir -p ci-artifacts
@@ -81,7 +81,7 @@ jobs:
         with:
           version: '6.8.3'
           arch: 'win64_msvc2022_64'
-          modules: 'qtmultimedia qtsvg'
+          modules: 'qtmultimedia'
           cache: true
       - name: Build QScintilla2 (Qt6)
         shell: cmd
