@@ -64,40 +64,52 @@ void main(void) {
     float m = dot(p, perp);         // position along the curl axis
 
     // the wrapped page lands at -R*sin(phi): solve for every turn and
-    // keep the frontmost (largest height R*(1-cos(phi)))
+    // keep the frontmost (largest height R*(1-cos(phi))); a solution
+    // counts only if its source point stays on the page - checking the
+    // UV after picking the max lets an off-page solution shadow a valid
+    // one (leaves holes and 1px stripes across the tube). Wrapped
+    // material only ever lands within +-R of the contact line; outside
+    // that band there is no solution (clamping -d/R would fabricate a
+    // phantom phi=pi/2 one that overwrites the flat page above the tube)
     float bestZ = -1.0;
     float bestPhi = -1.0;
-    float q = clamp(-d / R, -1.0, 1.0);
-    float phi0 = asin(q);
-    float phiCap = 11.5 * PI;       // ~5.75 turns is plenty
-    for (int k = 0; k < 8; k++) {
-        float base = TWO_PI * float(k);
-        float f1 = phi0 + base;
-        if (f1 > phiCap) break;
-        if (f1 >= 0.0) {
-            float z = R * (1.0 - cos(f1));
-            if (z > bestZ) { bestZ = z; bestPhi = f1; }
-        }
-        float f2 = PI - phi0 + base;
-        if (f2 > phiCap) break;
-        if (f2 >= 0.0) {
-            float z = R * (1.0 - cos(f2));
-            if (z > bestZ) { bestZ = z; bestPhi = f2; }
+    vec2 bestUV = vec2(0.0);
+    if (abs(d) <= R) {
+        float q = -d / R;
+        float phi0 = asin(q);
+        float phiCap = 11.5 * PI;       // ~5.75 turns is plenty
+        for (int k = 0; k < 8; k++) {
+            float base = TWO_PI * float(k);
+            float f1 = phi0 + base;
+            if (f1 <= phiCap && f1 >= 0.0) {
+                float z = R * (1.0 - cos(f1));
+                if (z > bestZ) {
+                    vec2 P0 = dir * (c + R * f1) + perp * m;
+                    vec2 uv0 = vec2(P0.x / aspect, P0.y);
+                    if (uv0.x >= 0.0 && uv0.x <= 1.0 &&
+                        uv0.y >= 0.0 && uv0.y <= 1.0) {
+                        bestZ = z; bestPhi = f1; bestUV = uv0;
+                    }
+                }
+            }
+            float f2 = PI - phi0 + base;
+            if (f2 <= phiCap && f2 >= 0.0) {
+                float z = R * (1.0 - cos(f2));
+                if (z > bestZ) {
+                    vec2 P0 = dir * (c + R * f2) + perp * m;
+                    vec2 uv0 = vec2(P0.x / aspect, P0.y);
+                    if (uv0.x >= 0.0 && uv0.x <= 1.0 &&
+                        uv0.y >= 0.0 && uv0.y <= 1.0) {
+                        bestZ = z; bestPhi = f2; bestUV = uv0;
+                    }
+                }
+            }
+            if (phi0 + base > phiCap) break;
         }
     }
 
-    // the wrapped point is material only if its source stays on the page
     bool useWrap = bestPhi >= 0.0;
-    vec2 uvSrc = texCoord;
-    if (useWrap) {
-        vec2 P0 = dir * (c + R * bestPhi) + perp * m;
-        vec2 uv0 = vec2(P0.x / aspect, P0.y);
-        if (uv0.x < 0.0 || uv0.x > 1.0 || uv0.y < 0.0 || uv0.y > 1.0) {
-            useWrap = false;
-        } else {
-            uvSrc = uv0;
-        }
-    }
+    vec2 uvSrc = useWrap ? bestUV : texCoord;
 
     // no tube above and not on the flat side: the page has left
     if (!useWrap && d > 0.0) {

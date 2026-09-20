@@ -116,45 +116,49 @@ Vec4 evalPageCurl(const PageCurlEffectData& d,
     const float m = px * perpX + py * perpY;      // position along the curl axis
 
     // wrapped page lands at -R*sin(phi): solve for every turn, keep the
-    // frontmost (largest height R*(1-cos(phi)))
+    // frontmost (largest height R*(1-cos(phi))); a solution counts only
+    // if its source point stays on the page - checking the UV after
+    // picking the max lets an off-page solution shadow a valid one
+    // (leaves holes and 1px stripes across the tube). Wrapped material
+    // only ever lands within +-R of the contact line; outside that band
+    // there is no solution (clamping -dd/R would fabricate a phantom
+    // phi=pi/2 one that overwrites the flat page above the tube)
     float bestZ = -1.f;
     float bestPhi = -1.f;
-    const float q = std::min(std::max(-dd / R, -1.f), 1.f);
-    const float phi0 = std::asin(q);
-    const float phiCap = 11.5f * kPi;
-    for (int k = 0; k < 8; k++) {
-        const float base = kTwoPi * float(k);
-        const float f1 = phi0 + base;
-        if (f1 > phiCap) break;
-        if (f1 >= 0.f) {
-            const float z = R * (1.f - std::cos(f1));
-            if (z > bestZ) { bestZ = z; bestPhi = f1; }
-        }
-        const float f2 = kPi - phi0 + base;
-        if (f2 > phiCap) break;
-        if (f2 >= 0.f) {
-            const float z = R * (1.f - std::cos(f2));
-            if (z > bestZ) { bestZ = z; bestPhi = f2; }
+    float bestU = 0.f;
+    float bestV = 0.f;
+    if (std::abs(dd) <= R) {
+        const float q = -dd / R;
+        const float phi0 = std::asin(q);
+        const float phiCap = 11.5f * kPi;
+        const auto consider = [&](const float phi) {
+            if (phi < 0.f || phi > phiCap) return;
+            const float z = R * (1.f - std::cos(phi));
+            if (z <= bestZ) return;
+            const float s0 = c + R * phi;
+            const float p0x = dirX * s0 + perpX * m;
+            const float p0y = dirY * s0 + perpY * m;
+            const float u0 = p0x / aspect;
+            const float v0 = p0y;
+            if (u0 < 0.f || u0 > 1.f || v0 < 0.f || v0 > 1.f) return;
+            bestZ = z; bestPhi = phi; bestU = u0; bestV = v0;
+        };
+        for (int k = 0; k < 8; k++) {
+            const float base = kTwoPi * float(k);
+            consider(phi0 + base);
+            consider(kPi - phi0 + base);
+            if (phi0 + base > phiCap) break;
         }
     }
 
-    bool useWrap = bestPhi >= 0.f;
+    const bool useWrap = bestPhi >= 0.f;
     float uvX = u, uvY = v;
-    if (useWrap) {
-        const float s0 = c + R * bestPhi;
-        const float p0x = dirX * s0 + perpX * m;
-        const float p0y = dirY * s0 + perpY * m;
-        const float u0 = p0x / aspect;
-        const float v0 = p0y;
-        if (u0 < 0.f || u0 > 1.f || v0 < 0.f || v0 > 1.f) {
-            useWrap = false;
-        } else {
-            uvX = u0; uvY = v0;
-        }
-    }
+    if (useWrap) { uvX = bestU; uvY = bestV; }
 
     // no tube above and not on the flat side: the page has left
-    if (!useWrap && dd > 0.f) return Vec4 { 0.f, 0.f, 0.f, 0.f };
+    if (!useWrap && dd > 0.f) {
+        return Vec4 { 0.f, 0.f, 0.f, 0.f };
+    }
 
     // light (image-space y points down; 225 deg = from the upper left)
     const float la = d.mLightAngle * kPi / 180.f;
