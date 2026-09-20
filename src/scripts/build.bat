@@ -53,10 +53,10 @@ mkdir output
 rem Qt6 toolchain comes from install-qt-action (Qt6_DIR), qscintilla2-qt6 is
 rem pre-built by the workflow into %QSCINTILLA_DIR% (qmake+nmake, release\)
 rem SDK still provides skia + ffmpeg + vtracer (all Qt-independent).
-if "%Qt6_DIR%" == "" (
+if "%QT_ROOT_DIR%" == "" (
     echo ERROR: Qt6_DIR not set - install Qt 6.8 first & exit /b 1
 )
-cmake -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=%BTYPE% -DCMAKE_PREFIX_PATH=%SDK_DIR% -DQt6_DIR=%Qt6_DIR%\lib\cmake\Qt6 -DQSCINTILLA_INCLUDE_DIRS=%QSCINTILLA_DIR% -DQSCINTILLA_LIBRARIES_DIRS=%QSCINTILLA_DIR%\release -DQSCINTILLA_LIBRARIES=qscintilla2_qt6 -DCUSTOM_BUILD=%CBUILD% -DBUILD_SKIA=OFF -DFRICTION_OFFICIAL_RELEASE=%REL% -DWIN_DEPLOY=ON -DGIT_COMMIT=%COMMIT% -DGIT_BRANCH=%BRANCH% ..
+cmake -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=%BTYPE% -DCMAKE_PREFIX_PATH=%SDK_DIR% -DQt6_DIR=%QT_ROOT_DIR%\lib\cmake\Qt6 -DQSCINTILLA_INCLUDE_DIRS=%QSCINTILLA_DIR% -DQSCINTILLA_LIBRARIES_DIRS=%QSCINTILLA_DIR%\release -DQSCINTILLA_LIBRARIES=qscintilla2_qt6 -DCUSTOM_BUILD=%CBUILD% -DBUILD_SKIA=OFF -DFRICTION_OFFICIAL_RELEASE=%REL% -DWIN_DEPLOY=ON -DGIT_COMMIT=%COMMIT% -DGIT_BRANCH=%BRANCH% ..
 set /p VERSION=<version.txt
 cmake --build . --config %BTYPE%
 
@@ -80,7 +80,7 @@ rem qscintilla2-qt6 (built by workflow)
 copy "%QSCINTILLA_DIR%\release\qscintilla2_qt6.dll" "%OUTPUT_DIR%\"
 
 rem Qt6 runtime + plugins (platforms/audio/imageformats/translations) via windeployqt
-"%Qt6_DIR%\bin\windeployqt.exe" --release --no-compiler-runtime "%OUTPUT_DIR%\friction.exe"
+"%QT_ROOT_DIR%\bin\windeployqt.exe" --release --no-compiler-runtime "%OUTPUT_DIR%\friction.exe"
 if errorlevel 1 (
     echo ERROR: windeployqt failed & exit /b 1
 )

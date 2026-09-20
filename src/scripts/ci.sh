@@ -44,7 +44,7 @@ if [ "${APT}" = 1 ]; then
     sudo apt update -y
     sudo apt install -y curl git clang build-essential cmake python3 ninja-build libfontconfig1-dev libfreetype-dev libavcodec-dev libavformat-dev libavutil-dev libswresample-dev libswscale-dev libunwind-dev libexpat1-dev libfreetype-dev libjpeg-turbo8-dev libpng-dev libwebp-dev zlib1g-dev libicu-dev libharfbuzz-dev libgl1-mesa-dev libegl1-mesa-dev libgles2-mesa-dev
     if [ "${QT6}" = "ON" ]; then
-        sudo apt install -y libqscintilla2-qt6-dev qt6-base-dev-tools qt6-base-dev qt6-declarative-dev-tools qt6-declarative-dev qt6-multimedia-dev qt6-tools-dev-tools qt6-tools-dev
+        sudo apt install -y libqscintilla2-qt6-dev libqt6svg6-dev qt6-base-dev-tools qt6-base-dev qt6-declarative-dev-tools qt6-declarative-dev qt6-multimedia-dev qt6-tools-dev-tools qt6-tools-dev
     else
         sudo apt install -y libqscintilla2-qt5-dev libqt5opengl5-dev qtbase5-dev-tools qtbase5-dev qtdeclarative5-dev-tools qtdeclarative5-dev qtmultimedia5-dev qttools5-dev-tools
     fi
