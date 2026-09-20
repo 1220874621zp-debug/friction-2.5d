@@ -92,7 +92,7 @@ cmake -G Ninja \
 -DQSCINTILLA_INCLUDE_DIRS=/usr/include/${CPU}-linux-gnu/qt${QTV} \
 -DQSCINTILLA_LIBRARIES=qscintilla2_qt${QTV} \
 -DUSE_QT6=${QT6} \
--DSKIA_STATIC=ON \
+-DSKIA_STATIC=OFF \
 ..
 cmake --build .
 
