@@ -101,6 +101,11 @@ public:
     void skinPinsBindSkeleton();
     // bind every FREE pin to its nearest bone in one action
     void skinPinsAutoBindBones();
+    // automatic hook at the natural bind moments (first bone pose,
+    // drop into a bone group); no-op without free pins or bones
+    void maybeAutoBindFreePins(const bool quiet = false);
+    // sweep every image under the container and auto-bind their pins
+    static void autoBindFreePinsUnder(ContainerBox * const root);
     // refresh the render cache after an out-of-animator pin change
     // (bone bind / unbind)
     void skinChangedNotify();

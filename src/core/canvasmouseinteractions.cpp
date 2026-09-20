@@ -501,6 +501,17 @@ void Canvas::bonePosePress(const eMouseEvent& e) {
     Bone* best = pickBoneAt(e.fPos, pickPx);
     if(!best) { clearBoxesSelection(); return; }
 
+    // the first pose of a skeleton is the natural moment the rig is
+    // complete: auto-bind any still-free pins of the images inside
+    // this bone layer BEFORE the pose applies (the captured bind pose
+    // is the pre-pose skeleton)
+    for (auto p = best->getParentGroup(); p; p = p->getParentGroup()) {
+        if (enve_cast<BoneLayer*>(p)) {
+            ImageBox::autoBindFreePinsUnder(p);
+            break;
+        }
+    }
+
     clearBoxesSelection();
     addBoxToSelection(best);
     mPoseBone = best;

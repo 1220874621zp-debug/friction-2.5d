@@ -667,23 +667,56 @@ void ImageBox::skinPinsBindSkeleton() {
 // "pins first, rig later" workflow: placement-time adoption found no
 // bones because the skeleton did not exist yet)
 void ImageBox::skinPinsAutoBindBones() {
-    if (skinCandidateBones().isEmpty()) {
-        qWarning() << "[SKIN]" << prp_getName()
-                   << "auto-bind: no bones in scope";
-        return;
+    maybeAutoBindFreePins(false);
+}
+
+// automatic binding hook: fires at the natural moments (first bone
+// pose, image dropped into a bone group that has bones) - an image
+// carrying pins inside a bone group MEANS bind, per the user model.
+// No-op without free pins or without bones in scope, so callers can
+// invoke it liberally
+void ImageBox::maybeAutoBindFreePins(const bool quiet) {
+    // only inside a bone-layer scope (an image outside any rig must
+    // not grab scene bones on its own)
+    bool inBoneLayer = false;
+    for (auto p = getParentGroup(); p; p = p->getParentGroup()) {
+        if (enve_cast<BoneLayer*>(p)) { inBoneLayer = true; break; }
     }
-    int bound = 0;
+    if (!inBoneLayer || skinCandidateBones().isEmpty()) return;
     int free = 0;
     for (int i = 0; i < skinPinCount(); ++i) {
         const auto pin = mSkinPins->pinAt(i);
+        if (pin && !pin->hasBone()) { free++; break; }
+    }
+    if (free == 0) return;
+    int bound = 0;
+    for (int i = 0; i < skinPinCount(); ++i) {
+        const auto pin = mSkinPins->pinAt(i);
         if (!pin || pin->hasBone()) continue;
-        free++;
         if (pin->tryBindNearestBone(false)) bound++;
     }
     qDebug() << "[SKIN]" << prp_getName()
-             << "auto-bind: free=" << free << "bound=" << bound;
+             << "auto-bind: bound=" << bound << "pins";
     if (bound > 0) prp_afterWholeInfluenceRangeChanged();
-    if (Document::sInstance) Document::sInstance->actionFinished();
+    if (!quiet && Document::sInstance) {
+        Document::sInstance->actionFinished();
+    }
+}
+
+// sweep every image under a container (e.g. a bone layer) and
+// auto-bind their free pins
+void ImageBox::autoBindFreePinsUnder(ContainerBox * const root) {
+    if (!root) return;
+    for (const auto& c : root->getContained()) {
+        if (const auto bone = enve_cast<Bone*>(c.data())) {
+            autoBindFreePinsUnder(bone);
+        } else if (const auto img = enve_cast<ImageBox*>(c.data())) {
+            img->maybeAutoBindFreePins(true);
+        } else if (const auto group =
+                   enve_cast<ContainerBox*>(c.data())) {
+            autoBindFreePinsUnder(group);
+        }
+    }
 }
 
 void ImageBox::removeSkinPin(SkinPin * const pin) {

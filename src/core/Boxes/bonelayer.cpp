@@ -139,6 +139,13 @@ void BoneLayer::absorbDroppedBoxes(const QList<eBoxOrSound*>& boxes) {
         }
     }
     diagMovedLayers(moved);
+    // a pinned image dropped into a bone group that carries bones
+    // means BIND: auto-bind its free pins now
+    for (const auto& w : moved) {
+        if (const auto img = enve_cast<ImageBox*>(w.data())) {
+            img->maybeAutoBindFreePins(true);
+        }
+    }
     if(absorbed > 0 && Document::sInstance) {
         Document::sInstance->actionFinished();
     }
