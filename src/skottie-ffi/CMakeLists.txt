@@ -199,7 +199,9 @@ if(WIN32)
     set(FRSK_SKIA_LIBRARIES skia user32 opengl32)
     set(FRSK_SKIA_LIBRARIES_DIRS ${CMAKE_SOURCE_DIR}/sdk/bin)
 elseif(APPLE)
-    set(FRSK_SKIA_LIBRARIES skia z)
+    set(FRSK_SKIA_LIBRARIES skia z
+        "-framework CoreFoundation" "-framework CoreGraphics"
+        "-framework CoreText" "-framework CoreServices")
     if(BUILD_SKIA)
         set(FRSK_SKIA_LIBRARIES_DIRS ${CMAKE_BINARY_DIR}/src/skia)
     else()

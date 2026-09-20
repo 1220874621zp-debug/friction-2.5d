@@ -45,9 +45,9 @@ if not exist "sdk\" (
 rem assemble the isolated ffmpeg header dir friction-ffmpeg.cmake points at
 rem (sdk\include also carries the whole Qt5 header tree which would shadow
 rem the Qt6 headers, so only the libav* subdirs get copied out)
-if not exist "sdk\ffmpeg-win" (
-    robocopy sdk\include sdk\ffmpeg-win libavcodec libavdevice libavfilter libavformat libavresample libavutil libswresample libswscale /E /NFL /NDL /NJH /NJS >nul
-    if exist "sdk\ffmpeg-win\libavutil" echo ffmpeg-win assembled
+if not exist "sdk\ffmpeg-win\libavutil\log.h" (
+    for %%D in (libavcodec libavdevice libavfilter libavformat libavresample libavutil libswresample libswscale) do robocopy "sdk\include\%%D" "sdk\ffmpeg-win\%%D" /E /NFL /NDL /NJH /NJS >nul
+    if exist "sdk\ffmpeg-win\libavutil\log.h" echo ffmpeg-win assembled
 )
 
 if exist "build\" (
