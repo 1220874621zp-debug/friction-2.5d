@@ -229,6 +229,7 @@ set(
     RasterEffects/chromakeyeffect.cpp
     RasterEffects/liquidglasseffect.cpp
     RasterEffects/pagecurleffect.cpp
+    RasterEffects/latticewarpeffect.cpp
     RasterEffects/colorizeeffect.cpp
     RasterEffects/customrastereffect.cpp
     RasterEffects/motionblureffect.cpp
@@ -277,6 +278,7 @@ set(
     RasterEffects/displacementwarpeffect.cpp
     RasterEffects/filmgraineffect.cpp
     RasterEffects/blackwhiteflasheffect.cpp
+    RasterEffects/effectcanvaspoint.cpp
     RasterEffects/liquidglasseffect.cpp
     RasterEffects/pixelarteffect.cpp
     RasterEffects/layerstyleseffect.cpp
@@ -285,7 +287,6 @@ set(
     RasterEffects/smeareffect.cpp
     RasterEffects/roughenedgeseffect.cpp
     RasterEffects/particleeffect.cpp
-    RasterEffects/latticewarpeffect.cpp
     ReadWrite/ereadstream.cpp
     ReadWrite/ewritestream.cpp
     ReadWrite/filefooter.cpp
@@ -622,6 +623,7 @@ set(
     RasterEffects/chromakeyeffect.h
     RasterEffects/liquidglasseffect.h
     RasterEffects/pagecurleffect.h
+    RasterEffects/latticewarpeffect.h
     RasterEffects/colorizeeffect.h
     RasterEffects/customrastereffect.h
     RasterEffects/motionblureffect.h
@@ -665,6 +667,7 @@ set(
     RasterEffects/displacementwarpeffect.h
     RasterEffects/filmgraineffect.h
     RasterEffects/blackwhiteflasheffect.h
+    RasterEffects/effectcanvaspoint.h
     RasterEffects/liquidglasseffect.h
     RasterEffects/pixelarteffect.h
     RasterEffects/layerstyleseffect.h
@@ -673,7 +676,6 @@ set(
     RasterEffects/smeareffect.h
     RasterEffects/roughenedgeseffect.h
     RasterEffects/particleeffect.h
-    RasterEffects/latticewarpeffect.h
     ReadWrite/efuturepos.h
     ReadWrite/ereadstream.h
     ReadWrite/evformat.h

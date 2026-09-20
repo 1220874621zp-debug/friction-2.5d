@@ -33,6 +33,7 @@
 #include "system/svgclipboard.h"
 #include "vtracerprovider.h"
 #include "Depth/aidepthprovider.h"
+#include "RasterEffects/effectcanvaspoint.h"
 
 #include <QDesktopServices>
 #include <QClipboard>
@@ -678,6 +679,24 @@ void MainWindow::setupMenuBar()
     cmdAddAction(mClipViewToCanvas);
     connect(mClipViewToCanvas, &QAction::triggered,
             &mActions, &Actions::setClipToCanvas);
+
+    // AE "Show Layer Controls" alike: toggle the draggable effect
+    // point crosshairs (zoom-blur center, shadow translation, ...)
+    // drawn for selected boxes
+    const auto effectPointsAct = mViewMenu->addAction(
+                tr("Effect Point Controls", "MenuBar_View"));
+    effectPointsAct->setCheckable(true);
+    effectPointsAct->setChecked(EffectCanvasPoint::pointsVisible());
+    connect(effectPointsAct, &QAction::triggered,
+            this, [this, effectPointsAct]() {
+        EffectCanvasPoint::setPointsVisible(effectPointsAct->isChecked());
+        const auto scene = *mDocument.fActiveScene;
+        if (scene) { scene->requestUpdate(); }
+        statusBar()->showMessage(tr("Effect Point Controls: %1").arg(
+                effectPointsAct->isChecked() ? tr("Enabled") :
+                                               tr("Disabled")), 3000);
+    });
+    cmdAddAction(effectPointsAct);
 
     mViewMenu->addSeparator();
 

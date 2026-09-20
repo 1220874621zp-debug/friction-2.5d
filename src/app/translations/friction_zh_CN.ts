@@ -6699,6 +6699,17 @@ Are you sure you want to save this project file?</source>
             <translation>裁剪到场景</translation>
         </message>
         <message>
+            <location filename="../GUI/menu.cpp" line="676" />
+            <source>Effect Point Controls</source>
+            <comment>MenuBar_View</comment>
+            <translation>效果控制点</translation>
+        </message>
+        <message>
+            <location filename="../GUI/menu.cpp" line="685" />
+            <source>Effect Point Controls: %1</source>
+            <translation>效果控制点：%1</translation>
+        </message>
+        <message>
             <location filename="../GUI/menu.cpp" line="683" />
             <source>Preview Cache</source>
             <translation>预览缓存</translation>

@@ -1,6 +1,8 @@
 #include "shadoweffect.h"
 
 #include "Boxes/containerbox.h"
+#include "MovablePoints/pointshandler.h"
+#include "RasterEffects/effectcanvaspoint.h"
 #include "svgexporter.h"
 #include "svgexporthelpers.h"
 #include "appsupport.h"
@@ -58,6 +60,13 @@ ShadowEffect::ShadowEffect() :
     ca_addChild(mOpacity);
 
     ca_setGUIProperty(mColor.data());
+
+    // AE-style draggable canvas handle for the shadow offset; the
+    // handle sits at content-center + translation and draws a dashed
+    // guide from the center, so the displacement reads at a glance
+    setPointsHandler(enve::make_shared<PointsHandler>());
+    getPointsHandler()->appendPt(enve::make_shared<EffectCanvasPoint>(
+                mTranslation.get(), this, EffectCanvasPoint::Space::Offset));
 }
 
 QDomElement ShadowEffect::saveShadowSVG(

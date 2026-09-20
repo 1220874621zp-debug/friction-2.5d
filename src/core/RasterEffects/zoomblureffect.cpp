@@ -27,6 +27,8 @@
 
 #include "Animators/qrealanimator.h"
 #include "Animators/qpointfanimator.h"
+#include "MovablePoints/pointshandler.h"
+#include "RasterEffects/effectcanvaspoint.h"
 #include "appsupport.h"
 
 ZoomBlurEffect::ZoomBlurEffect() :
@@ -42,6 +44,13 @@ ZoomBlurEffect::ZoomBlurEffect() :
     mCenter = enve::make_shared<QPointFAnimator>("center");
     mCenter->setBaseValue(0.5, 0.5);
     ca_addChild(mCenter);
+
+    // AE-style draggable canvas handle for the center (0..1 UV over
+    // the host box's content rect); drawn/hit-tested for selected
+    // boxes, driving mCenter so drags are keyframable and undoable
+    setPointsHandler(enve::make_shared<PointsHandler>());
+    getPointsHandler()->appendPt(enve::make_shared<EffectCanvasPoint>(
+                mCenter.get(), this, EffectCanvasPoint::Space::Normalized));
 }
 
 class ZoomBlurEffectCaller : public OpenGLRasterEffectCaller {
