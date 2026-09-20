@@ -125,7 +125,10 @@ enum class RasterEffectType : short {
     SMEAR,
     ROUGHEN_EDGES,
     // analytic particle emitter (stateless, per-frame deterministic)
-    PARTICLE
+    PARTICLE,
+    // AE Putty-style lattice (FFD) deformation - appended last,
+    // never reorder, serialized ids must stay stable
+    LATTICE_WARP
 };
 
 struct BoxRenderData;

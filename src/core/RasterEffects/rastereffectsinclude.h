@@ -47,5 +47,6 @@
 #include "smeareffect.h"
 #include "roughenedgeseffect.h"
 #include "particleeffect.h"
+#include "latticewarpeffect.h"
 
 #endif // RASTEREFFECTSINCLUDE_H

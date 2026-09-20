@@ -124,6 +124,8 @@ void RasterEffectMenuCreator::forEveryEffectCore(const EffectAdder &add)
         []() { return enve::make_shared<ShatterEffect>(); });
     add(QObject::tr("粒子"), QObject::tr("Simulation"),
         []() { return enve::make_shared<ParticleEffect>(); });
+    add(QObject::tr("晶格变形"), QObject::tr("Distort"),
+        []() { return enve::make_shared<LatticeWarpEffect>(); });
     add(QObject::tr("毛边粗糙化 (Roughen Edges)"), QObject::tr("Stylize"),
         []() { return enve::make_shared<RoughenEdgesEffect>(); });
     add(QObject::tr("图层样式"), "",

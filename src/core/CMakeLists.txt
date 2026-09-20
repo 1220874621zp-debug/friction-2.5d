@@ -284,6 +284,7 @@ set(
     RasterEffects/smeareffect.cpp
     RasterEffects/roughenedgeseffect.cpp
     RasterEffects/particleeffect.cpp
+    RasterEffects/latticewarpeffect.cpp
     ReadWrite/ereadstream.cpp
     ReadWrite/ewritestream.cpp
     ReadWrite/filefooter.cpp
@@ -670,6 +671,7 @@ set(
     RasterEffects/smeareffect.h
     RasterEffects/roughenedgeseffect.h
     RasterEffects/particleeffect.h
+    RasterEffects/latticewarpeffect.h
     ReadWrite/efuturepos.h
     ReadWrite/ereadstream.h
     ReadWrite/evformat.h
