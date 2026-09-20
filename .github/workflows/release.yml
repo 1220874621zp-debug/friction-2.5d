@@ -18,17 +18,34 @@ jobs:
   # ----------------- Linux AppImage 构建 -----------------
   build-linux-appimage:
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-      - name: Build AppImage (Release)
-        run: REL=1 ./src/scripts/build.sh
-      - name: Prepare Artifact
+      - name: Set Head Repo URL Environment Variable
+        if: github.event_name == 'pull_request'
         run: |
+          echo "HEAD_REPO_URL=${{ github.event.pull_request.head.repo.clone_url }}" >> $GITHUB_ENV
+          echo "COMMIT=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
+          echo "BRANCH=NONE" >> $GITHUB_ENV
+      - name: Build with Qt6
+        run: APT=1 CI=1 QT6=1 MKJOBS=2 REL=1 ./src/scripts/ci.sh
+      - name: Install to AppDir
+        run: |
+          mkdir -p AppDir
+          DESTDIR=AppDir cmake --install build-ci
+      - name: Build AppImage
+        run: |
+          sudo apt install -y libfuse2
+          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+          chmod +x linuxdeploy*.AppImage
+          export PATH=$(dirname $(readlink -f $(which qmake6))):$PATH
+          ./linuxdeploy-x86_64.AppImage --appdir AppDir --plugin qt --output appimage \
+            -d src/app/xdg/friction.desktop \
+            -i src/app/icons/hicolor/256x256/apps/graphics.friction.Friction.png
           mkdir -p ci-artifacts
-          cp distfiles/builds/*/*.AppImage ci-artifacts/
+          mv *.AppImage ci-artifacts/ || true
       - name: Upload Linux AppImage Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -63,6 +80,22 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+      - name: Install Qt 6.8
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          arch: 'win64_msvc2022_64'
+          modules: 'qtmultimedia qtsvg'
+          cache: true
+      - name: Build QScintilla2 (Qt6)
+        shell: cmd
+        run: |
+          git clone --depth 1 https://github.com/riverbankcomputing/qscintilla.git qscintilla
+          cd qscintilla\src
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          "%Qt6_DIR%\bin\qmake.exe" qscintilla.pro CONFIG+=release
+          nmake
+          echo QSCINTILLA_DIR=%cd%>>%GITHUB_ENV%
       - name: Build Windows Package (Release)
         shell: cmd
         run: .\src\scripts\build.bat release
@@ -89,8 +122,19 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-      - name: Build macOS DMG (Release)
-        run: REL=ON ./src/scripts/build_mac_ci.sh
+      - name: Install Qt6 + QScintilla2
+        run: |
+          brew install qt@6
+          git clone --depth 1 https://github.com/riverbankcomputing/qscintilla.git /tmp/qsci
+          cd /tmp/qsci/src
+          "$(brew --prefix qt@6)/bin/qmake" qscintilla.pro CONFIG+=release
+          make -j3
+      - name: Build macOS DMG (arm64)
+        run: |
+          export QT6_PREFIX="$(brew --prefix qt@6)"
+          export QSCINTILLA_DIR=/tmp/qsci/src
+          export PATH="$QT6_PREFIX/bin:$PATH"
+          BUILD_INTEL=0 BUILD_UNIVERSAL=0 REL=ON ./src/scripts/build_mac_ci.sh
       - name: Prepare Artifact
         run: |
           mkdir -p ci-artifacts

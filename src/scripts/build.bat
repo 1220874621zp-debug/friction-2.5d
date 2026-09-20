@@ -50,7 +50,13 @@ mkdir build
 cd "%CWD%\build"
 mkdir output
 
-cmake -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=%BTYPE% -DCMAKE_PREFIX_PATH=%SDK_DIR% -DUSE_QT6=OFF -DCUSTOM_BUILD=%CBUILD% -DBUILD_SKIA=OFF -DFRICTION_OFFICIAL_RELEASE=%REL% -DWIN_DEPLOY=ON -DGIT_COMMIT=%COMMIT% -DGIT_BRANCH=%BRANCH% ..
+rem Qt6 toolchain comes from install-qt-action (Qt6_DIR), qscintilla2-qt6 is
+rem pre-built by the workflow into %QSCINTILLA_DIR% (qmake+nmake, release\)
+rem SDK still provides skia + ffmpeg + vtracer (all Qt-independent).
+if "%Qt6_DIR%" == "" (
+    echo ERROR: Qt6_DIR not set - install Qt 6.8 first & exit /b 1
+)
+cmake -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=%BTYPE% -DCMAKE_PREFIX_PATH=%SDK_DIR% -DQt6_DIR=%Qt6_DIR%\lib\cmake\Qt6 -DQSCINTILLA_INCLUDE_DIRS=%QSCINTILLA_DIR% -DQSCINTILLA_LIBRARIES_DIRS=%QSCINTILLA_DIR%\release -DQSCINTILLA_LIBRARIES=qscintilla2_qt6 -DCUSTOM_BUILD=%CBUILD% -DBUILD_SKIA=OFF -DFRICTION_OFFICIAL_RELEASE=%REL% -DWIN_DEPLOY=ON -DGIT_COMMIT=%COMMIT% -DGIT_BRANCH=%BRANCH% ..
 set /p VERSION=<version.txt
 cmake --build . --config %BTYPE%
 
@@ -62,30 +68,22 @@ set BUILD_OUTPUT="%CWD%\build\output"
 set OUTPUT_DIR="%BUILD_OUTPUT%\friction-%VERSION%"
 
 mkdir "%OUTPUT_DIR%"
-mkdir "%OUTPUT_DIR%\audio"
-mkdir "%OUTPUT_DIR%\platforms"
 
 copy "%CWD%\build\src\core\%BDIR%\frictioncore.dll" "%OUTPUT_DIR%\"
 copy "%CWD%\build\src\ui\%BDIR%\frictionui.dll" "%OUTPUT_DIR%\"
 copy "%CWD%\build\src\app\%BDIR%\friction.exe" "%OUTPUT_DIR%\"
 
+rem skia from SDK (Qt-independent)
 copy "%SDK_DIR%\bin\skia.dll" "%OUTPUT_DIR%\"
 
-copy "%SDK_DIR%\bin\Qt5Core.dll" "%OUTPUT_DIR%\"
-copy "%SDK_DIR%\bin\Qt5Gui.dll" "%OUTPUT_DIR%\"
-copy "%SDK_DIR%\bin\Qt5Multimedia.dll" "%OUTPUT_DIR%\"
-copy "%SDK_DIR%\bin\Qt5Network.dll" "%OUTPUT_DIR%\"
-copy "%SDK_DIR%\bin\Qt5OpenGL.dll" "%OUTPUT_DIR%\"
-copy "%SDK_DIR%\bin\Qt5Qml.dll" "%OUTPUT_DIR%\"
-copy "%SDK_DIR%\bin\Qt5Svg.dll" "%OUTPUT_DIR%\"
-copy "%SDK_DIR%\bin\Qt5Widgets.dll" "%OUTPUT_DIR%\"
-copy "%SDK_DIR%\bin\Qt5Xml.dll" "%OUTPUT_DIR%\"
+rem qscintilla2-qt6 (built by workflow)
+copy "%QSCINTILLA_DIR%\release\qscintilla2_qt6.dll" "%OUTPUT_DIR%\"
 
-copy "%SDK_DIR%\plugins\audio\qtaudio_wasapi.dll" "%OUTPUT_DIR%\audio\"
-copy "%SDK_DIR%\plugins\audio\qtaudio_windows.dll" "%OUTPUT_DIR%\audio\"
-copy "%SDK_DIR%\plugins\platforms\qwindows.dll" "%OUTPUT_DIR%\platforms\"
-
-copy "%SDK_DIR%\bin\qscintilla2_qt5.dll" "%OUTPUT_DIR%\"
+rem Qt6 runtime + plugins (platforms/audio/imageformats/translations) via windeployqt
+"%Qt6_DIR%\bin\windeployqt.exe" --release --no-compiler-runtime "%OUTPUT_DIR%\friction.exe"
+if errorlevel 1 (
+    echo ERROR: windeployqt failed & exit /b 1
+)
 
 copy "%SDK_DIR%\bin\avcodec-58.dll" "%OUTPUT_DIR%\"
 copy "%SDK_DIR%\bin\avdevice-58.dll" "%OUTPUT_DIR%\"
@@ -102,10 +100,6 @@ copy "%SDK_DIR%\bin\Qt5Concurrent.dll" "%OUTPUT_DIR%\"
 
 rem vector trace (QLibrary runtime-loaded)
 copy "%SDK_DIR%\bin\vtracer.dll" "%OUTPUT_DIR%\"
-
-rem image format plugins (JPG/TIFF/WebP/SVG import)
-mkdir "%OUTPUT_DIR%\imageformats"
-copy "%SDK_DIR%\plugins\imageformats\*.dll" "%OUTPUT_DIR%\imageformats\"
 
 rem VC++ runtime app-local: clean machines without the redistributable
 rem cannot start the app; System32 always has them where a VC toolchain/redist exists
