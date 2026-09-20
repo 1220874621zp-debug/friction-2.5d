@@ -28,6 +28,7 @@
 #include <QFile>
 #include <QIcon>
 #include <QApplication>
+#include <QGuiApplication>
 #include <QDebug>
 #include <QToolButton>
 #include <QPixmap>
@@ -883,6 +884,12 @@ void ThemeSupport::applyThemeLive(int iconSize)
 
 const QList<QSize> ThemeSupport::getAvailableIconSizes()
 {
+    // QIcon::fromTheme needs a QGuiApplication (platform theme); a plain
+    // QCoreApplication (unit tests, headless tools) has none and crashes
+    if (qobject_cast<QGuiApplication*>(QCoreApplication::instance()) == nullptr) {
+        return { QSize(16, 16), QSize(22, 22), QSize(32, 32),
+                 QSize(48, 48), QSize(64, 64) };
+    }
     return QIcon::fromTheme("visible").availableSizes();
 }
 
