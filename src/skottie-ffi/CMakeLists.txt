@@ -142,26 +142,25 @@ set(FRSK_SKRESOURCES_SOURCES
 # SkTextBlob.cpp is deliberately NOT here: it pulls the whole text
 # subsystem; the run iterator skottie needs is reimplemented in
 # frsk_skia_stubs.cpp (same for SkOpts::hash_fn and SkAnimCodecPlayer).
-set(FRSK_SKIA_EXTRA_SOURCES
-    ${SKIA_ROOT}/src/utils/SkJSON.cpp
-    ${SKIA_ROOT}/src/utils/SkUTF.cpp
-    ${SKIA_ROOT}/src/core/SkM44.cpp
-    ${SKIA_ROOT}/src/core/SkArenaAlloc.cpp
-    ${SKIA_ROOT}/src/core/SkSemaphore.cpp
-    ${SKIA_ROOT}/src/core/SkString.cpp
-    ${SKIA_ROOT}/src/core/SkUtils.cpp
-    ${SKIA_ROOT}/src/core/SkStringUtils.cpp
-    ${SKIA_ROOT}/src/utils/SkOSPath.cpp
-    frsk_skia_stubs.cpp
-)
+# The private copies + stubs below exist only for the Windows prebuilt
+# skia.dll world (its export set omits these). Full static/shared skia on
+# mac/linux already contains every symbol - extra copies collide at link
+# time ("duplicate symbol" / "multiple definition").
 if(WIN32)
-    list(APPEND FRSK_SKIA_EXTRA_SOURCES
+    set(FRSK_SKIA_EXTRA_SOURCES
+        ${SKIA_ROOT}/src/utils/SkJSON.cpp
+        ${SKIA_ROOT}/src/utils/SkUTF.cpp
+        ${SKIA_ROOT}/src/core/SkM44.cpp
+        ${SKIA_ROOT}/src/core/SkArenaAlloc.cpp
+        ${SKIA_ROOT}/src/core/SkSemaphore.cpp
+        ${SKIA_ROOT}/src/core/SkString.cpp
+        ${SKIA_ROOT}/src/core/SkUtils.cpp
+        ${SKIA_ROOT}/src/core/SkStringUtils.cpp
+        ${SKIA_ROOT}/src/utils/SkOSPath.cpp
+        frsk_skia_stubs.cpp
         ${SKIA_ROOT}/src/ports/SkOSFile_win.cpp
-        ${SKIA_ROOT}/src/ports/SkOSFile_stdio.cpp)
-else()
-    list(APPEND FRSK_SKIA_EXTRA_SOURCES
-        ${SKIA_ROOT}/src/ports/SkOSFile_posix.cpp
-        ${SKIA_ROOT}/src/ports/SkOSFile_stdio.cpp)
+        ${SKIA_ROOT}/src/ports/SkOSFile_stdio.cpp
+    )
 endif()
 
 add_library(frictionskottie SHARED
