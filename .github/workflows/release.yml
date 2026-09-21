@@ -34,6 +34,8 @@ jobs:
         run: |
           mkdir -p AppDir
           DESTDIR=AppDir cmake --install build-ci
+          # shared skia is linked via -L only; put it where linuxdeploy looks
+          cp -L build-ci/src/skia/libskia-friction.so AppDir/usr/lib/ || true
       - name: Build AppImage
         run: |
           sudo apt install -y libfuse2
@@ -61,7 +63,7 @@ jobs:
         with:
           submodules: recursive
       - name: Build DEB Package (Release)
-        run: APT=1 CI=1 QT6=ON REL=1 MKJOBS=2 ./src/scripts/ci.sh
+        run: APT=1 CI=1 QT6=ON REL=1 DEB=1 MKJOBS=2 ./src/scripts/ci.sh
       - name: Prepare Artifact
         run: |
           mkdir -p ci-artifacts

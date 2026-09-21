@@ -25,11 +25,13 @@ jobs:
           echo "COMMIT=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
           echo "BRANCH=NONE" >> $GITHUB_ENV
       - name: Build with Qt6
-        run: APT=1 CI=1 QT6=ON MKJOBS=2 ./src/scripts/ci.sh
+        run: APT=1 CI=1 QT6=ON DEB=1 MKJOBS=2 ./src/scripts/ci.sh
       - name: Install to AppDir
         run: |
           mkdir -p AppDir
           DESTDIR=AppDir cmake --install build-ci
+          # shared skia is linked via -L only; put it where linuxdeploy looks
+          cp -L build-ci/src/skia/libskia-friction.so AppDir/usr/lib/ || true
       - name: Build AppImage
         run: |
           sudo apt install -y libfuse2
@@ -57,7 +59,7 @@ jobs:
         with:
           submodules: recursive
       - name: Build DEB Package
-        run: APT=1 CI=1 QT6=ON MKJOBS=2 ./src/scripts/ci.sh
+        run: APT=1 CI=1 QT6=ON DEB=1 MKJOBS=2 ./src/scripts/ci.sh
       - name: Prepare Artifact
         run: |
           mkdir -p ci-artifacts
