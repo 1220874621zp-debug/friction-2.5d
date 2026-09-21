@@ -246,6 +246,7 @@ set(
     RasterEffects/rastereffectcaller.cpp
     RasterEffects/rastereffectcollection.cpp
     RasterEffects/rastereffectmenucreator.cpp
+    RasterEffects/effectpreview.cpp
     RasterEffects/shadoweffect.cpp
     RasterEffects/vignetteeffect.cpp
     RasterEffects/chromaticaberrationeffect.cpp
@@ -634,6 +635,7 @@ set(
     RasterEffects/rastereffectcaller.h
     RasterEffects/rastereffectcollection.h
     RasterEffects/rastereffectmenucreator.h
+    RasterEffects/effectpreview.h
     RasterEffects/rastereffectsinclude.h
     RasterEffects/shadoweffect.h
     RasterEffects/vignetteeffect.h

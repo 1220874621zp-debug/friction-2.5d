@@ -33,6 +33,7 @@
 #include "RasterEffects/rastereffectsinclude.h"
 #include "RasterEffects/rastereffectcollection.h"
 #include "RasterEffects/rastereffectmenucreator.h"
+#include "RasterEffects/effectpreview.h"
 #include "Properties/comboboxproperty.h"
 #include "Psd/psdfile.h"
 #include "include/core/SkBitmap.h"
@@ -347,6 +348,107 @@ int main(int argc, char *argv[])
             }
             std::cout << "] ";
             throw std::runtime_error("no visible green glow around");
+        }
+    });
+
+    // Test 2c: visual effect-preview frames for every core raster
+    // effect (the card gallery renderer); optionally dumps PNGs to
+    // argv[2] for eyeballing. Asserts the CPU offscreen path returns
+    // a full frame sequence with non-blank content.
+    runTest("Test 2c: EffectPreview frames", [&]() {
+        const RasterEffectType types[] = {
+            RasterEffectType::BLUR,
+            RasterEffectType::SHADOW,
+            RasterEffectType::MOTION_BLUR,
+            RasterEffectType::WIPE,
+            RasterEffectType::NOISE_FADE,
+            RasterEffectType::COLORIZE,
+            RasterEffectType::BRIGHTNESS_CONTRAST,
+            RasterEffectType::CHROMA_KEY,
+            RasterEffectType::VIGNETTE,
+            RasterEffectType::CHROMATIC_ABERRATION,
+            RasterEffectType::LETTERBOX,
+            RasterEffectType::SCANLINES,
+            RasterEffectType::GLOW,
+            RasterEffectType::DIRECTIONAL_BLUR,
+            RasterEffectType::RADIAL_BLUR,
+            RasterEffectType::WAVE_WARP,
+            RasterEffectType::RAIN,
+            RasterEffectType::EDGE_DETECT,
+            RasterEffectType::INVERT,
+            RasterEffectType::TINT,
+            RasterEffectType::PIXELATE,
+            RasterEffectType::NOISE,
+            RasterEffectType::MIRROR,
+            RasterEffectType::GLITCH,
+            RasterEffectType::POSTERIZE,
+            RasterEffectType::TWIRL,
+            RasterEffectType::CHANNEL_BLUR,
+            RasterEffectType::HALFTONE,
+            RasterEffectType::SHAKE,
+            RasterEffectType::DROP_SHADOW,
+            RasterEffectType::ZOOM_BLUR,
+            RasterEffectType::COLOR_GRADING,
+            RasterEffectType::STRIPE,
+            RasterEffectType::MOTION_TILE,
+            RasterEffectType::FRACTAL_NOISE,
+            RasterEffectType::LIGHT_SWEEP,
+            RasterEffectType::DISPLACEMENT_WARP,
+            RasterEffectType::FILM_GRAIN,
+            RasterEffectType::BLACK_WHITE_FLASH,
+            RasterEffectType::PIXEL_ART,
+            RasterEffectType::LAYER_STYLES,
+            RasterEffectType::SHATTER,
+            RasterEffectType::SMEAR,
+            RasterEffectType::ROUGHEN_EDGES,
+            RasterEffectType::PARTICLE,
+            RasterEffectType::PAGE_CURL,
+            RasterEffectType::LATTICE_WARP
+        };
+        QString dumpDir;
+        if (argc >= 3) {
+            dumpDir = QString::fromLocal8Bit(argv[2]);
+            QDir().mkpath(dumpDir);
+        }
+        int rendered = 0;
+        int blank = 0;
+        for (const auto t : types) {
+            if (!EffectPreview::canPreview(t)) { continue; }
+            const auto frames = EffectPreview::renderEffectFrames(
+                        t, 8, QSize(96, 96));
+            if (frames.count() != 8) {
+                throw std::runtime_error("frame count mismatch for type "
+                                         + std::to_string(int(t)));
+            }
+            // at least one frame must carry visible pixels
+            bool anyOpaque = false;
+            for (const auto& f : frames) {
+                if (f.isNull()) { continue; }
+                for (int y = 0; y < f.height() && !anyOpaque; y += 8) {
+                    for (int x = 0; x < f.width(); x += 8) {
+                        if (qAlpha(f.pixel(x, y)) > 8) {
+                            anyOpaque = true;
+                            break;
+                        }
+                    }
+                }
+                if (anyOpaque) { break; }
+            }
+            if (anyOpaque) { rendered++; }
+            else {
+                blank++;
+                std::cout << " [blank: type " << int(t) << "] ";
+            }
+            if (!dumpDir.isEmpty() && !frames.isEmpty()) {
+                const int idx = frames.count() / 2;
+                frames.at(idx).save(dumpDir + "/" +
+                                    QString::number(int(t)) + ".png");
+            }
+        }
+        std::cout << " (" << rendered << " rendered, "
+                  << blank << " blank) ";
+        if (rendered < 20) {
+            throw std::runtime_error("too few effects produced visible frames");
         }
     });
 

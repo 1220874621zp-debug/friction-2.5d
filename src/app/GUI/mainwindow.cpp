@@ -1798,6 +1798,23 @@ void MainWindow::setupLayout()
         mTextAnimPanel->setGalleryPaused(false);
     });
 
+    // the effects card gallery freezes with the text-anim one while
+    // the main preview plays
+    if (mEffectsPresetsPanel) {
+        connect(&mRenderHandler, &RenderHandler::previewBeingPlayed,
+                mEffectsPresetsPanel, [this]() {
+            mEffectsPresetsPanel->setGalleryPaused(true);
+        });
+        connect(&mRenderHandler, &RenderHandler::previewPaused,
+                mEffectsPresetsPanel, [this]() {
+            mEffectsPresetsPanel->setGalleryPaused(false);
+        });
+        connect(&mRenderHandler, &RenderHandler::previewFinished,
+                mEffectsPresetsPanel, [this]() {
+            mEffectsPresetsPanel->setGalleryPaused(false);
+        });
+    }
+
     // Moho-style switch panel: bound to a switch group, ruler slider
     // drives the children's visibility keyframes
     mSwitchPanel = new SwitchPanel(mDocument, this);
