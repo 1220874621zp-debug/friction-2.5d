@@ -73,7 +73,7 @@ void SoundReader::readFrame() {
     const AVSampleFormat dstSampleFormat = mSettings.fSampleFormat;
     const uint64_t dstChLayout = mSettings.fChannelLayout;
     const uint dstSampleSize = static_cast<uint>(mSettings.bytesPerSample());
-    const int dstChCount = av_get_channel_layout_nb_channels(dstChLayout);
+    const int dstChCount = eChannelCountFromMask(dstChLayout);
     const bool dstPlanar = mSettings.planarFormat();
 
     const auto formatContext = mOpenedAudio->fFormatContext;

@@ -50,29 +50,17 @@ Source: "vcruntime140_1.dll"; DestDir: "{app}"; Components: friction ; Flags: ig
 ; runtime-loaded (QLibrary) features: AI depth estimation + vector trace
 Source: "onnxruntime.dll"; DestDir: "{app}"; Components: friction ; Flags: ignoreversion skipifsourcedoesntexist
 Source: "vtracer.dll"; DestDir: "{app}"; Components: friction ; Flags: ignoreversion skipifsourcedoesntexist
+Source: "frictionskottie.dll"; DestDir: "{app}"; Components: friction ; Flags: ignoreversion skipifsourcedoesntexist
 
-Source: "avcodec-58.dll"; DestDir: "{app}"; Components: ffmpeg ; Flags: ignoreversion
-Source: "avdevice-58.dll"; DestDir: "{app}"; Components: ffmpeg ; Flags: ignoreversion
-Source: "avfilter-7.dll"; DestDir: "{app}"; Components: ffmpeg ; Flags: ignoreversion
-Source: "avformat-58.dll"; DestDir: "{app}"; Components: ffmpeg ; Flags: ignoreversion
-Source: "avutil-56.dll"; DestDir: "{app}"; Components: ffmpeg ; Flags: ignoreversion
-Source: "swresample-3.dll"; DestDir: "{app}"; Components: ffmpeg ; Flags: ignoreversion
-Source: "swscale-5.dll"; DestDir: "{app}"; Components: ffmpeg ; Flags: ignoreversion
+Source: "av*.dll"; DestDir: "{app}"; Components: ffmpeg ; Flags: ignoreversion skipifsourcedoesntexist
+Source: "sw*.dll"; DestDir: "{app}"; Components: ffmpeg ; Flags: ignoreversion skipifsourcedoesntexist
 
-Source: "qscintilla2_qt5.dll"; DestDir: "{app}"; Components: qt ; Flags: ignoreversion
-Source: "Qt5Concurrent.dll"; DestDir: "{app}"; Components: qt ; Flags: ignoreversion
-Source: "Qt5Core.dll"; DestDir: "{app}"; Components: qt ; Flags: ignoreversion
-Source: "Qt5Gui.dll"; DestDir: "{app}"; Components: qt ; Flags: ignoreversion
-Source: "Qt5Multimedia.dll"; DestDir: "{app}"; Components: qt ; Flags: ignoreversion
-Source: "Qt5Network.dll"; DestDir: "{app}"; Components: qt ; Flags: ignoreversion
-Source: "Qt5OpenGL.dll"; DestDir: "{app}"; Components: qt ; Flags: ignoreversion
-Source: "Qt5Qml.dll"; DestDir: "{app}"; Components: qt ; Flags: ignoreversion
-Source: "Qt5Svg.dll"; DestDir: "{app}"; Components: qt ; Flags: ignoreversion
-Source: "Qt5Widgets.dll"; DestDir: "{app}"; Components: qt ; Flags: ignoreversion
-Source: "Qt5Xml.dll"; DestDir: "{app}"; Components: qt ; Flags: ignoreversion
-Source: "audio\*"; DestDir: "{app}\audio"; Components: qt ; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "platforms\*"; DestDir: "{app}\platforms"; Components: qt ; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "imageformats\*"; DestDir: "{app}\imageformats"; Components: qt ; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "qscintilla2_qt6.dll"; DestDir: "{app}"; Components: qt ; Flags: ignoreversion skipifsourcedoesntexist
+Source: "Qt6*.dll"; DestDir: "{app}"; Components: qt ; Flags: ignoreversion skipifsourcedoesntexist
+Source: "Qt5*.dll"; DestDir: "{app}"; Components: qt ; Flags: ignoreversion skipifsourcedoesntexist
+Source: "audio\*"; DestDir: "{app}\audio"; Components: qt ; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
+Source: "platforms\*"; DestDir: "{app}\platforms"; Components: qt ; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
+Source: "imageformats\*"; DestDir: "{app}\imageformats"; Components: qt ; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

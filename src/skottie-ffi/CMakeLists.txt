@@ -142,26 +142,25 @@ set(FRSK_SKRESOURCES_SOURCES
 # SkTextBlob.cpp is deliberately NOT here: it pulls the whole text
 # subsystem; the run iterator skottie needs is reimplemented in
 # frsk_skia_stubs.cpp (same for SkOpts::hash_fn and SkAnimCodecPlayer).
-set(FRSK_SKIA_EXTRA_SOURCES
-    ${SKIA_ROOT}/src/utils/SkJSON.cpp
-    ${SKIA_ROOT}/src/utils/SkUTF.cpp
-    ${SKIA_ROOT}/src/core/SkM44.cpp
-    ${SKIA_ROOT}/src/core/SkArenaAlloc.cpp
-    ${SKIA_ROOT}/src/core/SkSemaphore.cpp
-    ${SKIA_ROOT}/src/core/SkString.cpp
-    ${SKIA_ROOT}/src/core/SkUtils.cpp
-    ${SKIA_ROOT}/src/core/SkStringUtils.cpp
-    ${SKIA_ROOT}/src/utils/SkOSPath.cpp
-    frsk_skia_stubs.cpp
-)
+# The private copies + stubs below exist only for the Windows prebuilt
+# skia.dll world (its export set omits these). Full static/shared skia on
+# mac/linux already contains every symbol - extra copies collide at link
+# time ("duplicate symbol" / "multiple definition").
 if(WIN32)
-    list(APPEND FRSK_SKIA_EXTRA_SOURCES
+    set(FRSK_SKIA_EXTRA_SOURCES
+        ${SKIA_ROOT}/src/utils/SkJSON.cpp
+        ${SKIA_ROOT}/src/utils/SkUTF.cpp
+        ${SKIA_ROOT}/src/core/SkM44.cpp
+        ${SKIA_ROOT}/src/core/SkArenaAlloc.cpp
+        ${SKIA_ROOT}/src/core/SkSemaphore.cpp
+        ${SKIA_ROOT}/src/core/SkString.cpp
+        ${SKIA_ROOT}/src/core/SkUtils.cpp
+        ${SKIA_ROOT}/src/core/SkStringUtils.cpp
+        ${SKIA_ROOT}/src/utils/SkOSPath.cpp
+        frsk_skia_stubs.cpp
         ${SKIA_ROOT}/src/ports/SkOSFile_win.cpp
-        ${SKIA_ROOT}/src/ports/SkOSFile_stdio.cpp)
-else()
-    list(APPEND FRSK_SKIA_EXTRA_SOURCES
-        ${SKIA_ROOT}/src/ports/SkOSFile_posix.cpp
-        ${SKIA_ROOT}/src/ports/SkOSFile_stdio.cpp)
+        ${SKIA_ROOT}/src/ports/SkOSFile_stdio.cpp
+    )
 endif()
 
 add_library(frictionskottie SHARED
@@ -199,11 +198,33 @@ if(WIN32)
     set(FRSK_SKIA_LIBRARIES skia user32 opengl32)
     set(FRSK_SKIA_LIBRARIES_DIRS ${CMAKE_SOURCE_DIR}/sdk/bin)
 elseif(APPLE)
-    set(FRSK_SKIA_LIBRARIES skia z)
-    set(FRSK_SKIA_LIBRARIES_DIRS ${CMAKE_BINARY_DIR}/src/skia)
+    set(FRSK_SKIA_LIBRARIES skia z
+        "-framework CoreFoundation" "-framework CoreGraphics"
+        "-framework CoreText" "-framework CoreServices")
+    if(BUILD_SKIA)
+        set(FRSK_SKIA_LIBRARIES_DIRS ${CMAKE_BINARY_DIR}/src/skia)
+    else()
+        set(FRSK_SKIA_LIBRARIES_DIRS ${SKIA_LIB_PATH})
+    endif()
 else()
-    set(FRSK_SKIA_LIBRARIES skia-friction)
-    set(FRSK_SKIA_LIBRARIES_DIRS ${CMAKE_BINARY_DIR}/src/skia)
+    # mirror friction-common: static builds produce libskia.a,
+    # shared builds produce libskia-friction.so
+    if(SKIA_STATIC)
+        set(FRSK_SKIA_LIBRARIES skia)
+    else()
+        set(FRSK_SKIA_LIBRARIES skia-friction)
+    endif()
+    if(BUILD_SKIA)
+        set(FRSK_SKIA_LIBRARIES_DIRS ${CMAKE_BINARY_DIR}/src/skia)
+    else()
+        set(FRSK_SKIA_LIBRARIES_DIRS ${SKIA_LIB_PATH})
+    endif()
+endif()
+
+# the skia lib is produced by the `skialib` custom target (gn/ninja);
+# without this dependency ninja may link frictionskottie before it exists
+if(BUILD_SKIA)
+    add_dependencies(frictionskottie skialib)
 endif()
 
 target_link_directories(frictionskottie PRIVATE ${FRSK_SKIA_LIBRARIES_DIRS})

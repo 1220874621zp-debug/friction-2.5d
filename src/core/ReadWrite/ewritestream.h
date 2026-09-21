@@ -73,8 +73,10 @@ public:
     eWriteStream& operator<<(const uint64_t val);
 #if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
     eWriteStream& operator<<(const int64_t val);
-#ifndef _MSC_VER
-    // on MSVC int64_t IS long long - declaring both is a redefinition
+    // add the explicit `long long` overload only where it is a distinct
+    // type from int64_t (linux/gcc: int64_t is long); on MSVC and Apple
+    // clang int64_t IS long long - a second declaration is a redefinition
+#if !defined(_MSC_VER) && !defined(__APPLE__)
     eWriteStream& operator<<(const long long val);
 #endif
 #endif

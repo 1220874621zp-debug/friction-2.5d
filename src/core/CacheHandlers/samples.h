@@ -38,6 +38,8 @@ extern "C" {
     #include <libavutil/channel_layout.h>
 }
 
+#include "Sound/esoundsettings.h"
+
 struct CORE_EXPORT Samples : public StdSelfRef {
     e_OBJECT
 protected:
@@ -51,7 +53,7 @@ protected:
         fSampleRate(sampleRate),
         fSampleSize(uint(av_get_bytes_per_sample(format))),
         fChannelLayout(channelLayout),
-        fNChannels(av_get_channel_layout_nb_channels(channelLayout)),
+        fNChannels(eChannelCountFromMask(channelLayout)),
         fSampleRange(range), fData(data) {
     }
 
@@ -64,7 +66,7 @@ protected:
         fSampleRate(sampleRate),
         fSampleSize(uint(av_get_bytes_per_sample(format))),
         fChannelLayout(channelLayout),
-        fNChannels(av_get_channel_layout_nb_channels(channelLayout)),
+        fNChannels(eChannelCountFromMask(channelLayout)),
         fSampleRange(range) {
         const auto bytes = static_cast<ulong>(fSampleRange.span())*fSampleSize;
         if(fPlanar) {

@@ -75,59 +75,59 @@ bool VideoEncoder::isValidProfile(const AVCodec *codec,
     switch (codec->id) {
     case AV_CODEC_ID_H264:
         switch (profile) {
-        case FF_PROFILE_H264_BASELINE:
-        case FF_PROFILE_H264_MAIN:
-        case FF_PROFILE_H264_HIGH:
+        case AV_PROFILE_H264_BASELINE:
+        case AV_PROFILE_H264_MAIN:
+        case AV_PROFILE_H264_HIGH:
             return true;
         default:;
         }
         break;
     case AV_CODEC_ID_PRORES:
         switch (profile) {
-        case FF_PROFILE_PRORES_PROXY:
-        case FF_PROFILE_PRORES_LT:
-        case FF_PROFILE_PRORES_STANDARD:
-        case FF_PROFILE_PRORES_HQ:
-        case FF_PROFILE_PRORES_4444:
-        case FF_PROFILE_PRORES_XQ:
+        case AV_PROFILE_PRORES_PROXY:
+        case AV_PROFILE_PRORES_LT:
+        case AV_PROFILE_PRORES_STANDARD:
+        case AV_PROFILE_PRORES_HQ:
+        case AV_PROFILE_PRORES_4444:
+        case AV_PROFILE_PRORES_XQ:
             return true;
         default:;
         }
         break;
     case AV_CODEC_ID_AV1:
         switch (profile) {
-        case FF_PROFILE_AV1_MAIN:
-        case FF_PROFILE_AV1_HIGH:
-        case FF_PROFILE_AV1_PROFESSIONAL:
+        case AV_PROFILE_AV1_MAIN:
+        case AV_PROFILE_AV1_HIGH:
+        case AV_PROFILE_AV1_PROFESSIONAL:
             return true;
         default:;
         }
         break;
     case AV_CODEC_ID_VP9:
         switch (profile) {
-        case FF_PROFILE_VP9_0:
-        case FF_PROFILE_VP9_1:
-        case FF_PROFILE_VP9_2:
-        case FF_PROFILE_VP9_3:
+        case AV_PROFILE_VP9_0:
+        case AV_PROFILE_VP9_1:
+        case AV_PROFILE_VP9_2:
+        case AV_PROFILE_VP9_3:
             return true;
         default:;
         }
         break;
     case AV_CODEC_ID_MPEG4:
         switch (profile) {
-        case FF_PROFILE_MPEG4_SIMPLE:
-        case FF_PROFILE_MPEG4_CORE:
-        case FF_PROFILE_MPEG4_MAIN:
+        case AV_PROFILE_MPEG4_SIMPLE:
+        case AV_PROFILE_MPEG4_CORE:
+        case AV_PROFILE_MPEG4_MAIN:
             return true;
         default:;
         }
         break;
     case AV_CODEC_ID_VC1:
         switch (profile) {
-        case FF_PROFILE_VC1_SIMPLE:
-        case FF_PROFILE_VC1_MAIN:
-        case FF_PROFILE_VC1_COMPLEX:
-        case FF_PROFILE_VC1_ADVANCED:
+        case AV_PROFILE_VC1_SIMPLE:
+        case AV_PROFILE_VC1_MAIN:
+        case AV_PROFILE_VC1_COMPLEX:
+        case AV_PROFILE_VC1_ADVANCED:
             return true;
         default:;
         }
@@ -173,9 +173,6 @@ static void openVideo(const AVCodec * const codec, OutputStream * const ost) {
         ost->fStream->avg_frame_rate = fps;
         ost->fStream->r_frame_rate = fps;
         c->framerate = fps;
-    }
-    if(c->ticks_per_frame <= 0) {
-        c->ticks_per_frame = 1;
     }
 
     /* Allocate the encoded raw picture. */
@@ -227,7 +224,6 @@ static void addVideoStream(OutputStream * const ost,
         ost->fStream->r_frame_rate = targetFps;
         c->framerate = targetFps;
     }
-    c->ticks_per_frame = 1;
 
     c->time_base       = ost->fStream->time_base;
 
@@ -380,13 +376,13 @@ static void writeVideoFrame(AVFormatContext * const oc,
     const int ret = avcodec_send_frame(c, frame);
     if(ret < 0) AV_RuntimeThrow(ret, "Error submitting a frame for encoding")
 
-    while(ret >= 0) {
-        AVPacket pkt;
-        av_init_packet(&pkt);
+    AVPacket * pkt = av_packet_alloc();
+    if(!pkt) RuntimeThrow("Error allocating video packet");
 
-        const int recRet = avcodec_receive_packet(c, &pkt);
+    while(ret >= 0) {
+        const int recRet = avcodec_receive_packet(c, pkt);
         if(recRet >= 0) {
-            av_packet_rescale_ts(&pkt, c->time_base, ost->fStream->time_base);
+            av_packet_rescale_ts(pkt, c->time_base, ost->fStream->time_base);
             // if we did not set frame duration earlier, do it now
             if(ost->fFrameDuration <= 0) {
                 AVRational frameBase;
@@ -397,11 +393,11 @@ static void writeVideoFrame(AVFormatContext * const oc,
                 ost->fFrameDuration = av_rescale_q(1, frameBase, ost->fStream->time_base);
                 if(ost->fFrameDuration <= 0) ost->fFrameDuration = 1;
             }
-            pkt.duration = ost->fFrameDuration;
-            pkt.stream_index = ost->fStream->index;
+            pkt->duration = ost->fFrameDuration;
+            pkt->stream_index = ost->fStream->index;
 
             // Write the compressed frame to the media file.
-            const int interRet = av_interleaved_write_frame(oc, &pkt);
+            const int interRet = av_interleaved_write_frame(oc, pkt);
             if(interRet < 0) AV_RuntimeThrow(interRet, "Error while writing video frame")
         } else if(recRet == AVERROR(EAGAIN) || recRet == AVERROR_EOF) {
             *encodeVideo = ret != AVERROR_EOF;
@@ -410,8 +406,9 @@ static void writeVideoFrame(AVFormatContext * const oc,
             AV_RuntimeThrow(recRet, "Error encoding a video frame")
         }
 
-        av_packet_unref(&pkt);
+        av_packet_unref(pkt);
     }
+    av_packet_free(&pkt);
 }
 
 static void addAudioStream(OutputStream * const ost,
@@ -437,8 +434,10 @@ static void addAudioStream(OutputStream * const ost,
     /* put sample parameters */
     c->sample_fmt     = settings.fAudioSampleFormat;
     c->sample_rate    = settings.fAudioSampleRate;
-    c->channel_layout = settings.fAudioChannelsLayout;
-    c->channels       = av_get_channel_layout_nb_channels(c->channel_layout);
+    if(av_channel_layout_from_mask(&c->ch_layout,
+                                   settings.fAudioChannelsLayout) < 0) {
+        RuntimeThrow("Unsupported audio channel layout");
+    }
     c->bit_rate       = settings.fAudioBitrate;
     c->time_base      = { 1, c->sample_rate };
 
@@ -455,16 +454,18 @@ static void addAudioStream(OutputStream * const ost,
      */
 
     if(ost->fSwrCtx) swr_free(&ost->fSwrCtx);
-    ost->fSwrCtx = swr_alloc();
-    if(!ost->fSwrCtx) RuntimeThrow("Error allocating the resampling context");
-    av_opt_set_int(ost->fSwrCtx, "in_channel_count",  inSound.channelCount(), 0);
-    av_opt_set_int(ost->fSwrCtx, "out_channel_count", c->channels, 0);
-    av_opt_set_int(ost->fSwrCtx, "in_channel_layout",  inSound.fChannelLayout, 0);
-    av_opt_set_int(ost->fSwrCtx, "out_channel_layout", c->channel_layout, 0);
-    av_opt_set_int(ost->fSwrCtx, "in_sample_rate", inSound.fSampleRate, 0);
-    av_opt_set_int(ost->fSwrCtx, "out_sample_rate", c->sample_rate, 0);
-    av_opt_set_sample_fmt(ost->fSwrCtx, "in_sample_fmt", inSound.fSampleFormat, 0);
-    av_opt_set_sample_fmt(ost->fSwrCtx, "out_sample_fmt", c->sample_fmt,  0);
+    AVChannelLayout inLayout;
+    if(av_channel_layout_from_mask(&inLayout,
+                                   inSound.fChannelLayout) < 0) {
+        RuntimeThrow("Unsupported input audio channel layout");
+    }
+    const int swrRet = swr_alloc_set_opts2(&ost->fSwrCtx,
+                                           &c->ch_layout, c->sample_fmt,
+                                           c->sample_rate,
+                                           &inLayout, inSound.fSampleFormat,
+                                           inSound.fSampleRate,
+                                           0, nullptr);
+    if(swrRet < 0) AV_RuntimeThrow(swrRet, "Error allocating the resampling context")
     swr_init(ost->fSwrCtx);
     if(!swr_is_initialized(ost->fSwrCtx)) {
         RuntimeThrow("Resampler has not been properly initialized");
@@ -473,9 +474,9 @@ static void addAudioStream(OutputStream * const ost,
 #ifdef QT_DEBUG
     qDebug() << "name" << "src" << "output";
     qDebug() << "channels" << inSound.channelCount() <<
-                              c->channels;
+                              c->ch_layout.nb_channels;
     qDebug() << "channel layout" << inSound.fChannelLayout <<
-                                    c->channel_layout;
+                                    c->ch_layout.u.mask;
     qDebug() << "sample rate" << inSound.fSampleRate <<
                                  c->sample_rate;
     qDebug() << "sample format" << av_get_sample_fmt_name(inSound.fSampleFormat) <<
@@ -485,7 +486,7 @@ static void addAudioStream(OutputStream * const ost,
 }
 
 static AVFrame *allocAudioFrame(enum AVSampleFormat sample_fmt,
-                                const uint64_t& channel_layout,
+                                const AVChannelLayout& ch_layout,
                                 const int sample_rate,
                                 const int nb_samples) {
     AVFrame * const frame = av_frame_alloc();
@@ -493,8 +494,7 @@ static AVFrame *allocAudioFrame(enum AVSampleFormat sample_fmt,
     if(!frame) RuntimeThrow("Error allocating an audio frame");
 
     frame->format = sample_fmt;
-    frame->channel_layout = channel_layout;
-    frame->channels = av_get_channel_layout_nb_channels(channel_layout);
+    av_channel_layout_copy(&frame->ch_layout, &ch_layout);
     frame->sample_rate = sample_rate;
     frame->nb_samples = nb_samples;
 
@@ -520,12 +520,17 @@ static void openAudio(const AVCodec * const codec, OutputStream * const ost,
     const bool varFS = c->codec->capabilities & AV_CODEC_CAP_VARIABLE_FRAME_SIZE;
     const int nb_samples = varFS ? 10000 : c->frame_size;
 
-    ost->fDstFrame = allocAudioFrame(c->sample_fmt, c->channel_layout,
+    ost->fDstFrame = allocAudioFrame(c->sample_fmt, c->ch_layout,
                                      c->sample_rate, nb_samples);
     if(!ost->fDstFrame) RuntimeThrow("Could not alloc audio frame");
 
+    AVChannelLayout srcLayout;
+    if(av_channel_layout_from_mask(&srcLayout,
+                                   inSound.fChannelLayout) < 0) {
+        RuntimeThrow("Unsupported audio channel layout");
+    }
     ost->fSrcFrame = allocAudioFrame(inSound.fSampleFormat,
-                                     inSound.fChannelLayout,
+                                     srcLayout,
                                      inSound.fSampleRate,
                                      nb_samples);
     if(!ost->fSrcFrame) RuntimeThrow("Could not alloc temporary audio frame");
@@ -545,17 +550,17 @@ static void encodeAudioFrame(AVFormatContext * const oc,
     const int ret = avcodec_send_frame(ost->fCodec, frame);
     if(ret < 0) AV_RuntimeThrow(ret, "Error submitting a frame for encoding")
 
-    while(true) {
-        AVPacket pkt;
-        av_init_packet(&pkt);
+    AVPacket * pkt = av_packet_alloc();
+    if(!pkt) RuntimeThrow("Error allocating audio packet");
 
-        const int recRet = avcodec_receive_packet(ost->fCodec, &pkt);
+    while(true) {
+        const int recRet = avcodec_receive_packet(ost->fCodec, pkt);
         if(recRet >= 0) {
-            av_packet_rescale_ts(&pkt, ost->fCodec->time_base, ost->fStream->time_base);
-            pkt.stream_index = ost->fStream->index;
+            av_packet_rescale_ts(pkt, ost->fCodec->time_base, ost->fStream->time_base);
+            pkt->stream_index = ost->fStream->index;
 
             /* Write the compressed frame to the media file. */
-            const int interRet = av_interleaved_write_frame(oc, &pkt);
+            const int interRet = av_interleaved_write_frame(oc, pkt);
             if(interRet < 0) AV_RuntimeThrow(interRet, "Error while writing audio frame")
         } else if(recRet == AVERROR(EAGAIN) || recRet == AVERROR_EOF) {
             *encodeAudio = recRet == AVERROR(EAGAIN);
@@ -563,7 +568,10 @@ static void encodeAudioFrame(AVFormatContext * const oc,
         } else {
             AV_RuntimeThrow(recRet, "Error encoding an audio frame")
         }
+
+        av_packet_unref(pkt);
     }
+    av_packet_free(&pkt);
 }
 
 static void processAudioStream(AVFormatContext * const oc,
@@ -717,11 +725,11 @@ static void flushStream(OutputStream * const ost,
                         AVFormatContext * const formatCtx) {
     if(!ost) return;
     if(!ost->fCodec) return;
-    AVPacket pkt;
-    av_init_packet(&pkt);
+    AVPacket * pkt = av_packet_alloc();
+    if(!pkt) RuntimeThrow("Error allocating packet");
     int ret = avcodec_send_frame(ost->fCodec, nullptr);
     while(ret >= 0) {
-        ret = avcodec_receive_packet(ost->fCodec, &pkt);
+        ret = avcodec_receive_packet(ost->fCodec, pkt);
         if(ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
             // Write packet
             avcodec_flush_buffers(ost->fCodec);
@@ -729,11 +737,11 @@ static void flushStream(OutputStream * const ost,
         }
         if(ret < 0) AV_RuntimeThrow(ret, "Error encoding a video frame during flush");
 
-        if(pkt.pts != AV_NOPTS_VALUE)
-            pkt.pts = av_rescale_q(pkt.pts, ost->fCodec->time_base,
+        if(pkt->pts != AV_NOPTS_VALUE)
+            pkt->pts = av_rescale_q(pkt->pts, ost->fCodec->time_base,
                                    ost->fStream->time_base);
-        if(pkt.dts != AV_NOPTS_VALUE)
-            pkt.dts = av_rescale_q(pkt.dts, ost->fCodec->time_base,
+        if(pkt->dts != AV_NOPTS_VALUE)
+            pkt->dts = av_rescale_q(pkt->dts, ost->fCodec->time_base,
                                    ost->fStream->time_base);
         if(ost->fFrameDuration <= 0) {
             // if we did not set frame duration earlier, do it now
@@ -746,18 +754,16 @@ static void flushStream(OutputStream * const ost,
             if(ost->fFrameDuration <= 0) ost->fFrameDuration = 1;
         }
         // set duration if not set
-        pkt.duration = ost->fFrameDuration;
-        pkt.stream_index = ost->fStream->index;
-        ret = av_interleaved_write_frame(formatCtx, &pkt);
+        pkt->duration = ost->fFrameDuration;
+        pkt->stream_index = ost->fStream->index;
+        ret = av_interleaved_write_frame(formatCtx, pkt);
     }
+    av_packet_free(&pkt);
 }
 
 static void closeStream(OutputStream * const ost) {
     if(!ost) return;
-    if(ost->fCodec) {
-        avcodec_close(ost->fCodec);
-        avcodec_free_context(&ost->fCodec);
-    }
+    if(ost->fCodec) avcodec_free_context(&ost->fCodec);
     if(ost->fDstFrame) av_frame_free(&ost->fDstFrame);
     if(ost->fSrcFrame) av_frame_free(&ost->fSrcFrame);
     if(ost->fSwsCtx) sws_freeContext(ost->fSwsCtx);

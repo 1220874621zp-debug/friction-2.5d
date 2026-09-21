@@ -61,7 +61,7 @@ struct CORE_EXPORT OutputSettings
     const AVCodec *fVideoCodec = nullptr;
     AVPixelFormat fVideoPixelFormat = AV_PIX_FMT_NONE;
     int fVideoBitrate = 0;
-    int fVideoProfile = FF_PROFILE_UNKNOWN;
+    int fVideoProfile = AV_PROFILE_UNKNOWN;
     Friction::Core::FormatOptions fVideoOptions;
 
     bool fAudioEnabled = false;
