@@ -27,6 +27,10 @@
 #include <chrono>
 #include <QApplication>
 #include <QSurfaceFormat>
+#include <QElapsedTimer>
+#include <QResizeEvent>
+#include <QExposeEvent>
+#include <QWindow>
 
 #ifdef Q_OS_WIN
 // in-process crash minidump: no admin rights needed, writes next to the
@@ -342,6 +346,21 @@ int main(int argc, char *argv[])
 #endif
     const bool isRenderer = false; // todo
 
+    // Qt 6.11 wayland-egl regression: with widget RHI enabled the first
+    // show of every popup surface (menus, combos) presents a wrong-sized
+    // GL buffer instead of the rendered raster image, so the compositor
+    // stretches garbage across the popup until it is reopened. Force the
+    // raster path for widget windows on wayland unless the user overrides
+    // it explicitly. The Skia GL canvas is not affected (QOpenGLWidget
+    // keeps its own GL contexts). Repro/verdict: see MENUPROBE runs,
+    // 2026-09-21, kwin 6.7.5 + mesa 26.2.3 + qt6-base 6.11.2-3.
+    {
+        const bool wayland = qEnvironmentVariableIsSet("WAYLAND_DISPLAY");
+        if (wayland && qEnvironmentVariableIsEmpty("QT_WIDGETS_RHI")) {
+            qputenv("QT_WIDGETS_RHI", "0");
+        }
+    }
+
     // capture debug output from the very beginning
     MainWindow::installDebugLogHandler();
 
@@ -372,6 +391,83 @@ int main(int argc, char *argv[])
     // setup app
     QApplication app(argc, argv);
     setlocale(LC_NUMERIC, "C");
+
+    // dev-only menu probe: FRICTION_MENUPROBE=1 logs the lifecycle of
+    // every QMenu/QMenuBar popup (polish/show/resize/expose order, size
+    // vs sizeHint, window geometry) to diagnose the Wayland
+    // first-popup stretched-render issue
+    class MenuProbe : public QObject
+    {
+    public:
+        QElapsedTimer t;
+        explicit MenuProbe(QObject *parent) : QObject(parent) { t.start(); }
+        bool eventFilter(QObject *obj, QEvent *e) override
+        {
+            const auto mo = obj->metaObject();
+            if (!mo) { return QObject::eventFilter(obj, e); }
+            const QByteArray cn = mo->className();
+            const bool isMenu = cn == "QMenu" || cn == "QMenuBar"
+                                || cn.endsWith("Menu");
+            const bool isMenuWin = cn == "QWidgetWindow"
+                                   && obj->objectName() == QLatin1String("menu popup window")
+                                         ? true : false;
+            if (isMenu) {
+                const auto w = static_cast<QWidget*>(obj);
+                const auto tag = QString(cn) + " '" + w->objectName() + "'"
+                                 + " title '" + w->windowTitle() + "'";
+                switch (e->type()) {
+                case QEvent::Polish:
+                    qWarning() << "[MENUPROBE]" << t.elapsed() << tag << "POLISH"
+                               << "size" << w->size() << "hint" << w->sizeHint();
+                    break;
+                case QEvent::Show:
+                    qWarning() << "[MENUPROBE]" << t.elapsed() << tag << "SHOW"
+                               << "size" << w->size() << "hint" << w->sizeHint()
+                               << "geo" << w->geometry()
+                               << "winGeo" << (w->window() ? w->window()->geometry() : QRect());
+                    break;
+                case QEvent::Resize: {
+                    const auto re = static_cast<QResizeEvent*>(e);
+                    qWarning() << "[MENUPROBE]" << t.elapsed() << tag << "RESIZE"
+                               << re->oldSize() << "->" << re->size()
+                               << "hint" << w->sizeHint();
+                    break; }
+                case QEvent::Hide:
+                    qWarning() << "[MENUPROBE]" << t.elapsed() << tag << "HIDE";
+                    break;
+                default: break;
+                }
+            } else if (isMenuWin || cn == "QWidgetWindow") {
+                // log expose/update for any widget window whose title
+                // matches a menu (QMenu windows are titled like the menu)
+                switch (e->type()) {
+                case QEvent::Expose: {
+                    const auto we = static_cast<QExposeEvent*>(e);
+                    const auto qw = qobject_cast<QWindow*>(obj);
+                    qWarning() << "[MENUPROBE]" << t.elapsed() << "WINDOW"
+                               << (qw ? qw->title() : QString()) << "EXPOSE"
+                               << (we ? we->region().boundingRect() : QRect())
+                               << "geo" << (qw ? qw->geometry() : QRect())
+                               << "frame" << (qw ? qw->frameMargins() : QMargins());
+                    break; }
+                case QEvent::UpdateRequest: {
+                    const auto qw = qobject_cast<QWindow*>(obj);
+                    if (qw && !qw->title().isEmpty()) {
+                        qWarning() << "[MENUPROBE]" << t.elapsed() << "WINDOW"
+                                   << qw->title() << "UPDATEREQUEST geo" << qw->geometry();
+                    }
+                    break; }
+                default: break;
+                }
+            }
+            return QObject::eventFilter(obj, e);
+        }
+    };
+    if (qEnvironmentVariableIsSet("FRICTION_MENUPROBE")) {
+        static MenuProbe probe(&app);
+        app.installEventFilter(&probe);
+    }
+
 
     // load UI theme preference before any theme setup
     ThemeSupport::setThemeFromId(AppSupport::getSettings("ui",
