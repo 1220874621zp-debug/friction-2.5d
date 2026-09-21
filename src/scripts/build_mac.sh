@@ -35,7 +35,9 @@ SDK=${SDK:-"${CWD}/sdk/${CPU}"}
 BUILD_DIR=${BUILD_DIR:-"${CWD}/build-release-${CPU}"}
 
 export PATH="${SDK}/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-export PKG_CONFIG_PATH="${SDK}/lib/pkgconfig:${PKG_CONFIG_PATH}"
+# brew/system pkgconfig first: the macOS SDK .pc files carry
+# hardcoded rodlie build-machine paths that resolve nowhere
+export PKG_CONFIG_PATH="${PKG_CONFIG_PATH}:${SDK}/lib/pkgconfig"
 
 whereis python
 python --version
