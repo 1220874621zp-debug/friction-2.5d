@@ -85,8 +85,6 @@ class EffectsPresetsPanel;
 class TopViewWindow;
 class QuickEffectSearchDialog;
 class DockDropTuner;
-class EditorTimelineWindow;
-class EditorTimelineSync;
 
 namespace Friction {
     namespace AI {
@@ -299,9 +297,6 @@ private:
     class TextAnimPresetPanel *mTextAnimPanel = nullptr;
     QDockWidget *mSwitchPanelDock = nullptr;
     class SwitchPanel *mSwitchPanel = nullptr;
-    QDockWidget *mEditorTimelineDock = nullptr;
-    EditorTimelineWindow *mEditorTimelineWindow = nullptr;
-    EditorTimelineSync *mEditorTimelineSync = nullptr;
     EffectsPresetsPanel *mEffectsPresetsPanel = nullptr;
     QuickEffectSearchDialog *mQuickEffectSearch = nullptr;
     // JS plugin system (Scripts menu + console dock)
