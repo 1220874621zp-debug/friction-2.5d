@@ -43,9 +43,8 @@ constexpr qreal gPreviewLoopSec = 2.0;
 constexpr qreal gPreviewFps = 24.;
 
 enum class Sample {
-    text,      // dark gradient + big white glyph + color bar
-    photo,     // synthetic landscape (rich smooth gradients)
-    green      // chroma-green backdrop + foreground card
+    text,      // the embedded user-supplied image on a dark gradient
+    green      // chroma-green backdrop + the image as foreground
 };
 
 // which demo content shows the effect best
@@ -53,23 +52,6 @@ Sample sampleFor(const RasterEffectType type) {
     switch (type) {
     case RasterEffectType::CHROMA_KEY:
         return Sample::green;
-    case RasterEffectType::PIXELATE:
-    case RasterEffectType::HALFTONE:
-    case RasterEffectType::PIXEL_ART:
-    case RasterEffectType::PAGE_CURL:
-    case RasterEffectType::SHATTER:
-    case RasterEffectType::SMEAR:
-    case RasterEffectType::ROUGHEN_EDGES:
-    case RasterEffectType::EDGE_DETECT:
-    case RasterEffectType::POSTERIZE:
-    case RasterEffectType::MIRROR:
-    case RasterEffectType::COLOR_GRADING:
-    case RasterEffectType::FILM_GRAIN:
-    case RasterEffectType::SCANLINES:
-    case RasterEffectType::VIGNETTE:
-    case RasterEffectType::LETTERBOX:
-    case RasterEffectType::LATTICE_WARP:
-        return Sample::photo;
     default:
         return Sample::text;
     }
@@ -78,15 +60,15 @@ Sample sampleFor(const RasterEffectType type) {
 // this skia tree's SkRect has no center(); not needed anymore since
 // the glyph samples were replaced by the embedded wordmark
 
-// draws the embedded friction wordmark aspect-fitted into the sample,
-// vertically centered at h * cyFactor
+// draws the embedded user-supplied sample image aspect-fitted
+// (contain) into the demo sample, centered
 void drawWordmark(SkCanvas& c, SkPaint& p,
                   const int w, const int h, const qreal cyFactor) {
     static const QImage logo = QImage::fromData(
                 gFrictionLogoPng, int(gFrictionLogoPngSize), "PNG");
     if (logo.isNull()) { return; }
-    const qreal targetW = w * 0.84;
-    const qreal s = targetW / logo.width();
+    const qreal s = qMin(w * 0.96 / logo.width(),
+                         h * 0.96 / logo.height());
     const int lw = qRound(logo.width() * s);
     const int lh = qRound(logo.height() * s);
     const QImage scaled = logo.scaled(lw, lh,
@@ -121,71 +103,8 @@ SkBitmap makeTextSample(const int w, const int h) {
     c.drawRect(SkRect::MakeWH(w, h), p);
     p.setShader(nullptr);
 
-    // official friction wordmark (white on transparent, embedded)
-    drawWordmark(c, p, w, h, 0.42);
-
-    // color bar: gives color effects something to chew on
-    const SkColor bar[4] = { SkColorSetRGB(239, 68, 68),
-                             SkColorSetRGB(250, 204, 21),
-                             SkColorSetRGB(34, 197, 94),
-                             SkColorSetRGB(59, 130, 246) };
-    const qreal barH = h * 0.11;
-    const qreal bw = w / 4.;
-    for (int i = 0; i < 4; i++) {
-        p.setColor(bar[i]);
-        c.drawRect(SkRect::MakeXYWH(i * bw, h - barH, bw, barH), p);
-    }
-    return bmp;
-}
-
-SkBitmap makePhotoSample(const int w, const int h) {
-    SkBitmap bmp;
-    bmp.allocN32Pixels(w, h);
-    SkCanvas c(bmp);
-    SkPaint p;
-    p.setAntiAlias(true);
-
-    // sky gradient
-    SkPoint pts[2] = { SkPoint::Make(0, 0), SkPoint::Make(0, h * 0.68f) };
-    SkColor sky[2] = { SkColorSetRGB(96, 165, 250), SkColorSetRGB(254, 240, 214) };
-    p.setShader(SkGradientShader::MakeLinear(
-                    pts, sky, nullptr, 2, SkTileMode::kClamp));
-    c.drawRect(SkRect::MakeWH(w, h), p);
-    p.setShader(nullptr);
-
-    // sun
-    p.setColor(SkColorSetRGB(253, 224, 71));
-    c.drawCircle(w * 0.72f, h * 0.24f, h * 0.11f, p);
-
-    // clouds
-    p.setColor(SkColorSetARGB(220, 255, 255, 255));
-    c.drawOval(SkRect::MakeXYWH(w * 0.08f, h * 0.16f, w * 0.30f, h * 0.07f), p);
-    c.drawOval(SkRect::MakeXYWH(w * 0.16f, h * 0.11f, w * 0.18f, h * 0.06f), p);
-
-    // mountains
-    SkPath m1;
-    m1.moveTo(0, h * 0.68f);
-    m1.lineTo(w * 0.30f, h * 0.30f);
-    m1.lineTo(w * 0.62f, h * 0.68f);
-    m1.close();
-    p.setColor(SkColorSetRGB(101, 116, 74));
-    c.drawPath(m1, p);
-
-    SkPath m2;
-    m2.moveTo(w * 0.38f, h * 0.68f);
-    m2.lineTo(w * 0.66f, h * 0.38f);
-    m2.lineTo(w, h * 0.68f);
-    m2.close();
-    p.setColor(SkColorSetRGB(76, 92, 56));
-    c.drawPath(m2, p);
-
-    // meadow
-    SkPoint g2[2] = { SkPoint::Make(0, h * 0.68f), SkPoint::Make(0, h) };
-    SkColor gr[2] = { SkColorSetRGB(110, 138, 74), SkColorSetRGB(58, 84, 42) };
-    p.setShader(SkGradientShader::MakeLinear(
-                    g2, gr, nullptr, 2, SkTileMode::kClamp));
-    c.drawRect(SkRect::MakeXYWH(0, h * 0.68f, w, h * 0.32f), p);
-    p.setShader(nullptr);
+    // the embedded user-supplied sample image, centered
+    drawWordmark(c, p, w, h, 0.5);
     return bmp;
 }
 
@@ -208,7 +127,6 @@ SkBitmap makeSample(const RasterEffectType type, const QSize& size) {
     const int w = size.width();
     const int h = size.height();
     switch (sampleFor(type)) {
-    case Sample::photo: return makePhotoSample(w, h);
     case Sample::green: return makeGreenSample(w, h);
     case Sample::text:
     default: return makeTextSample(w, h);
