@@ -772,7 +772,8 @@ void EffectsPresetsPanel::buildTiles()
         mFlow->addWidget(tile);
         mTiles << tile;
         if (!EffectPreview::canPreview(e.type)) {
-            tile->setLoading();
+            // not "loading": nothing will ever arrive for this tile
+            tile->setUnavailable();
         }
     }
 

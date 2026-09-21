@@ -291,14 +291,26 @@ QList<QImage> renderEffectFrames(const RasterEffectType type,
         const SkBitmap src = makeSample(type, imgSize);
         const int loopSceneFrames = qMax(2, qRound(gPreviewLoopSec * gPreviewFps));
 
+        // position/axis-type parameters get a gentle oscillation
+        // around the default instead of the wide 2.5x sweep: a wide
+        // sweep walks e.g. the mirror axis off-canvas and half the
+        // loop shows a half-flipped image that reads as broken
+        const bool gentleScan = (type == RasterEffectType::MIRROR);
+
         for (int i = 0; i < nFrames; i++) {
             const qreal t = i / static_cast<qreal>(nFrames);
             const int relFrame = qRound(i * loopSceneFrames / static_cast<qreal>(nFrames));
 
             if (scanParam && !qFuzzyIsNull(baseVal)) {
-                const qreal v = baseVal + (targetVal - baseVal)
-                                    * (0.5 - 0.5 * std::cos(2. * M_PI * t));
-                scanParam->setCurrentBaseValue(v);
+                if (gentleScan) {
+                    const qreal v = scanParam->clamped(
+                                baseVal + 0.15 * std::sin(2. * M_PI * t));
+                    scanParam->setCurrentBaseValue(v);
+                } else {
+                    const qreal v = baseVal + (targetVal - baseVal)
+                                        * (0.5 - 0.5 * std::cos(2. * M_PI * t));
+                    scanParam->setCurrentBaseValue(v);
+                }
             }
 
             const auto caller = eff->getEffectCaller(relFrame, 1., 1., nullptr);

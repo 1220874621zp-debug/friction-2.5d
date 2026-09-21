@@ -22,6 +22,8 @@
 */
 
 #include <QCoreApplication>
+#include <QCryptographicHash>
+#include <QtConcurrent/QtConcurrentMap>
 #include <QTranslator>
 #include <QDebug>
 #include <QFile>
@@ -74,6 +76,17 @@ void MainWindow::toggleTopViewWindow() {}
 bool MainWindow::isTopViewVisible() const { return false; }
 const QMetaObject MainWindow::staticMetaObject = QMainWindow::staticMetaObject;
 const QMetaObject CanvasWindow::staticMetaObject = GLWindow::staticMetaObject;
+
+// frame-sequence hash for the parallel determinism test
+static const auto gHashFrames = [](const QList<QImage>& frames) -> QByteArray {
+    QCryptographicHash h(QCryptographicHash::Md5);
+    for (const auto& f : frames) {
+        const QImage c = f.convertToFormat(QImage::Format_ARGB32);
+        h.addData(reinterpret_cast<const char*>(c.constBits()),
+                  c.sizeInBytes());
+    }
+    return h.result();
+};
 
 int main(int argc, char *argv[])
 {
@@ -415,8 +428,8 @@ int main(int argc, char *argv[])
         for (const auto t : types) {
             if (!EffectPreview::canPreview(t)) { continue; }
             const auto frames = EffectPreview::renderEffectFrames(
-                        t, 8, QSize(96, 96));
-            if (frames.count() != 8) {
+                        t, 16, QSize(160, 160));
+            if (frames.count() != 16) {
                 throw std::runtime_error("frame count mismatch for type "
                                          + std::to_string(int(t)));
             }
@@ -449,6 +462,68 @@ int main(int argc, char *argv[])
                   << blank << " blank) ";
         if (rendered < 20) {
             throw std::runtime_error("too few effects produced visible frames");
+        }
+    });
+
+    // Test 2d: concurrency determinism - the visual panel renders all
+    // tiles in parallel on QtConcurrent threads; if any effect's CPU
+    // path mutates shared/static state, parallel output differs from
+    // serial. Hash both and compare per effect type.
+    runTest("Test 2d: EffectPreview parallel determinism", [&]() {
+        const RasterEffectType probeTypes[] = {
+            RasterEffectType::BLUR,
+            RasterEffectType::MIRROR,
+            RasterEffectType::TWIRL,
+            RasterEffectType::SHAKE,
+            RasterEffectType::GLITCH,
+            RasterEffectType::FRACTAL_NOISE,
+            RasterEffectType::RAIN,
+            RasterEffectType::FILM_GRAIN,
+            RasterEffectType::NOISE,
+            RasterEffectType::WAVE_WARP,
+            RasterEffectType::SHATTER,
+            RasterEffectType::SMEAR,
+            RasterEffectType::GLOW,
+            RasterEffectType::DISPLACEMENT_WARP
+        };
+        const auto hashFrames = gHashFrames;
+        // run the same batch in parallel several times; any mismatch
+        // against the serial baseline or between rounds is a race
+        QVector<QPair<RasterEffectType, int>> jobs;
+        for (const auto t : probeTypes) {
+            if (!EffectPreview::canPreview(t)) { continue; }
+            jobs << qMakePair(t, 0);
+            jobs << qMakePair(t, 1); // each effect twice concurrently
+        }
+        QVector<QByteArray> serial;
+        for (const auto& j : jobs) {
+            serial << hashFrames(EffectPreview::renderEffectFrames(
+                        j.first, 6, QSize(64, 64)));
+        }
+        const auto runBatch = [jobs]() {
+            return QtConcurrent::blockingMapped<QVector<QByteArray>>(
+                        jobs, [](const QPair<RasterEffectType, int>& j) -> QByteArray {
+                return gHashFrames(EffectPreview::renderEffectFrames(
+                            j.first, 6, QSize(64, 64)));
+            });
+        };
+        const int rounds = 6;
+        int mismatches = 0;
+        for (int r = 0; r < rounds; r++) {
+            const auto par = runBatch();
+            const int n = qMin(par.size(), serial.size());
+            for (int i = 0; i < n; i++) {
+                if (par.at(i) != serial.at(i)) {
+                    mismatches++;
+                    std::cout << " [RACE: type " << int(jobs.at(i).first)
+                              << " job " << i << "] ";
+                }
+            }
+        }
+        std::cout << " (" << rounds << " rounds, "
+                  << mismatches << " mismatches) ";
+        if (mismatches > 0) {
+            throw std::runtime_error("parallel rendering is not deterministic");
         }
     });
 
