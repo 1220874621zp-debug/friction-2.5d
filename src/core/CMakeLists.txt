@@ -636,6 +636,7 @@ set(
     RasterEffects/rastereffectcollection.h
     RasterEffects/rastereffectmenucreator.h
     RasterEffects/effectpreview.h
+    RasterEffects/effectpreviewlogo.h
     RasterEffects/rastereffectsinclude.h
     RasterEffects/shadoweffect.h
     RasterEffects/vignetteeffect.h

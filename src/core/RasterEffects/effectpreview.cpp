@@ -32,6 +32,7 @@
 #include "glhelpers.h"
 #include "cpurendertools.h"
 #include "skia/skiaincludes.h"
+#include "effectpreviewlogo.h"
 
 #include <QtMath>
 
@@ -74,13 +75,37 @@ Sample sampleFor(const RasterEffectType type) {
     }
 }
 
-// this skia tree's SkRect has no center(); keep the two call sites
-// tidy with a local helper
-inline SkScalar rectCenterX(const SkRect& r)
-{ return (r.fLeft + r.fRight) / 2.f; }
+// this skia tree's SkRect has no center(); not needed anymore since
+// the glyph samples were replaced by the embedded wordmark
 
-inline SkScalar rectCenterY(const SkRect& r)
-{ return (r.fTop + r.fBottom) / 2.f; }
+// draws the embedded friction wordmark aspect-fitted into the sample,
+// vertically centered at h * cyFactor
+void drawWordmark(SkCanvas& c, SkPaint& p,
+                  const int w, const int h, const qreal cyFactor) {
+    static const QImage logo = QImage::fromData(
+                gFrictionLogoPng, int(gFrictionLogoPngSize), "PNG");
+    if (logo.isNull()) { return; }
+    const qreal targetW = w * 0.84;
+    const qreal s = targetW / logo.width();
+    const int lw = qRound(logo.width() * s);
+    const int lh = qRound(logo.height() * s);
+    const QImage scaled = logo.scaled(lw, lh,
+                                      Qt::IgnoreAspectRatio,
+                                      Qt::SmoothTransformation);
+    const auto info = SkImageInfo::Make(
+                scaled.width(), scaled.height(),
+                kN32_SkColorType, kPremul_SkAlphaType);
+    const auto skLogo = SkImage::MakeFromRaster(
+                SkPixmap(info, scaled.constBits(),
+                         static_cast<size_t>(scaled.bytesPerLine())),
+                nullptr, nullptr);
+    if (!skLogo) { return; }
+    const SkRect dst = SkRect::MakeXYWH(
+                (w - lw) / 2.f, h * cyFactor - lh / 2.f, lw, lh);
+    c.drawImageRect(skLogo,
+                    SkRect::MakeWH(scaled.width(), scaled.height()),
+                    dst, &p, SkCanvas::kStrict_SrcRectConstraint);
+}
 
 SkBitmap makeTextSample(const int w, const int h) {
     SkBitmap bmp;
@@ -96,15 +121,8 @@ SkBitmap makeTextSample(const int w, const int h) {
     c.drawRect(SkRect::MakeWH(w, h), p);
     p.setShader(nullptr);
 
-    SkFont font;
-    font.setSize(h * 0.42f);
-    font.setEmbolden(true);
-    p.setColor(SK_ColorWHITE);
-    const char* txt = "Aa";
-    SkRect b;
-    font.measureText(txt, strlen(txt), SkTextEncoding::kUTF8, &b, nullptr);
-    c.drawString(txt, w / 2.f - rectCenterX(b), h / 2.f - rectCenterY(b),
-                 font, p);
+    // official friction wordmark (white on transparent, embedded)
+    drawWordmark(c, p, w, h, 0.42);
 
     // color bar: gives color effects something to chew on
     const SkColor bar[4] = { SkColorSetRGB(239, 68, 68),
@@ -181,20 +199,8 @@ SkBitmap makeGreenSample(const int w, const int h) {
     p.setColor(SkColorSetRGB(0, 177, 64));
     c.drawRect(SkRect::MakeWH(w, h), p);
 
-    // foreground card
-    p.setColor(SkColorSetRGB(124, 58, 237));
-    c.drawRoundRect(SkRect::MakeXYWH(w * 0.22f, h * 0.28f,
-                                     w * 0.56f, h * 0.44f),
-                    w * 0.06f, w * 0.06f, p);
-    p.setColor(SK_ColorWHITE);
-    SkFont font;
-    font.setSize(h * 0.20f);
-    font.setEmbolden(true);
-    const char* txt = "FX";
-    SkRect b;
-    font.measureText(txt, strlen(txt), SkTextEncoding::kUTF8, &b, nullptr);
-    c.drawString(txt, w / 2.f - rectCenterX(b),
-                 h * 0.50f - rectCenterY(b), font, p);
+    // foreground: the friction wordmark survives the key
+    drawWordmark(c, p, w, h, 0.5);
     return bmp;
 }
 
