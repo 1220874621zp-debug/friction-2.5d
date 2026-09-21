@@ -84,11 +84,20 @@ endif()
 
 if(WIN32)
     if(QT_VERSION_MAJOR EQUAL 6)
-        # Qt6 build: self-built QScintilla in sdk/qscintilla-qt6 (headers
-        # only in that dir - sdk/include would shadow Qt6 with Qt5 headers)
-        set(QSCINTILLA_LIBRARIES_DIRS ${CMAKE_SOURCE_DIR}/sdk/qscintilla-qt6/bin)
-        set(QSCINTILLA_LIBRARIES qscintilla2_qt6)
-        set(QSCINTILLA_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/sdk/qscintilla-qt6/include)
+        if(QSCINTILLA_SRC_DIR AND EXISTS "${QSCINTILLA_SRC_DIR}/release/qscintilla2_qt6.lib")
+            # freshly built qmake+nmake QScintilla (CI workflow or local):
+            # prefer it - the official sdk/qscintilla-qt6 ships headers but
+            # its bin dir carries no import lib
+            set(QSCINTILLA_LIBRARIES_DIRS ${QSCINTILLA_SRC_DIR}/release)
+            set(QSCINTILLA_LIBRARIES qscintilla2_qt6)
+            set(QSCINTILLA_INCLUDE_DIRS ${QSCINTILLA_SRC_DIR})
+        else()
+            # local sdk layout: self-built QScintilla in sdk/qscintilla-qt6
+            # (headers only there - sdk/include would shadow Qt6 with Qt5)
+            set(QSCINTILLA_LIBRARIES_DIRS ${CMAKE_SOURCE_DIR}/sdk/qscintilla-qt6/bin)
+            set(QSCINTILLA_LIBRARIES qscintilla2_qt6)
+            set(QSCINTILLA_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/sdk/qscintilla-qt6/include)
+        endif()
     else()
         set(QSCINTILLA_LIBRARIES_DIRS ${CMAKE_SOURCE_DIR}/sdk/bin)
         set(QSCINTILLA_LIBRARIES qscintilla2_qt5)

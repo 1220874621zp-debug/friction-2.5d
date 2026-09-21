@@ -359,6 +359,9 @@ OutputSettings OutputSettingsDialog::getSettings() {
 // AVCodec::pix_fmts / sample_fmts / supported_samplerates / channel_layouts
 // were removed in FFmpeg 9; avcodec_get_supported_config() returns
 // sentinel-terminated arrays when out_num_configs is NULL.
+// avcodec_get_supported_config landed in ffmpeg 7 (avcodec 61) - distro
+// builds on ffmpeg 4/5/6 (apt, sdk) still use the legacy fields there.
+#if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(61, 0, 0)
 static const AVPixelFormat *codecPixFormats(const AVCodec * const codec) {
     const void *cfg = nullptr;
     if(avcodec_get_supported_config(nullptr, codec,
@@ -390,6 +393,18 @@ static const AVChannelLayout *codecChannelLayouts(const AVCodec * const codec) {
                                     0, &cfg, nullptr) < 0) return nullptr;
     return static_cast<const AVChannelLayout*>(cfg);
 }
+#else
+static const AVPixelFormat *codecPixFormats(const AVCodec * const codec)
+{ return codec->pix_fmts; }
+static const AVSampleFormat *codecSampleFormats(const AVCodec * const codec)
+{ return codec->sample_fmts; }
+static const int *codecSampleRates(const AVCodec * const codec)
+{ return codec->supported_samplerates; }
+// legacy channel_layouts are uint64 masks, not AVChannelLayout entries;
+// return null so the UI falls back to the mono/stereo defaults
+static const AVChannelLayout *codecChannelLayouts(const AVCodec * const codec)
+{ Q_UNUSED(codec); return nullptr; }
+#endif
 
 void OutputSettingsDialog::updateAvailablePixelFormats() {
     const QString currentFormatName = mPixelFormatsComboBox->currentText();
