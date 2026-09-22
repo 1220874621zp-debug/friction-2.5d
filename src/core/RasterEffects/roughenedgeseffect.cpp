@@ -58,7 +58,7 @@ public:
                     const CpuRenderData& data) override
     {
         const auto& srcBtmp = renderTools.fSrcBtmp;
-        const auto& dstBtmp = renderTools.fDstBtmp;
+        auto& dstBtmp = renderTools.fDstBtmp;
 
         if (srcBtmp.empty() || srcBtmp.getPixels() == nullptr ||
             dstBtmp.empty() || dstBtmp.getPixels() == nullptr) {
@@ -74,15 +74,101 @@ public:
         const int yMin = std::max(0, data.fTexTile.top());
         const int yMax = std::min((int)data.fTexTile.bottom(), imgHeight - 1);
 
+        // border 0 is an exact passthrough, like the shader
+        if (mBorder <= 0.001) {
+            for (int yi = yMin; yi <= yMax; yi++) {
+                auto dst = static_cast<uchar*>(dstBtmp.getAddr(0, yi - yMin));
+                for (int xi = xMin; xi <= xMax; xi++) {
+                    const auto src = static_cast<const uchar*>(
+                                srcBtmp.getAddr(xi, yi));
+                    const int offset = (xi - xMin) * 4;
+                    dst[offset + 0] = src[0];
+                    dst[offset + 1] = src[1];
+                    dst[offset + 2] = src[2];
+                    dst[offset + 3] = src[3];
+                }
+            }
+            return;
+        }
+
+        // CPU mirror of roughenedgeseffect.frag: gradient fbm
+        // displacement plus a noise-threshold alpha erosion that
+        // chews the silhouette into a ragged fringe
+        const auto hash2 = [](const qreal x, const qreal y) {
+            const qreal h = std::sin(x * 127.1 + y * 311.7) * 43758.5453123;
+            return h - std::floor(h);
+        };
+        const auto gnoise = [&hash2](const qreal x, const qreal y) {
+            // perlin-style gradient noise in [-1, 1]
+            const auto grad = [&hash2](const int ix, const int iy,
+                                       const qreal dx, const qreal dy) {
+                const qreal a = hash2(ix, iy) * 6.28318530718;
+                return std::cos(a) * dx + std::sin(a) * dy;
+            };
+            const int ix = int(std::floor(x));
+            const int iy = int(std::floor(y));
+            const qreal fx = x - ix;
+            const qreal fy = y - iy;
+            const qreal ux = fx * fx * (3. - 2. * fx);
+            const qreal uy = fy * fy * (3. - 2. * fy);
+            const qreal n00 = grad(ix, iy, fx, fy);
+            const qreal n10 = grad(ix + 1, iy, fx - 1., fy);
+            const qreal n01 = grad(ix, iy + 1, fx, fy - 1.);
+            const qreal n11 = grad(ix + 1, iy + 1, fx - 1., fy - 1.);
+            const qreal a = n00 + (n10 - n00) * ux;
+            const qreal b = n01 + (n11 - n01) * ux;
+            return a + (b - a) * uy;
+        };
+        const int oct = qBound(1, int(mComplexity), 5);
+        const qreal sc = std::max(mScale * 2., 4.);
+        const qreal evX = mEvolution * 0.1;
+        const qreal evY = mEvolution * 0.07;
+        const auto fbm = [&gnoise, oct](const qreal x, const qreal y) {
+            qreal val = 0.;
+            qreal amp = 0.5;
+            qreal freq = 1.;
+            for (int i = 0; i < oct; i++) {
+                val += amp * gnoise(x * freq, y * freq);
+                freq *= 2.;
+                amp *= 0.5;
+            }
+            return val;
+        };
+        const qreal sharpness = std::max(mEdgeSharpness, 0.5);
+        const qreal edgeW = std::max(0.04, 1.5 / sharpness);
+        const auto smooth01 = [](const qreal e0, const qreal e1,
+                                 const qreal x) {
+            const qreal t = qBound(0., (x - e0) / std::max(e1 - e0, 0.0001), 1.);
+            return t * t * (3. - 2. * t);
+        };
+
+        const qreal dispBase = mBorder * 0.003 * std::max(imgWidth, imgHeight);
+        const qreal thrBase = mBorder * 0.006;
         for (int yi = yMin; yi <= yMax; yi++) {
             auto dst = static_cast<uchar*>(dstBtmp.getAddr(0, yi - yMin));
             for (int xi = xMin; xi <= xMax; xi++) {
-                const auto src = static_cast<const uchar*>(srcBtmp.getAddr(xi, yi));
+                const qreal n = fbm(xi / sc + evX, yi / sc + evY);
+                // (n, -n) displacement, uv-domain in the shader ->
+                // pixels here
+                const int sx = qBound(0, xi + qRound(n * dispBase),
+                                      imgWidth - 1);
+                const int sy = qBound(0, yi + qRound(-n * dispBase),
+                                      imgHeight - 1);
+                const auto src = static_cast<const uchar*>(
+                            srcBtmp.getAddr(sx, sy));
+                const qreal a = src[3] / 255.;
+                const qreal threshold = 0.5 - thrBase * n;
+                const qreal eroded = smooth01(threshold - edgeW,
+                                              threshold + edgeW, a);
+                const int outA = qRound(eroded * src[3]);
                 const int offset = (xi - xMin) * 4;
-                dst[offset + 0] = src[0];
-                dst[offset + 1] = src[1];
-                dst[offset + 2] = src[2];
-                dst[offset + 3] = src[3];
+                dst[offset + 0] = static_cast<uchar>(
+                            qRound(src[0] * eroded));
+                dst[offset + 1] = static_cast<uchar>(
+                            qRound(src[1] * eroded));
+                dst[offset + 2] = static_cast<uchar>(
+                            qRound(src[2] * eroded));
+                dst[offset + 3] = static_cast<uchar>(outA);
             }
         }
     }
