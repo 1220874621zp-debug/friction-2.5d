@@ -891,6 +891,13 @@ void EffectsPresetsPanel::filterTiles()
     for (const auto tile : mTiles) {
         if (tile) { tile->setVisible(tile->matches(filter, mActiveCategory)); }
     }
+    // hiding tiles alone leaves the scroll area's cached extent stale
+    // (trailing blank space under the grid); force a re-measure, same
+    // as the text animation preset panel's filterPresets
+    if (mFlow && mGridHost) {
+        mFlow->invalidate();
+        mGridHost->adjustSize();
+    }
 }
 
 void EffectsPresetsPanel::updatePlayTimer()
