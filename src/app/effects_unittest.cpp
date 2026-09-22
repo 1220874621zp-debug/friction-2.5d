@@ -459,6 +459,9 @@ int main(int argc, char *argv[])
                                     QString::number(int(t)) + ".png");
                 frames.at(0).save(dumpDir + "/f0_" +
                                   QString::number(int(t)) + ".png");
+                frames.at(qMax(1, frames.count() / 4)).save(
+                            dumpDir + "/q_" +
+                            QString::number(int(t)) + ".png");
             }
         }
         std::cout << " (" << rendered << " rendered, "

@@ -154,16 +154,24 @@ void EffectPreviewArea::setPlaceholder(const QString& text)
     update();
 }
 
+void EffectPreviewArea::setLightBase(const bool light)
+{
+    mLightBase = light;
+    update();
+}
+
 void EffectPreviewArea::paintEvent(QPaintEvent* const e)
 {
     Q_UNUSED(e)
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
-    // rounded dark frame; content is clipped to it
+    // rounded frame; content is clipped to it. Shadow-type effects
+    // use a light base so their black output stays readable
     const int rad = ThemeSupport::borderRadius();
     QPainterPath frame;
     frame.addRoundedRect(rect().adjusted(0, 0, -1, -1), rad, rad);
-    p.fillPath(frame, ThemeSupport::getThemeBaseDarkerColor());
+    p.fillPath(frame, mLightBase ? QColor(225, 228, 233)
+                                 : ThemeSupport::getThemeBaseDarkerColor());
     p.save();
     p.setClipPath(frame);
     if (!mFrames.isEmpty()) {
@@ -771,6 +779,11 @@ void EffectsPresetsPanel::buildTiles()
                 this, &EffectsPresetsPanel::onTileClicked);
         mFlow->addWidget(tile);
         mTiles << tile;
+        if (e.type == RasterEffectType::SHADOW ||
+            e.type == RasterEffectType::DROP_SHADOW) {
+            // black shadows vanish on the dark base
+            tile->setLightPreview();
+        }
         if (!EffectPreview::canPreview(e.type)) {
             // not "loading": nothing will ever arrive for this tile
             tile->setUnavailable();

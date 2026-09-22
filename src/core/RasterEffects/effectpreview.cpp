@@ -44,10 +44,9 @@ constexpr qreal gPreviewLoopSec = 2.0;
 constexpr qreal gPreviewFps = 24.;
 
 enum class Sample {
-    text,      // the embedded user-supplied image on a dark gradient
+    text,      // the embedded user-supplied image on a transparent rim
     green,     // chroma-green backdrop + the image as foreground
-    liquid,    // fisheye-lens "liquid glass" look on the image
-    roughen    // frayed/noisy-edge look (CPU path is a passthrough)
+    liquid     // fisheye-lens "liquid glass" look on the image
 };
 
 // which demo content shows the effect best
@@ -57,8 +56,6 @@ Sample sampleFor(const RasterEffectType type) {
         return Sample::green;
     case RasterEffectType::LIQUID_GLASS:
         return Sample::liquid;
-    case RasterEffectType::ROUGHEN_EDGES:
-        return Sample::roughen;
     default:
         return Sample::text;
     }
@@ -223,39 +220,65 @@ inline qreal fxFbm(const qreal x, const qreal y) {
     return sum;
 }
 
-// frayed-edge look for roughen edges: the image's rectangle border is
-// eaten away by a creeping value noise, leaving a rough ragged rim
-// with darkened debris. The real effect's CPU path is a passthrough,
-// so the sample itself carries the look (phase drives the creep).
+// roughen-edges look: the image's outer boundary is deformed into a
+// noisy ragged outline (the rectangle edge wobbles in and out with
+// fbm noise, plus a darkened rim band and creased displacement just
+// inside), creeping with the phase. The real effect's CPU path is a
+// passthrough, so the sample carries the look.
 SkBitmap makeRoughenSample(const int w, const int h, const qreal phase) {
     const SkBitmap base = makeTextSample(w, h);
     SkBitmap out;
     out.allocN32Pixels(w, h);
-    const qreal bw = w * 0.055;
+    out.eraseARGB(0, 0, 0, 0);
+    const qreal bw = w * 0.11;
     const uint32_t* const srcPixels =
             static_cast<const uint32_t*>(base.getPixels());
     uint32_t* const dstPixels =
             static_cast<uint32_t*>(out.getPixels());
     const qreal ph = phase * 6.28318530718;
+    const qreal driftX = std::cos(ph) * 4.;
+    const qreal driftY = std::sin(ph) * 4.;
     for (int y = 0; y < h; y++) {
         for (int x = 0; x < w; x++) {
             const qreal d = qMin(qMin(x, y),
                                  qMin(w - 1 - x, h - 1 - y));
-            const uint32_t src = srcPixels[y * w + x];
-            const qreal n = fxValueNoise(x / 9. + std::cos(ph) * 3.,
-                                         y / 9. + std::sin(ph) * 3.);
-            if (d < bw * (0.25 + 1.35 * n)) {
-                // eaten away: transparent, with sparse dark debris
-                dstPixels[y * w + x] = (n > 0.62)
-                        ? SkColorSetARGB(90, 40, 38, 36)
-                        : 0;
-            } else if (d < bw * 1.9) {
-                // ragged transition band: darken and roughen
-                const qreal k = 1. - (d - bw) / (bw * 0.9);
-                const int a = qRound(0.25 * k * 255.);
-                const int r8 = SkColorGetR(src) * (255 - a) / 255 + 30 * a / 255;
-                const int g8 = SkColorGetG(src) * (255 - a) / 255 + 26 * a / 255;
-                const int b8 = SkColorGetB(src) * (255 - a) / 255 + 24 * a / 255;
+            // noisy boundary: positive wobble eats into the image,
+            // negative lets it bulge outward past the rectangle
+            const qreal n = fxFbm(x / 13. + driftX, y / 13. + driftY);
+            const qreal wobble = (n - 0.5) * 2. * bw;
+            const qreal eff = d - wobble;
+            if (eff < -1.5) {
+                // outside the deformed boundary: transparent
+                continue;
+            }
+            // creased displacement just inside the rim: jitter the
+            // sampled source by the noise gradient
+            int sx = x;
+            int sy = y;
+            if (eff < bw) {
+                const qreal k = 1. - qMax(eff, 0.) / bw;
+                const qreal jx = (fxValueNoise(x / 7. + driftX * 2.,
+                                               y / 7.) - 0.5) * 6. * k;
+                const qreal jy = (fxValueNoise(x / 7.,
+                                               y / 7. + driftY * 2.) - 0.5) * 6. * k;
+                sx = qBound(0, x + qRound(jx), w - 1);
+                sy = qBound(0, y + qRound(jy), h - 1);
+            }
+            const uint32_t src = srcPixels[sy * w + sx];
+            if (eff < 2.5) {
+                // dark ragged rim line on the deformed boundary
+                const int r8 = SkColorGetR(src) / 3;
+                const int g8 = SkColorGetG(src) / 3;
+                const int b8 = SkColorGetB(src) / 3;
+                dstPixels[y * w + x] =
+                        SkColorSetARGB(SkColorGetA(src), r8, g8, b8);
+            } else if (eff < bw) {
+                // darkened crumple band fading back to full color
+                const qreal k = (bw - eff) / bw;
+                const int a = qRound(120 * k);
+                const int r8 = SkColorGetR(src) * (255 - a) / 255;
+                const int g8 = SkColorGetG(src) * (255 - a) / 255;
+                const int b8 = SkColorGetB(src) * (255 - a) / 255;
                 dstPixels[y * w + x] =
                         SkColorSetARGB(SkColorGetA(src), r8, g8, b8);
             } else {
@@ -283,6 +306,149 @@ SkBitmap makeFractalSample(const int w, const int h, const qreal phase) {
             const int g = qBound(0, qRound(20 + 215 * n), 255);
             dstPixels[y * w + x] = SkColorSetARGB(255, g, g, g);
         }
+    }
+    return out;
+}
+
+// motion-blur look: the image smeared along a direction with a
+// breathing trail length (the real effect needs layer motion from
+// the box render data; the sample stands in with a classic streak)
+SkBitmap makeMotionBlurSample(const int w, const int h, const qreal phase) {
+    const SkBitmap base = makeTextSample(w, h);
+    SkBitmap out;
+    out.allocN32Pixels(w, h);
+    out.eraseARGB(0, 0, 0, 0);
+    const uint32_t* const srcPixels =
+            static_cast<const uint32_t*>(base.getPixels());
+    uint32_t* const dstPixels =
+            static_cast<uint32_t*>(out.getPixels());
+    const qreal breath = 0.5 + 0.5 * std::sin(2. * M_PI * phase);
+    const int L = 2 + qRound(14 * breath);
+    constexpr int kPasses = 9;
+    for (int y = 0; y < h; y++) {
+        for (int x = 0; x < w; x++) {
+            qreal r = 0., g = 0., b = 0., a = 0., wsum = 0.;
+            for (int k = 0; k < kPasses; k++) {
+                const qreal u = k / static_cast<qreal>(kPasses - 1) - 0.5;
+                const int sx = qRound(x + u * 2. * L);
+                const int sy = qRound(y + u * 0.5 * L);
+                if (sx < 0 || sx >= w || sy < 0 || sy >= h) { continue; }
+                const uint32_t px = srcPixels[sy * w + sx];
+                const qreal wk = 1. - std::abs(u) * 1.4;
+                if (wk <= 0.) { continue; }
+                const qreal pa = SkColorGetA(px) / 255.;
+                r += SkColorGetR(px) * pa * wk;
+                g += SkColorGetG(px) * pa * wk;
+                b += SkColorGetB(px) * pa * wk;
+                a += pa * wk;
+                wsum += wk;
+            }
+            if (a > 0.004) {
+                const int ia = qBound(0, qRound(a / wsum * 255.), 255);
+                const int ir = qBound(0, qRound(r / a), 255);
+                const int ig = qBound(0, qRound(g / a), 255);
+                const int ib = qBound(0, qRound(b / a), 255);
+                dstPixels[y * w + x] =
+                        SkColorSetARGB(ia, ir, ig, ib);
+            }
+        }
+    }
+    return out;
+}
+
+// rain look: opaque black sky with white slanted streaks falling
+// (the user asked for exactly this readable readout)
+SkBitmap makeRainSample(const int w, const int h, const qreal phase) {
+    SkBitmap out;
+    out.allocN32Pixels(w, h);
+    SkCanvas c(out);
+    SkPaint p;
+    p.setAntiAlias(true);
+    p.setColor(SkColorSetRGB(8, 10, 14));
+    c.drawRect(SkRect::MakeWH(w, h), p);
+
+    const qreal slope = 0.22; // streak slant dx/dy
+    const int nDrops = 90;
+    for (int i = 0; i < nDrops; i++) {
+        const qreal rx = fxHash2(i * 3.1, 7.7);
+        const qreal rs = 0.5 + fxHash2(i * 9.3, 2.9);
+        const qreal rl = 10. + 26. * fxHash2(i * 5.7, 4.1);
+        const int alpha = qRound(90. + 150. * fxHash2(i * 1.7, 8.3));
+        const qreal span = h + rl * 3.;
+        const qreal y0 = fxHash2(i * 2.3, 6.1) * span
+                         + phase * rs * h * 2.2;
+        const qreal yy = std::fmod(y0, span) - rl;
+        const qreal xx = std::fmod(rx * w + yy * slope, w + 40.) - 20.;
+        p.setColor(SkColorSetARGB(alpha, 225, 232, 240));
+        c.drawLine(SkPoint::Make(xx, yy),
+                   SkPoint::Make(xx + rl * slope, yy + rl), p);
+    }
+    return out;
+}
+
+// lattice-warp look: the image warped by a breathing gaussian bulge
+// with a cyan lattice grid drawn over it, the grid lines bending
+// with the same deformation so the warp is directly readable. The
+// real caller's resample swallows thin overlay lines, so the sample
+// carries both the warp and the grid.
+SkBitmap makeLatticeAnimSample(const int w, const int h, const qreal phase) {
+    const SkBitmap base = makeTextSample(w, h);
+    SkBitmap out;
+    out.allocN32Pixels(w, h);
+    out.eraseARGB(0, 0, 0, 0);
+    const uint32_t* const srcPixels =
+            static_cast<const uint32_t*>(base.getPixels());
+    uint32_t* const dstPixels =
+            static_cast<uint32_t*>(out.getPixels());
+    const qreal cx = w / 2.;
+    const qreal cy = h / 2.;
+    const qreal sig = w * 0.30;
+    const qreal amp = 0.30 + 0.22 * std::sin(2. * M_PI * phase);
+    const auto bulge = [&](const qreal x, const qreal y) {
+        const qreal dx = (x - cx) / sig;
+        const qreal dy = (y - cy) / sig;
+        return 1. + amp * std::exp(-(dx * dx + dy * dy) / 2.);
+    };
+    for (int y = 0; y < h; y++) {
+        for (int x = 0; x < w; x++) {
+            const qreal k = bulge(x, y);
+            const int sx = qBound(0, qRound(cx + (x - cx) / k), w - 1);
+            const int sy = qBound(0, qRound(cy + (y - cy) / k), h - 1);
+            dstPixels[y * w + x] = srcPixels[sy * w + sx];
+        }
+    }
+    // bent grid: rule-grid points pushed through the same bulge
+    SkCanvas c(out);
+    SkPaint p;
+    p.setAntiAlias(true);
+    p.setStyle(SkPaint::kStroke_Style);
+    p.setColor(SkColorSetARGB(190, 90, 225, 255));
+    p.setStrokeWidth(1.6f);
+    const int cells = 5;
+    const qreal step = 14.;
+    for (int i = 0; i <= cells; i++) {
+        // vertical rule at x = v*w, bent
+        SkPath vLine;
+        bool started = false;
+        for (qreal y = 0.; y <= h + step / 2.; y += step) {
+            const qreal k = bulge(i * w / static_cast<qreal>(cells), y);
+            const qreal bx = cx + (i * w / cells - cx) * k;
+            const qreal by = cy + (y - cy) * k;
+            if (!started) { vLine.moveTo(bx, by); started = true; }
+            else { vLine.lineTo(bx, by); }
+        }
+        c.drawPath(vLine, p);
+        // horizontal rule
+        SkPath hLine;
+        started = false;
+        for (qreal x = 0.; x <= w + step / 2.; x += step) {
+            const qreal k = bulge(x, i * h / static_cast<qreal>(cells));
+            const qreal bx = cx + (x - cx) * k;
+            const qreal by = cy + (i * h / cells - cy) * k;
+            if (!started) { hLine.moveTo(bx, by); started = true; }
+            else { hLine.lineTo(bx, by); }
+        }
+        c.drawPath(hLine, p);
     }
     return out;
 }
@@ -328,8 +494,14 @@ NamedScan namedScanFor(const RasterEffectType type) {
         // tile is alive (the param name is the Chinese tr source
         // string, living inside the shadow group)
         return { "distance", "距离", 12., 34. };
-    case RasterEffectType::LATTICE_WARP:
-        return { "scale", "缩放", 160., 195. };
+    case RasterEffectType::PAGE_CURL:
+        // factory progress 0 = flat page; sweeping it curls the page
+        // across the corner for a real turning look
+        return { "progress", nullptr, 0., 100. };
+    case RasterEffectType::COLOR_GRADING:
+        // all grading params default to 0 (= passthrough); breathing
+        // the saturation on top of a warm cine base look
+        return { "saturation", nullptr, 5., 60. };
     default:
         return { nullptr, nullptr, 0., 0. };
     }
@@ -397,6 +569,18 @@ void setupDefaults(RasterEffect* const eff, const RasterEffectType type) {
         if (qa) { qa->setCurrentBaseValue(value); }
     };
     switch (type) {
+    case RasterEffectType::PAGE_CURL:
+        // a fatter curl tube reads as page-turning at thumbnail size
+        setParam("radius", 20.);
+        break;
+    case RasterEffectType::COLOR_GRADING:
+        // factory defaults are all zero = no grading at all; set a
+        // warm cinematic base so the tile reads as "graded"
+        setParam("exposure", 0.35);
+        setParam("contrast", 25.);
+        setParam("temperature", 18.);
+        setParam("tint", -8.);
+        break;
     case RasterEffectType::ROUGHEN_EDGES:
         // much stronger frayed edge than the subtle factory default
         setParam("border", 45.);
@@ -429,14 +613,11 @@ void setupDefaults(RasterEffect* const eff, const RasterEffectType type) {
 namespace EffectPreview {
 
 bool canPreview(const RasterEffectType type) {
-    // reads layer motion from the box render data - crashes without
-    // a real layer behind it
-    if (type == RasterEffectType::MOTION_BLUR) { return false; }
+    // motion blur reads layer motion from the box render data and
+    // crashes without a real layer behind it - a purpose-built
+    // streak sample stands in instead
     if (type == RasterEffectType::CUSTOM ||
         type == RasterEffectType::CUSTOM_SHADER) { return false; }
-    // liquid glass samples the canvas below the layer at composite
-    // time; the preview shows a purpose-built "liquid glass" sample
-    // instead of running the caller
     return true;
 }
 
@@ -450,13 +631,18 @@ QList<QImage> renderEffectFrames(const RasterEffectType type,
         return result;
     }
     try {
-        // liquid glass samples the composite below the layer, roughen
-        // edges' and fractal noise's CPU paths are a passthrough /
-        // parameter-dead: purpose-built samples carry the looks,
-        // animated by their own phase over the loop
+        // purpose-built sample paths (their callers cannot produce
+        // the look offscreen): liquid glass needs the composite below
+        // the layer; roughen edges' CPU path is a passthrough;
+        // fractal noise's CPU path ignores parameters; motion blur
+        // needs layer motion from the box render data; rain gets a
+        // plain black-sky/white-streaks animation per user request
         if (type == RasterEffectType::LIQUID_GLASS ||
             type == RasterEffectType::ROUGHEN_EDGES ||
-            type == RasterEffectType::FRACTAL_NOISE) {
+            type == RasterEffectType::FRACTAL_NOISE ||
+            type == RasterEffectType::MOTION_BLUR ||
+            type == RasterEffectType::RAIN ||
+            type == RasterEffectType::LATTICE_WARP) {
             for (int i = 0; i < nFrames; i++) {
                 const qreal t = i / static_cast<qreal>(nFrames);
                 const SkBitmap frame =
@@ -466,6 +652,15 @@ QList<QImage> renderEffectFrames(const RasterEffectType type,
                         : type == RasterEffectType::ROUGHEN_EDGES
                         ? makeRoughenSample(imgSize.width(),
                                             imgSize.height(), t)
+                        : type == RasterEffectType::MOTION_BLUR
+                        ? makeMotionBlurSample(imgSize.width(),
+                                               imgSize.height(), t)
+                        : type == RasterEffectType::RAIN
+                        ? makeRainSample(imgSize.width(),
+                                         imgSize.height(), t)
+                        : type == RasterEffectType::LATTICE_WARP
+                        ? makeLatticeAnimSample(imgSize.width(),
+                                                imgSize.height(), t)
                         : makeFractalSample(imgSize.width(),
                                             imgSize.height(), t);
                 QImage img(imgSize, QImage::Format_ARGB32_Premultiplied);

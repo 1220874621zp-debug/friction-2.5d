@@ -74,6 +74,9 @@ public:
     void setFrames(const QList<QImage>& frames);
     void advance();
     void setPlaceholder(const QString& text);
+    // dark shadows are invisible on the dark default base: shadow
+    // effects get a light backdrop instead
+    void setLightBase(const bool light);
 
 protected:
     void paintEvent(QPaintEvent* const e) override;
@@ -82,6 +85,7 @@ private:
     QList<QImage> mFrames;
     int mFrame = 0;
     QString mPlaceholder;
+    bool mLightBase = false;
 };
 
 // one effect card: preview, name, category tag and an apply button;
@@ -100,6 +104,8 @@ public:
     void advance() { if (mPreviewArea) { mPreviewArea->advance(); } }
     void applyNow() { if (mApply) { mApply(nullptr); } }
     void setLoading();
+    void setLightPreview()
+    { if (mPreviewArea) { mPreviewArea->setLightBase(true); } }
     void setTileFrames(const QList<QImage>& frames)
     { if (mPreviewArea) { mPreviewArea->setFrames(frames); } }
     void setUnavailable()
