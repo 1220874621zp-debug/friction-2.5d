@@ -291,6 +291,7 @@ private:
     QDockWidget *mTimelineDock = nullptr;
     QDockWidget *mFillStrokeDock = nullptr;
     QDockWidget *mPropertiesDock = nullptr;
+    QDockWidget *mEffectsDock = nullptr;
     QDockWidget *mEasingDock = nullptr;
     QDockWidget *mProjectDock = nullptr;
     ProjectPanel *mProjectPanel = nullptr;
@@ -421,7 +422,6 @@ private:
     int mTabColorIndex;
     int mTabTextIndex;
     int mTabPropertiesIndex;
-    int mTabEffectsIndex;
     int mTabQueueIndex;
 
     Friction::Ui::ColorToolBar *mColorToolBar;

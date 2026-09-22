@@ -1523,6 +1523,7 @@ void MainWindow::applyDefaultWorkspace()
     const QList<QDockWidget*> docks = {mTimelineDock,
                                        mFillStrokeDock,
                                        mPropertiesDock,
+                                       mEffectsDock,
                                        mProjectDock,
                                        mEasingDock};
     for (const auto dock : docks) {
@@ -1533,6 +1534,7 @@ void MainWindow::applyDefaultWorkspace()
 
     addDockWidget(Qt::RightDockWidgetArea, mFillStrokeDock);
     addDockWidget(Qt::RightDockWidgetArea, mPropertiesDock);
+    addDockWidget(Qt::RightDockWidgetArea, mEffectsDock);
     addDockWidget(Qt::RightDockWidgetArea, mProjectDock);
     addDockWidget(Qt::RightDockWidgetArea, mEasingDock);
     addDockWidget(Qt::BottomDockWidgetArea, mTimelineDock);
@@ -1579,6 +1581,9 @@ void MainWindow::rebuildWorkspaceMenu()
     panelsMenu->addAction(mTimelineDock->toggleViewAction());
     panelsMenu->addAction(mFillStrokeDock->toggleViewAction());
     panelsMenu->addAction(mPropertiesDock->toggleViewAction());
+    if (mEffectsDock) {
+        panelsMenu->addAction(mEffectsDock->toggleViewAction());
+    }
     panelsMenu->addAction(mEasingDock->toggleViewAction());
     if (mProjectDock) {
         panelsMenu->addAction(mProjectDock->toggleViewAction());
@@ -1696,12 +1701,9 @@ void MainWindow::setupPropertiesWidgets()
                                                  ThemeSupport::themedToolIcon("drawPathAutoChecked",
                                                                               ThemeSupport::getThemeColorBlue(), 64),
                                                  tr("Properties"));
-    const auto effectsPanel = new EffectsPresetsPanel(this, this);
-    mEffectsPresetsPanel = effectsPanel;
-    mTabEffectsIndex = mTabProperties->addTab(effectsPanel,
-                                              ThemeSupport::themedToolIcon("effect",
-                                                                           ThemeSupport::getThemeColorOrange(), 64),
-                                              tr("Effects"));
+    // the effects presets panel lives in its own dock (see setupLayout),
+    // it is no longer a tab inside the properties dock
+    mEffectsPresetsPanel = new EffectsPresetsPanel(this, this);
     mTabQueueIndex = mTabProperties->addTab(mRenderWidget,
                                             ThemeSupport::themedToolIcon("render_animation",
                                                                          ThemeSupport::getThemeColorRed(), 64),
@@ -1759,6 +1761,12 @@ void MainWindow::setupLayout()
                                mFillStrokeSettings);
     mPropertiesDock = makeDock(tr("Properties"), QStringLiteral("dockProperties"),
                                mTabProperties);
+
+    // effects & presets panel (AE style): its own dock, separated from
+    // the properties tab widget so it can be resized/floated freely
+    mEffectsDock = makeDock(tr("特效"),
+                            QStringLiteral("dockEffects"),
+                            mEffectsPresetsPanel);
 
     // easing presets panel (AE-like curve picker)
     const auto easingPresets = new EasingPresetsWidget(this);
@@ -1837,6 +1845,7 @@ void MainWindow::setupLayout()
     setCentralWidget(mStackWidget);
     addDockWidget(Qt::RightDockWidgetArea, mFillStrokeDock);
     addDockWidget(Qt::RightDockWidgetArea, mPropertiesDock);
+    addDockWidget(Qt::RightDockWidgetArea, mEffectsDock);
     // project panel sits right beside the properties/queue dock
     addDockWidget(Qt::RightDockWidgetArea, mProjectDock);
     addDockWidget(Qt::RightDockWidgetArea, mEasingDock);
