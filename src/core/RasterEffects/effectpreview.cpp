@@ -430,6 +430,9 @@ NamedScan namedScanFor(const RasterEffectType type) {
         // the CPU path now mirrors the shader: evolution drives the
         // fringe creep
         return { "evolution", nullptr, 0., 100. };
+    case RasterEffectType::COLORIZE:
+        // pink <-> magenta swing around the 330 base
+        return { "hue", nullptr, 300., 355. };
     case RasterEffectType::CHANNEL_BLUR:
         return { "blue radius", nullptr, 15., 55. };
     case RasterEffectType::BRIGHTNESS_CONTRAST:
