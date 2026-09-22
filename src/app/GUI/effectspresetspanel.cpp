@@ -45,6 +45,7 @@
 #include <QStackedWidget>
 #include <QToolButton>
 #include <QTimer>
+#include <QSlider>
 #include <QScrollArea>
 #include <QMouseEvent>
 #include <QButtonGroup>
@@ -266,6 +267,12 @@ void EffectPreviewTile::setLoading()
     }
 }
 
+void EffectPreviewTile::setPreviewSize(const int size)
+{
+    if (mPreviewArea) { mPreviewArea->setFixedSize(size, size); }
+    updateGeometry();
+}
+
 void EffectPreviewTile::setChecked(const bool checked)
 {
     mChecked = checked;
@@ -465,6 +472,41 @@ EffectsPresetsPanel::EffectsPresetsPanel(MainWindow * const mainWindow,
     btnLayout->addWidget(importBtn);
     btnLayout->addWidget(folderBtn);
     btnLayout->addWidget(refreshBtn);
+
+    // card size zoom for the card view (same control as the text
+    // animation preset panel footer); no-op in the classic tree view
+    const auto sizeLabel = new QLabel(QString::fromUtf8("视图:"), this);
+    {
+        QFont zf = sizeLabel->font();
+        zf.setPixelSize(11);
+        sizeLabel->setFont(zf);
+        sizeLabel->setStyleSheet(QStringLiteral("color: %1;")
+                                .arg(ThemeSupport::getThemeColorTextDisabled().name()));
+    }
+    btnLayout->addWidget(sizeLabel);
+
+    mTileSize = AppSupport::getSettings(QStringLiteral("EffectsPanel"),
+                                        QStringLiteral("tileSize"),
+                                        130).toInt();
+    mTileSizeSlider = new QSlider(Qt::Horizontal, this);
+    mTileSizeSlider->setRange(90, 200);
+    mTileSizeSlider->setSingleStep(10);
+    mTileSizeSlider->setValue(mTileSize);
+    mTileSizeSlider->setMaximumHeight(18);
+    mTileSizeSlider->setToolTip(QString::fromUtf8("预览卡片尺寸"));
+    btnLayout->addWidget(mTileSizeSlider, 1);
+    connect(mTileSizeSlider, &QSlider::valueChanged, this, [this](const int v) {
+        mTileSize = v;
+        AppSupport::setSettings(QStringLiteral("EffectsPanel"),
+                                QStringLiteral("tileSize"), v);
+        for (const auto tile : mTiles) {
+            if (tile) { tile->setPreviewSize(v); }
+        }
+        if (mFlow && mGridHost) {
+            mFlow->invalidate();
+            mGridHost->adjustSize();
+        }
+    });
     mainLayout->addLayout(btnLayout);
 
     // gallery playback: advances every visible tile's preview
@@ -487,6 +529,8 @@ EffectsPresetsPanel::EffectsPresetsPanel(MainWindow * const mainWindow,
                                                   true).toBool();
     if (gridView) { mViewToggleBtn->setChecked(true); }
     else { mStack->setCurrentIndex(0); }
+    // the zoom slider only drives the card view
+    mTileSizeSlider->setEnabled(mStack->currentIndex() == 1);
 }
 
 void EffectsPresetsPanel::focusSearch()
@@ -779,6 +823,7 @@ void EffectsPresetsPanel::buildTiles()
                 this, &EffectsPresetsPanel::onTileClicked);
         mFlow->addWidget(tile);
         mTiles << tile;
+        if (mTileSize != 130) { tile->setPreviewSize(mTileSize); }
         if (e.type == RasterEffectType::SHADOW ||
             e.type == RasterEffectType::DROP_SHADOW) {
             // black shadows vanish on the dark base
@@ -860,6 +905,7 @@ void EffectsPresetsPanel::onViewModeToggled(const bool checked)
 {
     if (!mStack) { return; }
     mStack->setCurrentIndex(checked ? 1 : 0);
+    if (mTileSizeSlider) { mTileSizeSlider->setEnabled(checked); }
     AppSupport::setSettings(QStringLiteral("EffectsPanel"),
                             QStringLiteral("gridView"), checked);
     if (checked) {

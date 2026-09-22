@@ -44,6 +44,7 @@ class QPushButton;
 class QLabel;
 class QHBoxLayout;
 class QButtonGroup;
+class QSlider;
 class FlowLayout;
 
 // a null target applies to every selected layer (AE double-click
@@ -104,6 +105,7 @@ public:
     void advance() { if (mPreviewArea) { mPreviewArea->advance(); } }
     void applyNow() { if (mApply) { mApply(nullptr); } }
     void setLoading();
+    void setPreviewSize(const int size);
     void setLightPreview()
     { if (mPreviewArea) { mPreviewArea->setLightBase(true); } }
     void setTileFrames(const QList<QImage>& frames)
@@ -223,6 +225,9 @@ private:
     QString mActiveCategory = QStringLiteral("all");
     QList<EffectPreviewTile*> mTiles;
     bool mTilesBuilt = false;
+    // card zoom (card view): slider-driven preview size, remembered
+    QSlider* mTileSizeSlider = nullptr;
+    int mTileSize = 130;
     bool mGalleryPaused = false;
     // render requested while the grid view was hidden or the panel
     // invisible; honored on the next showEvent / view switch
