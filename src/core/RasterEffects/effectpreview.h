@@ -27,6 +27,7 @@
 class RasterEffect;
 enum class RasterEffectType : short;
 
+#include "core_global.h"
 #include <QImage>
 #include <QSize>
 
@@ -38,13 +39,13 @@ namespace EffectPreview {
 
 // 该特效类型是否支持离屏预览（backdrop 采样型特效需要下方
 // 画布合成内容，无法在单图层预览中表达）
-bool canPreview(const RasterEffectType type);
+CORE_EXPORT bool canPreview(const RasterEffectType type);
 
 // 渲染 nFrames 帧循环演示动画；失败时返回空列表（调用方显示
 // 占位图）。imgSize 建议 160x160 上下。
-QList<QImage> renderEffectFrames(const RasterEffectType type,
-                                 const int nFrames,
-                                 const QSize& imgSize);
+CORE_EXPORT QList<QImage> renderEffectFrames(const RasterEffectType type,
+                                             const int nFrames,
+                                             const QSize& imgSize);
 
 }
 
