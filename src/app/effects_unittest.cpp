@@ -378,6 +378,7 @@ int main(int argc, char *argv[])
             RasterEffectType::COLORIZE,
             RasterEffectType::BRIGHTNESS_CONTRAST,
             RasterEffectType::CHROMA_KEY,
+            RasterEffectType::LIQUID_GLASS,
             RasterEffectType::VIGNETTE,
             RasterEffectType::CHROMATIC_ABERRATION,
             RasterEffectType::LETTERBOX,
@@ -456,6 +457,8 @@ int main(int argc, char *argv[])
                 const int idx = frames.count() / 2;
                 frames.at(idx).save(dumpDir + "/" +
                                     QString::number(int(t)) + ".png");
+                frames.at(0).save(dumpDir + "/f0_" +
+                                  QString::number(int(t)) + ".png");
             }
         }
         std::cout << " (" << rendered << " rendered, "
