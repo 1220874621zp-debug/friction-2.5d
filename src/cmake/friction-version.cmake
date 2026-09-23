@@ -24,6 +24,27 @@ set(PROJECT_VERSION_MINOR 5)
 set(PROJECT_VERSION_PATCH 0)
 set(PROJECT_VERSION_TWEAK 0)
 
+# version.txt at the repo root is the single source of truth for releases
+# (build.bat packages the copy CMake writes into the build dir); without this
+# the hardcoded 1.5.0 above leaked into package names / About dialog while
+# releases were tagged v1.6.x.
+if(EXISTS "${CMAKE_SOURCE_DIR}/version.txt")
+    file(READ "${CMAKE_SOURCE_DIR}/version.txt" FRICTION_VER_RAW)
+    string(STRIP "${FRICTION_VER_RAW}" FRICTION_VER)
+    string(REPLACE "." ";" FRICTION_VER_PARTS "${FRICTION_VER}")
+    list(LENGTH FRICTION_VER_PARTS FRICTION_VER_N)
+    if(FRICTION_VER_N GREATER_EQUAL 3)
+        list(GET FRICTION_VER_PARTS 0 PROJECT_VERSION_MAJOR)
+        list(GET FRICTION_VER_PARTS 1 PROJECT_VERSION_MINOR)
+        list(GET FRICTION_VER_PARTS 2 PROJECT_VERSION_PATCH)
+        if(FRICTION_VER_N GREATER 3)
+            list(GET FRICTION_VER_PARTS 3 PROJECT_VERSION_TWEAK)
+        else()
+            set(PROJECT_VERSION_TWEAK 0)
+        endif()
+    endif()
+endif()
+
 if (PROJECT_VERSION_TWEAK GREATER 0)
     set(PROJECT_VERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}.${PROJECT_VERSION_PATCH}.${PROJECT_VERSION_TWEAK})
 else()
