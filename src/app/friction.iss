@@ -59,6 +59,7 @@ Source: "qscintilla2_qt6.dll"; DestDir: "{app}"; Components: qt ; Flags: ignorev
 Source: "Qt6*.dll"; DestDir: "{app}"; Components: qt ; Flags: ignoreversion skipifsourcedoesntexist
 Source: "Qt5*.dll"; DestDir: "{app}"; Components: qt ; Flags: ignoreversion skipifsourcedoesntexist
 Source: "audio\*"; DestDir: "{app}\audio"; Components: qt ; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
+Source: "multimedia\*"; DestDir: "{app}\multimedia"; Components: qt ; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 Source: "platforms\*"; DestDir: "{app}\platforms"; Components: qt ; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 Source: "imageformats\*"; DestDir: "{app}\imageformats"; Components: qt ; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 

@@ -107,8 +107,11 @@ copy "%SDK_DIR%\bin\skia.dll" "%OUTPUT_DIR%\"
 rem qscintilla2-qt6 (built by workflow)
 copy "%QSCINTILLA_DIR%\release\qscintilla2_qt6.dll" "%OUTPUT_DIR%\"
 
-rem Qt6 runtime + plugins (platforms/audio/imageformats/translations) via windeployqt
-"%QT_ROOT_DIR%\bin\windeployqt.exe" --release --no-compiler-runtime "%OUTPUT_DIR:"=%\friction.exe"
+rem Qt6 runtime + plugins (platforms/multimedia/imageformats/translations) via windeployqt.
+rem Must pass frictioncore.dll/frictionui.dll too: Qt6Multimedia is imported
+rem only by the core dll, and windeployqt does not follow non-Qt dll imports,
+rem so scanning friction.exe alone ships without Qt6Multimedia.dll.
+"%QT_ROOT_DIR%\bin\windeployqt.exe" --release --no-compiler-runtime "%OUTPUT_DIR:"=%\friction.exe" "%OUTPUT_DIR:"=%\frictioncore.dll" "%OUTPUT_DIR:"=%\frictionui.dll"
 if errorlevel 1 (
     echo ERROR: windeployqt failed & exit /b 1
 )
