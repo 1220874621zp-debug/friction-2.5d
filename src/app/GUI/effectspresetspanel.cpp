@@ -664,6 +664,25 @@ void EffectsPresetsPanel::populateEffects()
         });
 
     mTreeWidget->expandAll();
+
+    // the card gallery is built once; a refresh (import / delete /
+    // reload) must rebuild it too, or new effects never show up there.
+    // The generation bump invalidates any in-flight render batch
+    // started against the old tiles.
+    if (mTilesBuilt) {
+        mTileGeneration++;
+        mTilesBuilt = false;
+        for (const auto tile : mTiles) {
+            if (tile) { tile->deleteLater(); }
+        }
+        mTiles.clear();
+        if (mStack && mStack->currentIndex() == 1) {
+            buildTiles();
+            queueTileRender();
+        } else {
+            mRenderOnShow = true;
+        }
+    }
 }
 
 QWidget* EffectsPresetsPanel::buildGridView()
@@ -850,6 +869,10 @@ void EffectsPresetsPanel::queueTileRender()
     QVector<QPointer<EffectPreviewTile>> targets;
     for (const auto tile : mTiles) {
         if (!tile || !EffectPreview::canPreview(tile->effectType())) { continue; }
+        // frames depend on nothing mutable (fixed 160x160 source), so
+        // a tile that already holds frames never needs a re-render;
+        // this keeps tree->grid toggles from redoing the whole batch
+        if (tile->hasFrames()) { continue; }
         TileRenderParams p;
         p.type = tile->effectType();
         p.nFrames = 16;

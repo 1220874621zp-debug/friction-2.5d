@@ -73,6 +73,7 @@ public:
     EffectPreviewArea(QWidget* const parent = nullptr);
 
     void setFrames(const QList<QImage>& frames);
+    bool hasFrames() const { return !mFrames.isEmpty(); }
     void advance();
     void setPlaceholder(const QString& text);
     // dark shadows are invisible on the dark default base: shadow
@@ -101,6 +102,8 @@ public:
                       QWidget* const parent = nullptr);
 
     RasterEffectType effectType() const { return mType; }
+    bool hasFrames() const
+    { return mPreviewArea && mPreviewArea->hasFrames(); }
     void setChecked(const bool checked);
     void advance() { if (mPreviewArea) { mPreviewArea->advance(); } }
     void applyNow() { if (mApply) { mApply(nullptr); } }
