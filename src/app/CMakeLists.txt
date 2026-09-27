@@ -264,6 +264,8 @@ set(
     GUI/animationdockwidget.cpp
     GUI/easingpresetspanel.cpp
     GUI/effectspresetspanel.cpp
+    GUI/lyricmotionpanel.cpp
+    GUI/lyricmotionengine.cpp
     GUI/quickeffectsearchdialog.cpp
     GUI/scriptmanager.cpp
     GUI/scriptconsole.cpp
@@ -334,6 +336,8 @@ set(
     GUI/animationdockwidget.h
     GUI/easingpresetspanel.h
     GUI/effectspresetspanel.h
+    GUI/lyricmotionpanel.h
+    GUI/lyricmotionengine.h
     GUI/quickeffectsearchdialog.h
     GUI/scriptmanager.h
     GUI/scriptconsole.h

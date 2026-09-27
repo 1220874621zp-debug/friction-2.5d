@@ -72,6 +72,7 @@
 #include "effectspresetspanel.h"
 #include "quickeffectsearchdialog.h"
 #include "projectpanel.h"
+#include "lyricmotionpanel.h"
 #include "switchpanel.h"
 #include <QShortcut>
 #include "textanimpresetpanel.h"
@@ -1534,6 +1535,9 @@ void MainWindow::applyDefaultWorkspace()
     addDockWidget(Qt::RightDockWidgetArea, mEffectsDock);
     addDockWidget(Qt::RightDockWidgetArea, mProjectDock);
     addDockWidget(Qt::RightDockWidgetArea, mEasingDock);
+    if (mLyricMotionDock) {
+        addDockWidget(Qt::RightDockWidgetArea, mLyricMotionDock);
+    }
     addDockWidget(Qt::BottomDockWidgetArea, mTimelineDock);
 
     const int w = width();
@@ -1582,6 +1586,9 @@ void MainWindow::rebuildWorkspaceMenu()
         panelsMenu->addAction(mEffectsDock->toggleViewAction());
     }
     panelsMenu->addAction(mEasingDock->toggleViewAction());
+    if (mLyricMotionDock) {
+        panelsMenu->addAction(mLyricMotionDock->toggleViewAction());
+    }
     if (mProjectDock) {
         panelsMenu->addAction(mProjectDock->toggleViewAction());
     }
@@ -1762,6 +1769,14 @@ void MainWindow::setupLayout()
                             QStringLiteral("dockEffects"),
                             mEffectsPresetsPanel);
 
+    // 歌词动画面板 (JIZURA planner port): own dock, hidden by default,
+    // opened via Workspace → Panels
+    mLyricMotionPanel = new LyricMotionPanel(this);
+    mLyricMotionDock = makeDock(tr("歌词动画"),
+                            QStringLiteral("dockLyricMotion"),
+                            mLyricMotionPanel);
+    mLyricMotionDock->hide();
+
     // easing presets panel (AE-like curve picker)
     const auto easingPresets = new EasingPresetsWidget(this);
     easingPresets->setKeysViewGetter([this]() -> KeysView* {
@@ -1831,6 +1846,9 @@ void MainWindow::setupLayout()
     // project panel sits right beside the properties/queue dock
     addDockWidget(Qt::RightDockWidgetArea, mProjectDock);
     addDockWidget(Qt::RightDockWidgetArea, mEasingDock);
+    if (mLyricMotionDock) {
+        addDockWidget(Qt::RightDockWidgetArea, mLyricMotionDock);
+    }
     addDockWidget(Qt::BottomDockWidgetArea, mTimelineDock);
 
     addDockWidget(Qt::RightDockWidgetArea, mTextAnimDock);

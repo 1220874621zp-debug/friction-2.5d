@@ -84,6 +84,7 @@ class ProjectPanel;
 class EffectsPresetsPanel;
 class TopViewWindow;
 class QuickEffectSearchDialog;
+class LyricMotionPanel;
 class DockDropTuner;
 
 namespace Friction {
@@ -292,12 +293,14 @@ private:
     QDockWidget *mEffectsDock = nullptr;
     QDockWidget *mEasingDock = nullptr;
     QDockWidget *mProjectDock = nullptr;
+    QDockWidget *mLyricMotionDock = nullptr;
     ProjectPanel *mProjectPanel = nullptr;
     QDockWidget *mTextAnimDock = nullptr;
     class TextAnimPresetPanel *mTextAnimPanel = nullptr;
     QDockWidget *mSwitchPanelDock = nullptr;
     class SwitchPanel *mSwitchPanel = nullptr;
     EffectsPresetsPanel *mEffectsPresetsPanel = nullptr;
+    LyricMotionPanel *mLyricMotionPanel = nullptr;
     QuickEffectSearchDialog *mQuickEffectSearch = nullptr;
     // JS plugin system (Scripts menu + console dock)
     ScriptManager *mScriptManager = nullptr;
