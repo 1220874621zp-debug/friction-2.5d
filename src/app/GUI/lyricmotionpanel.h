@@ -15,9 +15,11 @@ class QPushButton;
 class QTreeWidget;
 class QLabel;
 class QScrollArea;
+class QThread;
 class QToolButton;
 class FlowLayout;
 class LyricStyleCard;
+class LyricPreviewWorker;
 
 // 歌词动画面板 — vendored JIZURA planner (MIT, (c) 852wa) + one-shot
 // "apply to scene" that materializes the plan as friction text layers
@@ -28,6 +30,11 @@ class LyricMotionPanel : public QWidget
     Q_OBJECT
 public:
     explicit LyricMotionPanel(QWidget * const parent = nullptr);
+    ~LyricMotionPanel() override;
+
+protected:
+    void showEvent(QShowEvent *e) override;
+    void hideEvent(QHideEvent *e) override;
 
 private:
     void setupUi();
@@ -41,6 +48,14 @@ private:
     void populateCuts();
     void applyToScene();
     void setStatus(const QString &text, const bool error = false);
+    void setupPreviewWorker();
+    void pumpPreviewQueue();
+    void advancePreviews();
+
+    QThread *mPreviewThread = nullptr;
+    LyricPreviewWorker *mPreviewWorker = nullptr;
+    int mPreviewGeneration = 0;
+    QTimer mFrameTimer;
 
     LyricMotionEngine *mEngine = nullptr;
 

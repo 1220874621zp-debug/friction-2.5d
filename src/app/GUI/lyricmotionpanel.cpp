@@ -1,6 +1,7 @@
 #include "lyricmotionpanel.h"
 
 #include "lyricmotionengine.h"
+#include "lyricmotionpreview.h"
 
 #include "appsupport.h"
 #include "canvas.h"
@@ -9,6 +10,7 @@
 #include "Boxes/textbox.h"
 #include "Boxes/containerbox.h"
 #include "Animators/qrealanimator.h"
+#include "Animators/qstringanimator.h"
 #include "Animators/transformanimator.h"
 #include "widgets/flowlayout.h"
 #include "themesupport.h"
@@ -43,14 +45,33 @@ public:
     LyricStyleCard(const LyricMotionEngine::StyleInfo &info,
                    QWidget * const parent) :
         QWidget(parent), mInfo(info) {
-        setFixedSize(112, 86);
+        setFixedSize(112, 92);
         setToolTip(info.name);
         setCursor(Qt::PointingHandCursor);
     }
 
+    const QString &key() const { return mInfo.key; }
+
     void setSelected(const bool selected) {
         if (mSelected == selected) { return; }
         mSelected = selected;
+        update();
+    }
+
+    void setFrames(const QVector<QImage> &frames) {
+        mFrames = frames;
+        mFrameIdx = 0;
+        mPending = false;
+        update();
+    }
+
+    bool hasFrames() const { return !mFrames.isEmpty(); }
+    bool isPending() const { return mPending; }
+    void setPending(const bool pending) { mPending = pending; }
+
+    void advance() {
+        if (mFrames.size() < 2) { return; }
+        mFrameIdx = (mFrameIdx + 1) % mFrames.size();
         update();
     }
 
@@ -60,24 +81,45 @@ protected:
     void paintEvent(QPaintEvent *) override {
         QPainter p(this);
         p.setRenderHint(QPainter::Antialiasing);
+        p.setRenderHint(QPainter::SmoothPixmapTransform);
         const QRectF r = rect().adjusted(1, 1, -1, -1);
-        p.setPen(Qt::NoPen);
-        p.setBrush(mInfo.bg);
-        p.drawRoundedRect(r, 6, 6);
-        // two text-ish bars over the style background
-        const qreal barH = qMax(6.0, r.height() * 0.14);
-        p.setBrush(mInfo.fg);
-        p.drawRoundedRect(QRectF(r.left() + 10, r.top() + 12,
-                                 r.width() * 0.72, barH), 2.5, 2.5);
-        p.setBrush(mInfo.accent);
-        p.drawRoundedRect(QRectF(r.left() + 10, r.top() + 12 + barH + 5,
-                                 r.width() * 0.5, barH), 2.5, 2.5);
+        const QRectF preview = r.adjusted(0, 0, 0, -18);
+        if (!mFrames.isEmpty()) {
+            // real JIZURA-rendered frame
+            const int idx = qBound(0, mFrameIdx, mFrames.size() - 1);
+            p.setPen(Qt::NoPen);
+            p.setBrush(Qt::black);
+            p.drawRoundedRect(preview, 6, 6);
+            p.save();
+            QPainterPath clip;
+            clip.addRoundedRect(preview, 6, 6);
+            p.setClipPath(clip);
+            const QImage &frame = mFrames[idx];
+            const QImage scaled = frame.scaled(
+                        int(preview.width()), int(preview.height()),
+                        Qt::KeepAspectRatioByExpanding,
+                        Qt::SmoothTransformation);
+            p.drawImage(preview.topLeft(), scaled);
+            p.restore();
+        } else {
+            // swatch fallback until the background render arrives
+            p.setPen(Qt::NoPen);
+            p.setBrush(mInfo.bg);
+            p.drawRoundedRect(preview, 6, 6);
+            const qreal barH = qMax(6.0, preview.height() * 0.14);
+            p.setBrush(mInfo.fg);
+            p.drawRoundedRect(QRectF(preview.left() + 10, preview.top() + 12,
+                                     preview.width() * 0.72, barH), 2.5, 2.5);
+            p.setBrush(mInfo.accent);
+            p.drawRoundedRect(QRectF(preview.left() + 10,
+                                     preview.top() + 12 + barH + 5,
+                                     preview.width() * 0.5, barH), 2.5, 2.5);
+        }
         // name plate
         QFont f = font();
         f.setPointSizeF(8.5);
         p.setFont(f);
-        p.setPen(mInfo.bg.lightness() > 128 ? QColor(30, 30, 30)
-                                            : QColor(235, 235, 235));
+        p.setPen(palette().color(QPalette::WindowText));
         const QString name = QFontMetricsF(f).elidedText(
                     mInfo.name, Qt::ElideRight, r.width() - 8);
         p.drawText(QRectF(r.left(), r.bottom() - 20, r.width(), 16),
@@ -95,6 +137,9 @@ protected:
     }
 private:
     LyricMotionEngine::StyleInfo mInfo;
+    QVector<QImage> mFrames;
+    int mFrameIdx = 0;
+    bool mPending = false;
     bool mSelected = false;
 };
 
@@ -193,7 +238,72 @@ LyricMotionPanel::LyricMotionPanel(QWidget * const parent) :
             this, &LyricMotionPanel::replanNow);
     mReplanTimer.setSingleShot(true);
     mReplanTimer.setInterval(350);
-    scheduleReplan();
+
+    // preview pipeline: dedicated thread owns the render engine
+    setupPreviewWorker();
+
+    connect(&mFrameTimer, &QTimer::timeout,
+            this, &LyricMotionPanel::advancePreviews);
+    mFrameTimer.setInterval(40);
+}
+
+LyricMotionPanel::~LyricMotionPanel() {
+    if (mPreviewThread) {
+        mPreviewThread->quit();
+        mPreviewThread->wait(3000);
+    }
+}
+
+void LyricMotionPanel::showEvent(QShowEvent *e) {
+    QWidget::showEvent(e);
+    pumpPreviewQueue();
+    if (isVisible()) { mFrameTimer.start(); }
+}
+
+void LyricMotionPanel::hideEvent(QHideEvent *e) {
+    QWidget::hideEvent(e);
+    mFrameTimer.stop();
+}
+
+void LyricMotionPanel::setupPreviewWorker() {
+    mPreviewThread = new QThread(this);
+    mPreviewWorker = new LyricPreviewWorker(240, 135, 10);
+    mPreviewWorker->moveToThread(mPreviewThread);
+    connect(mPreviewThread, &QThread::started,
+            mPreviewWorker, &LyricPreviewWorker::setup);
+    connect(mPreviewWorker, &LyricPreviewWorker::framesReady, this,
+            [this](const QString &key, const int generation,
+                   const QVector<QImage> &frames) {
+        if (generation != mPreviewGeneration) { return; } // stale batch
+        for (LyricStyleCard *card : mCards) {
+            if (card->key() == key) { card->setFrames(frames); break; }
+        }
+        pumpPreviewQueue();
+    }, Qt::QueuedConnection);
+    connect(mPreviewWorker, &LyricPreviewWorker::styleFailed, this,
+            [this](const QString &key, const int generation,
+                   const QString &) {
+        if (generation != mPreviewGeneration) { return; }
+        pumpPreviewQueue(); // skip the failed one, keep filling
+    }, Qt::QueuedConnection);
+    mPreviewThread->start();
+}
+
+void LyricMotionPanel::pumpPreviewQueue() {
+    if (!isVisible() || !mPreviewWorker) { return; }
+    for (LyricStyleCard *card : mCards) {
+        if (!card->hasFrames() && !card->isPending()) {
+            card->setPending(true);
+            mPreviewWorker->renderStyle(card->key(),
+                                        static_cast<quint32>(mSeedSpin->value()),
+                                        mDensitySlider->value() / 100.0,
+                                        mPreviewGeneration);
+        }
+    }
+}
+
+void LyricMotionPanel::advancePreviews() {
+    for (LyricStyleCard *card : mCards) { card->advance(); }
 }
 
 void LyricMotionPanel::setupUi() {
@@ -431,6 +541,8 @@ void LyricMotionPanel::rebuildStyleCards() {
         mCardLayout->addWidget(card);
         mCards << card;
     }
+    mPreviewGeneration++; // stale async results are dropped on arrival
+    pumpPreviewQueue();
 }
 
 void LyricMotionPanel::replanNow() {
@@ -552,6 +664,7 @@ void LyricMotionPanel::applyToScene() {
         auto group = enve::make_shared<ContainerBox>(eBoxType::layer);
         scene->getCurrentGroup()->addContained(group);
         group->prp_setName(groupName);
+        QVector<BoundingBox *> cutLayers(cuts.size(), nullptr);
 
         for (int i = 0; i < cuts.size(); i++) {
             const auto c = cuts.at(i).toObject();
@@ -626,7 +739,26 @@ void LyricMotionPanel::applyToScene() {
 
             // opacity: 0..100 engine range; hard-cut phases get no keys
             // at all so visibility is bounded by the duration rectangle
-            if (enterPlan.animated && fIn > 0) {
+            const QString enterKey = c.value(QStringLiteral("enter")).toString();
+            const bool typewriter = enterKey.contains(
+                        QStringLiteral("type"), Qt::CaseInsensitive) && fIn > 0;
+            if (typewriter) {
+                // reveal the text progressively (text keys, no fade)
+                if (auto *textAnim = box->getStringAnimator()) {
+                    const int chars = text.length();
+                    const int steps = qBound(2, chars, 30);
+                    for (int k = 1; k <= steps; k++) {
+                        const int frame = fStart + qRound(
+                                    qreal(fIn) * k / steps);
+                        const QString partial = text.left(
+                                    qRound(qreal(chars) * k / steps));
+                        textAnim->anim_appendKey(
+                                    enve::make_shared<QStringKey>(
+                                        partial, frame, textAnim));
+                    }
+                }
+                opaAnim->saveValueToKey(fStart, 100);
+            } else if (enterPlan.animated && fIn > 0) {
                 posX->saveValueToKey(fStart, anchor.x() + enterPlan.enterOffset.x());
                 posY->saveValueToKey(fStart, anchor.y() + enterPlan.enterOffset.y());
                 posX->saveValueToKey(fInEnd, anchor.x());
@@ -652,7 +784,36 @@ void LyricMotionPanel::applyToScene() {
                 durRect->setMinAbsFrame(fStart - 1);
                 durRect->setFramesDuration(fEnd - fStart + 2);
             }
+            cutLayers[i] = box.get();
             created++;
+        }
+
+        // transition pass: the plan chains some cuts with a transition
+        // (cut.trans, duration transDur); map it to a crossfade by
+        // overlapping the previous layer and fading both
+        for (int i = 1; i < cuts.size(); i++) {
+            const auto c = cuts.at(i).toObject();
+            const QString trans = c.value(QStringLiteral("trans")).toString();
+            const qreal transDur = c.value(QStringLiteral("transDur")).toDouble();
+            if (trans.isEmpty() || transDur <= 0.01) { continue; }
+            auto *prevBox = cutLayers.at(i - 1);
+            auto *curBox = cutLayers.at(i);
+            if (!prevBox || !curBox) { continue; }
+            const qreal start = c.value(QStringLiteral("start")).toDouble();
+            const int fStart = qFloor(start * fps);
+            const int fTd = qMax(1, qRound(transDur * fps));
+            if (const auto dr = prevBox->getDurationRectangle()) {
+                const int newMax = qMax(dr->getMaxAbsFrame(), fStart + fTd + 1);
+                dr->setFramesDuration(newMax - dr->getMinAbsFrame() + 1);
+            }
+            auto *prevOpa = prevBox->getBoxTransformAnimator()
+                    ->getOpacityAnimator();
+            auto *curOpa = curBox->getBoxTransformAnimator()
+                    ->getOpacityAnimator();
+            prevOpa->saveValueToKey(fStart, 100);
+            prevOpa->saveValueToKey(fStart + fTd, 0);
+            curOpa->saveValueToKey(fStart, 0);
+            curOpa->saveValueToKey(fStart + fTd, 100);
         }
 
         // extend the scene range to hold the whole lyric
