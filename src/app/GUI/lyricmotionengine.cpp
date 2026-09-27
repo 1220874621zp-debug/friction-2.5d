@@ -47,6 +47,13 @@ QString paramsToJson(const LyricMotionEngine::Params &p) {
     o.insert(QStringLiteral("seed"), static_cast<double>(p.seed));
     o.insert(QStringLiteral("density"), p.density);
     o.insert(QStringLiteral("bpm"), p.bpm);
+    if (p.chroma >= 0) { o.insert(QStringLiteral("chroma"), p.chroma); }
+    if (!p.beats.isEmpty()) {
+        QJsonArray beats;
+        for (const qreal b : p.beats) { beats.append(b); }
+        o.insert(QStringLiteral("beats"), beats);
+        o.insert(QStringLiteral("audioDuration"), p.audioDuration);
+    }
     return QString::fromUtf8(QJsonDocument(o).toJson(QJsonDocument::Compact));
 }
 
@@ -184,9 +191,14 @@ QString LyricMotionEngine::planJson(const Params &params, QString *error) {
         "  pr.mood = p.mood || null;"
         "  pr.seed = p.seed;"
         "  pr.fx.density = p.density;"
+        "  if (p.chroma != null) pr.fx.chroma = p.chroma;"
         "  pr.timing.bpm = p.bpm;"
         "  var audio = null;"
-        "  if (p.bpm > 0) audio = { beats: J.beatGrid(p.bpm, pr.timing.offset || 0, 600) };"
+        "  if (p.beats && p.beats.length) {"
+        "    audio = { beats: p.beats, duration: p.audioDuration || 600 };"
+        "  } else if (p.bpm > 0) {"
+        "    audio = { beats: J.beatGrid(p.bpm, pr.timing.offset || 0, 600) };"
+        "  }"
         "  var plan = J.plan(pr, audio);"
         "  var fonts = {};"
         "  for (var k in J.FONTS) fonts[k] = { label: J.FONTS[k].label,"

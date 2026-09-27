@@ -25,6 +25,12 @@ public slots:
     void setup();
     void renderStyle(const QString &styleKey, const quint32 seed,
                      const qreal density, const int generation);
+    // one large frame at an arbitrary time (cut-level preview); reuses
+    // the cached plan when style/seed/density are unchanged
+    void renderCutFrame(const QString &styleKey, const quint32 seed,
+                        const qreal density, const qreal time,
+                        const int width, const int height,
+                        const int generation);
 
 signals:
     void engineReady();
@@ -33,14 +39,20 @@ signals:
                      const QVector<QImage> &frames);
     void styleFailed(const QString &styleKey, const int generation,
                      const QString &error);
+    void cutFrameReady(const QImage &frame, const int generation);
 
 private:
     bool ensureEngine(QString *error);
+    bool ensurePlan(const QString &styleKey, const quint32 seed,
+                    const qreal density, QString *error);
 
     const int mW, mH, mFrames;
     std::unique_ptr<QJSEngine> mEngine;
     LyricCanvasFactory *mFactory = nullptr;
     bool mLoaded = false;
+    QString mPlanStyle;
+    quint32 mPlanSeed = 0;
+    qreal mPlanDensity = -1;
 };
 
 #endif // LYRICMOTIONPREVIEW_H

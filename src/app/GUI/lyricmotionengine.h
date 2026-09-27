@@ -36,6 +36,9 @@ public:
         quint32 seed = 1;
         qreal density = 0.55;
         qreal bpm = 0;              // 0 = no beat grid
+        QVector<qreal> beats;       // detected beats (overrides bpm grid)
+        qreal audioDuration = 0;    // keeps the plan as long as the song
+        qreal chroma = -1;          // <0 = keep the style default
     };
 
     explicit LyricMotionEngine(QObject * const parent = nullptr);

@@ -268,6 +268,8 @@ set(
     GUI/lyricmotionengine.cpp
     GUI/lyricmotionpreview.cpp
     GUI/lyricmotioncanvas.cpp
+    GUI/lyricmotionaudio.cpp
+    GUI/lyricmotionaudiocore.cpp
     GUI/quickeffectsearchdialog.cpp
     GUI/scriptmanager.cpp
     GUI/scriptconsole.cpp
@@ -342,6 +344,8 @@ set(
     GUI/lyricmotionengine.h
     GUI/lyricmotionpreview.h
     GUI/lyricmotioncanvas.h
+    GUI/lyricmotionaudio.h
+    GUI/lyricmotionaudiocore.h
     GUI/quickeffectsearchdialog.h
     GUI/scriptmanager.h
     GUI/scriptconsole.h

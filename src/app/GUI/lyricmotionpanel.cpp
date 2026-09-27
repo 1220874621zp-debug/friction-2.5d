@@ -2,6 +2,9 @@
 
 #include "lyricmotionengine.h"
 #include "lyricmotionpreview.h"
+#include "lyricmotionaudio.h"
+#include "Sound/eindependentsound.h"
+#include "RasterEffects/rastereffectcollection.h"
 
 #include "appsupport.h"
 #include "canvas.h"
@@ -18,7 +21,10 @@
 #include "include/core/SkFont.h"
 #include "include/core/SkTypeface.h"
 
+#include <QCheckBox>
 #include <QComboBox>
+#include <QFileDialog>
+#include <QtConcurrent>
 #include <QFontMetricsF>
 #include <QHBoxLayout>
 #include <QJsonArray>
@@ -286,6 +292,11 @@ void LyricMotionPanel::setupPreviewWorker() {
         if (generation != mPreviewGeneration) { return; }
         pumpPreviewQueue(); // skip the failed one, keep filling
     }, Qt::QueuedConnection);
+    connect(mPreviewWorker, &LyricPreviewWorker::cutFrameReady, this,
+            [this](const QImage &frame, const int generation) {
+        if (generation != mPreviewGeneration) { return; }
+        mCutPreview->setPixmap(QPixmap::fromImage(frame));
+    }, Qt::QueuedConnection);
     mPreviewThread->start();
 }
 
@@ -352,14 +363,31 @@ void LyricMotionPanel::setupUi() {
     mDensitySlider = new QSlider(Qt::Horizontal, this);
     mDensitySlider->setRange(0, 100);
     mDensitySlider->setToolTip(tr("细分：每句切分的粒度"));
+    mChromaSlider = new QSlider(Qt::Horizontal, this);
+    mChromaSlider->setRange(0, 100);
+    mChromaSlider->setToolTip(tr("色差强度（幽灵三 pass 映射）"));
     mBpmSpin = new QSpinBox(this);
     mBpmSpin->setRange(0, 300);
     mBpmSpin->setSuffix(QStringLiteral(" BPM"));
     mBpmSpin->setSpecialValueText(tr("BPM 自动/无"));
     ctrl2->addWidget(new QLabel(tr("细分"), this), 0);
-    ctrl2->addWidget(mDensitySlider, 1);
+    ctrl2->addWidget(mDensitySlider, 0);
+    ctrl2->addWidget(new QLabel(tr("色差"), this), 0);
+    ctrl2->addWidget(mChromaSlider, 0);
     ctrl2->addWidget(mBpmSpin);
     mainLayout->addLayout(ctrl2);
+
+    // audio row
+    auto *audioRow = new QHBoxLayout();
+    audioRow->setSpacing(4);
+    mAudioButton = new QPushButton(tr("载入音频"), this);
+    mAudioButton->setToolTip(tr("分析 BPM 并对齐切边界（JIZURA 检测算法）"));
+    mAudioLabel = new QLabel(tr("未载入"), this);
+    mIncludeAudio = new QCheckBox(tr("应用时含音频层"), this);
+    audioRow->addWidget(mAudioButton);
+    audioRow->addWidget(mAudioLabel, 1);
+    audioRow->addWidget(mIncludeAudio);
+    mainLayout->addLayout(audioRow);
 
     // style cards
     mGalleryHost = new QWidget(this);
@@ -370,6 +398,16 @@ void LyricMotionPanel::setupUi() {
     mGalleryScroll->setMinimumHeight(96);
     mGalleryScroll->setFrameShape(QFrame::NoFrame);
     mainLayout->addWidget(mGalleryScroll);
+
+    // cut-level large preview (click a cut row to render it)
+    mCutPreview = new QLabel(this);
+    mCutPreview->setMinimumHeight(120);
+    mCutPreview->setMaximumHeight(160);
+    mCutPreview->setAlignment(Qt::AlignCenter);
+    mCutPreview->setStyleSheet(QStringLiteral("background:#0a0a0a; color:#666;"));
+    mCutPreview->setText(tr("点击切行查看该切大图"));
+    mCutPreview->setScaledContents(true);
+    mainLayout->addWidget(mCutPreview);
 
     // cut list
     mCutsTree = new QTreeWidget(this);
@@ -433,10 +471,51 @@ void LyricMotionPanel::setupUi() {
     });
     connect(mDensitySlider, &QSlider::valueChanged,
             this, &LyricMotionPanel::scheduleReplan);
+    connect(mChromaSlider, &QSlider::valueChanged,
+            this, &LyricMotionPanel::scheduleReplan);
     connect(mBpmSpin, qOverload<int>(&QSpinBox::valueChanged),
             this, &LyricMotionPanel::scheduleReplan);
+    connect(mAudioButton, &QPushButton::clicked, this, [this]() {
+        const QString path = QFileDialog::getOpenFileName(
+                    this, tr("载入音频"), QString(),
+                    tr("音频文件 (*.mp3 *.wav *.ogg *.flac *.m4a *.aac)"));
+        if (path.isEmpty()) { return; }
+        mAudioLabel->setText(tr("分析中…"));
+        mAudioButton->setEnabled(false);
+        QtConcurrent::run([this, path]() {
+            LyricAudioAnalysis analysis;
+            QString err;
+            const bool ok = LyricAudioAnalyzer::analyze(path, analysis, &err);
+            QMetaObject::invokeMethod(this, [this, path, analysis, err, ok]() {
+                mAudioButton->setEnabled(true);
+                if (!ok) {
+                    mAudioLabel->setText(err);
+                    return;
+                }
+                mAudioPath = path;
+                mAudioAnalysis = analysis;
+                mAudioLabel->setText(QStringLiteral("%1 · BPM %2 · %3 拍")
+                    .arg(QFileInfo(path).fileName(),
+                         QString::number(analysis.bpm, 'f', 1),
+                         QString::number(analysis.beats.size())));
+                scheduleReplan();
+            }, Qt::QueuedConnection);
+        });
+    });
     connect(mApplyButton, &QPushButton::clicked,
             this, &LyricMotionPanel::applyToScene);
+    connect(mCutsTree, &QTreeWidget::itemClicked, this,
+            [this](QTreeWidgetItem *item, int) {
+        const QVariant idxVar = item->data(0, Qt::UserRole);
+        if (!idxVar.isValid()) { return; } // line rows carry no cut data
+        const QVariant tVar = item->data(0, Qt::UserRole + 1);
+        if (!tVar.isValid() || !mPreviewWorker) { return; }
+        mPreviewWorker->renderCutFrame(
+                    collectParams().style,
+                    static_cast<quint32>(mSeedSpin->value()),
+                    mDensitySlider->value() / 100.0,
+                    tVar.toDouble(), 480, 270, mPreviewGeneration);
+    });
 }
 
 void LyricMotionPanel::loadSettings() {
@@ -492,7 +571,14 @@ LyricMotionEngine::Params LyricMotionPanel::collectParams() const {
     p.mood = mMoodCombo->currentData().toString();
     p.seed = static_cast<quint32>(mSeedSpin->value());
     p.density = mDensitySlider->value() / 100.0;
+    p.chroma = mChromaSlider->value() / 100.0;
     p.bpm = mBpmSpin->value();
+    // JIZURA semantics: a manual BPM grid overrides detected beats;
+    // detected beats apply while the spin stays on 自动/无
+    if (!mAudioPath.isEmpty() && mAudioAnalysis.valid && p.bpm == 0) {
+        p.beats = mAudioAnalysis.beats;
+        p.audioDuration = mAudioAnalysis.duration;
+    }
     return p;
 }
 
@@ -593,6 +679,7 @@ void LyricMotionPanel::populateCuts() {
         item->setText(1, l.value(QStringLiteral("text")).toString());
         lineItems.insert(idx, item);
     }
+    int j = 0;
     for (const auto &cv : cuts) {
         const auto c = cv.toObject();
         QTreeWidgetItem *parent = lineItems.value(
@@ -609,6 +696,10 @@ void LyricMotionPanel::populateCuts() {
         for (int i = 2; i < 5; i++) {
             item->setForeground(i, QColor(140, 140, 140));
         }
+        item->setData(0, Qt::UserRole, j++);
+        item->setData(0, Qt::UserRole + 1,
+                      (c.value(QStringLiteral("start")).toDouble()
+                       + c.value(QStringLiteral("end")).toDouble()) * 0.5);
     }
     mCutsTree->expandAll();
 }
@@ -661,6 +752,18 @@ void LyricMotionPanel::applyToScene() {
                 box->removeFromParent_k();
             }
         }
+        // audio layer (created once per loaded file, outside the
+        // lyric group so re-applying never duplicates it)
+        if (mIncludeAudio->isChecked() && !mAudioPath.isEmpty()
+            && mAudioPath != mAppliedAudioPath) {
+            const auto sound = enve::make_shared<eIndependentSound>();
+            sound->setFilePath(mAudioPath);
+            scene->getCurrentGroup()->addContained(sound);
+            sound->prp_setName(
+                        QFileInfo(mAudioPath).completeBaseName());
+            mAppliedAudioPath = mAudioPath;
+        }
+
         auto group = enve::make_shared<ContainerBox>(eBoxType::layer);
         scene->getCurrentGroup()->addContained(group);
         group->prp_setName(groupName);
@@ -814,6 +917,23 @@ void LyricMotionPanel::applyToScene() {
             prevOpa->saveValueToKey(fStart + fTd, 0);
             curOpa->saveValueToKey(fStart, 0);
             curOpa->saveValueToKey(fStart + fTd, 100);
+        }
+
+        // ghost three-pass mapping: JIZURA's RGB-separated ghost is
+        // approximated with the chromatic aberration raster effect,
+        // strength from the style's fx.chroma slider
+        const qreal chroma = plan.value(QStringLiteral("fx"))
+                .toObject().value(QStringLiteral("chroma")).toDouble();
+        if (chroma > 0.05) {
+            const auto eff = createRasterEffectForNonCustomType(
+                        RasterEffectType::CHROMATIC_ABERRATION);
+            if (eff) {
+                if (auto *amt = eff->ca_getFirstDescendantWithName<
+                            QrealAnimator>(QStringLiteral("amount"))) {
+                    amt->setCurrentBaseValue(chroma * 8.0);
+                }
+                group->addRasterEffect(eff);
+            }
         }
 
         // extend the scene range to hold the whole lyric

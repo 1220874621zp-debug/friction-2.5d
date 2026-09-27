@@ -41,6 +41,15 @@ const auto kDriverJs = QStringLiteral(
     "    st.renderer.frame(st.ctx, plan, t, { scale: st.canvas.width / plan.W });"
     "    return JSON.stringify({ t: t });"
     "  };"
+    "  globalThis.__jzFrameAt = function(t, w, h){"
+    "    if (!st.canvas) __jzInit(w, h);"
+    "    if (st.canvas.width !== w) st.canvas.width = w;"
+    "    if (st.canvas.height !== h) st.canvas.height = h;"
+    "    st.ctx.setTransform(1, 0, 0, 1, 0, 0);"
+    "    st.ctx.clearRect(0, 0, w, h);"
+    "    st.renderer.frame(st.ctx, st.plan, t, { scale: w / st.plan.W });"
+    "    return 'ok';"
+    "  };"
     "})();");
 
 QStringList plannerSources() {
@@ -115,6 +124,55 @@ bool LyricPreviewWorker::ensureEngine(QString *error) {
     return true;
 }
 
+bool LyricPreviewWorker::ensurePlan(const QString &styleKey,
+                                    const quint32 seed,
+                                    const qreal density, QString *error) {
+    if (mLoaded && mPlanStyle == styleKey && mPlanSeed == seed
+        && qAbs(mPlanDensity - density) < 1e-6) {
+        return true; // cached plan still matches
+    }
+    const QString quoted = QString::fromUtf8(
+                QJsonDocument(QJsonArray{styleKey})
+                .toJson(QJsonDocument::Compact).mid(1).chopped(1));
+    const auto r = mEngine->evaluate(QStringLiteral(
+        "__jzPlan(%1, %2, %3)").arg(quoted)
+            .arg(seed).arg(QString::number(density, 'f', 3)));
+    if (r.isError()) {
+        if (error) { *error = r.toString(); }
+        return false;
+    }
+    mPlanStyle = styleKey;
+    mPlanSeed = seed;
+    mPlanDensity = density;
+    return true;
+}
+
+void LyricPreviewWorker::renderCutFrame(const QString &styleKey,
+                                        const quint32 seed,
+                                        const qreal density,
+                                        const qreal time,
+                                        const int width, const int height,
+                                        const int generation) {
+    QString error;
+    if (!ensureEngine(&error)) {
+        Q_UNUSED(error)
+        return;
+    }
+    QString err;
+    if (!ensurePlan(styleKey, seed, density, &err)) { return; }
+    const auto r = mEngine->evaluate(QStringLiteral(
+        "__jzFrameAt(%1, %2, %3)").arg(QString::number(time, 'f', 4))
+            .arg(width).arg(height));
+    if (r.isError()) { return; }
+    const auto canvasObj = mEngine->globalObject()
+            .property(QStringLiteral("__jz"))
+            .property(QStringLiteral("canvas"));
+    const auto *canvas = qobject_cast<const JsCanvas2D *>(
+                canvasObj.toQObject());
+    if (!canvas) { return; }
+    Q_EMIT cutFrameReady(canvas->image().copy(), generation);
+}
+
 void LyricPreviewWorker::renderStyle(const QString &styleKey,
                                      const quint32 seed,
                                      const qreal density,
@@ -125,16 +183,12 @@ void LyricPreviewWorker::renderStyle(const QString &styleKey,
         return;
     }
     // plan + renderer for this style
-    const QString quoted = QString::fromUtf8(
-                QJsonDocument(QJsonArray{styleKey})
-                .toJson(QJsonDocument::Compact).mid(1).chopped(1));
-    auto r = mEngine->evaluate(QStringLiteral(
-        "__jzPlan(%1, %2, %3)").arg(quoted)
-            .arg(seed).arg(QString::number(density, 'f', 3)));
-    if (r.isError()) {
-        Q_EMIT styleFailed(styleKey, generation, r.toString());
+    QString planErr;
+    if (!ensurePlan(styleKey, seed, density, &planErr)) {
+        Q_EMIT styleFailed(styleKey, generation, planErr);
         return;
     }
+    QJSValue r;
     QVector<QImage> frames;
     frames.reserve(mFrames);
     for (int i = 0; i < mFrames; i++) {

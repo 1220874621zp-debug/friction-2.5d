@@ -2,6 +2,7 @@
 #define LYRICMOTIONPANEL_H
 
 #include "lyricmotionengine.h"
+#include "lyricmotionaudio.h"
 
 #include <QWidget>
 #include <QTimer>
@@ -13,6 +14,9 @@ class QSpinBox;
 class QSlider;
 class QPushButton;
 class QTreeWidget;
+class QLabel;
+class QCheckBox;
+class QFileDialog;
 class QLabel;
 class QScrollArea;
 class QThread;
@@ -66,7 +70,15 @@ private:
     QToolButton *mSeedDice = nullptr;
     QToolButton *mOmakaseButton = nullptr;
     QSlider *mDensitySlider = nullptr;
+    QSlider *mChromaSlider = nullptr;
     QSpinBox *mBpmSpin = nullptr;
+    QPushButton *mAudioButton = nullptr;
+    QLabel *mAudioLabel = nullptr;
+    QCheckBox *mIncludeAudio = nullptr;
+    QLabel *mCutPreview = nullptr;
+    QString mAudioPath;
+    QString mAppliedAudioPath;
+    LyricAudioAnalysis mAudioAnalysis;
 
     QScrollArea *mGalleryScroll = nullptr;
     QWidget *mGalleryHost = nullptr;
