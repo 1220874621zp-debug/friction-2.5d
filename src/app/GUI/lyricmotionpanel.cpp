@@ -12,6 +12,7 @@
 #include "Scripting/jsapi.h"
 #include "Boxes/textbox.h"
 #include "Boxes/containerbox.h"
+#include "Boxes/imagesequencebox.h"
 #include "Animators/qrealanimator.h"
 #include "Animators/qstringanimator.h"
 #include "Animators/transformanimator.h"
@@ -23,7 +24,10 @@
 
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDateTime>
+#include <QDir>
 #include <QFileDialog>
+#include <QStandardPaths>
 #include <QtConcurrent>
 #include <QFontMetricsF>
 #include <QHBoxLayout>
@@ -262,8 +266,10 @@ LyricMotionPanel::~LyricMotionPanel() {
 
 void LyricMotionPanel::showEvent(QShowEvent *e) {
     QWidget::showEvent(e);
-    pumpPreviewQueue();
-    if (isVisible()) { mFrameTimer.start(); }
+    mFrameTimer.start();
+    // deferred: visibility of dock contents is not settled inside
+    // showEvent, so the queue pump runs on the next event loop pass
+    QTimer::singleShot(0, this, [this]() { pumpPreviewQueue(); });
 }
 
 void LyricMotionPanel::hideEvent(QHideEvent *e) {
@@ -284,13 +290,39 @@ void LyricMotionPanel::setupPreviewWorker() {
         for (LyricStyleCard *card : mCards) {
             if (card->key() == key) { card->setFrames(frames); break; }
         }
+        int remaining = 0;
+        for (LyricStyleCard *card : mCards) {
+            if (!card->hasFrames() && card->isPending()) { remaining++; }
+        }
+        if (remaining > 0) {
+            setStatus(tr("风格预览渲染中（剩余 %1）…").arg(remaining));
+        }
         pumpPreviewQueue();
     }, Qt::QueuedConnection);
     connect(mPreviewWorker, &LyricPreviewWorker::styleFailed, this,
             [this](const QString &key, const int generation,
-                   const QString &) {
+                   const QString &error) {
         if (generation != mPreviewGeneration) { return; }
+        setStatus(tr("风格预览失败 %1: %2").arg(key, error.left(60)), true);
         pumpPreviewQueue(); // skip the failed one, keep filling
+    }, Qt::QueuedConnection);
+    connect(mPreviewWorker, &LyricPreviewWorker::sequenceProgress, this,
+            [this](const int done, const int total, const int generation) {
+        if (generation != mExportGeneration) { return; }
+        setStatus(tr("高保真渲染中 %1/%2 帧…").arg(done).arg(total));
+    }, Qt::QueuedConnection);
+    connect(mPreviewWorker, &LyricPreviewWorker::sequenceFailed, this,
+            [this](const QString &error, const int generation) {
+        if (generation != mExportGeneration) { return; }
+        mApplying = false;
+        mApplyButton->setEnabled(true);
+        setStatus(tr("序列渲染失败: %1").arg(error), true);
+    }, Qt::QueuedConnection);
+    connect(mPreviewWorker, &LyricPreviewWorker::sequenceReady, this,
+            [this](const QString &dirPath, const int frames,
+                   const qreal fps, const int generation) {
+        if (generation != mExportGeneration) { return; }
+        applySequenceResult(dirPath, frames, fps);
     }, Qt::QueuedConnection);
     connect(mPreviewWorker, &LyricPreviewWorker::cutFrameReady, this,
             [this](const QImage &frame, const int generation) {
@@ -305,10 +337,11 @@ void LyricMotionPanel::pumpPreviewQueue() {
     for (LyricStyleCard *card : mCards) {
         if (!card->hasFrames() && !card->isPending()) {
             card->setPending(true);
-            mPreviewWorker->renderStyle(card->key(),
-                                        static_cast<quint32>(mSeedSpin->value()),
-                                        mDensitySlider->value() / 100.0,
-                                        mPreviewGeneration);
+            const auto params = collectParams();
+            mPreviewWorker->renderStyle(card->key(), params.seed,
+                                        params.density, params.lyrics,
+                                        params.beats, params.audioDuration,
+                                        sceneFps(), mPreviewGeneration);
         }
     }
 }
@@ -365,6 +398,7 @@ void LyricMotionPanel::setupUi() {
     mDensitySlider->setToolTip(tr("细分：每句切分的粒度"));
     mChromaSlider = new QSlider(Qt::Horizontal, this);
     mChromaSlider->setRange(0, 100);
+    mChromaSlider->setValue(70);
     mChromaSlider->setToolTip(tr("色差强度（幽灵三 pass 映射）"));
     mBpmSpin = new QSpinBox(this);
     mBpmSpin->setRange(0, 300);
@@ -419,10 +453,14 @@ void LyricMotionPanel::setupUi() {
 
     // bottom row
     auto *bottom = new QHBoxLayout();
+    mHiFi = new QCheckBox(tr("高保真"), this);
+    mHiFi->setChecked(true);
+    mHiFi->setToolTip(tr("按网页版渲染器逐帧渲染为 PNG 序列插入场景（效果与网页版一致，渲染需要一些时间）。取消勾选则生成可编辑的文字图层（简化映射）。"));
     mApplyButton = new QPushButton(tr("应用到场景"), this);
-    mApplyButton->setToolTip(tr("按当前规划生成文字图层（一个撤销步骤）"));
+    mApplyButton->setToolTip(tr("按当前规划生成（一个撤销步骤）"));
     mStatus = new QLabel(tr("就绪"), this);
     mStatus->setWordWrap(true);
+    bottom->addWidget(mHiFi);
     bottom->addWidget(mApplyButton);
     bottom->addWidget(mStatus, 1);
     mainLayout->addLayout(bottom);
@@ -510,11 +548,12 @@ void LyricMotionPanel::setupUi() {
         if (!idxVar.isValid()) { return; } // line rows carry no cut data
         const QVariant tVar = item->data(0, Qt::UserRole + 1);
         if (!tVar.isValid() || !mPreviewWorker) { return; }
+        const auto params = collectParams();
         mPreviewWorker->renderCutFrame(
-                    collectParams().style,
-                    static_cast<quint32>(mSeedSpin->value()),
-                    mDensitySlider->value() / 100.0,
-                    tVar.toDouble(), 480, 270, mPreviewGeneration);
+                    params.style, params.seed, params.density,
+                    params.lyrics, params.beats, params.audioDuration,
+                    sceneFps(), tVar.toDouble(), 480, 270,
+                    mPreviewGeneration);
     });
 }
 
@@ -527,6 +566,8 @@ void LyricMotionPanel::loadSettings() {
         QStringLiteral("LyricPanel"), QStringLiteral("seed"), 1).toInt());
     mDensitySlider->setValue(AppSupport::getSettings(
         QStringLiteral("LyricPanel"), QStringLiteral("density"), 55).toInt());
+    mChromaSlider->setValue(AppSupport::getSettings(
+        QStringLiteral("LyricPanel"), QStringLiteral("chroma"), 70).toInt());
     mBpmSpin->setValue(AppSupport::getSettings(
         QStringLiteral("LyricPanel"), QStringLiteral("bpm"), 0).toInt());
     const QString style = AppSupport::getSettings(
@@ -558,6 +599,9 @@ void LyricMotionPanel::saveSettings() {
     AppSupport::setSettings(QStringLiteral("LyricPanel"),
                             QStringLiteral("density"),
                             mDensitySlider->value());
+    AppSupport::setSettings(QStringLiteral("LyricPanel"),
+                            QStringLiteral("chroma"),
+                            mChromaSlider->value());
     AppSupport::setSettings(QStringLiteral("LyricPanel"),
                             QStringLiteral("bpm"),
                             mBpmSpin->value());
@@ -704,10 +748,101 @@ void LyricMotionPanel::populateCuts() {
     mCutsTree->expandAll();
 }
 
+void LyricMotionPanel::applyHighFidelity() {
+    if (mApplying) { return; }
+    auto * const scene = Document::sInstance
+                ? Document::sInstance->fActiveScene : nullptr;
+    if (!scene) { setStatus(tr("请先打开一个场景"), true); return; }
+    const auto params = collectParams();
+    const QString base = QStandardPaths::writableLocation(
+                QStandardPaths::AppDataLocation)
+            + QStringLiteral("/jizura_seq");
+    QDir().mkpath(base);
+    mSequenceDir = base + QDir::separator()
+            + QDateTime::currentDateTime().toString(
+                    QStringLiteral("yyyyMMdd_HHmmss"));
+    mExportGeneration++;
+    mApplying = true;
+    mApplyButton->setEnabled(false);
+    setStatus(tr("高保真渲染开始（整段逐帧，请稍候）…"));
+    mPreviewWorker->exportSequence(
+                params.style, params.seed, params.density, params.lyrics,
+                params.beats, params.audioDuration, mSequenceDir,
+                scene->getCanvasWidth(), scene->getCanvasHeight(),
+                scene->getFps(), mExportGeneration);
+}
+
+void LyricMotionPanel::applySequenceResult(const QString &dirPath,
+                                           const int frames,
+                                           const qreal fps) {
+    auto * const scene = Document::sInstance
+                ? Document::sInstance->fActiveScene : nullptr;
+    if (!scene) {
+        mApplying = false;
+        mApplyButton->setEnabled(true);
+        return;
+    }
+    Friction::Core::beginUndoGroupBatch();
+    QString error;
+    try {
+        const QString groupName = tr("歌词动画");
+        for (const auto &box : scene->getContainedBoxes()) {
+            if (box->getBoxType() == eBoxType::layer &&
+                box->prp_getName().startsWith(groupName)) {
+                box->setSelected(false);
+                box->removeFromParent_k();
+            }
+        }
+        // audio layer (same dedupe as the text path)
+        if (mIncludeAudio->isChecked() && !mAudioPath.isEmpty()
+            && mAudioPath != mAppliedAudioPath) {
+            const auto sound = enve::make_shared<eIndependentSound>();
+            sound->setFilePath(mAudioPath);
+            scene->getCurrentGroup()->addContained(sound);
+            sound->prp_setName(
+                        QFileInfo(mAudioPath).completeBaseName());
+            mAppliedAudioPath = mAudioPath;
+        }
+        auto group = enve::make_shared<ContainerBox>(eBoxType::layer);
+        scene->getCurrentGroup()->addContained(group);
+        group->prp_setName(groupName);
+        const auto seqBox = enve::make_shared<ImageSequenceBox>();
+        group->addContained(seqBox);
+        seqBox->prp_setName(tr("歌词动画 序列"));
+        seqBox->setFolderPath(dirPath);
+        if (const auto durRect = seqBox->getDurationRectangle()) {
+            durRect->setMinAbsFrame(0);
+            durRect->setFramesDuration(frames);
+        }
+        const int lastFrame = frames - 1;
+        const auto range = scene->getFrameRange();
+        if (range.fMax < lastFrame) {
+            scene->setFrameRange(FrameRange{range.fMin, lastFrame});
+        }
+    } catch (const std::exception &e) {
+        error = QString::fromUtf8(e.what());
+    }
+    Friction::Core::endUndoGroupBatch();
+    Document::sInstance->actionFinished();
+    mApplying = false;
+    mApplyButton->setEnabled(true);
+    if (error.isEmpty()) {
+        setStatus(tr("已应用（高保真序列 %1 帧）").arg(frames));
+    } else {
+        setStatus(tr("应用失败: %1").arg(error), true);
+    }
+}
+
 void LyricMotionPanel::setStatus(const QString &text, const bool error) {
     mStatus->setText(text);
     mStatus->setStyleSheet(error ? QStringLiteral("color:#E06C5A;")
                                  : QString());
+}
+
+qreal LyricMotionPanel::sceneFps() const {
+    const auto * const scene = Document::sInstance
+                ? Document::sInstance->fActiveScene : nullptr;
+    return scene ? scene->getFps() : 24.0;
 }
 
 void LyricMotionPanel::applyToScene() {
@@ -715,6 +850,7 @@ void LyricMotionPanel::applyToScene() {
         setStatus(tr("没有可应用的规划"), true);
         return;
     }
+    if (mHiFi->isChecked()) { applyHighFidelity(); return; }
     auto * const scene = Document::sInstance ?
                 Document::sInstance->fActiveScene : nullptr;
     if (!scene) { setStatus(tr("请先打开一个场景"), true); return; }

@@ -55,10 +55,17 @@ private:
     void setupPreviewWorker();
     void pumpPreviewQueue();
     void advancePreviews();
+    qreal sceneFps() const;
+    void applyHighFidelity();
+    void applySequenceResult(const QString &dirPath, const int frames,
+                             const qreal fps);
 
     QThread *mPreviewThread = nullptr;
     LyricPreviewWorker *mPreviewWorker = nullptr;
     int mPreviewGeneration = 0;
+    int mExportGeneration = -1;
+    bool mApplying = false;
+    QString mSequenceDir;
     QTimer mFrameTimer;
 
     LyricMotionEngine *mEngine = nullptr;
@@ -75,6 +82,7 @@ private:
     QPushButton *mAudioButton = nullptr;
     QLabel *mAudioLabel = nullptr;
     QCheckBox *mIncludeAudio = nullptr;
+    QCheckBox *mHiFi = nullptr;
     QLabel *mCutPreview = nullptr;
     QString mAudioPath;
     QString mAppliedAudioPath;

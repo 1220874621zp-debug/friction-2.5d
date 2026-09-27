@@ -23,13 +23,20 @@ const auto kDriverJs = QStringLiteral(
     "    st.canvas.width = w; st.canvas.height = h;"
     "    st.ctx = st.canvas.getContext('2d');"
     "  };"
-    "  globalThis.__jzPlan = function(styleKey, seed, density){"
+    "  globalThis.__jzPlan = function(styleKey, seed, density, lyrics,"
+    "                                  beatsJson, audioDuration, fps){"
     "    var pr = J.defaultProject();"
-    "    pr.lyrics = \"\\u591c\\u660e\\u3051\\u306e\\u8272\\n*\\u6587\\u5b57* Motion\\n\\u6b4c\\u8a5e\\u30a2\\u30cb\\u30e1\\u3067\\u3059\";"
+    "    pr.lyrics = (lyrics && lyrics.length) ? lyrics"
+    "      : \"\\u591c\\u660e\\u3051\\u306e\\u8272\\n*\\u6587\\u5b57* Motion\\n\\u6b4c\\u8a5e\\u30a2\\u30cb\\u30e1\\u3067\\u3059\";"
     "    pr.style = styleKey; pr.seed = seed;"
     "    pr.fx.density = (density == null ? 0.55 : density);"
+    "    pr.fps = (fps || 24);"
     "    pr.timing.bpm = 0;"
-    "    st.plan = J.plan(pr, null);"
+    "    var audio = null;"
+    "    if (beatsJson && beatsJson.length) {"
+    "      audio = { beats: beatsJson, duration: audioDuration || 600 };"
+    "    }"
+    "    st.plan = J.plan(pr, audio);"
     "    st.renderer = new J.Renderer();"
     "    return JSON.stringify({ duration: st.plan.duration, cuts: st.plan.cuts.length });"
     "  };"
@@ -48,6 +55,12 @@ const auto kDriverJs = QStringLiteral(
     "    st.ctx.setTransform(1, 0, 0, 1, 0, 0);"
     "    st.ctx.clearRect(0, 0, w, h);"
     "    st.renderer.frame(st.ctx, st.plan, t, { scale: w / st.plan.W });"
+    "    return 'ok';"
+    "  };"
+    "  globalThis.__jzRenderTime = function(t){"
+    "    st.ctx.setTransform(1, 0, 0, 1, 0, 0);"
+    "    st.ctx.clearRect(0, 0, st.canvas.width, st.canvas.height);"
+    "    st.renderer.frame(st.ctx, st.plan, t, { scale: st.canvas.width / st.plan.W });"
     "    return 'ok';"
     "  };"
     "})();");
@@ -124,94 +137,196 @@ bool LyricPreviewWorker::ensureEngine(QString *error) {
     return true;
 }
 
+QString planCacheKey(const QString &styleKey, const quint32 seed,
+                     const qreal density, const QString &lyrics,
+                     const QVector<qreal> &beats, const qreal audioDuration,
+                     const qreal fps) {
+    return QStringLiteral("%1|%2|%3|%4|%5|%6|%7")
+            .arg(styleKey).arg(seed).arg(QString::number(density, 'f', 3))
+            .arg(QString::number(qHash(lyrics)))
+            .arg(beats.size())
+            .arg(beats.isEmpty() ? 0.0 : beats.first(), 0, 'f', 3)
+            .arg(QString::number(fps, 'f', 3))
+            + (beats.isEmpty() ? QString()
+                               : QStringLiteral("|%1").arg(audioDuration));
+}
+
 bool LyricPreviewWorker::ensurePlan(const QString &styleKey,
                                     const quint32 seed,
-                                    const qreal density, QString *error) {
-    if (mLoaded && mPlanStyle == styleKey && mPlanSeed == seed
-        && qAbs(mPlanDensity - density) < 1e-6) {
-        return true; // cached plan still matches
+                                    const qreal density,
+                                    const QString &lyrics,
+                                    const QVector<qreal> &beats,
+                                    const qreal audioDuration,
+                                    const qreal fps, QString *error) {
+    const QString key = planCacheKey(styleKey, seed, density, lyrics,
+                                     beats, audioDuration, fps);
+    if (mLoaded && mPlanKey == key) { return true; } // cached plan matches
+    const auto js = [](const QString &v) {
+        return QString::fromUtf8(QJsonDocument(QJsonArray{v})
+                                 .toJson(QJsonDocument::Compact)
+                                 .mid(1).chopped(1));
+    };
+    QString beatsSrc = QStringLiteral("null");
+    if (!beats.isEmpty()) {
+        QJsonArray arr;
+        for (const qreal b : beats) { arr.append(b); }
+        beatsSrc = QString::fromUtf8(QJsonDocument(arr)
+                                     .toJson(QJsonDocument::Compact));
     }
-    const QString quoted = QString::fromUtf8(
-                QJsonDocument(QJsonArray{styleKey})
-                .toJson(QJsonDocument::Compact).mid(1).chopped(1));
     const auto r = mEngine->evaluate(QStringLiteral(
-        "__jzPlan(%1, %2, %3)").arg(quoted)
-            .arg(seed).arg(QString::number(density, 'f', 3)));
+        "__jzPlan(%1, %2, %3, %4, %5, %6, %7)")
+            .arg(js(styleKey)).arg(seed)
+            .arg(QString::number(density, 'f', 3)).arg(js(lyrics))
+            .arg(beatsSrc)
+            .arg(QString::number(audioDuration, 'f', 4))
+            .arg(QString::number(fps, 'f', 3)));
     if (r.isError()) {
         if (error) { *error = r.toString(); }
         return false;
     }
-    mPlanStyle = styleKey;
-    mPlanSeed = seed;
-    mPlanDensity = density;
+    mPlanKey = key;
     return true;
 }
 
-void LyricPreviewWorker::renderCutFrame(const QString &styleKey,
-                                        const quint32 seed,
-                                        const qreal density,
-                                        const qreal time,
-                                        const int width, const int height,
-                                        const int generation) {
-    QString error;
-    if (!ensureEngine(&error)) {
-        Q_UNUSED(error)
-        return;
-    }
-    QString err;
-    if (!ensurePlan(styleKey, seed, density, &err)) { return; }
-    const auto r = mEngine->evaluate(QStringLiteral(
-        "__jzFrameAt(%1, %2, %3)").arg(QString::number(time, 'f', 4))
-            .arg(width).arg(height));
-    if (r.isError()) { return; }
+qreal LyricPreviewWorker::planDuration() const {
+    if (!mLoaded || !mEngine) { return 0; }
+    return mEngine->evaluate(QStringLiteral("__jz.plan.duration")).toNumber();
+}
+
+QImage LyricPreviewWorker::renderFrameAt(const qreal t) {
     const auto canvasObj = mEngine->globalObject()
             .property(QStringLiteral("__jz"))
             .property(QStringLiteral("canvas"));
     const auto *canvas = qobject_cast<const JsCanvas2D *>(
                 canvasObj.toQObject());
-    if (!canvas) { return; }
-    Q_EMIT cutFrameReady(canvas->image().copy(), generation);
+    if (!canvas) { return QImage(); }
+    const auto r = mEngine->evaluate(QStringLiteral("__jzRenderTime(%1)")
+                                     .arg(QString::number(t, 'f', 5)));
+    if (r.isError()) { return QImage(); }
+    return canvas->image().copy();
+}
+
+void LyricPreviewWorker::renderCutFrame(const QString &styleKey,
+                                        const quint32 seed,
+                                        const qreal density,
+                                        const QString &lyrics,
+                                        const QVector<qreal> &beats,
+                                        const qreal audioDuration,
+                                        const qreal fps,
+                                        const qreal time,
+                                        const int width, const int height,
+                                        const int generation) {
+    QString error;
+    if (!ensureEngine(&error)) { return; }
+    QString err;
+    if (!ensurePlan(styleKey, seed, density, lyrics, beats, audioDuration,
+                    fps, &err)) { return; }
+    // resize the shared canvas for the big preview, render, restore
+    const auto r = mEngine->evaluate(QStringLiteral("__jzFrameAt(%1, %2, %3)")
+                                     .arg(QString::number(time, 'f', 4))
+                                     .arg(width).arg(height));
+    if (r.isError()) { return; }
+    const QImage frame = [&]() {
+        const auto canvasObj = mEngine->globalObject()
+                .property(QStringLiteral("__jz"))
+                .property(QStringLiteral("canvas"));
+        const auto *canvas = qobject_cast<const JsCanvas2D *>(
+                    canvasObj.toQObject());
+        return canvas ? canvas->image().copy() : QImage();
+    }();
+    if (!frame.isNull()) { Q_EMIT cutFrameReady(frame, generation); }
 }
 
 void LyricPreviewWorker::renderStyle(const QString &styleKey,
                                      const quint32 seed,
                                      const qreal density,
+                                     const QString &lyrics,
+                                     const QVector<qreal> &beats,
+                                     const qreal audioDuration,
+                                     const qreal fps,
                                      const int generation) {
     QString error;
     if (!ensureEngine(&error)) {
         Q_EMIT styleFailed(styleKey, generation, error);
         return;
     }
-    // plan + renderer for this style
     QString planErr;
-    if (!ensurePlan(styleKey, seed, density, &planErr)) {
+    if (!ensurePlan(styleKey, seed, density, lyrics, beats, audioDuration,
+                    fps, &planErr)) {
         Q_EMIT styleFailed(styleKey, generation, planErr);
         return;
     }
-    QJSValue r;
+    // preview tiles render on the shared canvas at the tile size (a
+    // cut-level preview may have resized it)
+    mEngine->evaluate(QStringLiteral("__jzInit(%1, %2)").arg(mW).arg(mH));
     QVector<QImage> frames;
     frames.reserve(mFrames);
     for (int i = 0; i < mFrames; i++) {
-        r = mEngine->evaluate(QStringLiteral("__jzFrame(%1, %2)")
-                              .arg(i).arg(mFrames));
-        if (r.isError()) {
+        const QImage frame = renderFrameAt(
+                    planDuration() * (i + 0.5) / mFrames);
+        if (frame.isNull()) {
             if (frames.isEmpty()) {
-                Q_EMIT styleFailed(styleKey, generation, r.toString());
+                Q_EMIT styleFailed(styleKey, generation,
+                                   QStringLiteral("frame render failed"));
                 return;
             }
             break; // keep whatever rendered; preview is best-effort
         }
-        const auto canvasObj = mEngine->globalObject()
-                .property(QStringLiteral("__jz"))
-                .property(QStringLiteral("canvas"));
-        const auto *canvas = qobject_cast<const JsCanvas2D *>(
-                    canvasObj.toQObject());
-        if (!canvas) {
-            Q_EMIT styleFailed(styleKey, generation,
-                               QStringLiteral("preview canvas missing"));
-            return;
-        }
-        frames.append(canvas->image().copy());
+        frames.append(frame);
     }
     Q_EMIT framesReady(styleKey, generation, frames);
+}
+
+void LyricPreviewWorker::exportSequence(const QString &styleKey,
+                                        const quint32 seed,
+                                        const qreal density,
+                                        const QString &lyrics,
+                                        const QVector<qreal> &beats,
+                                        const qreal audioDuration,
+                                        const QString &outDir,
+                                        const int width, const int height,
+                                        const qreal fps,
+                                        const int generation) {
+    QString error;
+    if (!ensureEngine(&error)) {
+        Q_EMIT sequenceFailed(error, generation);
+        return;
+    }
+    QString planErr;
+    if (!ensurePlan(styleKey, seed, density, lyrics, beats, audioDuration,
+                    fps, &planErr)) {
+        Q_EMIT sequenceFailed(planErr, generation);
+        return;
+    }
+    // dedicated canvas at scene resolution
+    mEngine->evaluate(QStringLiteral("__jzInit(%1, %2)").arg(width).arg(height));
+    const qreal duration = planDuration();
+    int total = qCeil(duration * fps);
+    if (total > 4000) { total = 4000; } // hard cap (~2.8 min @ 24fps)
+    if (total <= 0) {
+        Q_EMIT sequenceFailed(QStringLiteral("plan duration is zero"),
+                              generation);
+        return;
+    }
+    for (int i = 0; i < total; i++) {
+        const QImage frame = renderFrameAt((i + 0.5) / fps);
+        if (frame.isNull()) {
+            Q_EMIT sequenceFailed(
+                        QStringLiteral("frame %1 render failed").arg(i),
+                        generation);
+            return;
+        }
+        const QString path = QStringLiteral("%1/jizura_%2.png")
+                .arg(outDir, QString::number(i, 'd', 5).rightJustified(5, u'0'));
+        if (!frame.save(path, "PNG")) {
+            Q_EMIT sequenceFailed(
+                        QStringLiteral("write %1 failed").arg(path),
+                        generation);
+            return;
+        }
+        if (i % 8 == 0 || i == total - 1) {
+            Q_EMIT sequenceProgress(i + 1, total, generation);
+        }
+    }
+    Q_EMIT sequenceReady(outDir, total, fps, generation);
 }

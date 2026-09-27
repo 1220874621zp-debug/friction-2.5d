@@ -24,12 +24,24 @@ public:
 public slots:
     void setup();
     void renderStyle(const QString &styleKey, const quint32 seed,
-                     const qreal density, const int generation);
+                     const qreal density, const QString &lyrics,
+                     const QVector<qreal> &beats, qreal audioDuration,
+                     qreal fps, const int generation);
     // one large frame at an arbitrary time (cut-level preview); reuses
-    // the cached plan when style/seed/density are unchanged
+    // the cached plan when the plan inputs are unchanged
     void renderCutFrame(const QString &styleKey, const quint32 seed,
-                        const qreal density, const qreal time,
+                        const qreal density, const QString &lyrics,
+                        const QVector<qreal> &beats, qreal audioDuration,
+                        qreal fps, const qreal time,
                         const int width, const int height,
+                        const int generation);
+    // high-fidelity export: render EVERY frame of the plan at scene
+    // resolution and save a PNG sequence (the exact web-version look)
+    void exportSequence(const QString &styleKey, const quint32 seed,
+                        const qreal density, const QString &lyrics,
+                        const QVector<qreal> &beats, qreal audioDuration,
+                        const QString &outDir, const int width,
+                        const int height, const qreal fps,
                         const int generation);
 
 signals:
@@ -40,19 +52,26 @@ signals:
     void styleFailed(const QString &styleKey, const int generation,
                      const QString &error);
     void cutFrameReady(const QImage &frame, const int generation);
+    void sequenceProgress(const int done, const int total,
+                          const int generation);
+    void sequenceReady(const QString &dirPath, const int frames,
+                       const qreal fps, const int generation);
+    void sequenceFailed(const QString &error, const int generation);
 
 private:
     bool ensureEngine(QString *error);
     bool ensurePlan(const QString &styleKey, const quint32 seed,
-                    const qreal density, QString *error);
+                    const qreal density, const QString &lyrics,
+                    const QVector<qreal> &beats, qreal audioDuration,
+                    qreal fps, QString *error);
+    QImage renderFrameAt(const qreal t);
+    qreal planDuration() const;
 
     const int mW, mH, mFrames;
     std::unique_ptr<QJSEngine> mEngine;
     LyricCanvasFactory *mFactory = nullptr;
     bool mLoaded = false;
-    QString mPlanStyle;
-    quint32 mPlanSeed = 0;
-    qreal mPlanDensity = -1;
+    QString mPlanKey;
 };
 
 #endif // LYRICMOTIONPREVIEW_H
