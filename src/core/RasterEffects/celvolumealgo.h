@@ -62,11 +62,15 @@ struct Params {
     int minArea = 40;         // regions below this pixel count merge into neighbors
     // radial shading
     int shadeMode = ShadeRadial;
-    // stops calibrated against the reference treatment: saturated
-    // pure red / electric purple / blue-violet, all s > 0.9
-    float colWarm[3] = { 0.80f, 0.10f, 0.04f };  // region-center stop, rgb 0..1
+    // stops: center magenta from the user's panel (h .833 s 1 v .794),
+    // middle electric purple / edge blue-violet, all s > 0.9
+    float colWarm[3] = { 0.83f, 0.00f, 0.79f };  // region-center stop, rgb 0..1
     float colMid[3]  = { 0.58f, 0.03f, 0.72f };  // middle stop
     float colCool[3] = { 0.26f, 0.07f, 0.76f };  // region-edge stop
+    // draggable canvas light (uv 0..1): every region's gradient
+    // center offsets from its centroid toward this point, so one
+    // control aims all center-color bands at once
+    float lightPos[2] = { 0.2f, 0.2f };
     float gradGamma = 1.8f;    // t response curve; >1 keeps the center
                                // color wide before falling to the edge
     float mix = 100.f;         // 0 = original .. 100 = fully re-tinted
@@ -531,6 +535,33 @@ inline void compute(const uint32_t* const src, const int w, const int h,
         }
     }
 
+    // aim every gradient center at the canvas light: direction from
+    // the image center toward the light, offset scaled by how far
+    // the light sits from center (0 = centroids, 0.7R at the rim);
+    // then re-derive each radius from the shifted center so the
+    // edge still lands exactly on the edge stop
+    const float lw = (p.lightPos[0] - 0.5f) * 2.f;
+    const float lh = (p.lightPos[1] - 0.5f) * 2.f;
+    const float lLen = std::max(0.001f, std::sqrt(lw * lw + lh * lh));
+    const float lNx = lw / lLen;
+    const float lNy = lh / lLen;
+    const float lOff = std::min(1.f, lLen) * 0.7f;
+    std::vector<float> gx(regions.size()), gy(regions.size());
+    for (size_t k = 0; k < regions.size(); k++) {
+        gx[k] = float(cx[k]) + lNx * rad[k] * lOff;
+        gy[k] = float(cy[k]) + lNy * rad[k] * lOff;
+        rad[k] = 1.f;
+    }
+    for (int y = 0; y < h; y++) {
+        for (int x = 0; x < w; x++) {
+            const int32_t L = label[size_t(y) * w + x];
+            if (L < 0) continue;
+            const float d = float(std::hypot(x + 0.5 - gx[size_t(L)],
+                                             y + 0.5 - gy[size_t(L)]));
+            if (d > rad[size_t(L)]) rad[size_t(L)] = d;
+        }
+    }
+
     // ---- 4. shading ----------------------------------------------------
     const float mixAmt = detail::clamp01(p.mix / 100.f);
     const float gradGamma = std::max(0.05f, p.gradGamma);
@@ -587,8 +618,8 @@ inline void compute(const uint32_t* const src, const int w, const int h,
             if (L < 0) { dst[i] = s; continue; }
             const RegionStat& st = regions[size_t(L)];
             if (st.flat) { dst[i] = s; continue; }
-            const float d = float(std::hypot(x + 0.5 - cx[size_t(L)],
-                                             y + 0.5 - cy[size_t(L)]));
+            const float d = float(std::hypot(x + 0.5 - gx[size_t(L)],
+                                             y + 0.5 - gy[size_t(L)]));
             // only real blocks (wide AND roomy) run the full journey
             // to the center stop; small leftover regions shade within
             // mid..edge tones so no red cores pop out of folds

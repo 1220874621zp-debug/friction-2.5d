@@ -4,6 +4,7 @@
 #include "rastereffect.h"
 
 class QrealAnimator;
+class QPointFAnimator;
 class ColorAnimator;
 class ComboBoxProperty;
 
@@ -29,6 +30,7 @@ private:
     // 3-stop radial gradient
     qsptr<ComboBoxProperty> mShadeMode;
     qsptr<QrealAnimator> mGradGamma;
+    qsptr<QPointFAnimator> mLightPos;
     qsptr<ColorAnimator> mColWarm;
     qsptr<ColorAnimator> mColMid;
     qsptr<ColorAnimator> mColCool;

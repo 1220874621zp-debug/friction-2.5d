@@ -7,6 +7,9 @@
 #include "Animators/coloranimator.h"
 #include "Animators/staticcomplexanimator.h"
 #include "Properties/comboboxproperty.h"
+#include "Animators/qpointfanimator.h"
+#include "MovablePoints/pointshandler.h"
+#include "RasterEffects/effectcanvaspoint.h"
 
 #include "appsupport.h"
 
@@ -134,8 +137,17 @@ CelVolumeEffect::CelVolumeEffect() :
     mGradGamma = enve::make_shared<QrealAnimator>(1.8, 0.2, 5.0, 0.1,
                                                   QObject::tr("\u4e2d\u5fc3\u8272\u8303\u56f4"));
     gradGroup->ca_addChild(mGradGamma);
+    mLightPos = enve::make_shared<QPointFAnimator>(
+                QObject::tr("\u5149\u6e90\u4f4d\u7f6e"));
+    mLightPos->setBaseValue(0.2, 0.2);
+    gradGroup->ca_addChild(mLightPos);
+    // AE-style draggable crosshair aiming every region's center
+    // color band at once (0..1 uv over the host box content rect)
+    setPointsHandler(enve::make_shared<PointsHandler>());
+    getPointsHandler()->appendPt(enve::make_shared<EffectCanvasPoint>(
+                mLightPos.get(), this, EffectCanvasPoint::Space::Normalized));
     mColWarm = enve::make_shared<ColorAnimator>(QObject::tr("\u4e2d\u5fc3\u8272"));
-    mColWarm->setColor(QColor(204, 26, 10, 255));
+    mColWarm->setColor(QColor(212, 0, 202, 255));
     gradGroup->ca_addChild(mColWarm);
     mColMid = enve::make_shared<ColorAnimator>(QObject::tr("\u4e2d\u95f4\u8272"));
     mColMid->setColor(QColor(148, 7, 184, 255));
@@ -184,6 +196,9 @@ stdsptr<RasterEffectCaller> CelVolumeEffect::getEffectCaller(
     p.minArea = qMax(1, qRound(mMinArea->getEffectiveValue(relFrame)));
     p.shadeMode = mShadeMode->getCurrentValue();
     p.gradGamma = float(mGradGamma->getEffectiveValue(relFrame));
+    const QPointF lp = mLightPos->getEffectiveValue(relFrame);
+    p.lightPos[0] = float(lp.x());
+    p.lightPos[1] = float(lp.y());
     const QColor warm = mColWarm->getColor(relFrame);
     p.colWarm[0] = float(warm.redF());
     p.colWarm[1] = float(warm.greenF());
