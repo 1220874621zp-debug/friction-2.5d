@@ -32,10 +32,8 @@ class BoolAnimator;
 // Rec.601 luminance; alpha passes through untouched. The amount
 // parameter blends between the original colors (0) and full
 // grayscale (100, the AE/PS default behavior). With "invert" on the
-// target flips: instead of keeping the luminance and dropping the
-// colors it keeps the colors and drops the luminance (each channel
-// minus the channel minimum = the pure chroma component), so full
-// amount yields a flat-brightness vivid-color image
+// grayscale target is reversed (255 - gray), i.e. a negative of the
+// desaturated image
 class DesaturateEffect : public RasterEffect {
 public:
     DesaturateEffect();

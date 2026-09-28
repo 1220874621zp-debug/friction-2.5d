@@ -7,12 +7,8 @@ uniform bool invert;
 
 void main(void) {
     vec4 src = texture(tex, texCoord);
-    vec3 target;
-    if (invert) {
-        target = src.rgb - vec3(min(src.r, min(src.g, src.b)));
-    } else {
-        target = vec3(dot(src.rgb, vec3(0.299, 0.587, 0.114)));
-    }
-    vec3 mixed = mix(src.rgb, target, amount);
+    float lum = dot(src.rgb, vec3(0.299, 0.587, 0.114));
+    if (invert) { lum = 1.0 - lum; }
+    vec3 mixed = mix(src.rgb, vec3(lum), amount);
     fragColor = vec4(mixed, src.a);
 }

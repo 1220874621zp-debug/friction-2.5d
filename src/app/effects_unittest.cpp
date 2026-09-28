@@ -902,8 +902,8 @@ int main(int argc, char *argv[])
                 throw std::runtime_error("amount 50 blend is off");
             }
 
-            // invert: blend toward pure chroma (channel - minimum)
-            // instead of luminance - colors survive, values die
+            // invert: black/white reversed desaturation - the gray
+            // target becomes its negative (255 - gray)
             const auto findBool = [&eff]() -> BoolAnimator* {
                 const int n = eff->ca_getNumberOfChildren();
                 for (int i = 0; i < n; i++) {
@@ -925,31 +925,32 @@ int main(int argc, char *argv[])
             if (!renderTiles(eff.get(), src, dst)) {
                 throw std::runtime_error("invert caller is null");
             }
-            // (200,40,40): min 40 -> chroma (160,0,0); alpha kept
-            const auto chromaPx = px(dst, 32, 32);
-            if (std::abs(int(SkColorGetR(chromaPx)) - 160) > 1 ||
-                SkColorGetG(chromaPx) != 0 ||
-                SkColorGetB(chromaPx) != 0 ||
-                SkColorGetA(chromaPx) != 255) {
-                throw std::runtime_error("invert did not isolate chroma");
+            // (200,40,40): gray 87.8 -> negative 167, alpha kept
+            const auto negPx = px(dst, 32, 32);
+            if (std::abs(int(SkColorGetR(negPx)) - 167) > 1 ||
+                SkColorGetR(negPx) != SkColorGetG(negPx) ||
+                SkColorGetG(negPx) != SkColorGetB(negPx) ||
+                SkColorGetA(negPx) != 255) {
+                throw std::runtime_error("invert not negative gray");
             }
-            // gray input has no chroma: collapses to black, alpha kept
-            const auto grayInPx = px(dst, 8, 32);
-            if (SkColorGetR(grayInPx) != 0 ||
-                SkColorGetA(grayInPx) != 180) {
-                throw std::runtime_error("invert left color on gray input");
+            // light gray input: stored premultiplied as
+            // round(240*180/255) = 169 -> negative 86, alpha kept
+            const auto lightPx = px(dst, 8, 32);
+            if (std::abs(int(SkColorGetR(lightPx)) - 86) > 1 ||
+                SkColorGetA(lightPx) != 180) {
+                throw std::runtime_error("invert wrong on light input");
             }
 
-            // invert + amount 50: halfway between source and chroma
+            // invert + amount 50: halfway between source and negative
             amount->setCurrentBaseValue(50.0);
             dst.eraseARGB(0, 0, 0, 0);
             if (!renderTiles(eff.get(), src, dst)) {
                 throw std::runtime_error("invert 50 caller is null");
             }
             const auto halfInvPx = px(dst, 32, 32);
-            // r: 200*0.5+160*0.5 = 180, g/b: 40*0.5+0*0.5 = 20
-            if (std::abs(int(SkColorGetR(halfInvPx)) - 180) > 1 ||
-                std::abs(int(SkColorGetG(halfInvPx)) - 20) > 1) {
+            // r: 200*0.5+167*0.5 = 184, g/b: 40*0.5+167*0.5 = 104
+            if (std::abs(int(SkColorGetR(halfInvPx)) - 184) > 1 ||
+                std::abs(int(SkColorGetG(halfInvPx)) - 104) > 1) {
                 throw std::runtime_error("invert amount 50 blend is off");
             }
         }

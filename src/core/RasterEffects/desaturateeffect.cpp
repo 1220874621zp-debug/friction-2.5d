@@ -122,9 +122,8 @@ void DesaturateEffectCaller::processCpu(CpuRenderTools& renderTools,
 
     // Rec.601 luminance, the same curve as Threshold; kN32 is
     // little-endian BGRA in memory: byte 0 = B, 1 = G, 2 = R.
-    // Normal: blend toward the shared luminance (colors die, values
-    // survive). Invert: blend toward channel-minus-minimum, the pure
-    // chroma component (values die, colors survive)
+    // Normal: blend toward the luminance; invert: toward its
+    // negative (255 - gray), a black/white reversed desaturation
     const qreal t = mAmount / 100.0;
     const qreal it = 1.0 - t;
 
@@ -138,18 +137,12 @@ void DesaturateEffectCaller::processCpu(CpuRenderTools& renderTools,
             const qreal r = *src++;
             const uchar a = *src++;
 
-            qreal tb, tg, tr;
-            if (mInvert) {
-                const qreal m = std::min(b, std::min(g, r));
-                tb = b - m; tg = g - m; tr = r - m;
-            } else {
-                const qreal gray = 0.299 * r + 0.587 * g + 0.114 * b;
-                tb = gray; tg = gray; tr = gray;
-            }
+            qreal gray = 0.299 * r + 0.587 * g + 0.114 * b;
+            if (mInvert) gray = 255.0 - gray;
 
-            *dst++ = static_cast<uchar>(qBound(0.0, b * it + tb * t + 0.5, 255.0));
-            *dst++ = static_cast<uchar>(qBound(0.0, g * it + tg * t + 0.5, 255.0));
-            *dst++ = static_cast<uchar>(qBound(0.0, r * it + tr * t + 0.5, 255.0));
+            *dst++ = static_cast<uchar>(qBound(0.0, b * it + gray * t + 0.5, 255.0));
+            *dst++ = static_cast<uchar>(qBound(0.0, g * it + gray * t + 0.5, 255.0));
+            *dst++ = static_cast<uchar>(qBound(0.0, r * it + gray * t + 0.5, 255.0));
             *dst++ = a;
         }
     }
