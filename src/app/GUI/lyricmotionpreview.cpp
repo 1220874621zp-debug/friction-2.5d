@@ -72,7 +72,10 @@ bool LyricPreviewWorker::ensureEngine(QString *error) {
     if (err.isEmpty()) {
         for (const QString &file : plannerSources()) {
             QFile f(file);
-            f.open(QIODevice::ReadOnly);
+            if (!f.open(QIODevice::ReadOnly)) {
+                err = QStringLiteral("cannot open %1").arg(file);
+                break;
+            }
             const auto r = mEngine->evaluate(QString::fromUtf8(f.readAll()), file);
             if (r.isError()) {
                 err = QStringLiteral("%1: %2").arg(

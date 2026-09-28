@@ -336,6 +336,10 @@ void LyricMotionPanel::hideEvent(QHideEvent *e) {
 
 void LyricMotionPanel::setupPreviewWorker() {
     mPreviewThread = new QThread(this);
+    // QV4 compiles the 45k-line vendored sources with deep recursion;
+    // the default thread stack is too tight on memory-pressured
+    // startups (user hit SEGV inside evaluate at boot)
+    mPreviewThread->setStackSize(32 * 1024 * 1024);
     mPreviewWorker = new LyricPreviewWorker(240, 135, 10);
     mPreviewWorker->moveToThread(mPreviewThread);
     connect(mPreviewThread, &QThread::started,
@@ -368,7 +372,12 @@ void LyricMotionPanel::setupPreviewWorker() {
         if (generation != mPreviewGeneration) { return; }
         mCutPreview->setPixmap(QPixmap::fromImage(frame));
     }, Qt::QueuedConnection);
-    mPreviewThread->start();
+    // defer the thread start past the boot GL/effects bring-up — the
+    // QVSEngine allocation spike landing on that peak crashed startup
+    // on memory-pressured machines
+    QTimer::singleShot(1200, this, [this]() {
+        if (mPreviewThread) { mPreviewThread->start(); }
+    });
 }
 
 void LyricMotionPanel::pumpPreviewQueue() {
@@ -836,8 +845,10 @@ void LyricMotionPanel::applyToScene() {
             ? mAudioPath : QString();
     LyricMotionNative::Result result;
     QString error;
+    const auto replayParams = collectParams();
     const bool ok = LyricMotionNative::build(scene, plan, fonts, newAudio,
-                mIncludeAudio->isChecked(), &result, &error);
+                mIncludeAudio->isChecked(), &result, &error,
+                &replayParams);
     if (ok && !newAudio.isEmpty()) { mAppliedAudioPath = newAudio; }
     mApplying = false;
     mApplyButton->setEnabled(true);
