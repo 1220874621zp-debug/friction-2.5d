@@ -266,6 +266,7 @@ set(
     GUI/effectspresetspanel.cpp
     GUI/lyricmotionpanel.cpp
     GUI/lyricmotionengine.cpp
+    GUI/lyricmotionnative.cpp
     GUI/lyricmotionpreview.cpp
     GUI/lyricmotioncanvas.cpp
     GUI/lyricmotionaudio.cpp
@@ -342,6 +343,7 @@ set(
     GUI/effectspresetspanel.h
     GUI/lyricmotionpanel.h
     GUI/lyricmotionengine.h
+    GUI/lyricmotionnative.h
     GUI/lyricmotionpreview.h
     GUI/lyricmotioncanvas.h
     GUI/lyricmotionaudio.h
@@ -424,6 +426,27 @@ if(WIN32)
 
     target_link_libraries(
         friction_harness
+        PRIVATE
+        ${PROJECT_NAME}core
+        ${QT_LIBRARIES}
+        ${FFMPEG_LIBRARIES}
+        ${SKIA_LIBRARIES}
+    )
+endif()
+
+if(UNIX AND NOT APPLE)
+    # headless smoke test for the native lyric builder (development
+    # tool only, never installed or deployed)
+    add_executable(lyricnativesmoke lyricnativesmoke.cpp jizura_smoke.qrc
+        GUI/lyricmotionengine.cpp GUI/lyricmotionnative.cpp)
+    target_link_directories(
+        lyricnativesmoke
+        PRIVATE
+        ${FFMPEG_LIBRARIES_DIRS}
+        ${SKIA_LIBRARIES_DIRS}
+    )
+    target_link_libraries(
+        lyricnativesmoke
         PRIVATE
         ${PROJECT_NAME}core
         ${QT_LIBRARIES}

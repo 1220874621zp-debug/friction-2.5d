@@ -133,6 +133,7 @@ private:
 
     QList<stdsptr<CpuExecController>> mCpuExecs;
     stdsptr<GpuExecController> mGpuExec;
+    bool mGpuInitialized = false;
     stdsptr<HddExecController> mHddExec;
 
     QPointer<Canvas> mOutputRenderScene;

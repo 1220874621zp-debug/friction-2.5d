@@ -35,14 +35,6 @@ public slots:
                         qreal fps, const qreal time,
                         const int width, const int height,
                         const int generation);
-    // high-fidelity export: render EVERY frame of the plan at scene
-    // resolution and save a PNG sequence (the exact web-version look)
-    void exportSequence(const QString &styleKey, const quint32 seed,
-                        const qreal density, const QString &lyrics,
-                        const QVector<qreal> &beats, qreal audioDuration,
-                        const QString &outDir, const int width,
-                        const int height, const qreal fps,
-                        const int generation);
 
 signals:
     void engineReady();
@@ -52,11 +44,6 @@ signals:
     void styleFailed(const QString &styleKey, const int generation,
                      const QString &error);
     void cutFrameReady(const QImage &frame, const int generation);
-    void sequenceProgress(const int done, const int total,
-                          const int generation);
-    void sequenceReady(const QString &dirPath, const int frames,
-                       const qreal fps, const int generation);
-    void sequenceFailed(const QString &error, const int generation);
 
 private:
     bool ensureEngine(QString *error);

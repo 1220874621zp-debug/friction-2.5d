@@ -1,6 +1,7 @@
 #include "lyricmotionpanel.h"
 
 #include "lyricmotionengine.h"
+#include "lyricmotionnative.h"
 #include "lyricmotionpreview.h"
 #include "lyricmotionaudio.h"
 #include "Sound/eindependentsound.h"
@@ -12,7 +13,6 @@
 #include "Scripting/jsapi.h"
 #include "Boxes/textbox.h"
 #include "Boxes/containerbox.h"
-#include "Boxes/imagesequencebox.h"
 #include "Animators/qrealanimator.h"
 #include "Animators/qstringanimator.h"
 #include "Animators/transformanimator.h"
@@ -160,80 +160,6 @@ QString timeLabel(const qreal t) {
     return QString::number(t, 'f', 2);
 }
 
-// font kind → locally available family; JIZURA's Google families are
-// not vendored, so we resolve by kind and keep the requested weight
-struct LocalFont { QString family; int weight; };
-LocalFont localFont(const QJsonObject &fontDef) {
-    const QString kind = fontDef.value(QStringLiteral("kind")).toString();
-    int weight = fontDef.value(QStringLiteral("weight")).toInt(700);
-    weight = qBound(300, weight, 900);
-    QString family;
-    if (kind == QStringLiteral("mincho") || kind == QStringLiteral("brush")) {
-        family = QStringLiteral("Noto Serif CJK JP");
-    } else if (kind == QStringLiteral("mono")) {
-        family = QStringLiteral("Noto Sans Mono CJK JP");
-    } else { // gothic / display / round / hand / pixel
-        family = QStringLiteral("Noto Sans CJK JP");
-        if (kind == QStringLiteral("display")) { weight = qMax(weight, 900); }
-    }
-    return {family, weight};
-}
-
-// largest font size whose rendered width stays within targetWidth
-qreal fitTextSize(const QString &text, const QString &family,
-                  const int weight, const qreal targetWidth) {
-    const auto typeface = SkTypeface::MakeFromName(
-                family.toUtf8().constData(),
-                SkFontStyle(weight, SkFontStyle::kNormal_Width,
-                            SkFontStyle::kUpright_Slant));
-    SkFont font(typeface ? typeface : SkTypeface::MakeDefault(), 100);
-    const QString probe = text.left(64);
-    const qreal w = font.measureText(probe.utf16(),
-                                     probe.size() * sizeof(char16_t),
-                                     SkTextEncoding::kUTF16);
-    if (w <= 1) { return 48; }
-    return 100.0 * targetWidth / w;
-}
-
-// layout key → anchor point on the canvas (phase-1 mapping; unknown
-// keys land centered like JIZURA's own fallback)
-QPointF anchorForLayout(const QString &layout,
-                        const qreal cw, const qreal ch) {
-    const auto has = [&layout](const char *s) {
-        return layout.contains(QLatin1String(s), Qt::CaseInsensitive);
-    };
-    if (has("lower") || has("tl3rd") || has("foot")) { return {cw*0.5, ch*0.78}; }
-    if (has("upper") || has("top")) { return {cw*0.5, ch*0.24}; }
-    if (has("bottom")) { return {cw*0.5, ch*0.80}; }
-    return {cw*0.5, ch*0.5};
-}
-
-struct MovePlan {
-    bool animated = false;   // false → plain cut (visibility by durRect)
-    QPointF enterOffset;     // added to the anchor at the enter start
-    QPointF exitOffset;      // added to the anchor at the exit end
-};
-
-// enter/exit key → motion hints; unknown names still fade
-MovePlan movePlanFor(const QString &key, const qreal cw, const qreal ch) {
-    MovePlan plan;
-    if (key == QStringLiteral("cut") || key == QStringLiteral("none")) {
-        return plan;
-    }
-    plan.animated = true;
-    const auto has = [&key](const char *s) {
-        return key.contains(QLatin1String(s), Qt::CaseInsensitive);
-    };
-    const qreal dx = cw * 0.07, dy = ch * 0.06;
-    if (has("rise") || has("up")) { plan.enterOffset = {0, dy}; plan.exitOffset = {0, -dy}; }
-    else if (has("drop") || has("fall") || has("down")) { plan.enterOffset = {0, -dy}; plan.exitOffset = {0, dy}; }
-    else if (has("left")) { plan.enterOffset = {dx, 0}; plan.exitOffset = {-dx, 0}; }
-    else if (has("right")) { plan.enterOffset = {-dx, 0}; plan.exitOffset = {dx, 0}; }
-    else if (has("slide") || has("wipe") || has("swipe")) { plan.enterOffset = {dx, 0}; plan.exitOffset = {-dx, 0}; }
-    else if (has("slam") || has("impact")) { plan.enterOffset = {0, -dy*0.6}; }
-    return plan;
-}
-
 } // namespace
 
 LyricMotionPanel::LyricMotionPanel(QWidget * const parent) :
@@ -305,24 +231,6 @@ void LyricMotionPanel::setupPreviewWorker() {
         if (generation != mPreviewGeneration) { return; }
         setStatus(tr("风格预览失败 %1: %2").arg(key, error.left(60)), true);
         pumpPreviewQueue(); // skip the failed one, keep filling
-    }, Qt::QueuedConnection);
-    connect(mPreviewWorker, &LyricPreviewWorker::sequenceProgress, this,
-            [this](const int done, const int total, const int generation) {
-        if (generation != mExportGeneration) { return; }
-        setStatus(tr("高保真渲染中 %1/%2 帧…").arg(done).arg(total));
-    }, Qt::QueuedConnection);
-    connect(mPreviewWorker, &LyricPreviewWorker::sequenceFailed, this,
-            [this](const QString &error, const int generation) {
-        if (generation != mExportGeneration) { return; }
-        mApplying = false;
-        mApplyButton->setEnabled(true);
-        setStatus(tr("序列渲染失败: %1").arg(error), true);
-    }, Qt::QueuedConnection);
-    connect(mPreviewWorker, &LyricPreviewWorker::sequenceReady, this,
-            [this](const QString &dirPath, const int frames,
-                   const qreal fps, const int generation) {
-        if (generation != mExportGeneration) { return; }
-        applySequenceResult(dirPath, frames, fps);
     }, Qt::QueuedConnection);
     connect(mPreviewWorker, &LyricPreviewWorker::cutFrameReady, this,
             [this](const QImage &frame, const int generation) {
@@ -453,14 +361,10 @@ void LyricMotionPanel::setupUi() {
 
     // bottom row
     auto *bottom = new QHBoxLayout();
-    mHiFi = new QCheckBox(tr("高保真"), this);
-    mHiFi->setChecked(true);
-    mHiFi->setToolTip(tr("按网页版渲染器逐帧渲染为 PNG 序列插入场景（效果与网页版一致，渲染需要一些时间）。取消勾选则生成可编辑的文字图层（简化映射）。"));
     mApplyButton = new QPushButton(tr("应用到场景"), this);
-    mApplyButton->setToolTip(tr("按当前规划生成（一个撤销步骤）"));
+    mApplyButton->setToolTip(tr("原生构建：把规划落成可编辑的文字层/特效/关键帧（一个撤销步骤）"));
     mStatus = new QLabel(tr("就绪"), this);
     mStatus->setWordWrap(true);
-    bottom->addWidget(mHiFi);
     bottom->addWidget(mApplyButton);
     bottom->addWidget(mStatus, 1);
     mainLayout->addLayout(bottom);
@@ -748,91 +652,6 @@ void LyricMotionPanel::populateCuts() {
     mCutsTree->expandAll();
 }
 
-void LyricMotionPanel::applyHighFidelity() {
-    if (mApplying) { return; }
-    auto * const scene = Document::sInstance
-                ? Document::sInstance->fActiveScene : nullptr;
-    if (!scene) { setStatus(tr("请先打开一个场景"), true); return; }
-    const auto params = collectParams();
-    const QString base = QStandardPaths::writableLocation(
-                QStandardPaths::AppDataLocation)
-            + QStringLiteral("/jizura_seq");
-    QDir().mkpath(base);
-    mSequenceDir = base + QDir::separator()
-            + QDateTime::currentDateTime().toString(
-                    QStringLiteral("yyyyMMdd_HHmmss"));
-    mExportGeneration++;
-    mApplying = true;
-    mApplyButton->setEnabled(false);
-    setStatus(tr("高保真渲染开始（整段逐帧，请稍候）…"));
-    mPreviewWorker->exportSequence(
-                params.style, params.seed, params.density, params.lyrics,
-                params.beats, params.audioDuration, mSequenceDir,
-                scene->getCanvasWidth(), scene->getCanvasHeight(),
-                scene->getFps(), mExportGeneration);
-}
-
-void LyricMotionPanel::applySequenceResult(const QString &dirPath,
-                                           const int frames,
-                                           const qreal fps) {
-    auto * const scene = Document::sInstance
-                ? Document::sInstance->fActiveScene : nullptr;
-    if (!scene) {
-        mApplying = false;
-        mApplyButton->setEnabled(true);
-        return;
-    }
-    Friction::Core::beginUndoGroupBatch();
-    QString error;
-    try {
-        const QString groupName = tr("歌词动画");
-        for (const auto &box : scene->getContainedBoxes()) {
-            if (box->getBoxType() == eBoxType::layer &&
-                box->prp_getName().startsWith(groupName)) {
-                box->setSelected(false);
-                box->removeFromParent_k();
-            }
-        }
-        // audio layer (same dedupe as the text path)
-        if (mIncludeAudio->isChecked() && !mAudioPath.isEmpty()
-            && mAudioPath != mAppliedAudioPath) {
-            const auto sound = enve::make_shared<eIndependentSound>();
-            sound->setFilePath(mAudioPath);
-            scene->getCurrentGroup()->addContained(sound);
-            sound->prp_setName(
-                        QFileInfo(mAudioPath).completeBaseName());
-            mAppliedAudioPath = mAudioPath;
-        }
-        auto group = enve::make_shared<ContainerBox>(eBoxType::layer);
-        scene->getCurrentGroup()->addContained(group);
-        group->prp_setName(groupName);
-        const auto seqBox = enve::make_shared<ImageSequenceBox>();
-        group->addContained(seqBox);
-        seqBox->prp_setName(tr("歌词动画 序列"));
-        seqBox->setFolderPath(dirPath);
-        if (const auto durRect = seqBox->getDurationRectangle()) {
-            durRect->setMinAbsFrame(0);
-            durRect->setFramesDuration(frames);
-        }
-        const int lastFrame = frames - 1;
-        const auto range = scene->getFrameRange();
-        if (range.fMax < lastFrame) {
-            scene->setFrameRange(FrameRange{range.fMin, lastFrame});
-        }
-    } catch (const std::exception &e) {
-        error = QString::fromUtf8(e.what());
-    }
-    Friction::Core::endUndoGroupBatch();
-    Document::sInstance->actionFinished();
-    mApplying = false;
-    mApplyButton->setEnabled(true);
-    if (error.isEmpty()) {
-        setStatus(tr("已应用（高保真序列 %1 帧）").arg(frames));
-    } else {
-        setStatus(tr("应用失败: %1").arg(error), true);
-    }
-}
-
 void LyricMotionPanel::setStatus(const QString &text, const bool error) {
     mStatus->setText(text);
     mStatus->setStyleSheet(error ? QStringLiteral("color:#E06C5A;")
@@ -850,243 +669,44 @@ void LyricMotionPanel::applyToScene() {
         setStatus(tr("没有可应用的规划"), true);
         return;
     }
-    if (mHiFi->isChecked()) { applyHighFidelity(); return; }
+    if (mApplying) { return; }
     auto * const scene = Document::sInstance ?
                 Document::sInstance->fActiveScene : nullptr;
     if (!scene) { setStatus(tr("请先打开一个场景"), true); return; }
 
     const auto doc = QJsonDocument::fromJson(mPlanJson.toUtf8());
     const auto plan = doc.object().value(QStringLiteral("plan")).toObject();
-    const auto cuts = plan.value(QStringLiteral("cuts")).toArray();
-    const auto schemes = plan.value(QStringLiteral("style")).toObject()
-            .value(QStringLiteral("schemes")).toArray();
     const auto fonts = doc.object().value(QStringLiteral("fonts")).toObject();
-    if (cuts.isEmpty() || schemes.isEmpty()) {
+    if (plan.value(QStringLiteral("cuts")).toArray().isEmpty()) {
         setStatus(tr("规划为空，先重新规划"), true);
         return;
     }
 
-    const qreal fps = scene->getFps();
-    const qreal cw = scene->getCanvasWidth();
-    const qreal ch = scene->getCanvasHeight();
-    const auto schemeAt = [&schemes](const int idx) {
-        return schemes.at(((idx % schemes.size()) + schemes.size())
-                          % schemes.size()).toObject();
-    };
-
-    int created = 0;
-    Friction::Core::beginUndoGroupBatch();
+    mApplying = true;
+    mApplyButton->setEnabled(false);
+    setStatus(tr("原生构建中…"));
+    // audio dedupe: only hand the path over when the layer is new
+    const QString newAudio = (mIncludeAudio->isChecked()
+                              && !mAudioPath.isEmpty()
+                              && mAudioPath != mAppliedAudioPath)
+            ? mAudioPath : QString();
+    LyricMotionNative::Result result;
     QString error;
-    try {
-        // replace the previous generation: drop every top-level group
-        // named 歌词动画 before laying out the new one
-        const QString groupName = tr("歌词动画");
-        for (const auto &box : scene->getContainedBoxes()) {
-            if (box->getBoxType() == eBoxType::layer &&
-                box->prp_getName().startsWith(groupName)) {
-                box->setSelected(false);
-                box->removeFromParent_k();
-            }
-        }
-        // audio layer (created once per loaded file, outside the
-        // lyric group so re-applying never duplicates it)
-        if (mIncludeAudio->isChecked() && !mAudioPath.isEmpty()
-            && mAudioPath != mAppliedAudioPath) {
-            const auto sound = enve::make_shared<eIndependentSound>();
-            sound->setFilePath(mAudioPath);
-            scene->getCurrentGroup()->addContained(sound);
-            sound->prp_setName(
-                        QFileInfo(mAudioPath).completeBaseName());
-            mAppliedAudioPath = mAudioPath;
-        }
-
-        auto group = enve::make_shared<ContainerBox>(eBoxType::layer);
-        scene->getCurrentGroup()->addContained(group);
-        group->prp_setName(groupName);
-        QVector<BoundingBox *> cutLayers(cuts.size(), nullptr);
-
-        for (int i = 0; i < cuts.size(); i++) {
-            const auto c = cuts.at(i).toObject();
-            const QString text = c.value(QStringLiteral("text")).toString();
-            if (text.isEmpty()) { continue; }
-            const qreal start = c.value(QStringLiteral("start")).toDouble();
-            const qreal end = c.value(QStringLiteral("end")).toDouble();
-            if (end - start < 0.05) { continue; }
-            const qreal inDur = c.value(QStringLiteral("inDur")).toDouble();
-            const qreal outDur = c.value(QStringLiteral("outDur")).toDouble();
-            const int schemeIdx = c.value(QStringLiteral("scheme")).toInt();
-            const auto scheme = schemeAt(schemeIdx);
-            const bool emph = c.value(QStringLiteral("emph")).toDouble() > 0;
-            const QString layout = c.value(QStringLiteral("layout")).toString();
-
-            const auto box = enve::make_shared<TextBox>();
-            group->addContained(box);
-            box->prp_setName(tr("歌词 %1").arg(i + 1));
-            box->setCurrentValue(text);
-
-            // font: cut's picked key → local family by kind
-            QString family = QStringLiteral("Noto Sans CJK JP");
-            int weight = 700;
-            const QString fontKey = c.value(QStringLiteral("params"))
-                    .toObject().value(QStringLiteral("font")).toString();
-            if (!fontKey.isEmpty() && fonts.contains(fontKey)) {
-                const auto lf = localFont(fonts.value(fontKey).toObject());
-                family = lf.family;
-                weight = lf.weight;
-            }
-            box->setFontFamilyAndStyle(
-                        family,
-                        SkFontStyle(weight, SkFontStyle::kNormal_Width,
-                                    SkFontStyle::kUpright_Slant));
-            // size: fit the text into a share of the canvas width
-            qreal target = cw * 0.8;
-            if (layout.contains(QLatin1String("lower"), Qt::CaseInsensitive) ||
-                layout.contains(QLatin1String("tl3rd"), Qt::CaseInsensitive)) {
-                target = cw * 0.7;
-            }
-            box->setFontSize(qBound(12.0,
-                                    fitTextSize(text, family, weight, target),
-                                    ch * 0.35));
-            // color
-            const auto fill = box->getFillSettings();
-            fill->setPaintType(PaintType::FLATPAINT);
-            fill->setCurrentColor(QColor(
-                emph ? scheme.value(QStringLiteral("accent")).toString()
-                     : scheme.value(QStringLiteral("fg")).toString()));
-
-            // placement + enter/exit animation
-            const QPointF anchor = anchorForLayout(layout, cw, ch);
-            const MovePlan enterPlan = movePlanFor(
-                        c.value(QStringLiteral("enter")).toString(), cw, ch);
-            const MovePlan exitPlan = movePlanFor(
-                        c.value(QStringLiteral("exit")).toString(), cw, ch);
-
-            auto * const posX = box->getTransformAnimator()
-                    ->getPosAnimator()->getXAnimator();
-            auto * const posY = box->getTransformAnimator()
-                    ->getPosAnimator()->getYAnimator();
-            auto * const opaAnim = box->getBoxTransformAnimator()
-                    ->getOpacityAnimator();
-            posX->setCurrentBaseValue(anchor.x());
-            posY->setCurrentBaseValue(anchor.y());
-            const int fStart = qFloor(start * fps);
-            const int fEnd = qCeil(end * fps);
-            const int fIn = qRound(inDur * fps);
-            const int fOut = qRound(outDur * fps);
-            const int fInEnd = fStart + fIn;
-            const int fOutStart = fEnd - fOut;
-
-            // opacity: 0..100 engine range; hard-cut phases get no keys
-            // at all so visibility is bounded by the duration rectangle
-            const QString enterKey = c.value(QStringLiteral("enter")).toString();
-            const bool typewriter = enterKey.contains(
-                        QStringLiteral("type"), Qt::CaseInsensitive) && fIn > 0;
-            if (typewriter) {
-                // reveal the text progressively (text keys, no fade)
-                if (auto *textAnim = box->getStringAnimator()) {
-                    const int chars = text.length();
-                    const int steps = qBound(2, chars, 30);
-                    for (int k = 1; k <= steps; k++) {
-                        const int frame = fStart + qRound(
-                                    qreal(fIn) * k / steps);
-                        const QString partial = text.left(
-                                    qRound(qreal(chars) * k / steps));
-                        textAnim->anim_appendKey(
-                                    enve::make_shared<QStringKey>(
-                                        partial, frame, textAnim));
-                    }
-                }
-                opaAnim->saveValueToKey(fStart, 100);
-            } else if (enterPlan.animated && fIn > 0) {
-                posX->saveValueToKey(fStart, anchor.x() + enterPlan.enterOffset.x());
-                posY->saveValueToKey(fStart, anchor.y() + enterPlan.enterOffset.y());
-                posX->saveValueToKey(fInEnd, anchor.x());
-                posY->saveValueToKey(fInEnd, anchor.y());
-                opaAnim->saveValueToKey(fStart, 0);
-                opaAnim->saveValueToKey(fInEnd, 100);
-            } else if (exitPlan.animated && fOut > 0) {
-                // anchor for the fade-out interpolation
-                opaAnim->saveValueToKey(fStart, 100);
-            }
-            if (exitPlan.animated && fOut > 0 && fOutStart > fInEnd) {
-                posX->saveValueToKey(fOutStart, anchor.x());
-                posY->saveValueToKey(fOutStart, anchor.y());
-                posX->saveValueToKey(fEnd, anchor.x() + exitPlan.exitOffset.x());
-                posY->saveValueToKey(fEnd, anchor.y() + exitPlan.exitOffset.y());
-                opaAnim->saveValueToKey(fOutStart, 100);
-                opaAnim->saveValueToKey(fEnd, 0);
-            }
-
-            // visibility window (1-frame pads so keys are not clipped)
-            box->createDurationRectangle();
-            if (const auto durRect = box->getDurationRectangle()) {
-                durRect->setMinAbsFrame(fStart - 1);
-                durRect->setFramesDuration(fEnd - fStart + 2);
-            }
-            cutLayers[i] = box.get();
-            created++;
-        }
-
-        // transition pass: the plan chains some cuts with a transition
-        // (cut.trans, duration transDur); map it to a crossfade by
-        // overlapping the previous layer and fading both
-        for (int i = 1; i < cuts.size(); i++) {
-            const auto c = cuts.at(i).toObject();
-            const QString trans = c.value(QStringLiteral("trans")).toString();
-            const qreal transDur = c.value(QStringLiteral("transDur")).toDouble();
-            if (trans.isEmpty() || transDur <= 0.01) { continue; }
-            auto *prevBox = cutLayers.at(i - 1);
-            auto *curBox = cutLayers.at(i);
-            if (!prevBox || !curBox) { continue; }
-            const qreal start = c.value(QStringLiteral("start")).toDouble();
-            const int fStart = qFloor(start * fps);
-            const int fTd = qMax(1, qRound(transDur * fps));
-            if (const auto dr = prevBox->getDurationRectangle()) {
-                const int newMax = qMax(dr->getMaxAbsFrame(), fStart + fTd + 1);
-                dr->setFramesDuration(newMax - dr->getMinAbsFrame() + 1);
-            }
-            auto *prevOpa = prevBox->getBoxTransformAnimator()
-                    ->getOpacityAnimator();
-            auto *curOpa = curBox->getBoxTransformAnimator()
-                    ->getOpacityAnimator();
-            prevOpa->saveValueToKey(fStart, 100);
-            prevOpa->saveValueToKey(fStart + fTd, 0);
-            curOpa->saveValueToKey(fStart, 0);
-            curOpa->saveValueToKey(fStart + fTd, 100);
-        }
-
-        // ghost three-pass mapping: JIZURA's RGB-separated ghost is
-        // approximated with the chromatic aberration raster effect,
-        // strength from the style's fx.chroma slider
-        const qreal chroma = plan.value(QStringLiteral("fx"))
-                .toObject().value(QStringLiteral("chroma")).toDouble();
-        if (chroma > 0.05) {
-            const auto eff = createRasterEffectForNonCustomType(
-                        RasterEffectType::CHROMATIC_ABERRATION);
-            if (eff) {
-                if (auto *amt = eff->ca_getFirstDescendantWithName<
-                            QrealAnimator>(QStringLiteral("amount"))) {
-                    amt->setCurrentBaseValue(chroma * 8.0);
-                }
-                group->addRasterEffect(eff);
-            }
-        }
-
-        // extend the scene range to hold the whole lyric
-        const qreal duration = plan.value(QStringLiteral("duration")).toDouble();
-        const int lastFrame = qCeil(duration * fps) + 1;
-        const auto range = scene->getFrameRange();
-        if (range.fMax < lastFrame) {
-            scene->setFrameRange(FrameRange{range.fMin, lastFrame});
-        }
-    } catch (const std::exception &e) {
-        error = QString::fromUtf8(e.what());
-    }
-    Friction::Core::endUndoGroupBatch();
-    Document::sInstance->actionFinished();
-    if (error.isEmpty()) {
-        setStatus(tr("已应用到场景：%1 个文字层").arg(created));
-    } else {
+    const bool ok = LyricMotionNative::build(scene, plan, fonts, newAudio,
+                mIncludeAudio->isChecked(), &result, &error);
+    if (ok && !newAudio.isEmpty()) { mAppliedAudioPath = newAudio; }
+    mApplying = false;
+    mApplyButton->setEnabled(true);
+    if (!ok) {
         setStatus(tr("应用失败: %1").arg(error), true);
+        return;
     }
+    QString extra;
+    const int maxNotes = qMin(3, result.notes.size());
+    for (int i = 0; i < maxNotes; i++) {
+        extra += (i == 0 ? QStringLiteral("；") : QStringLiteral("，"))
+                + result.notes.at(i);
+    }
+    setStatus(tr("已应用到场景：%1 切 · 原生构建（可编辑）%2")
+              .arg(result.cutsBuilt).arg(extra));
 }

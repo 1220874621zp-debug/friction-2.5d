@@ -94,6 +94,7 @@ void TaskScheduler::sClearTasks() {
 void TaskScheduler::initializeGpu() {
     try {
         mGpuExec->initialize();
+        mGpuInitialized = true;
     } catch(...) {
         RuntimeThrow("Failed to initialize GPU execution controller.");
     }
@@ -230,6 +231,10 @@ void TaskScheduler::processNextTasks() {
 }
 
 bool TaskScheduler::processNextQuedGpuTask() {
+    // without a started GPU thread the taken tasks would sit in the
+    // static executor list forever (headless/CLI contexts never call
+    // initializeGpu); route everything to the CPU executors instead
+    if(!mGpuInitialized) return false;
     bool finished = false;
     QList<stdsptr<eTask>> tasks;
     const int count = 3 - GpuTaskExecutor::sWaitingTasks();
