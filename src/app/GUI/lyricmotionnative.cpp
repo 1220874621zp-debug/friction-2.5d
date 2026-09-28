@@ -428,52 +428,102 @@ struct CutText {
     QPointF anchor;
 };
 
-// kn* kinetic family: each word enters on its own sub-window — the
-// word-swap rhythm that makes kinetic layouts feel alive
+// kn* kinetic family: word-level choreography — each word is its own
+// box with its own sub-window, and every part key gets a distinct
+// arrangement + motion hook (the word-swap rhythm stays for all)
 CutText kineticWords(Ctx &c, ContainerBox * const group,
                      const QJsonObject &cut, const QString &text,
                      const LocalFont &lf, const QColor &textCol,
                      const QColor &accent, const QColor &sub) {
     CutText ct;
+    const QString layout = cut.value(QStringLiteral("layout")).toString();
     QStringList words = text.split(
                 QRegularExpression(QStringLiteral("[\\s、，,/]+")),
                 Qt::SkipEmptyParts);
     if (words.isEmpty()) { words << text; }
     QRandomGenerator rng(quint32(cut.value(QStringLiteral("seed"))
                                 .toInt(1)) ^ 0x4B4Eu);
-    const qreal start = cut.value(QStringLiteral("start")).toDouble();
-    const qreal end = cut.value(QStringLiteral("end")).toDouble();
-    const int f0 = fSec(c, start);
-    const int f1 = qMax(f0 + 2, fSec(c, end));
+    const int f0 = fSec(c, cut.value(QStringLiteral("start")).toDouble());
+    const int f1 = qMax(f0 + 2, fSec(c,
+                    cut.value(QStringLiteral("end")).toDouble()));
     const int n = words.size();
-    const int variant = int(rng.generate() % 4);
     // per-word windows: overlap 55% so swaps read as motion
     const int span = qMax(2, (f1 - f0) * 2 / (n + 1));
+
+    // choreography per part key — arrangement variants
+    const int arrange = [&]() {
+        if (layout == QStringLiteral("knSlamStack")
+                || layout == QStringLiteral("knStackAway")) return 1;
+        if (layout == QStringLiteral("knSwapCenter")
+                || layout == QStringLiteral("knCollide")
+                || layout == QStringLiteral("knSeesaw")) return 2;
+        if (layout == QStringLiteral("knQuarterTurn")
+                || layout == QStringLiteral("knTumble")
+                || layout == QStringLiteral("knReflow")) return 3;
+        if (layout == QStringLiteral("knPadGrid")
+                || layout == QStringLiteral("knGearWords")) return 4;
+        if (layout == QStringLiteral("knZoomDive")
+                || layout == QStringLiteral("knDiveGlyph")) return 5;
+        if (layout == QStringLiteral("knFlowSnap")) return 6;
+        if (layout == QStringLiteral("knPathRide")) return 7;
+        return int(rng.generate() % 4);
+    }();
     for (int k = 0; k < n; k++) {
         const bool big = (k % 3 == 0) || n == 1;
-        const qreal size = c.ch * (big ? 0.17 : 0.11)
+        qreal size = c.ch * (big ? 0.17 : 0.11)
                 * (0.9 + 0.25 * rng.generateDouble());
+        QPointF pos(c.cw * 0.5, c.ch * 0.5);
+        qreal rot = 0;
+        switch (arrange) {
+        case 1: // 積み上げ: words stack up from the bottom
+            pos = QPointF(c.cw * 0.5,
+                          c.ch * (0.78 - 0.5 * k / qMax(1, n - 1)));
+            size = c.ch * 0.13;
+            break;
+        case 2: // 入れ替わり/衝突/シーソー: two-side alternation
+            pos = QPointF(c.cw * (k % 2 ? 0.7 : 0.3), c.ch * 0.5);
+            size = c.ch * 0.16;
+            break;
+        case 3: // 直角ターン/箱転がし/縦から横へ: quarter-turn steps
+            pos = QPointF(c.cw * 0.5,
+                          c.ch * (0.26 + 0.5 * k / qMax(1, n - 1)));
+            rot = 90.0 * k / qMax(1, n - 1);
+            break;
+        case 4: // パッド/歯車: pad-grid cells
+            pos = QPointF(c.cw * (0.3 + 0.4 * (k % 2)),
+                          c.ch * (0.3 + 0.4 * (k / 2 % 2)));
+            size = c.ch * 0.13;
+            break;
+        case 5: // 文字へ潜る: dive — later words grow toward the lens
+            pos = QPointF(c.cw * 0.5, c.ch * 0.5);
+            size = c.ch * (0.08 + 0.14 * k / qMax(1, n - 1));
+            break;
+        case 6: // 流れて整列: words settle into a justified row
+            pos = QPointF(c.cw * (0.2 + 0.6 * k / qMax(1, n - 1)),
+                          c.ch * 0.5);
+            size = c.ch * 0.12;
+            break;
+        case 7: { // ループ軌道: words ride a circle
+            const qreal ang = -90.0 + 360.0 * k / n;
+            const qreal R = qMin(c.cw, c.ch) * 0.26;
+            pos = QPointF(c.cw * 0.5 + qCos(qDegreesToRadians(ang)) * R,
+                          c.ch * 0.5 + qSin(qDegreesToRadians(ang)) * R);
+            rot = ang + 90;
+            size = c.ch * 0.1;
+            break;
+        }
+        default: // relay / alternating rows
+            pos = QPointF(c.cw * 0.5, c.ch * (0.32 + 0.36 * (k % 2)));
+            break;
+        }
         auto *b = mkText(group, words.at(k), lf.family,
                          big ? 900 : 700, size,
                          big ? accent : textCol);
-        QPointF pos;
-        switch (variant) {
-        case 0: // horizontal relay
-            pos = QPointF(c.cw * 0.5,
-                          c.ch * (0.3 + 0.4 * (k % 2)));
-            break;
-        case 1: // vertical stack, top to bottom
-            pos = QPointF(c.cw * 0.5,
-                          c.ch * (0.24 + 0.52 * k / qMax(1, n - 1)));
-            break;
-        case 2: // alternating sides
-            pos = QPointF(c.cw * (k % 2 ? 0.72 : 0.28), c.ch * 0.5);
-            break;
-        default: // center slam
-            pos = QPointF(c.cw * 0.5, c.ch * 0.5);
-            break;
-        }
         b->getTransformAnimator()->getPosAnimator()->setBaseValue(pos);
+        if (qAbs(rot) > 0.01) {
+            b->getTransformAnimator()->getRotAnimator()
+                    ->setCurrentBaseValue(rot);
+        }
         // the word only lives inside its sub-window
         const int wStart = f0 + qMax(0, (f1 - f0 - span) * k / qMax(1, n - 1));
         const int wEnd = qMin(f1, wStart + span);
@@ -481,6 +531,43 @@ CutText kineticWords(Ctx &c, ContainerBox * const group,
         if (const auto dr = b->getDurationRectangle()) {
             dr->setMinAbsFrame(qMax(f0 - 1, wStart - 1));
             dr->setFramesDuration(qMax(2, wEnd - wStart + 2));
+        }
+        // per-key motion hooks layered on the word window
+        if (layout == QStringLiteral("knTypeSlam")
+                || layout == QStringLiteral("knTypeToSlam")) {
+            scrambleKeys(c, b, wStart, wStart + qRound(0.2 * c.fps),
+                         quint32(cut.value(QStringLiteral("seed"))
+                                 .toInt(1)) + k);
+        } else if (layout == QStringLiteral("knSeesaw")) {
+            auto *ra = b->getTransformAnimator()->getRotAnimator();
+            bakeSpan(ra, c, wStart, wEnd, [k](const qreal p) {
+                return (k % 2 ? 1 : -1) * 6.0 * qSin(p * 6.2831853);
+            });
+        } else if (layout == QStringLiteral("knInertia")
+                   || layout == QStringLiteral("knLaunch")) {
+            auto *px = b->getTransformAnimator()->getPosAnimator()
+                    ->getXAnimator();
+            const qreal dx = c.cw * (k % 2 ? -0.12 : 0.12);
+            bakeSpan(px, c, wStart, wStart + qRound(0.3 * c.fps),
+                     [pos, dx](const qreal p) {
+                return pos.x() + dx * (1 - p) * (1 - p);
+            });
+        } else if (layout == QStringLiteral("knZoomDive")
+                   || layout == QStringLiteral("knDiveGlyph")) {
+            auto *sc = b->getTransformAnimator()->getScaleAnimator();
+            auto *sx = sc->getXAnimator();
+            sx->saveValueToKey(wStart, 0.4);
+            sx->saveValueToKey(wStart + qRound(0.25 * c.fps), 1.0);
+            sc->getYAnimator()->saveValueToKey(wStart, 0.4);
+            sc->getYAnimator()->saveValueToKey(
+                        wStart + qRound(0.25 * c.fps), 1.0);
+        } else if (layout == QStringLiteral("knStutterCut")
+                   || layout == QStringLiteral("knRhythmCuts")) {
+            // hard strobe: opacity flips on the koma grid
+            auto *opa = opacityAnim(b);
+            bakeSpan(opa, c, wStart, wEnd, [](const qreal p) {
+                return (int(p * 24) % 2) ? 100.0 : 35.0;
+            });
         }
         static const char *const slams[] = {
             "sharp-slam-front", "sharp-overshoot-down",
@@ -491,6 +578,47 @@ CutText kineticWords(Ctx &c, ContainerBox * const group,
         applyPreset(b, preset, wStart, c, 0.32, false);
         ct.boxes << b;
         ct.mainSize = qMax(ct.mainSize, size);
+    }
+    // per-key backdrops
+    if (layout == QStringLiteral("knPadGrid")) {
+        for (int gy = 0; gy < 2; gy++) {
+            for (int gx = 0; gx < 2; gx++) {
+                auto *pad = mkRect(group, QRectF(
+                            c.cw * 0.3 - c.ch * 0.1 + gx * c.cw * 0.4,
+                            c.ch * 0.3 - c.ch * 0.1 + gy * c.ch * 0.4,
+                            c.ch * 0.2, c.ch * 0.2), QColor(),
+                            c.ch * 0.03, c.ch * 0.03);
+                pad->getStrokeSettings()->setCurrentColor(sub);
+                pad->getStrokeSettings()->getStrokeWidthAnimator()
+                        ->setCurrentBaseValue(2);
+            }
+        }
+    } else if (layout == QStringLiteral("knPathRide")) {
+        auto *orbitRing = mkCircle(group, QPointF(c.cw * 0.5, c.ch * 0.5),
+                                   qMin(c.cw, c.ch) * 0.26, QColor());
+        orbitRing->getStrokeSettings()->setCurrentColor(sub);
+        orbitRing->getStrokeSettings()->getStrokeWidthAnimator()
+                ->setCurrentBaseValue(1.5);
+    } else if (layout == QStringLiteral("knGearWords")) {
+        auto *gear = mkCircle(group, QPointF(c.cw * 0.36, c.ch * 0.5),
+                              c.ch * 0.16, QColor());
+        gear->getStrokeSettings()->setCurrentColor(accent);
+        gear->getStrokeSettings()->getStrokeWidthAnimator()
+                ->setCurrentBaseValue(2);
+        auto *gear2 = mkCircle(group, QPointF(c.cw * 0.64, c.ch * 0.5),
+                                c.ch * 0.11, QColor());
+        gear2->getStrokeSettings()->setCurrentColor(sub);
+        gear2->getStrokeSettings()->getStrokeWidthAnimator()
+                ->setCurrentBaseValue(2);
+    } else if (layout == QStringLiteral("knStripSlam")) {
+        // 短冊スラム: vertical strips the words slam onto
+        for (int k = 0; k < n; k++) {
+            mkRect(group, QRectF(c.cw * 0.5 - c.cw * 0.3
+                                 + k * c.cw * 0.6 / qMax(1, n - 1),
+                                 c.ch * 0.2, c.cw * 0.6 / qMax(1, n - 1) - 4,
+                                 c.ch * 0.6),
+                   k % 2 ? sub : accent);
+        }
     }
     // faint full-line ghost underneath keeps the reading order
     if (n > 1) {
@@ -511,90 +639,338 @@ CutText typoEditorial(Ctx &c, ContainerBox * const group,
                       const LocalFont &lf, const QColor &textCol,
                       const QColor &accent, const QColor &sub) {
     CutText ct;
-    QRandomGenerator rng(quint32(cut.value(QStringLiteral("seed"))
-                                .toInt(1)) ^ 0x5459u);
-    const int variant = int(rng.generate() % 4);
     const QString layout = cut.value(QStringLiteral("layout")).toString();
-    if (variant == 0 || layout.contains(QStringLiteral("Crop"))) {
-        // giant glyph cropped by the canvas edge
-        const QString crop = text.left(2);
-        const qreal size = c.ch * 0.75;
-        auto *b = mkText(group, crop, lf.family, 900, size, accent);
-        b->getTransformAnimator()->getPosAnimator()->setBaseValue(
-                    QPointF(c.cw * 0.82, c.ch * 0.28));
-        opacityAnim(b)->setCurrentBaseValue(26);
-        const qreal size2 = qMin(fitSize(text, lf.family, 700, c.cw * 0.66),
-                                 c.ch * 0.16);
-        const QPointF pos(c.cw * 0.5, c.ch * 0.62);
+    const auto rule = [&](const qreal x, const qreal y, const qreal w,
+                          const QColor &col, const qreal th = 2) {
+        mkRect(group, QRectF(x, y, w, qMax(1.5, th)), col);
+    };
+    const auto tag = [&](const QString &s, const QPointF &pos,
+                         const QColor &col) {
+        auto *t = mkText(group, s,
+                         QStringLiteral("Noto Sans Mono CJK JP"), 500,
+                         qBound(11.0, c.ch * 0.022, 26.0), col);
+        t->getTransformAnimator()->getPosAnimator()->setBaseValue(pos);
+        return t;
+    };
+
+    if (layout == QStringLiteral("tyKeySplit")) {
+        // 大字挟み: a giant lead glyph sandwiching the rest of the line
+        const qreal big = c.ch * 0.4;
+        auto *lead = mkText(group, text.left(1), lf.family, 900, big,
+                            accent);
+        lead->getTransformAnimator()->getPosAnimator()->setBaseValue(
+                    QPointF(c.cw * 0.24, c.ch * 0.46));
+        ct.boxes << lead;
+        const QString rest = text.mid(1);
+        if (!rest.isEmpty()) {
+            const qreal size = qMin(fitSize(rest, lf.family, 500,
+                                            c.cw * 0.36), c.ch * 0.12);
+            auto *r = mkText(group, rest, lf.family, 500, size, textCol);
+            r->getTransformAnimator()->getPosAnimator()->setBaseValue(
+                        QPointF(c.cw * 0.62, c.ch * 0.5));
+            ct.boxes << r;
+        }
+        rule(c.cw * 0.42, c.ch * 0.78, c.cw * 0.3, accent);
+        tag(QStringLiteral("KEY"), QPointF(c.cw * 0.24, c.ch * 0.78), sub);
+        ct.anchor = QPointF(c.cw * 0.4, c.ch * 0.48);
+        ct.mainSize = big * 0.4;
+    } else if (layout == QStringLiteral("tyCropGiant")) {
+        // 見切れ大文字: an oversized glyph bleeding off the frame edge
+        const qreal size = c.ch * 0.9;
+        auto *giant = mkText(group, text.right(1), lf.family, 900, size,
+                             accent);
+        giant->getTransformAnimator()->getPosAnimator()->setBaseValue(
+                    QPointF(c.cw * 0.97, c.ch * 0.95));
+        opacityAnim(giant)->setCurrentBaseValue(30);
+        const qreal size2 = qMin(fitSize(text, lf.family, 700, c.cw * 0.62),
+                                 c.ch * 0.15);
+        const QPointF pos(c.cw * 0.5, c.ch * 0.36);
         auto *m = mkText(group, text, lf.family, 700, size2, textCol);
         m->getTransformAnimator()->getPosAnimator()->setBaseValue(pos);
-        ct.boxes << b << m;
+        ct.boxes << giant << m;
+        rule(c.cw * 0.04, c.ch * 0.52, c.cw * 0.92, sub, 1.5);
         ct.mainSize = size2;
         ct.anchor = pos;
-    } else if (variant == 1) {
-        // character cells: each glyph boxed in a ruled cell
-        const int n = qMax(1, text.length());
-        const qreal size = qMin(c.cw * 0.72 / n, c.ch * 0.16);
-        const qreal cell = size * 1.5;
-        for (int k = 0; k < n; k++) {
-            const QPointF pos(c.cw * 0.5 + (k - (n - 1) / 2.0) * cell,
-                              c.ch * 0.48);
-            auto *cellRect = mkRect(group, QRectF(pos.x() - cell / 2,
-                                                  pos.y() - cell / 2,
-                                                  cell, cell), QColor());
-            cellRect->getStrokeSettings()->setCurrentColor(sub);
-            cellRect->getStrokeSettings()->getStrokeWidthAnimator()
-                    ->setCurrentBaseValue(1.5);
-            auto *b = mkText(group, QString(text.at(k)), lf.family,
-                             700, size,
-                             k == n / 2 ? accent : textCol);
-            b->getTransformAnimator()->getPosAnimator()->setBaseValue(pos);
+    } else if (layout == QStringLiteral("tyCross")) {
+        // 十字組: a vertical and a horizontal arm crossing at the
+        // emphasized glyph
+        const int mid = qMax(1, text.length() / 2);
+        const qreal big = c.ch * 0.2;
+        auto *center = mkText(group, QString(text.at(mid - 1)), lf.family,
+                              900, big * 1.6, accent);
+        center->getTransformAnimator()->getPosAnimator()->setBaseValue(
+                    QPointF(c.cw * 0.5, c.ch * 0.5));
+        ct.boxes << center;
+        const QString h = text.left(mid - 1);
+        const QString v = text.mid(mid);
+        if (!h.isEmpty()) {
+            auto *b = mkText(group, h, lf.family, 700, big, textCol);
+            b->getTransformAnimator()->getPosAnimator()->setBaseValue(
+                        QPointF(c.cw * 0.5 - big * 0.8
+                                - h.length() * big * 0.3, c.ch * 0.5));
             ct.boxes << b;
         }
-        ct.mainSize = size;
-        ct.anchor = QPointF(c.cw * 0.5, c.ch * 0.48);
-    } else if (variant == 2) {
-        // justified stretch: the line scales X to span the full width
-        const qreal size = qMin(fitSize(text, lf.family, 500, c.cw * 0.6),
-                                c.ch * 0.14);
+        for (int k = 0; k < v.length() && k < 4; k++) {
+            auto *b = mkText(group, QString(v.at(k)), lf.family, 700,
+                             big * 0.8, textCol);
+            b->getTransformAnimator()->getPosAnimator()->setBaseValue(
+                        QPointF(c.cw * 0.5 + big * 1.0,
+                                c.ch * 0.32 + big * 1.1 * k));
+            ct.boxes << b;
+        }
+        rule(c.cw * 0.5 - big * 2.4, c.ch * 0.5, big * 4.8, sub, 1.5);
+        ct.anchor = QPointF(c.cw * 0.5, c.ch * 0.5);
+        ct.mainSize = big;
+    } else if (layout == QStringLiteral("tyBandHide")) {
+        // 帯隠れ: an accent band crosses the middle of the line; the
+        // glyphs peek from above and below it
+        const qreal size = qMin(fitSize(text, lf.family, 900, c.cw * 0.8),
+                                c.ch * 0.2);
         const QPointF pos(c.cw * 0.5, c.ch * 0.5);
-        auto *b = mkText(group, text, lf.family, 500, size, textCol);
-        b->getTransformAnimator()->getPosAnimator()->setBaseValue(pos);
-        auto *sc = b->getTransformAnimator()->getScaleAnimator();
-        const qreal stretch = 1.0 * c.cw * 0.86
-                / (size * 0.62 * text.length() + 1);
-        sc->setBaseValue(QPointF(qBound(1.0, stretch, 1.7), 1.0));
-        ct.boxes << b;
-        ct.mainSize = size;
+        const int n = text.length();
+        for (int k = 0; k < n; k++) {
+            auto *b = mkText(group, QString(text.at(k)), lf.family, 900,
+                             size, textCol);
+            const bool up = k % 2 == 0;
+            b->getTransformAnimator()->getPosAnimator()->setBaseValue(
+                        QPointF(c.cw * 0.5 + (k - (n - 1) / 2.0) * size * 0.95,
+                                pos.y() + (up ? -1 : 1) * size * 0.34));
+            ct.boxes << b;
+        }
+        auto *band = mkRect(group, QRectF(0, c.ch * 0.5 - size * 0.28,
+                                          c.cw, size * 0.56), accent);
+        opacityAnim(band)->setCurrentBaseValue(96);
         ct.anchor = pos;
-        mkRect(group, QRectF(c.cw * 0.07, pos.y() + size,
-                             c.cw * 0.86, 2), accent);
-        mkRect(group, QRectF(c.cw * 0.07, pos.y() - size,
-                             c.cw * 0.86, 2), accent);
-    } else {
-        // banded lines: alternating accent bars behind stacked words
+        ct.mainSize = size;
+    } else if (layout == QStringLiteral("tyScaleSteps")) {
+        // 級数上げ: type sizes step up glyph by glyph
+        const int n = qMax(1, text.length());
+        const qreal base = c.ch * 0.07;
+        qreal x = c.cw * 0.1;
+        for (int k = 0; k < n; k++) {
+            const qreal size = base * (1.0 + 0.32 * k);
+            auto *b = mkText(group, QString(text.at(k)), lf.family,
+                             700, size, k == n - 1 ? accent : textCol);
+            b->getTransformAnimator()->getPosAnimator()->setBaseValue(
+                        QPointF(x + size * 0.5, c.ch * 0.5));
+            x += size * 0.92;
+            ct.boxes << b;
+        }
+        rule(c.cw * 0.08, c.ch * 0.68, c.cw * 0.84, sub, 1.5);
+        tag(QStringLiteral("STEP %1").arg(n),
+            QPointF(c.cw * 0.9, c.ch * 0.86), sub);
+        ct.anchor = QPointF(x / 2, c.ch * 0.5);
+        ct.mainSize = base * (1.0 + 0.32 * (n - 1));
+    } else if (layout == QStringLiteral("tyIndexTable")) {
+        // 一覧表: an index table — header row, numbered cells
         const QStringList words = text.split(
                     QRegularExpression(QStringLiteral("[\\s、，,/]+")),
                     Qt::SkipEmptyParts);
         const int n = qMax(1, words.size());
-        const qreal size = qBound(14.0, c.ch * 0.05, 40.0);
+        const int cols = qMin(3, n);
+        const int rows = (n + cols - 1) / cols;
+        const qreal cw = c.cw * 0.8 / cols;
+        const qreal chh = c.ch * 0.5 / qMax(1, rows);
+        const qreal size = qMin(cw, chh) * 0.5;
+        tag(QStringLiteral("INDEX / %1").arg(n),
+            QPointF(c.cw * 0.12, c.ch * 0.2), sub);
         for (int k = 0; k < n; k++) {
-            const qreal y = c.ch * (0.3 + 0.42 * k / qMax(1, n - 1));
-            if (k % 2 == 0) {
-                mkRect(group, QRectF(c.cw * 0.08, y - size * 0.8,
-                                     c.cw * 0.84, size * 1.6),
-                       accent);
-            }
-            auto *b = mkText(group, words.at(k % words.size()), lf.family,
-                             700, size,
-                             k % 2 == 0 ? QColor(16, 16, 18) : textCol);
+            const int col = k % cols, row = k / cols;
+            const QRectF cell(c.cw * 0.1 + col * cw,
+                              c.ch * 0.3 + row * chh, cw, chh);
+            auto *frame = mkRect(group, cell.adjusted(1, 1, -1, -1),
+                                 QColor());
+            frame->getStrokeSettings()->setCurrentColor(sub);
+            frame->getStrokeSettings()->getStrokeWidthAnimator()
+                    ->setCurrentBaseValue(1);
+            auto *b = mkText(group, words.at(k), lf.family, 700, size,
+                             k == 0 ? accent : textCol);
             b->getTransformAnimator()->getPosAnimator()->setBaseValue(
-                        QPointF(c.cw * 0.12, y));
-            b->setTextHAlignment(Qt::AlignLeft);
+                        cell.center());
+            ct.boxes << b;
+            tag(QStringLiteral("%1").arg(k + 1, 2, 10, QLatin1Char('0')),
+                QPointF(cell.left() + cw * 0.12, cell.top() + chh * 0.2),
+                sub);
+        }
+        ct.anchor = QPointF(c.cw * 0.5, c.ch * 0.5);
+        ct.mainSize = size;
+    } else if (layout == QStringLiteral("tySplitType")) {
+        // 断ち割り: the line split by a vertical rule, halves offset
+        const qreal size = qMin(fitSize(text.left(text.length() / 2 + 1),
+                                        lf.family, 900, c.cw * 0.38),
+                                c.ch * 0.2);
+        const int mid = text.length() / 2;
+        auto *l = mkText(group, text.left(mid), lf.family, 900, size,
+                         textCol);
+        l->setTextHAlignment(Qt::AlignRight);
+        l->getTransformAnimator()->getPosAnimator()->setBaseValue(
+                    QPointF(c.cw * 0.44, c.ch * 0.44));
+        auto *r = mkText(group, text.mid(mid), lf.family, 900, size,
+                         accent);
+        r->setTextHAlignment(Qt::AlignLeft);
+        r->getTransformAnimator()->getPosAnimator()->setBaseValue(
+                    QPointF(c.cw * 0.56, c.ch * 0.56));
+        ct.boxes << l << r;
+        mkRect(group, QRectF(c.cw * 0.5 - 2, c.ch * 0.16, 4,
+                             c.ch * 0.68), accent);
+        ct.anchor = QPointF(c.cw * 0.5, c.ch * 0.5);
+        ct.mainSize = size;
+    } else if (layout == QStringLiteral("tyErode")) {
+        // 削り反復: eroded repeats — offset ghosts with strike rules
+        const qreal size = qMin(fitSize(text, lf.family, 700, c.cw * 0.6),
+                                c.ch * 0.18);
+        const QPointF pos(c.cw * 0.5, c.ch * 0.5);
+        for (int k = 2; k >= 0; k--) {
+            auto *b = mkText(group, text, lf.family, 700, size,
+                             k == 0 ? textCol : sub);
+            b->getTransformAnimator()->getPosAnimator()->setBaseValue(
+                        pos + QPointF(size * 0.05 * k, size * 0.07 * k));
+            opacityAnim(b)->setCurrentBaseValue(k == 0 ? 100 : 55 - 15 * k);
+            ct.boxes << b;
+            if (k > 0) {
+                rule(pos.x() - size * 2, pos.y() + size * (0.1 + 0.16 * k),
+                     size * 4, accent, 3);
+            }
+        }
+        ct.anchor = pos;
+        ct.mainSize = size;
+    } else if (layout == QStringLiteral("tyStatCount")) {
+        // 字数表示: the line plus a giant glyph-count numeral
+        const qreal size = qMin(fitSize(text, lf.family, 700, c.cw * 0.56),
+                                c.ch * 0.16);
+        const QPointF pos(c.cw * 0.5, c.ch * 0.4);
+        auto *m = mkText(group, text, lf.family, 700, size, textCol);
+        m->getTransformAnimator()->getPosAnimator()->setBaseValue(pos);
+        ct.boxes << m;
+        const int n = text.length();
+        auto *num = mkText(group, QString::number(n),
+                           QStringLiteral("Noto Sans Mono CJK JP"), 900,
+                           c.ch * 0.2, accent);
+        num->getTransformAnimator()->getPosAnimator()->setBaseValue(
+                    QPointF(c.cw * 0.82, c.ch * 0.75));
+        tag(QStringLiteral("CHARS"), QPointF(c.cw * 0.82, c.ch * 0.86),
+            sub);
+        rule(c.cw * 0.08, c.ch * 0.58, c.cw * 0.5, sub, 1.5);
+        ct.anchor = pos;
+        ct.mainSize = size;
+    } else if (layout == QStringLiteral("tyMargin")) {
+        // 余白: generous whitespace — small line, page number, one rule
+        const qreal size = qMin(fitSize(text, lf.family, 400, c.cw * 0.3),
+                                c.ch * 0.08);
+        auto *m = mkText(group, text, lf.family, 400, size, textCol);
+        m->getTransformAnimator()->getPosAnimator()->setBaseValue(
+                    QPointF(c.cw * 0.32, c.ch * 0.4));
+        m->setTextHAlignment(Qt::AlignLeft);
+        ct.boxes << m;
+        rule(c.cw * 0.1, c.ch * 0.5, c.cw * 0.2, accent, 1.5);
+        tag(QStringLiteral("P.%1").arg(
+                qRound(cut.value(QStringLiteral("start")).toDouble()) + 1),
+            QPointF(c.cw * 0.1, c.ch * 0.9), sub);
+        ct.anchor = QPointF(c.cw * 0.32, c.ch * 0.4);
+        ct.mainSize = size;
+    } else if (layout == QStringLiteral("tyRotBlock")) {
+        // 回転ブロック: the block typeset vertically (rotated 90°)
+        const qreal size = qMin(fitSize(text, lf.family, 900, c.ch * 0.6),
+                                c.ch * 0.16);
+        auto *b = mkText(group, text, lf.family, 900, size, textCol);
+        b->getTransformAnimator()->getPosAnimator()->setBaseValue(
+                    QPointF(c.cw * 0.7, c.ch * 0.5));
+        b->getTransformAnimator()->getRotAnimator()
+                ->setCurrentBaseValue(90);
+        ct.boxes << b;
+        auto *mark = mkText(group, text.left(2), lf.family, 900,
+                            size * 1.4, accent);
+        mark->getTransformAnimator()->getPosAnimator()->setBaseValue(
+                    QPointF(c.cw * 0.3, c.ch * 0.5));
+        ct.boxes << mark;
+        rule(c.cw * 0.5, c.ch * 0.12, 2, sub, 1);
+        ct.anchor = QPointF(c.cw * 0.5, c.ch * 0.5);
+        ct.mainSize = size;
+    } else if (layout == QStringLiteral("tySquare")
+               || layout == QStringLiteral("tyGridCells")) {
+        // 方形組/升目送り: connected square cells, one glyph each
+        const int n = qMax(1, text.length());
+        const int cols = layout == QStringLiteral("tyGridCells")
+                ? qMin(3, n) : n;
+        const int rows = (n + cols - 1) / cols;
+        const qreal cell = qMin(c.cw * 0.72 / cols, c.ch * 0.5 / rows);
+        const qreal size = cell * 0.62;
+        for (int k = 0; k < n; k++) {
+            const int col = k % cols, row = k / cols;
+            const QPointF p(c.cw * 0.5
+                            + (col - (cols - 1) / 2.0) * cell,
+                            c.ch * 0.5 + (row - (rows - 1) / 2.0) * cell);
+            auto *frame = mkRect(group, QRectF(
+                        p.x() - cell / 2, p.y() - cell / 2, cell, cell),
+                        k % 2 ? QColor() : sub);
+            if (k % 2) {
+                frame->getStrokeSettings()->setCurrentColor(sub);
+                frame->getStrokeSettings()->getStrokeWidthAnimator()
+                        ->setCurrentBaseValue(1.5);
+            }
+            auto *b = mkText(group, QString(text.at(k)), lf.family, 900,
+                             size, k % 3 == 0 ? accent : textCol);
+            b->getTransformAnimator()->getPosAnimator()->setBaseValue(p);
             ct.boxes << b;
         }
-        ct.mainSize = size;
         ct.anchor = QPointF(c.cw * 0.5, c.ch * 0.5);
+        ct.mainSize = size;
+    } else if (layout == QStringLiteral("tyLineFocus")) {
+        // 行中強調: a modest line with one word blown up in accent
+        const QStringList words = text.split(
+                    QRegularExpression(QStringLiteral("[\\s、，,/]+")),
+                    Qt::SkipEmptyParts);
+        const int focus = words.size() > 1 ? QRandomGenerator(
+                    quint32(cut.value(QStringLiteral("seed")).toInt(1)))
+                .bounded(words.size()) : 0;
+        const qreal big = qMin(fitSize(words.value(focus), lf.family,
+                                       900, c.cw * 0.4), c.ch * 0.24);
+        const qreal small = big * 0.42;
+        qreal x = c.cw * 0.14;
+        for (int k = 0; k < words.size(); k++) {
+            const bool hot = k == focus;
+            const qreal size = hot ? big : small;
+            auto *b = mkText(group, words.at(k), lf.family,
+                             hot ? 900 : 500, size,
+                             hot ? accent : textCol);
+            b->setTextHAlignment(Qt::AlignLeft);
+            b->getTransformAnimator()->getPosAnimator()->setBaseValue(
+                        QPointF(x + size * 0.3, hot ? c.ch * 0.5 : c.ch * 0.66));
+            x += size * 0.62 * words.at(k).length() + big * 0.12;
+            ct.boxes << b;
+        }
+        rule(c.cw * 0.1, c.ch * 0.62, c.cw * 0.8, sub, 1.5);
+        ct.anchor = QPointF(c.cw * 0.5, c.ch * 0.55);
+        ct.mainSize = big;
+    } else if (layout == QStringLiteral("tyRuleWipe")) {
+        // 署線ワイプ: a thick rule the text rides on, shifted off-axis
+        const qreal size = qMin(fitSize(text, lf.family, 900, c.cw * 0.7),
+                                c.ch * 0.2);
+        const QPointF pos(c.cw * 0.55, c.ch * 0.42);
+        auto *m = mkText(group, text, lf.family, 900, size, textCol);
+        m->getTransformAnimator()->getPosAnimator()->setBaseValue(pos);
+        ct.boxes << m;
+        rule(c.cw * 0.04, pos.y() + size * 0.62, c.cw * 0.92, accent,
+             qMax(3.0, size * 0.07));
+        tag(QStringLiteral("— %1").arg(
+                text.left(qMin(4, text.length()))),
+            QPointF(c.cw * 0.08, c.ch * 0.82), sub);
+        ct.anchor = pos;
+        ct.mainSize = size;
+    } else {
+        // remaining ty* keys: ruled editorial block with a corner tag
+        const qreal size = qMin(fitSize(text, lf.family, 700, c.cw * 0.66),
+                                c.ch * 0.17);
+        const QPointF pos(c.cw * 0.5, c.ch * 0.48);
+        auto *m = mkText(group, text, lf.family, 700, size, textCol);
+        m->getTransformAnimator()->getPosAnimator()->setBaseValue(pos);
+        ct.boxes << m;
+        rule(c.cw * 0.08, pos.y() - size * 1.1, c.cw * 0.3, accent);
+        rule(c.cw * 0.08, pos.y() + size * 1.05, c.cw * 0.84, sub, 1.5);
+        tag(QStringLiteral("TYPO/%1").arg(layout.right(4).toUpper()),
+            QPointF(c.cw * 0.92, c.ch * 0.1), sub);
+        ct.anchor = pos;
+        ct.mainSize = size;
     }
     return ct;
 }
