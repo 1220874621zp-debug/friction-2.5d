@@ -1034,8 +1034,10 @@ int main(int argc, char *argv[])
                                 for (const auto *k : opa->anim_getKeys()) {
                                     kv << QStringLiteral("%1=%2")
                                         .arg(k->getAbsFrame())
-                                        .arg(opa->getEffectiveValueAtAbsFrame(
-                                                 k->getAbsFrame()), 'f', 0);
+                                        .arg(QString::number(
+                                                 opa->getEffectiveValueAtAbsFrame(
+                                                     k->getAbsFrame()),
+                                                 'f', 0));
                                 }
                                 qWarning() << "[LYRICAPPLY]   glyph"
                                     << gi++ << txt->getCurrentValue()
