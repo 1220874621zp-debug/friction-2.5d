@@ -233,6 +233,7 @@ set(
     RasterEffects/celvolumeeffect.cpp
     RasterEffects/thresholdeffect.cpp
     RasterEffects/simplechokereffect.cpp
+    RasterEffects/desaturateeffect.cpp
     RasterEffects/colorizeeffect.cpp
     RasterEffects/customrastereffect.cpp
     RasterEffects/motionblureffect.cpp
@@ -632,6 +633,7 @@ set(
     RasterEffects/celvolumeeffect.h
     RasterEffects/thresholdeffect.h
     RasterEffects/simplechokereffect.h
+    RasterEffects/desaturateeffect.h
     RasterEffects/colorizeeffect.h
     RasterEffects/customrastereffect.h
     RasterEffects/motionblureffect.h

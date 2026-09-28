@@ -25,6 +25,7 @@
         <file alias="glitcheffect.frag">RasterEffects/glitcheffect.frag</file>
         <file alias="posterizeeffect.frag">RasterEffects/posterizeeffect.frag</file>
         <file alias="thresholdeffect.frag">RasterEffects/thresholdeffect.frag</file>
+        <file alias="desaturateeffect.frag">RasterEffects/desaturateeffect.frag</file>
         <file alias="twirleffect.frag">RasterEffects/twirleffect.frag</file>
         <file alias="channelblureffect.frag">RasterEffects/channelblureffect.frag</file>
         <file alias="halftoneeffect.frag">RasterEffects/halftoneeffect.frag</file>

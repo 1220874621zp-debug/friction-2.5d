@@ -137,7 +137,9 @@ enum class RasterEffectType : short {
     // AE Threshold: binarize luminance at a level percent
     THRESHOLD,
     // AE Simple Choker: choke/spread the alpha matte
-    SIMPLE_CHOKER
+    SIMPLE_CHOKER,
+    // AE Black & White / PS Desaturate: collapse to Rec.601 luminance
+    DESATURATE
 };
 
 struct BoxRenderData;

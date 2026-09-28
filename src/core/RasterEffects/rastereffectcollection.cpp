@@ -328,6 +328,8 @@ qsptr<RasterEffect> createRasterEffectForNonCustomType(const RasterEffectType ty
             return enve::make_shared<ThresholdEffect>();
         case(RasterEffectType::SIMPLE_CHOKER):
             return enve::make_shared<SimpleChokerEffect>();
+        case(RasterEffectType::DESATURATE):
+            return enve::make_shared<DesaturateEffect>();
         default: return nullptr;
     }
 }

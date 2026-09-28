@@ -163,7 +163,8 @@ int main(int argc, char *argv[])
             RasterEffectType::LAYER_STYLES,
             RasterEffectType::PAGE_CURL,
             RasterEffectType::THRESHOLD,
-            RasterEffectType::SIMPLE_CHOKER
+            RasterEffectType::SIMPLE_CHOKER,
+            RasterEffectType::DESATURATE
         };
 
         for (const auto t : types) {
@@ -219,7 +220,8 @@ int main(int argc, char *argv[])
             RasterEffectType::LIQUID_GLASS,
             RasterEffectType::PIXEL_ART,
             RasterEffectType::PAGE_CURL,
-            RasterEffectType::THRESHOLD
+            RasterEffectType::THRESHOLD,
+            RasterEffectType::DESATURATE
         };
 
         SkBitmap srcBtmp;
@@ -423,7 +425,8 @@ int main(int argc, char *argv[])
             RasterEffectType::LATTICE_WARP,
             RasterEffectType::CEL_VOLUME,
             RasterEffectType::THRESHOLD,
-            RasterEffectType::SIMPLE_CHOKER
+            RasterEffectType::SIMPLE_CHOKER,
+            RasterEffectType::DESATURATE
         };
         QString dumpDir;
         if (argc >= 3) {
@@ -540,9 +543,11 @@ int main(int argc, char *argv[])
     });
 
     // Test 2e: AE semantics of Threshold (luminance binarize, alpha
-    // preserved) and Simple Choker (positive chokes the matte inward,
+    // preserved), Simple Choker (positive chokes the matte inward,
     // negative spreads it outward; choke 0 = no caller = passthrough)
-    runTest("Test 2e: Threshold + Simple Choker semantics", [&]() {
+    // and Desaturate (Rec.601 grayscale, alpha preserved, amount
+    // blends toward the original colors)
+    runTest("Test 2e: Threshold + Simple Choker + Desaturate semantics", [&]() {
         const auto findParam = [](RasterEffect* eff,
                                   const char* name) -> QrealAnimator* {
             const int n = eff->ca_getNumberOfChildren();
@@ -679,6 +684,59 @@ int main(int argc, char *argv[])
             }
             if (SkColorGetA(px(dst, 8, 32)) > 30) {
                 throw std::runtime_error("spread bled too far out");
+            }
+        }
+
+        // --- desaturate: Rec.601 gray, alpha untouched, amount blend ---
+        {
+            const auto eff = createRasterEffectForNonCustomType(
+                        RasterEffectType::DESATURATE);
+            auto* amount = findParam(eff.get(), "amount");
+            if (!amount) { throw std::runtime_error("no amount param"); }
+
+            SkBitmap src;
+            src.allocN32Pixels(64, 64);
+            src.eraseARGB(0, 0, 0, 0);
+            {
+                SkCanvas c(src);
+                SkPaint p;
+                // lum = 0.299*200+0.587*40+0.114*40 = 87.8 -> 88
+                p.setColor(SkColorSetARGB(255, 200, 40, 40));
+                c.drawRect(SkRect::MakeXYWH(16, 16, 32, 32), p);
+                // lum = 240
+                p.setColor(SkColorSetARGB(180, 240, 240, 240));
+                c.drawRect(SkRect::MakeXYWH(0, 0, 16, 64), p);
+            }
+            SkBitmap dst;
+            dst.allocN32Pixels(64, 64);
+
+            // amount 100 (default): pure gray, channels equal, alpha kept
+            dst.eraseARGB(0, 0, 0, 0);
+            if (!renderTiles(eff.get(), src, dst)) {
+                throw std::runtime_error("desaturate caller is null");
+            }
+            const auto grayPx = px(dst, 32, 32);
+            if (std::abs(int(SkColorGetR(grayPx)) - 88) > 1 ||
+                SkColorGetR(grayPx) != SkColorGetG(grayPx) ||
+                SkColorGetG(grayPx) != SkColorGetB(grayPx) ||
+                SkColorGetA(grayPx) != 255) {
+                throw std::runtime_error("amount 100 not uniform Rec.601 gray");
+            }
+            if (SkColorGetA(px(dst, 8, 32)) != 180) {
+                throw std::runtime_error("desaturate lost alpha");
+            }
+
+            // amount 50: halfway between source and gray
+            amount->setCurrentBaseValue(50.0);
+            dst.eraseARGB(0, 0, 0, 0);
+            if (!renderTiles(eff.get(), src, dst)) {
+                throw std::runtime_error("desaturate 50 caller is null");
+            }
+            const auto halfPx = px(dst, 32, 32);
+            // r: 200*0.5+88*0.5 = 144, g/b: 40*0.5+88*0.5 = 64
+            if (std::abs(int(SkColorGetR(halfPx)) - 144) > 1 ||
+                std::abs(int(SkColorGetG(halfPx)) - 64) > 1) {
+                throw std::runtime_error("amount 50 blend is off");
             }
         }
     });

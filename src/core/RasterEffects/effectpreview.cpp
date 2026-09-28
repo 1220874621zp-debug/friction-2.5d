@@ -525,6 +525,10 @@ NamedScan namedScanFor(const RasterEffectType type) {
     case RasterEffectType::THRESHOLD:
         // full-range sweep flips the silhouette in/out of white
         return { "level", nullptr, 10., 90. };
+    case RasterEffectType::DESATURATE:
+        // color <-> grayscale breathing (default 100 would sweep
+        // nowhere: 100 * 2.5 clamps back to 100)
+        return { "amount", nullptr, 0., 100. };
     case RasterEffectType::SIMPLE_CHOKER:
         // negative spread -> positive choke breathing; the to-value
         // stays off the exact 0 grid point - a choke of exactly 0 is
