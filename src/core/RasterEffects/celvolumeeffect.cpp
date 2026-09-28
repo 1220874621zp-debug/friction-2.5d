@@ -4,15 +4,15 @@
 #include "celvolumealgo.h"
 
 #include "Animators/qrealanimator.h"
-#include "Animators/boolanimator.h"
+#include "Animators/coloranimator.h"
 #include "Animators/staticcomplexanimator.h"
+#include "Properties/comboboxproperty.h"
 
 #include "appsupport.h"
 
 #include <QMutex>
 #include <QMutexLocker>
 #include <vector>
-#include <cstring>
 
 namespace {
 
@@ -100,7 +100,6 @@ public:
                    mResult.getAddr(xMin, yi),
                    static_cast<size_t>(xMax - xMin + 1) * 4);
         }
-
     }
 private:
     const celvolume::Params mP;
@@ -110,75 +109,74 @@ private:
 };
 
 CelVolumeEffect::CelVolumeEffect() :
-    RasterEffect(QObject::tr("体积渐变"),
+    RasterEffect(QObject::tr("\u4e09\u8272\u6e10\u53d8"),
                  AppSupport::getRasterEffectHardwareSupport("CelVolume",
                                                             HardwareSupport::cpuOnly),
                  false,
                  RasterEffectType::CEL_VOLUME)
 {
     const auto segGroup =
-            enve::make_shared<StaticComplexAnimator>(QObject::tr("区域分割"));
-    mColorTol = enve::make_shared<QrealAnimator>(14.0, 0.0, 64.0, 0.5,
-                                                 QObject::tr("颜色容差"));
+            enve::make_shared<StaticComplexAnimator>(QObject::tr("\u533a\u57df\u5206\u5272"));
+    mColorTol = enve::make_shared<QrealAnimator>(32.0, 0.0, 96.0, 0.5,
+                                                 QObject::tr("\u989c\u8272\u5bb9\u5dee"));
     segGroup->ca_addChild(mColorTol);
     mMinArea = enve::make_shared<QrealAnimator>(40.0, 1.0, 5000.0, 1.0,
-                                                QObject::tr("最小区域"));
+                                                QObject::tr("\u6700\u5c0f\u533a\u57df"));
     segGroup->ca_addChild(mMinArea);
-    mProtectDark = enve::make_shared<BoolAnimator>(
-                QObject::tr("保护线稿"));
-    mProtectDark->setCurrentBoolValue(true);
-    segGroup->ca_addChild(mProtectDark);
-    mDarkLuma = enve::make_shared<QrealAnimator>(30.0, 0.0, 100.0, 1.0,
-                                                 QObject::tr("线稿亮度阈值"));
-    segGroup->ca_addChild(mDarkLuma);
     ca_addChild(segGroup);
 
+    const auto gradGroup =
+            enve::make_shared<StaticComplexAnimator>(QObject::tr("\u4e09\u8272\u6e10\u53d8"));
+    mShadeMode = enve::make_shared<ComboBoxProperty>(
+                QObject::tr("\u7740\u8272\u6a21\u5f0f"), QStringList()
+                << QObject::tr("\u65b9\u5411\u6e10\u53d8") << QObject::tr("\u4f53\u79ef\u5149\u5f71"));
+    gradGroup->ca_addChild(mShadeMode);
+    mTMode = enve::make_shared<ComboBoxProperty>(
+                QObject::tr("\u6e10\u53d8\u8303\u56f4"), QStringList()
+                << QObject::tr("\u6bcf\u533a\u57df\u72ec\u7acb") << QObject::tr("\u6574\u56fe\u7edf\u4e00"));
+    mTMode->setCurrentValue(1);
+    gradGroup->ca_addChild(mTMode);
+    mGradAngle = enve::make_shared<QrealAnimator>(45.0, -360.0, 360.0, 1.0,
+                                                  QObject::tr("\u6e10\u53d8\u65b9\u5411"));
+    gradGroup->ca_addChild(mGradAngle);
+    mColWarm = enve::make_shared<ColorAnimator>(QObject::tr("\u6696\u7aef\u8272"));
+    mColWarm->setColor(QColor(219, 35, 69, 255));
+    gradGroup->ca_addChild(mColWarm);
+    mColMid = enve::make_shared<ColorAnimator>(QObject::tr("\u4e2d\u95f4\u8272"));
+    mColMid->setColor(QColor(150, 55, 185, 255));
+    gradGroup->ca_addChild(mColMid);
+    mColCool = enve::make_shared<ColorAnimator>(QObject::tr("\u51b7\u7aef\u8272"));
+    mColCool->setColor(QColor(74, 60, 175, 255));
+    gradGroup->ca_addChild(mColCool);
+    mBgDarken = enve::make_shared<QrealAnimator>(0.0, 0.0, 100.0, 1.0,
+                                                 QObject::tr("\u80cc\u666f\u6697\u5316"));
+    gradGroup->ca_addChild(mBgDarken);
+    mMix = enve::make_shared<QrealAnimator>(100.0, 0.0, 100.0, 1.0,
+                                            QObject::tr("\u4e0a\u8272\u5f3a\u5ea6"));
+    gradGroup->ca_addChild(mMix);
+    ca_addChild(gradGroup);
+
     const auto volGroup =
-            enve::make_shared<StaticComplexAnimator>(QObject::tr("体积光照"));
+            enve::make_shared<StaticComplexAnimator>(QObject::tr("\u4f53\u79ef\u5149\u5f71"));
     mLightAngle = enve::make_shared<QrealAnimator>(135.0, -360.0, 360.0, 1.0,
-                                                   QObject::tr("光照角度"));
+                                                   QObject::tr("\u5149\u7167\u89d2\u5ea6"));
     volGroup->ca_addChild(mLightAngle);
     mLightElev = enve::make_shared<QrealAnimator>(35.0, 0.0, 90.0, 1.0,
-                                                  QObject::tr("光源高度"));
+                                                  QObject::tr("\u5149\u6e90\u9ad8\u5ea6"));
     volGroup->ca_addChild(mLightElev);
     mBump = enve::make_shared<QrealAnimator>(60.0, 0.0, 100.0, 1.0,
-                                             QObject::tr("体积强度"));
+                                             QObject::tr("\u4f53\u79ef\u5f3a\u5ea6"));
     volGroup->ca_addChild(mBump);
     mAo = enve::make_shared<QrealAnimator>(40.0, 0.0, 100.0, 1.0,
-                                          QObject::tr("边缘暗部"));
+                                          QObject::tr("\u8fb9\u7f18\u6697\u90e8"));
     volGroup->ca_addChild(mAo);
     mAoWidth = enve::make_shared<QrealAnimator>(6.0, 1.0, 30.0, 0.5,
-                                                QObject::tr("暗部宽度"));
+                                                QObject::tr("\u6697\u90e8\u5bbd\u5ea6"));
     volGroup->ca_addChild(mAoWidth);
     mSmooth = enve::make_shared<QrealAnimator>(3.0, 0.0, 16.0, 1.0,
-                                               QObject::tr("平滑半径"));
+                                               QObject::tr("\u5e73\u6ed1\u534a\u5f84"));
     volGroup->ca_addChild(mSmooth);
     ca_addChild(volGroup);
-
-    const auto rampGroup =
-            enve::make_shared<StaticComplexAnimator>(QObject::tr("四色渐变"));
-    mHiStrength = enve::make_shared<QrealAnimator>(62.0, 0.0, 100.0, 1.0,
-                                                   QObject::tr("高光强度"));
-    rampGroup->ca_addChild(mHiStrength);
-    mHiWarm = enve::make_shared<QrealAnimator>(40.0, 0.0, 100.0, 1.0,
-                                               QObject::tr("高光暖度"));
-    rampGroup->ca_addChild(mHiWarm);
-    mBrightStrength = enve::make_shared<QrealAnimator>(30.0, 0.0, 100.0, 1.0,
-                                                       QObject::tr("亮部强度"));
-    rampGroup->ca_addChild(mBrightStrength);
-    mShadeStrength = enve::make_shared<QrealAnimator>(38.0, 0.0, 100.0, 1.0,
-                                                     QObject::tr("暗部强度"));
-    rampGroup->ca_addChild(mShadeStrength);
-    mShadeHue = enve::make_shared<QrealAnimator>(-18.0, -180.0, 180.0, 1.0,
-                                                 QObject::tr("暗部偏色"));
-    rampGroup->ca_addChild(mShadeHue);
-    mSoftness = enve::make_shared<QrealAnimator>(45.0, 0.0, 100.0, 1.0,
-                                                 QObject::tr("渐变柔和度"));
-    rampGroup->ca_addChild(mSoftness);
-    mMix = enve::make_shared<QrealAnimator>(100.0, 0.0, 100.0, 1.0,
-                                            QObject::tr("效果强度"));
-    rampGroup->ca_addChild(mMix);
-    ca_addChild(rampGroup);
 }
 
 stdsptr<RasterEffectCaller> CelVolumeEffect::getEffectCaller(
@@ -189,20 +187,28 @@ stdsptr<RasterEffectCaller> CelVolumeEffect::getEffectCaller(
     celvolume::Params p;
     p.colorTol = float(mColorTol->getEffectiveValue(relFrame));
     p.minArea = qMax(1, qRound(mMinArea->getEffectiveValue(relFrame)));
-    p.protectDark = mProtectDark->getBoolValue(relFrame);
-    p.darkLuma = float(mDarkLuma->getEffectiveValue(relFrame) / 100.0);
+    p.shadeMode = mShadeMode->getCurrentValue();
+    p.tMode = mTMode->getCurrentValue();
+    p.gradAngleDeg = float(mGradAngle->getEffectiveValue(relFrame));
+    const QColor warm = mColWarm->getColor(relFrame);
+    p.colWarm[0] = float(warm.redF());
+    p.colWarm[1] = float(warm.greenF());
+    p.colWarm[2] = float(warm.blueF());
+    const QColor mid = mColMid->getColor(relFrame);
+    p.colMid[0] = float(mid.redF());
+    p.colMid[1] = float(mid.greenF());
+    p.colMid[2] = float(mid.blueF());
+    const QColor cool = mColCool->getColor(relFrame);
+    p.colCool[0] = float(cool.redF());
+    p.colCool[1] = float(cool.greenF());
+    p.colCool[2] = float(cool.blueF());
+    p.bgDarken = float(mBgDarken->getEffectiveValue(relFrame));
+    p.mix = float(mMix->getEffectiveValue(relFrame) * influence);
     p.lightAngleDeg = float(mLightAngle->getEffectiveValue(relFrame));
     p.lightElevDeg = float(mLightElev->getEffectiveValue(relFrame));
     p.bump = float(mBump->getEffectiveValue(relFrame));
     p.ao = float(mAo->getEffectiveValue(relFrame));
     p.aoWidth = float(mAoWidth->getEffectiveValue(relFrame) * resolution);
     p.smooth = qMax(0, qRound(mSmooth->getEffectiveValue(relFrame) * resolution));
-    p.hiStrength = float(mHiStrength->getEffectiveValue(relFrame));
-    p.hiWarm = float(mHiWarm->getEffectiveValue(relFrame));
-    p.brightStrength = float(mBrightStrength->getEffectiveValue(relFrame));
-    p.shadeStrength = float(mShadeStrength->getEffectiveValue(relFrame));
-    p.shadeHue = float(mShadeHue->getEffectiveValue(relFrame));
-    p.softness = float(mSoftness->getEffectiveValue(relFrame));
-    p.mix = float(mMix->getEffectiveValue(relFrame) * influence);
     return enve::make_shared<CelVolumeEffectCaller>(p);
 }

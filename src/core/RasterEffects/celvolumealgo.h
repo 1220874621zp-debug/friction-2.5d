@@ -1,30 +1,44 @@
 #ifndef CELVOLUMEALGO_H
 #define CELVOLUMEALGO_H
 
-// Flat-color region segmentation + volumetric 4-stop ramp, the core
-// of the cel-volume effect. Deliberately free of Qt/Skia so the whole
-// pipeline can be exercised from a plain standalone test harness.
+// Flat-color region segmentation + 3-stop gradient re-shading, the
+// core of the cel-volume effect. Deliberately free of Qt/Skia so the
+// whole pipeline can be exercised from a plain standalone test
+// harness.
 //
 // Pixel format: uint32 packed 0xAARRGGBB (SkColor order), straight
 // (non-premultiplied) alpha. The caller converts to/from whatever
 // Skia gives it.
 //
+// The look (reverse-engineered pixel-by-pixel from the user's
+// reference pair, a flat-cel portrait and its gradient treatment):
+//   - the original hues are fully replaced; the same spot in hair,
+//     skin and clothes receives the SAME hue, i.e. the hue comes
+//     from a spatial field, not from the source color
+//   - the field is one big hue journey along a diagonal: warm end
+//     (~350 deg red) at the upper right through bright purple
+//     (~295 deg) to a cool end (~250 deg blue-violet) at the lower
+//     left - the "3 colors" are three user-picked stops on that
+//     journey, interpolated in HSV so the middle stays vivid
+//   - saturation stays uniformly high (~0.9), value follows the
+//     stops (slight falloff toward the cool end)
+//   - thin strokes (lashes, fine lines) pass through untouched;
+//     large dark blocks (hair) DO get recolored
+//   - the flat backdrop can be darkened toward black
+//
 // Pipeline:
 //   1. dominant flat colors  - greedy frequency clustering with a
-//      merge radius, so jpeg/anti-aliased jitter around each flat
-//      fill collapses onto one dominant color
+//      merge radius (jpeg/anti-aliased jitter collapses)
 //   2. region labeling       - 8-connected components per dominant
-//      color; the same color reappearing in hair and shirt becomes
-//      two regions with independent shading
-//   3. inner distance field  - chamfer(1, sqrt2) two-pass inside each
-//      region, then masked box blur so gradients flow instead of
-//      following pixel-level staircases
-//   4. volume shading        - the blurred distance field is read as
-//      a height field; its central-difference gradient gives a
-//      pseudo surface normal, lambert against the user light, plus a
-//      crease-style ambient term from the distance itself
-//   5. 4-stop ramp           - shade / base / bright / highlight with
-//      soft transition bands (hard cel steps .. full airbrush blend)
+//      color; the same color in hair and shirt becomes two regions
+//   3. inner distance field  - chamfer(1, sqrt2) two passes + masked
+//      box blur; used for the thin-sliver test and the optional
+//      volumetric shading mode
+//   4a. gradient mode (new)  - t is the pixel's projection on the
+//      gradient axis, normalized either per region or globally;
+//      color = HSV 3-stop interpolation
+//   4b. volumetric mode      - distance-field pseudo normal lambert
+//      + crease ao produce t, then the same 3-stop interpolation
 
 #include <algorithm>
 #include <cmath>
@@ -35,129 +49,139 @@
 
 namespace celvolume {
 
+// shading mode
+enum ShadeMode { ShadeGradient = 0, ShadeVolumetric = 1 };
+// gradient-axis normalization scope
+enum TMode { TPerRegion = 0, TGlobal = 1 };
+
 struct Params {
     // segmentation
-    float colorTol = 14.f;    // merge radius for flat-color clustering (rgb units)
+    float colorTol = 32.f;    // merge radius for flat-color clustering (rgb units)
     int minArea = 40;         // regions below this pixel count pass through
-    bool protectDark = true;  // keep line-art-ish dark regions flat
-    float darkLuma = 0.30f;   // luma below which a region reads as line art
-    // volume
+    // gradient shading
+    int shadeMode = ShadeGradient;
+    int tMode = TPerRegion;
+    float gradAngleDeg = 45.f; // axis pointing from the cool end toward the warm end
+    float colWarm[3] = { 0.86f, 0.14f, 0.27f };  // warm-end stop, rgb 0..1
+    float colMid[3]  = { 0.59f, 0.22f, 0.73f };  // middle stop
+    float colCool[3] = { 0.29f, 0.24f, 0.69f };  // cool-end stop
+    float mix = 100.f;         // 0 = original .. 100 = fully re-tinted
+    float bgDarken = 0.f;      // backdrop (largest border region) darkening, 0..100
+    // volumetric shading (shadeMode == ShadeVolumetric)
     float lightAngleDeg = 135.f; // 0 = right, 90 = up (screen y is down)
     float lightElevDeg = 35.f;   // light elevation, z contribution
     float bump = 60.f;           // 0 = flat (ao only) .. 100 = strong ridges
     float ao = 40.f;             // crease darkening strength, 0..100
     float aoWidth = 6.f;         // crease darkening band, px
     int smooth = 3;              // distance-field blur radius, px
-    // 4-stop ramp
-    float hiStrength = 62.f;     // highlight lift toward warm white, 0..100
-    float hiWarm = 40.f;         // warmness of the highlight tint, 0..100
-    float brightStrength = 30.f; // midtone lift, 0..100
-    float shadeStrength = 38.f;  // shadow drop, 0..100
-    float shadeHue = -18.f;      // shadow hue shift, degrees (negative = cooler)
-    float softness = 45.f;       // ramp transition band width, 0..100
-    float mix = 100.f;           // 0 = original .. 100 = fully ramped
 };
 
 struct RegionStat {
     int area = 0;
     uint32_t color = 0;   // dominant color of the region
     float maxDist = 1.f;  // deepest inner distance after blur
-    bool flat = false;    // passed through untouched (tiny / line art)
+    bool flat = false;    // passed through untouched (thin sliver / line art)
+    bool tiny = false;    // speck region: shaded with the global axis instead of its own
+    bool backdrop = false;// the flat backdrop region (bgDarken target)
 };
 
 namespace detail {
 
 inline float clamp01(const float v) { return v < 0.f ? 0.f : (v > 1.f ? 1.f : v); }
 
-inline float smoothStep(const float e0, const float e1, const float x) {
-    const float t = clamp01((x - e0) / (e1 - e0));
-    return t * t * (3.f - 2.f * t);
-}
-
-struct rgbF { float r, g, b; };
-
-inline rgbF unpack(const uint32_t c) {
-    return { ((c >> 16) & 255) / 255.f,
-             ((c >> 8) & 255) / 255.f,
-             (c & 255) / 255.f };
-}
-
-inline uint32_t pack(const rgbF& v) {
-    const auto q = [](const float f) {
-        return (f <= 0.f) ? 0u : (f >= 1.f) ? 255u : uint32_t(f * 255.f + 0.5f);
-    };
-    return 0xFF000000u | (q(v.r) << 16) | (q(v.g) << 8) | q(v.b);
-}
-
 inline float lumaOf(const uint32_t c) {
-    const rgbF v = unpack(c);
-    return 0.2126f * v.r + 0.7152f * v.g + 0.0722f * v.b;
+    return (0.2126f * ((c >> 16) & 255) + 0.7152f * ((c >> 8) & 255)
+            + 0.0722f * (c & 255)) / 255.f;
 }
 
-// rgb <-> hsv (h in [0,1)); used for the shadow hue shift only
-inline void rgbToHsv(const rgbF& in, float& h, float& s, float& v) {
-    const float mx = std::max(in.r, std::max(in.g, in.b));
-    const float mn = std::min(in.r, std::min(in.g, in.b));
+inline void rgbToHsv(const float r, const float g, const float b,
+                     float& h, float& s, float& v) {
+    const float mx = std::max(r, std::max(g, b));
+    const float mn = std::min(r, std::min(g, b));
     const float d = mx - mn;
     v = mx;
     s = mx <= 0.f ? 0.f : d / mx;
     if (d <= 1e-6f) { h = 0.f; return; }
-    if (mx == in.r)      h = (in.g - in.b) / d + (in.g < in.b ? 6.f : 0.f);
-    else if (mx == in.g) h = (in.b - in.r) / d + 2.f;
-    else                 h = (in.r - in.g) / d + 4.f;
+    if (mx == r)         h = (g - b) / d + (g < b ? 6.f : 0.f);
+    else if (mx == g)    h = (b - r) / d + 2.f;
+    else                 h = (r - g) / d + 4.f;
     h /= 6.f;
 }
 
-inline rgbF hsvToRgb(float h, float s, float v) {
-    h = h - std::floor(h);
-    const int i = int(h * 6.f);
-    const float f = h * 6.f - i;
+inline void hsvToRgb(const float h, const float s, const float v,
+                     float& r, float& g, float& b) {
+    const float hh = h - std::floor(h);
+    const int i = int(hh * 6.f);
+    const float f = hh * 6.f - i;
     const float p = v * (1.f - s);
     const float q = v * (1.f - f * s);
     const float t = v * (1.f - (1.f - f) * s);
     switch (i % 6) {
-    case 0: return { v, t, p };
-    case 1: return { q, v, p };
-    case 2: return { p, v, t };
-    case 3: return { p, q, v };
-    case 4: return { t, p, v };
-    default: return { v, p, q };
+    case 0: r = v; g = t; b = p; return;
+    case 1: r = q; g = v; b = p; return;
+    case 2: r = p; g = v; b = t; return;
+    case 3: r = p; g = q; b = v; return;
+    case 4: r = t; g = p; b = v; return;
+    default: r = v; g = p; b = q; return;
     }
 }
 
-inline rgbF mix(const rgbF& a, const rgbF& b, const float t) {
-    return { a.r + (b.r - a.r) * t,
-             a.g + (b.g - a.g) * t,
-             a.b + (b.b - a.b) * t };
+// hue delta from a to b on the shortest arc, in turns
+inline float hueDelta(const float a, const float b) {
+    float d = b - a;
+    d -= std::floor(d + 0.5f);
+    return d;
 }
 
-// the four ramp colors derived from one region's dominant color
-struct Ramp {
-    rgbF shade, base, bright, hi;
+// the 3-stop journey pre-resolved: hues as accumulated shortest
+// arcs, so cool->mid->warm interpolates through vivid middles;
+// t = 0 lands on the cool stop, t = 1 on the warm stop
+struct Ramp3 {
+    float h0, dh1, dh2; // start hue, arc to mid, arc from mid to cool
+    float s0, s1, s2;
+    float v0, v1, v2;
 };
 
-inline Ramp makeRamp(const uint32_t color, const Params& p) {
-    const rgbF base = unpack(color);
+inline Ramp3 makeRamp3(const float c[3], const float m[3], const float w[3]) {
+    float hw, mw, cw, sw, sa, sk, vw, va, vk;
+    rgbToHsv(w[0], w[1], w[2], hw, sw, vw);
+    rgbToHsv(m[0], m[1], m[2], mw, sa, va);
+    rgbToHsv(c[0], c[1], c[2], cw, sk, vk);
+    Ramp3 r;
+    r.h0 = cw;
+    r.dh1 = hueDelta(cw, mw);
+    r.dh2 = hueDelta(mw, hw);
+    r.s0 = sw; r.s1 = sa; r.s2 = sk;
+    r.v0 = vw; r.v1 = va; r.v2 = vk;
+    return r;
+}
 
-    // shadow: hue-shifted, darker, slightly more saturated so it reads
-    // "thicker" than a plain multiply
+inline void evalRamp3(const Ramp3& rp, const float t, const float mixAmt,
+                      const uint32_t src, uint32_t& dst) {
     float h, s, v;
-    rgbToHsv(base, h, s, v);
-    const float ss = clamp01(s + (1.f - s) * 0.25f * (p.shadeStrength / 100.f));
-    const float vs = clamp01(v * (1.f - 0.9f * p.shadeStrength / 100.f));
-    const rgbF shade = hsvToRgb(h + p.shadeHue / 360.f, ss, vs);
-
-    // bright: gentle lift toward white, slightly warm
-    const rgbF bright = mix(base, rgbF{ 1.f, 0.995f, 0.97f },
-                            0.85f * p.brightStrength / 100.f);
-
-    // highlight: strong lift toward a warm-white whose temperature the
-    // user controls
-    const float w = p.hiWarm / 100.f;
-    const rgbF warm = { 1.f, 1.f - 0.02f * w, 1.f - 0.10f * w };
-    const rgbF hi = mix(base, warm, p.hiStrength / 100.f);
-
-    return { shade, base, bright, hi };
+    if (t < 0.5f) {
+        const float u = t * 2.f;
+        h = rp.h0 + rp.dh1 * u;
+        s = rp.s0 + (rp.s1 - rp.s0) * u;
+        v = rp.v0 + (rp.v1 - rp.v0) * u;
+    } else {
+        const float u = (t - 0.5f) * 2.f;
+        h = rp.h0 + rp.dh1 + rp.dh2 * u;
+        s = rp.s1 + (rp.s2 - rp.s1) * u;
+        v = rp.v1 + (rp.v2 - rp.v1) * u;
+    }
+    float r, g, b;
+    hsvToRgb(h, s, v, r, g, b);
+    const float orr = ((src >> 16) & 255) / 255.f;
+    const float og = ((src >> 8) & 255) / 255.f;
+    const float ob = (src & 255) / 255.f;
+    r = orr + (r - orr) * mixAmt;
+    g = og + (g - og) * mixAmt;
+    b = ob + (b - ob) * mixAmt;
+    const auto q = [](const float f) {
+        return (f <= 0.f) ? 0u : (f >= 1.f) ? 255u : uint32_t(f * 255.f + 0.5f);
+    };
+    dst = (src & 0xFF000000u) | (q(r) << 16) | (q(g) << 8) | q(b);
 }
 
 } // namespace detail
@@ -165,13 +189,10 @@ inline Ramp makeRamp(const uint32_t color, const Params& p) {
 // Compute the full pipeline. src and dst may not alias; dst receives
 // the same alpha as src (segmentation treats alpha < 128 as
 // background). stats, when not null, reports one entry per region.
-// sdOut, when not null, receives the raw ramp coordinate per pixel
-// (test/debug hook; -1 for background).
 inline void compute(const uint32_t* const src, const int w, const int h,
                     const Params& p, uint32_t* const dst,
                     std::vector<RegionStat>* const stats = nullptr,
-                    std::vector<float>* const sdOut = nullptr,
-                    std::vector<float>* const distOut = nullptr)
+                    std::vector<float>* const tOut = nullptr)
 {
     const size_t n = size_t(w) * size_t(h);
     if (n == 0) return;
@@ -257,12 +278,14 @@ inline void compute(const uint32_t* const src, const int w, const int h,
             label[i0] = id;
             stack.clear();
             stack.push_back(int32_t(i0));
+            int borderTouch = 0;
             while (!stack.empty()) {
                 const size_t i = size_t(stack.back());
                 stack.pop_back();
                 st.area++;
                 const int x = int(i % w);
                 const int y = int(i / w);
+                if (x == 0 || y == 0 || x == w - 1 || y == h - 1) borderTouch++;
                 for (int dy = -1; dy <= 1; dy++) {
                     const int ny = y + dy;
                     if (ny < 0 || ny >= h) continue;
@@ -276,9 +299,24 @@ inline void compute(const uint32_t* const src, const int w, const int h,
                     }
                 }
             }
-            st.flat = st.area < p.minArea
-                      || (p.protectDark && detail::lumaOf(st.color) < p.darkLuma);
+            st.tiny = st.area < p.minArea;
+            // backdrop candidate: a border-touching region big enough
+            // to be the ground the character stands on
+            st.backdrop = borderTouch > 0 && st.area >= int(0.15 * n);
             regions.push_back(st);
+        }
+    }
+    // only the single largest border region counts as the backdrop
+    {
+        int best = -1;
+        for (size_t k = 0; k < regions.size(); k++) {
+            if (!regions[k].backdrop) continue;
+            if (best < 0 || regions[k].area > regions[size_t(best)].area) {
+                best = int(k);
+            }
+        }
+        for (size_t k = 0; k < regions.size(); k++) {
+            if (int(k) != best) regions[k].backdrop = false;
         }
     }
 
@@ -379,86 +417,127 @@ inline void compute(const uint32_t* const src, const int w, const int h,
     for (auto& st : regions) st.maxDist = std::max(st.maxDist, 1.f);
 
     // thin slivers (anti-aliased rims around shapes, stray outline
-    // fragments) never develop a meaningful gradient - their shading
-    // is pure noise, so they pass through like flat regions
+    // fragments) never develop a meaningful gradient. Only LOW
+    // SATURATION ones pass through untouched - that is line art
+    // (gray/black strokes, white glints); colored slivers (backdrop
+    // gradient bands, hair strands) tint with the global axis like
+    // specks, so real-world sources shade evenly instead of keeping
+    // original-color holes
     for (auto& st : regions) {
-        if (st.maxDist < 4.5f) st.flat = true;
+        if (st.maxDist < 4.5f) {
+            float hh, ss, vv;
+            detail::rgbToHsv(((st.color >> 16) & 255) / 255.f,
+                             ((st.color >> 8) & 255) / 255.f,
+                             (st.color & 255) / 255.f,
+                             hh, ss, vv);
+            if (ss < 0.3f) st.flat = true;
+            else st.tiny = true;
+        }
     }
 
     if (stats) *stats = regions;
-    if (sdOut) sdOut->assign(n, -1.f);
-    if (distOut) *distOut = dist;
+    if (tOut) tOut->assign(n, -1.f);
 
-    // ---- 4/5. shading + ramp -----------------------------------------
-    using detail::rgbF;
-    // one ramp per dominant color, not per region - same-fill regions
-    // shift identically, which is how flat art recolors read
-    std::vector<detail::Ramp> ramps(doms.size());
-    for (size_t k = 0; k < doms.size(); k++) ramps[k] = detail::makeRamp(doms[k], p);
-
-    const float th = p.lightAngleDeg * 3.14159265f / 180.f;
-    const float lx = std::cos(th);
-    const float ly = -std::sin(th); // screen y is down
-    const float lz = std::tan(p.lightElevDeg * 3.14159265f / 180.f);
-    const float invLLen = 1.f / std::sqrt(lx * lx + ly * ly + lz * lz);
-    const rgbF L3 = { lx * invLLen, ly * invLLen, lz * invLLen };
-
-    // height-field steepness; 0 maps to a flat sheet (normal = +z)
-    const float k = std::pow(p.bump / 100.f, 1.3f) * 5.f;
-    const float aoStr = p.ao / 100.f;
-    const float aoW = std::max(1.f, p.aoWidth);
-    const float halfBand = 0.5f * (0.06f + p.softness / 100.f * 0.94f);
+    // ---- 4. shading ----------------------------------------------------
     const float mixAmt = detail::clamp01(p.mix / 100.f);
+    const detail::Ramp3 ramp = detail::makeRamp3(p.colCool, p.colMid, p.colWarm);
 
+    if (p.shadeMode == ShadeVolumetric) {
+        // pseudo-normal lambert + crease ao produce t (0 = shadow /
+        // cool end, 1 = lit / warm end)
+        const float th = p.lightAngleDeg * 3.14159265f / 180.f;
+        const float lx = std::cos(th);
+        const float ly = -std::sin(th); // screen y is down
+        const float lz = std::tan(p.lightElevDeg * 3.14159265f / 180.f);
+        const float invLLen = 1.f / std::sqrt(lx * lx + ly * ly + lz * lz);
+        const float Lv[3] = { lx * invLLen, ly * invLLen, lz * invLLen };
+        const float k = std::pow(p.bump / 100.f, 1.3f) * 5.f;
+        const float aoStr = p.ao / 100.f;
+        const float aoW = std::max(1.f, p.aoWidth);
+
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                const size_t i = size_t(y) * w + x;
+                const uint32_t s = src[i];
+                const int32_t L = label[i];
+                if (L < 0 || regions[size_t(L)].flat) { dst[i] = s; continue; }
+                const size_t il = (x > 0) ? i - 1 : i;
+                const size_t ir = (x < w - 1) ? i + 1 : i;
+                const size_t iu = (y > 0) ? i - w : i;
+                const size_t idn = (y < h - 1) ? i + w : i;
+                const float gx = (dist[ir] - dist[il]) * k;
+                const float gy = (dist[idn] - dist[iu]) * k;
+                const float invN = 1.f / std::sqrt(gx * gx + gy * gy + 1.f);
+                const float nDotL = (-gx * Lv[0] - gy * Lv[1] + invN * Lv[2]) * invN;
+                float t = 0.5f + 0.5f * nDotL;
+                const float depth = detail::clamp01(dist[i] / aoW);
+                t -= aoStr * 0.5f * (1.f - depth) * (1.f - depth);
+                t = 0.5f + (t - 0.5f) * 1.15f;
+                t = detail::clamp01(t);
+                if (tOut) (*tOut)[i] = t;
+                detail::evalRamp3(ramp, t, mixAmt, s, dst[i]);
+            }
+        }
+        return;
+    }
+
+    // gradient mode: t = projection on the gradient axis, normalized
+    // per region or over the whole image; the axis points from the
+    // cool end toward the warm end (t = 1 hits the warm stop)
+    const float th = p.gradAngleDeg * 3.14159265f / 180.f;
+    const float ax = std::cos(th);
+    const float ay = -std::sin(th); // screen y is down
+
+    const bool perRegion = p.tMode == TPerRegion;
+    std::vector<float> projMin(regions.size() + 1, 1e30f);
+    std::vector<float> projMax(regions.size() + 1, -1e30f);
+    const size_t gk = regions.size(); // global slot, also the tiny-region axis
+    for (int y = 0; y < h; y++) {
+        for (int x = 0; x < w; x++) {
+            const size_t i = size_t(y) * w + x;
+            const int32_t L = label[i];
+            if (L < 0 || regions[size_t(L)].flat) continue;
+            const float proj = (x + 0.5f) * ax + (y + 0.5f) * ay;
+            if (proj < projMin[gk]) projMin[gk] = proj;
+            if (proj > projMax[gk]) projMax[gk] = proj;
+            if (!perRegion || regions[size_t(L)].tiny) continue;
+            if (proj < projMin[size_t(L)]) projMin[size_t(L)] = proj;
+            if (proj > projMax[size_t(L)]) projMax[size_t(L)] = proj;
+        }
+    }
+    for (size_t k = 0; k < projMin.size(); k++) {
+        if (projMax[k] <= projMin[k]) projMax[k] = projMin[k] + 1.f;
+    }
+
+    const float bgK = 1.f - detail::clamp01(p.bgDarken / 100.f);
     for (int y = 0; y < h; y++) {
         for (int x = 0; x < w; x++) {
             const size_t i = size_t(y) * w + x;
             const uint32_t s = src[i];
             const int32_t L = label[i];
-            if (L < 0 || regions[size_t(L)].flat) { dst[i] = s; continue; }
-
-            const size_t il = (x > 0) ? i - 1 : i;
-            const size_t ir = (x < w - 1) ? i + 1 : i;
-            const size_t iu = (y > 0) ? i - w : i;
-            const size_t idn = (y < h - 1) ? i + w : i;
-            const float gx = (dist[ir] - dist[il]) * k;
-            const float gy = (dist[idn] - dist[iu]) * k;
-            const float invN = 1.f / std::sqrt(gx * gx + gy * gy + 1.f);
-            const float nx = -gx * invN;
-            const float ny = -gy * invN;
-            const float nz = invN;
-            const float nDotL = nx * L3.r + ny * L3.g + nz * L3.b;
-
-            float sd = 0.5f + 0.5f * nDotL;
-
-            // crease shading: a fixed pixel band around any region
-            // edge darkens, regardless of region size, so both a huge
-            // dress and a tiny eye-white get the same contact shadow
-            const float depth = detail::clamp01(dist[i] / aoW);
-            sd -= aoStr * 0.5f * (1.f - depth) * (1.f - depth);
-            // spread the lambert term so lit slopes reach the
-            // highlight stop and unlit slopes the shadow stop
-            sd = 0.5f + (sd - 0.5f) * 1.15f;
-            sd = detail::clamp01(sd);
-            if (sdOut) (*sdOut)[i] = sd;
-
-            // 4-stop gradient: shade @0 .. base @0.36 .. bright @0.70 .. hi @1
-            const detail::Ramp& rp = ramps[size_t(colorId[i])];
-            static const float stops[3] = { 0.36f, 0.70f, 1.f };
-            const rgbF* cols[4] = { &rp.shade, &rp.base, &rp.bright, &rp.hi };
-            rgbF out = *cols[0];
-            float prev = 0.f;
-            for (int t = 0; t < 3; t++) {
-                const float tt = detail::clamp01((sd - prev) / (stops[t] - prev));
-                const float m = detail::smoothStep(0.5f - halfBand,
-                                                   0.5f + halfBand, tt);
-                out = detail::mix(out, *cols[t + 1], m);
-                prev = stops[t];
+            if (L < 0) { dst[i] = s; continue; }
+            const RegionStat& st = regions[size_t(L)];
+            if (st.flat) { dst[i] = s; continue; }
+            const float proj = (x + 0.5f) * ax + (y + 0.5f) * ay;
+            const size_t k = (perRegion && !st.tiny) ? size_t(L) : gk;
+            const float t = detail::clamp01((proj - projMin[k])
+                                            / (projMax[k] - projMin[k]));
+            if (st.backdrop && bgK < 1.f) {
+                // darken the backdrop before tinting, so a full
+                // darken swallows the gradient too (reference look)
+                const uint32_t a = (s >> 24) & 255;
+                const auto q = [bgK](const uint32_t v) -> uint32_t {
+                    return uint32_t(v * bgK + 0.5f);
+                };
+                const uint32_t dark = (a << 24)
+                        | (q((s >> 16) & 255) << 16)
+                        | (q((s >> 8) & 255) << 8) | q(s & 255);
+                if (tOut) (*tOut)[i] = t;
+                detail::evalRamp3(ramp, t, mixAmt, dark, dst[i]);
+                continue;
             }
-
-            const rgbF orig = detail::unpack(s);
-            const rgbF final = detail::mix(orig, out, mixAmt);
-            dst[i] = (s & 0xFF000000u) | (detail::pack(final) & 0x00FFFFFFu);
+            if (tOut) (*tOut)[i] = t;
+            detail::evalRamp3(ramp, t, mixAmt, s, dst[i]);
         }
     }
 }
