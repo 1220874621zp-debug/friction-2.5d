@@ -21,6 +21,15 @@
 
 #include "GUI/mainwindow.h"
 #include "GUI/hangwatchdog.h"
+#include "GUI/canvaswindow.h"
+#include "GUI/lyricmotionengine.h"
+#include "GUI/lyricmotionnative.h"
+#include "Private/document.h"
+#include "Boxes/boxrenderdata.h"
+#include "Boxes/textbox.h"
+#include "Boxes/containerbox.h"
+#include "Animators/transformanimator.h"
+#include <QJsonDocument>
 
 #include <iostream>
 #include <thread>
@@ -761,6 +770,224 @@ int main(int argc, char *argv[])
                  renderHandler,
                  openProject);
     w.show();
+
+    // dev-only lyric apply probe: FRICTION_LYRICAPPLY=1 drives the real
+    // GUI path the panel's 应用到场景 button uses (plan → native build
+    // → playhead jump) against a fresh scene, waits for the render
+    // tasks, grabs the canvas and exits - reproduces "applied but the
+    // canvas shows no text" without touching the user's project
+    if (qEnvironmentVariableIsSet("FRICTION_LYRICAPPLY")) {
+        const bool probeGpuOff = qEnvironmentVariable("FRICTION_LYRICAPPLY")
+                != QLatin1String("gpu");
+        QTimer::singleShot(800, &w, [&w, &document, probeGpuOff]() {
+            // the standalone smoke disables the GPU path before any
+            // scene exists; mirror that unless FRICTION_LYRICAPPLY=gpu
+            if (probeGpuOff && eSettings::sInstance) {
+                eSettings::sInstance->fPathGpuAcc = false;
+            }
+            const auto scene = document.createNewScene(true);
+            scene->setCanvasSize(1920, 1080);
+            scene->setFps(24);
+            qWarning() << "[LYRICAPPLY] scene created";
+            // control: one PLAIN text box created the way a user
+            // would - if this renders while the lyric texts do not,
+            // the builder path is the problem, not text rendering
+            {
+                const auto ctl = enve::make_shared<TextBox>();
+                scene->getCurrentGroup()->addContained(ctl);
+                ctl->prp_setName(QStringLiteral("探针对照"));
+                ctl->setCurrentValue(QStringLiteral("对照测试文字ABC"));
+                ctl->setFontFamilyAndStyle(
+                            QStringLiteral("Noto Sans CJK JP"),
+                            SkFontStyle(700, SkFontStyle::kNormal_Width,
+                                        SkFontStyle::kUpright_Slant));
+                ctl->setFontSize(120);
+                ctl->setTextHAlignment(Qt::AlignHCenter);
+                ctl->setTextVAlignment(Qt::AlignVCenter);
+                ctl->getFillSettings()->setPaintType(PaintType::FLATPAINT);
+                ctl->getFillSettings()->setCurrentColor(Qt::white);
+                ctl->getTransformAnimator()->getPosAnimator()->setBaseValue(
+                            QPointF(960, 540));
+                qWarning() << "[LYRICAPPLY] control text added";
+            }
+            LyricMotionEngine engine;
+            QString err;
+            if (!engine.ensureLoaded(&err)) {
+                qWarning() << "[LYRICAPPLY] engine load failed:" << err;
+                QApplication::exit(2);
+                return;
+            }
+            LyricMotionEngine::Params p;
+            // bisect knob: FRICTION_LYRICAPPLY=smoke uses the exact
+            // params of the passing standalone smoke; =user (default)
+            // uses the user's real panel params
+            const bool smokeParams = qEnvironmentVariable(
+                        "FRICTION_LYRICAPPLY") == QLatin1String("smoke");
+            if (smokeParams) {
+                p.lyrics = QStringLiteral(
+                            "[00:01.00]夜明けの色を/覚えてる\n"
+                            "[00:03.50]*文字* Motion 歌词动画\n"
+                            "[00:05.50]两行歌词 第二句!\n"
+                            "[間奏 2]\n"
+                            "[00:09.50]ラストライン end");
+                p.style = QStringLiteral("noir");
+                p.seed = 7;
+                p.density = 0.55;
+                p.bpm = 120;
+            } else {
+                p.lyrics = QStringLiteral("你啊好哦啊 你是谁");
+                p.style = QStringLiteral("transit");
+                p.seed = 1;
+                p.density = 0.36;
+            }
+            p.chroma = 0.7;
+            const QString json = engine.planJson(p, &err);
+            if (json.isEmpty()) {
+                qWarning() << "[LYRICAPPLY] plan failed:" << err;
+                QApplication::exit(2);
+                return;
+            }
+            const auto doc = QJsonDocument::fromJson(json.toUtf8()).object();
+            const auto plan = doc.value(QStringLiteral("plan")).toObject();
+            const auto fonts = doc.value(QStringLiteral("fonts")).toObject();
+            LyricMotionNative::Result result;
+            QString buildErr;
+            const bool ok = LyricMotionNative::build(
+                        scene, plan, fonts, QString(), false,
+                        &result, &buildErr, &p);
+            qWarning() << "[LYRICAPPLY] build ok=" << ok
+                       << "err=" << buildErr
+                       << "cuts=" << result.cutsBuilt
+                       << "notes=" << result.notes;
+            if (!ok) { QApplication::exit(2); return; }
+            // mirror applyToScene's playhead jump
+            const auto firstCut = plan.value(QStringLiteral("cuts"))
+                    .toArray().first().toObject();
+            const qreal fStartS = firstCut.value(QStringLiteral("start")).toDouble();
+            const qreal fEndS = firstCut.value(QStringLiteral("end")).toDouble();
+            const qreal mid = (fStartS + fEndS) * 0.5;
+            const int frame = qMax(0, qRound(mid * scene->getFps()));
+            scene->anim_setAbsFrame(frame);
+            qWarning() << "[LYRICAPPLY] jumped to frame" << frame
+                       << "of" << scene->getFrameRange().fMax
+                       << "cut" << fStartS << "-" << fEndS << "s"
+                       << "top boxes" << scene->getContainedBoxes().size();
+            for (const auto &b : scene->getContainedBoxes()) {
+                const auto cont = dynamic_cast<ContainerBox*>(b);
+                qWarning() << "[LYRICAPPLY] box" << b->prp_getName()
+                           << "type" << int(b->getBoxType())
+                           << "children"
+                           << (cont ? cont->getContainedBoxes().size() : 0);
+                // dump every cut group's text census so an invisible
+                // run shows exactly which knob is off
+                if (cont && b->prp_getName() ==
+                            QStringLiteral("歌词动画")) {
+                    for (const auto &cg : cont->getContainedBoxes()) {
+                        const auto cutGroup = dynamic_cast<ContainerBox*>(cg);
+                        if (!cutGroup) { continue; }
+                        const auto dr = cutGroup->getDurationRectangle();
+                        int nText = 0, nOther = 0;
+                        qreal maxSize = 0;
+                        QString sample;
+                        for (const auto &tb : cutGroup->getContainedBoxes()) {
+                            const auto txt = dynamic_cast<TextBox*>(tb);
+                            if (txt) {
+                                nText++;
+                                if (txt->getFontSize() > maxSize) {
+                                    maxSize = txt->getFontSize();
+                                    sample = txt->getCurrentValue();
+                                }
+                            } else { nOther++; }
+                        }
+                        qWarning() << "[LYRICAPPLY]  cut"
+                                   << cg->prp_getName()
+                                   << "durRect"
+                                   << (dr ? QString("%1+%2")
+                                          .arg(dr->getMinAbsFrame())
+                                          .arg(dr->getFrameDuration())
+                                      : QStringLiteral("none"))
+                                   << "texts" << nText << "others" << nOther
+                                   << "maxSize" << maxSize
+                                   << "sample" << sample;
+                    }
+                }
+            }
+            const int fStartF = qMax(0, qRound(fStartS * scene->getFps()));
+            const int fEndF = qRound(fEndS * scene->getFps());
+            const QList<int> probeFrames = {fStartF, fStartF + 3, frame,
+                                            fEndF - 3, 0};
+            QTimer::singleShot(1500, &w, [&w, scene, probeFrames]() {
+                const auto cw = w.findChild<CanvasWindow*>();
+                if (!cw) {
+                    qWarning() << "[LYRICAPPLY] no CanvasWindow";
+                    QApplication::exit(4);
+                    return;
+                }
+                int anyBright = 0;
+                for (int fi = 0; fi < probeFrames.size(); fi++) {
+                    const int f = probeFrames.at(fi);
+                    scene->anim_setAbsFrame(f);
+                    QThread::msleep(350); // let render tasks settle
+                    QCoreApplication::processEvents(
+                                QEventLoop::AllEvents, 300);
+                    const QImage grab = cw->grab().toImage();
+                    grab.save(QStringLiteral("lyricapply_f%1.png").arg(fi));
+                    int bright = 0;
+                    for (int y = grab.height() / 5;
+                         y < grab.height() * 4 / 5; y += 3) {
+                        for (int x = grab.width() / 5;
+                             x < grab.width() * 4 / 5; x += 3) {
+                            const QRgb rgb = grab.pixel(x, y);
+                            if (qAlpha(rgb) > 10 && qGray(rgb) > 160) {
+                                bright++;
+                            }
+                        }
+                    }
+                    // offscreen cross-check on the same frame: the
+                    // smoke test renders this way, the GUI canvas
+                    // draws another way - a divergence pins the bug
+                    const auto rd = scene->queExternalRender(f, false);
+                    for (int w2 = 0; w2 < 3000; w2++) {
+                        QCoreApplication::processEvents(
+                                    QEventLoop::AllEvents, 20);
+                        if (rd && rd->finished()) { break; }
+                        QThread::msleep(10);
+                    }
+                    int obright = 0;
+                    if (rd && rd->fRenderedImage) {
+                        const auto raster = rd->fRenderedImage->makeRasterImage();
+                        SkPixmap pm;
+                        if (raster && raster->peekPixels(&pm)) {
+                            const QImage oimg(
+                                        static_cast<const uchar*>(pm.addr()),
+                                        pm.width(), pm.height(),
+                                        static_cast<qsizetype>(pm.rowBytes()),
+                                        QImage::Format_ARGB32_Premultiplied);
+                            oimg.save(QStringLiteral("lyricapply_o%1.png").arg(fi));
+                            for (int y = oimg.height() / 5;
+                                 y < oimg.height() * 4 / 5; y += 6) {
+                                for (int x = oimg.width() / 5;
+                                     x < oimg.width() * 4 / 5; x += 6) {
+                                    const QRgb rgb = oimg.pixel(x, y);
+                                    if (qAlpha(rgb) > 10 && qGray(rgb) > 160) {
+                                        obright++;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    qWarning() << "[LYRICAPPLY] frame" << f
+                               << "guiBright" << bright
+                               << "offBright" << obright
+                               << "rd" << (rd != nullptr)
+                               << "img" << (rd && rd->fRenderedImage);
+                    anyBright = qMax(anyBright, bright);
+                }
+                qWarning() << "[LYRICAPPLY] DONE anyBright" << anyBright;
+                QApplication::exit(anyBright > 30 ? 0 : 5);
+            });
+        });
+    }
 
     // dev-only tooltip probe: FRICTION_TIPPROBE=1 runs the real app,
     // hovers the first toolbox button, grabs the QTipLabel and dumps

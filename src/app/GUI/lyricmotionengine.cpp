@@ -1,6 +1,7 @@
 #include "lyricmotionengine.h"
 
 #include "Scripting/jsapi.h"
+#include "appsupport.h"
 
 #include <QDir>
 #include <QDirIterator>
@@ -109,6 +110,11 @@ bool LyricMotionEngine::ensureLoaded(QString *error) {
         return false;
     }
     mLoaded = true;
+    // refresh the startup catalog cache so the next session can build
+    // the gallery without compiling the planner on the GUI thread
+    AppSupport::setSettings(QStringLiteral("LyricPanel"),
+                            QStringLiteral("catalog"),
+                            catalogJson());
     return true;
 }
 
@@ -200,6 +206,51 @@ bool LyricMotionEngine::collectCatalog(QString *error) {
 QString LyricMotionEngine::partName(const QString &group,
                                     const QString &key) const {
     return mPartNames.value(group).value(key, key);
+}
+
+QString LyricMotionEngine::catalogJson() const {
+    QJsonArray styles;
+    for (const auto &s : mStyles) {
+        QJsonObject o;
+        o.insert(QStringLiteral("key"), s.key);
+        o.insert(QStringLiteral("name"), s.name);
+        o.insert(QStringLiteral("bg"), s.bg.name());
+        o.insert(QStringLiteral("fg"), s.fg.name());
+        o.insert(QStringLiteral("accent"), s.accent.name());
+        styles.append(o);
+    }
+    QJsonObject root;
+    root.insert(QStringLiteral("styles"), styles);
+    root.insert(QStringLiteral("moods"), QJsonArray::fromStringList(mMoods));
+    return QString::fromUtf8(QJsonDocument(root).toJson(
+                                 QJsonDocument::Compact));
+}
+
+bool LyricMotionEngine::catalogFromJson(const QString &json,
+                                        QList<StyleInfo> *styles,
+                                        QStringList *moods) {
+    const auto doc = QJsonDocument::fromJson(json.toUtf8());
+    if (!doc.isObject()) { return false; }
+    const auto root = doc.object();
+    QList<StyleInfo> parsed;
+    for (const auto &v : root.value(QStringLiteral("styles")).toArray()) {
+        const auto o = v.toObject();
+        StyleInfo info;
+        info.key = o.value(QStringLiteral("key")).toString();
+        info.name = o.value(QStringLiteral("name")).toString();
+        info.bg = QColor(o.value(QStringLiteral("bg")).toString());
+        info.fg = QColor(o.value(QStringLiteral("fg")).toString());
+        info.accent = QColor(o.value(QStringLiteral("accent")).toString());
+        if (!info.key.isEmpty() && info.bg.isValid()) { parsed << info; }
+    }
+    if (parsed.isEmpty()) { return false; }
+    QStringList parsedMoods;
+    for (const auto &v : root.value(QStringLiteral("moods")).toArray()) {
+        parsedMoods << v.toString();
+    }
+    *styles = parsed;
+    *moods = parsedMoods;
+    return true;
 }
 
 QString LyricMotionEngine::runJs(const QString &source, QString *error) {

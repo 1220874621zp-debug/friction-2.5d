@@ -285,6 +285,14 @@ void debugLogMessageHandler(const QtMsgType type,
                             const QMessageLogContext &context,
                             const QString &msg)
 {
+    // static-analysis noise from the vendored JIZURA planner sources:
+    // QV4 re-emits these warnings on EVERY engine compile and the
+    // lyric panel rebuilds its engine per plan, which flooded the
+    // journal with hundreds of identical lines per session
+    if (type == QtWarningMsg &&
+            msg.startsWith(QStringLiteral("qrc:/jizura/"))) {
+        return;
+    }
     QString typeName;
     switch (type) {
         case QtDebugMsg:    typeName = QStringLiteral("DEBUG"); break;

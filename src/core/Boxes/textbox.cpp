@@ -248,9 +248,19 @@ QString typefaceFamilyOf(const sk_sp<SkTypeface>& typeface)
     return QString::fromUtf8(got.c_str());
 }
 
+// font-resolution probe: off by default (it logged 3 lines per text
+// box and flooded the journal during lyric materialization); set
+// FRICTION_TFPROBE=1 to bring it back
+bool tfProbeEnabled()
+{
+    static const bool on = qEnvironmentVariableIsSet("FRICTION_TFPROBE");
+    return on;
+}
+
 void logTypefaceStep(const char* const stage,
                      const sk_sp<SkTypeface>& typeface)
 {
+    if (!tfProbeEnabled()) { return; }
     qWarning() << "[TF]" << stage
                << "family=" << typefaceFamilyOf(typeface)
                << "cjkGlyph=" << (cjkGlyphId(typeface) != 0);
@@ -345,10 +355,12 @@ sk_sp<SkTypeface> makeTypefaceForFamily(const QString& family,
     {
         const QRawFont raw = QRawFont::fromFont(QFont(family));
         const QString real = raw.familyName();
-        qWarning() << "[TF] qt entry=" << family
-                   << "family=" << real
-                   << "styleName=" << raw.styleName()
-                   << "weight=" << raw.weight();
+        if (tfProbeEnabled()) {
+            qWarning() << "[TF] qt entry=" << family
+                       << "family=" << real
+                       << "styleName=" << raw.styleName()
+                       << "weight=" << raw.weight();
+        }
         if (!real.isEmpty() && real != family &&
                 familyNamesCompatible(real, family)) {
             const int skWeight = qBound(100, qRound(raw.weight() * 9.0),
@@ -434,10 +446,12 @@ void TextBox::setFontFamilyAndStyle(const QString &fontFamily,
     mStyle = style;
     SkFont newFont = mFont;
     const auto newTypeface = makeTypefaceForFamily(fontFamily, style);
-    qWarning() << "[TF] apply requested=" << fontFamily
-               << "resolved=" << typefaceFamilyOf(newTypeface)
-               << "cjkGlyph=" << (cjkGlyphId(newTypeface) != 0)
-               << "text=" << mText->getCurrentValue();
+    if (tfProbeEnabled()) {
+        qWarning() << "[TF] apply requested=" << fontFamily
+                   << "resolved=" << typefaceFamilyOf(newTypeface)
+                   << "cjkGlyph=" << (cjkGlyphId(newTypeface) != 0)
+                   << "text=" << mText->getCurrentValue();
+    }
     newFont.setTypeface(newTypeface);
     setFont(newFont);
 }

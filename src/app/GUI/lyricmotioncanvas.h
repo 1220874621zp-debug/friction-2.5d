@@ -360,6 +360,9 @@ private:
     };
 
     void ensurePainter();
+    // balance any JS-side save() calls left open and end the painter
+    // (QPainter::end with saved states warns and corrupts state)
+    void endPainting();
     void applyFillBrush();   // fillStyle → painter brush
     void applyStrokePen();   // strokeStyle/width/cap/join → painter pen
     QBrush styleToBrush(const QVariant &v) const;
@@ -378,6 +381,7 @@ private:
     JsCanvas2D *mCanvas = nullptr;
     QPainter mPainter;
     bool mPainting = false;
+    int mSaveDepth = 0; // unbalanced JS save() calls to restore at end
 
     QPainterPath mPath;
     bool mIgnoreDraw = false; // HSL blend modes (no QPainter equivalent)

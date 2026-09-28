@@ -102,6 +102,42 @@ int main(int argc, char** argv) {
     p.chroma = 0.7;
     p.bpm = 120; // beat grid, no audio file
     p.audioDuration = 11.5;
+    // --preview-th: the SAME worker on a dedicated thread exactly like
+    // the panel does (the GUI startup crash lives on this path)
+    if(argc > 1 && QString(argv[1]) == "--preview-th") {
+        auto *thread = new QThread();
+        auto *worker = new LyricPreviewWorker(240, 135, 10);
+        worker->moveToThread(thread);
+        QObject::connect(thread, &QThread::started,
+                         worker, &LyricPreviewWorker::setup);
+        QObject::connect(worker, &LyricPreviewWorker::framesReady,
+                [](const QString&, int, const QVector<QImage>& f) {
+            fprintf(stderr, "[preview-th] framesReady %d\n", f.size());
+            fflush(stderr);
+        });
+        QObject::connect(worker, &LyricPreviewWorker::engineFailed,
+                [](const QString& e) {
+            fprintf(stderr, "[preview-th] engineFailed: %s\n",
+                    e.toUtf8().constData());
+            fflush(stderr);
+        });
+        QObject::connect(worker, &LyricPreviewWorker::styleFailed,
+                [&](const QString& k, int, const QString& e) {
+            fprintf(stderr, "[preview-th] styleFailed %s: %s\n",
+                    k.toUtf8().constData(), e.toUtf8().constData());
+            fflush(stderr);
+            QMetaObject::invokeMethod(worker, [worker, k]() {
+                worker->renderStyle(k, 7, 0.55,
+                        QStringLiteral("夜明けの色を\n*文字* Motion"),
+                        QVector<qreal>(), 0.0, 24.0, 0);
+            }, Qt::QueuedConnection);
+        });
+        thread->start();
+        QTimer::singleShot(15000, [&]() { thread->quit(); });
+        thread->wait(20000);
+        return 0;
+    }
+
     // --preview: run the preview worker synchronously (no thread) and
     // report how many frames the style cards actually receive
     if(argc > 1 && QString(argv[1]) == "--preview") {
@@ -140,6 +176,27 @@ int main(int argc, char** argv) {
                                QVector<qreal>(), 0.0, 24.0, 0);
             QApplication::processEvents();
         }
+        // cut-level animated preview (the big rectangle under the
+        // gallery): N frames spanning one cut's window
+        QObject::connect(&worker, &LyricPreviewWorker::cutFramesReady,
+                [](const QVector<QImage>& frames, int) {
+            fprintf(stderr, "[preview] cutFramesReady: %d frames, first %dx%d\n",
+                    frames.size(),
+                    frames.isEmpty() ? 0 : frames.first().width(),
+                    frames.isEmpty() ? 0 : frames.first().height());
+        });
+        QObject::connect(&worker, &LyricPreviewWorker::cutFrameReady,
+                [](const QImage& frame, int) {
+            fprintf(stderr, "[preview] cutFrameReady(single): %dx%d\n",
+                    frame.width(), frame.height());
+        });
+        fprintf(stderr, "[preview] requesting cut animation\n");
+        fflush(stderr);
+        worker.renderCutAnimation(QStringLiteral("noir"), 7, 0.55,
+                                  QStringLiteral("夜明けの色を\n*文字* Motion\nテスト"),
+                                  QVector<qreal>(), 0.0, 24.0,
+                                  0.4, 2.4, 24, 480, 270, 0);
+        QApplication::processEvents();
         return 0;
     }
 

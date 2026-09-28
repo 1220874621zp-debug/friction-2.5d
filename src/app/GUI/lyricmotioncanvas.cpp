@@ -274,29 +274,20 @@ JsCanvas2D::~JsCanvas2D()
     // painted" + heap corruption later) — end it while the image is
     // still alive
     if (mContext) {
-        if (mContext->mPainting || mContext->mPainter.isActive()) {
-            mContext->mPainter.end();
-            mContext->mPainting = false;
-        }
+        mContext->endPainting();
         delete mContext.data();
     }
 }
 
 void JsCanvas2D::setWidth(const int w) {
-    if (mContext && mContext->mPainting) {
-        mContext->mPainter.end();
-        mContext->mPainting = false;
-    }
+    if (mContext) { mContext->endPainting(); }
     mImage = QImage(qMax(1, w), qMax(1, mImage.height()),
                     QImage::Format_ARGB32_Premultiplied);
     mImage.fill(Qt::transparent);
 }
 
 void JsCanvas2D::setHeight(const int h) {
-    if (mContext && mContext->mPainting) {
-        mContext->mPainter.end();
-        mContext->mPainting = false;
-    }
+    if (mContext) { mContext->endPainting(); }
     mImage = QImage(qMax(1, mImage.width()), qMax(1, h),
                     QImage::Format_ARGB32_Premultiplied);
     mImage.fill(Qt::transparent);
@@ -390,6 +381,17 @@ void JsContext2D::ensurePainter() {
         mPainter.setRenderHint(QPainter::TextAntialiasing);
         mPainting = true;
     }
+}
+
+void JsContext2D::endPainting() {
+    if (mPainting || mPainter.isActive()) {
+        while (mSaveDepth > 0) {
+            mPainter.restore();
+            mSaveDepth--;
+        }
+        mPainter.end();
+    }
+    mPainting = false;
 }
 
 void JsContext2D::setGlobalAlpha(const qreal a) {
@@ -500,12 +502,14 @@ QBrush JsContext2D::styleToBrush(const QVariant &v) const {
 void JsContext2D::save() {
     ensurePainter();
     mPainter.save();
+    mSaveDepth++;
     mExtraStack.push(mExtra);
 }
 
 void JsContext2D::restore() {
-    if (!mPainting) { return; }
+    if (!mPainting || mSaveDepth <= 0) { return; }
     mPainter.restore();
+    mSaveDepth--;
     if (!mExtraStack.isEmpty()) { mExtra = mExtraStack.pop(); }
 }
 
@@ -777,7 +781,15 @@ void JsContext2D::recText(const bool stroke, const QString &text,
     r.family = f.family();
     const qreal sy = qSqrt(t.m22() * t.m22() + t.m21() * t.m21());
     const qreal sx = qSqrt(t.m11() * t.m11() + t.m12() * t.m12());
-    r.pointSize = qMax(4.0, f.pointSizeF() * qMax(0.01, sy));
+    // QFont keeps pixelSize and pointSize mutually exclusive: the
+    // canvas-2D specs this shim resolves are px-based, so pointSizeF()
+    // returns -1 for them. Reading it anyway collapsed every recorded
+    // text to the qMax floor (4-6 px) and the materialized layers
+    // came out invisible specks. Derive the size in px instead (the
+    // materializer's setFontSize is px-based, like SkFont).
+    const qreal basePx = f.pointSizeF() > 0
+            ? f.pointSizeF() * 96.0 / 72.0 : qreal(f.pixelSize());
+    r.pointSize = qMax(4.0, basePx * qMax(0.01, sy));
     r.weight = f.weight();
     r.stretchX = sy > 0.01 ? sx / sy : 1.0;
     r.rotation = qRadiansToDegrees(qAtan2(t.m21(), t.m11()));

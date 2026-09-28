@@ -153,6 +153,10 @@ protected:
         mHovered = true;
         mFrameIdx = 0; // restart the loop on hover
         update();
+        // render on demand: hovering a swatch card asks the worker for
+        // its frames (each style needs its own QJSEngine rebuild, so
+        // eager batch rendering is far too expensive)
+        if (mFrames.isEmpty() && !mPending && onHovered) { onHovered(); }
     }
     void leaveEvent(QEvent *e) override {
         QWidget::leaveEvent(e);
@@ -166,6 +170,8 @@ private:
     bool mPending = false;
     bool mSelected = false;
     bool mHovered = false;
+public:
+    std::function<void()> onHovered;
 };
 
 
@@ -313,7 +319,13 @@ LyricMotionPanel::LyricMotionPanel(QWidget * const parent) :
     setObjectName(QStringLiteral("LyricMotionPanel"));
     setupUi();
     loadSettings();
-    rebuildStyleCards();
+    // build the gallery from the persisted catalog — compiling the
+    // planner here (QV4 on the GUI thread, ~seconds) delayed every
+    // startup while the window sat unreponsive before the workspace
+    // restore; the engine itself loads lazily on the first replan.
+    // Only a first-ever run without a cache still pays the load once
+    // (and then writes the cache).
+    rebuildStyleCards(true);
 
     connect(&mReplanTimer, &QTimer::timeout,
             this, &LyricMotionPanel::replanNow);
@@ -330,8 +342,16 @@ LyricMotionPanel::LyricMotionPanel(QWidget * const parent) :
 
 LyricMotionPanel::~LyricMotionPanel() {
     if (mPreviewThread) {
+        if (mPreviewWorker) { mPreviewWorker->setCancelled(); }
         mPreviewThread->quit();
-        mPreviewThread->wait(3000);
+        if (!mPreviewThread->wait(2000)) {
+            // a compile in flight cannot be interrupted (QJSEngine::
+            // evaluate); leaking the thread beats destroying a running
+            // QThread — the exit watchdog reaps the process anyway
+            mPreviewThread->setParent(nullptr);
+            mPreviewThread->disconnect();
+            mPreviewThread = nullptr;
+        }
     }
 }
 
@@ -339,8 +359,14 @@ void LyricMotionPanel::showEvent(QShowEvent *e) {
     QWidget::showEvent(e);
     mFrameTimer.start();
     // deferred: visibility of dock contents is not settled inside
-    // showEvent, so the queue pump runs on the next event loop pass
-    QTimer::singleShot(0, this, [this]() { pumpPreviewQueue(); });
+    // showEvent; render only the selected style's card (the rest stay
+    // cheap swatches until hovered — per-card rendering rebuilds the
+    // whole QJSEngine, batching all cards ground one core for ~10s
+    // at every startup)
+    QTimer::singleShot(0, this, [this]() {
+        const QString key = mStyleCombo->currentData().toString();
+        if (auto *card = findCard(key)) { requestCardPreview(card); }
+    });
 }
 
 void LyricMotionPanel::hideEvent(QHideEvent *e) {
@@ -362,29 +388,33 @@ void LyricMotionPanel::setupPreviewWorker() {
             [this](const QString &key, const int generation,
                    const QVector<QImage> &frames) {
         if (generation != mPreviewGeneration) { return; } // stale batch
-        for (LyricStyleCard *card : mCards) {
-            if (card->key() == key) { card->setFrames(frames); break; }
-        }
-        int remaining = 0;
-        for (LyricStyleCard *card : mCards) {
-            if (!card->hasFrames() && card->isPending()) { remaining++; }
-        }
-        if (remaining > 0) {
-            setStatus(tr("风格预览渲染中（剩余 %1）…").arg(remaining));
-        }
-        pumpPreviewQueue();
+        if (auto *card = findCard(key)) { card->setFrames(frames); }
     }, Qt::QueuedConnection);
     connect(mPreviewWorker, &LyricPreviewWorker::styleFailed, this,
             [this](const QString &key, const int generation,
                    const QString &error) {
         if (generation != mPreviewGeneration) { return; }
+        if (auto *card = findCard(key)) { card->setPending(false); }
         setStatus(tr("风格预览失败 %1: %2").arg(key, error.left(60)), true);
-        pumpPreviewQueue(); // skip the failed one, keep filling
     }, Qt::QueuedConnection);
     connect(mPreviewWorker, &LyricPreviewWorker::cutFrameReady, this,
             [this](const QImage &frame, const int generation) {
         if (generation != mPreviewGeneration) { return; }
+        mCutFrames.clear();
         mCutPreview->setPixmap(QPixmap::fromImage(frame));
+    }, Qt::QueuedConnection);
+    connect(mPreviewWorker, &LyricPreviewWorker::cutFramesReady, this,
+            [this](const QVector<QImage> &frames, const int generation) {
+        if (generation != mPreviewGeneration) { return; }
+        mCutFrames.clear();
+        mCutFrames.reserve(frames.size());
+        for (const auto &f : frames) {
+            mCutFrames << QPixmap::fromImage(f);
+        }
+        mCutFrameIdx = 0;
+        if (!mCutFrames.isEmpty()) {
+            mCutPreview->setPixmap(mCutFrames.first());
+        }
     }, Qt::QueuedConnection);
     // defer the thread start past the boot GL/effects bring-up — the
     // QVSEngine allocation spike landing on that peak crashed startup
@@ -394,22 +424,31 @@ void LyricMotionPanel::setupPreviewWorker() {
     });
 }
 
-void LyricMotionPanel::pumpPreviewQueue() {
-    if (!isVisible() || !mPreviewWorker) { return; }
+LyricStyleCard *LyricMotionPanel::findCard(const QString &key) const {
     for (LyricStyleCard *card : mCards) {
-        if (!card->hasFrames() && !card->isPending()) {
-            card->setPending(true);
-            const auto params = collectParams();
-            mPreviewWorker->renderStyle(card->key(), params.seed,
-                                        params.density, params.lyrics,
-                                        params.beats, params.audioDuration,
-                                        sceneFps(), mPreviewGeneration);
-        }
+        if (card->key() == key) { return card; }
     }
+    return nullptr;
+}
+
+void LyricMotionPanel::requestCardPreview(LyricStyleCard * const card) {
+    if (!isVisible() || !mPreviewWorker || !card) { return; }
+    if (card->hasFrames() || card->isPending()) { return; }
+    card->setPending(true);
+    const auto params = collectParams();
+    mPreviewWorker->renderStyle(card->key(), params.seed,
+                                params.density, params.lyrics,
+                                params.beats, params.audioDuration,
+                                sceneFps(), mPreviewGeneration);
 }
 
 void LyricMotionPanel::advancePreviews() {
     for (LyricStyleCard *card : mCards) { card->advance(); }
+    // loop the animated cut preview alongside the style cards
+    if (mCutFrames.size() > 1) {
+        mCutFrameIdx = (mCutFrameIdx + 1) % mCutFrames.size();
+        mCutPreview->setPixmap(mCutFrames.at(mCutFrameIdx));
+    }
 }
 
 void LyricMotionPanel::setupUi() {
@@ -501,7 +540,7 @@ void LyricMotionPanel::setupUi() {
     mCutPreview->setMaximumHeight(160);
     mCutPreview->setAlignment(Qt::AlignCenter);
     mCutPreview->setStyleSheet(QStringLiteral("background:#0a0a0a; color:#666;"));
-    mCutPreview->setText(tr("点击切行查看该切大图"));
+    mCutPreview->setText(tr("切预览渲染中…（点击切行可切换）"));
     mCutPreview->setScaledContents(true);
     mainLayout->addWidget(mCutPreview);
 
@@ -612,11 +651,19 @@ void LyricMotionPanel::requestCutPreview(QTreeWidgetItem * const item) {
     if (!idxVar.isValid()) { return; } // line rows carry no cut data
     const QVariant tVar = item->data(0, Qt::UserRole + 1);
     if (!tVar.isValid()) { return; }
+    // cut window for the animated preview (fallback: a 1s window
+    // around the recorded midpoint)
+    const QVariant sVar = item->data(0, Qt::UserRole + 2);
+    const QVariant eVar = item->data(0, Qt::UserRole + 3);
+    const qreal mid = tVar.toDouble();
+    const qreal start = sVar.isValid() ? sVar.toDouble() : mid - 0.5;
+    const qreal end = eVar.isValid() ? eVar.toDouble() : mid + 0.5;
+    mCutFrames.clear(); // drop the old loop immediately
     const auto params = collectParams();
-    mPreviewWorker->renderCutFrame(
+    mPreviewWorker->renderCutAnimation(
                 params.style, params.seed, params.density,
                 params.lyrics, params.beats, params.audioDuration,
-                sceneFps(), tVar.toDouble(), 480, 270,
+                sceneFps(), start, end, 24, 480, 270,
                 mPreviewGeneration);
 }
 
@@ -694,27 +741,63 @@ void LyricMotionPanel::scheduleReplan() {
     mReplanTimer.start();
 }
 
-void LyricMotionPanel::rebuildStyleCards() {
+void LyricMotionPanel::rebuildStyleCards(const bool fromCache) {
+    QList<LyricMotionEngine::StyleInfo> styles;
+    QStringList moods;
+    if (fromCache && !mEngine->isLoaded()) {
+        // startup fast path: the persisted catalog (written by the
+        // engine after its last successful load) mirrors styles()/
+        // moodNames() without compiling the planner
+        const QString cached = AppSupport::getSettings(
+                    QStringLiteral("LyricPanel"),
+                    QStringLiteral("catalog")).toString();
+        if (LyricMotionEngine::catalogFromJson(cached, &styles, &moods)) {
+            buildStyleCardsFrom(styles, moods);
+            return;
+        }
+    }
     QString err;
     if (!mEngine->ensureLoaded(&err)) {
         setStatus(tr("引擎加载失败: %1").arg(err), true);
         return;
     }
+    buildStyleCardsFrom(mEngine->styles(), mEngine->moodNames());
+}
+
+void LyricMotionPanel::buildStyleCardsFrom(
+        const QList<LyricMotionEngine::StyleInfo> &styles,
+        const QStringList &moods) {
     // combos (first build only)
     mBuildingUi = true;
     if (mStyleCombo->count() == 0) {
-        for (const auto &info : mEngine->styles()) {
+        for (const auto &info : styles) {
             mStyleCombo->addItem(styleZh(info.key, info.name), info.key);
         }
     }
     if (mMoodCombo->count() == 1) {
-        for (const QString &m : mEngine->moodNames()) {
+        for (const QString &m : moods) {
             const int sep = m.indexOf(QLatin1Char('|'));
             const QString key = m.left(sep);
             mMoodCombo->addItem(moodZh(key, m.mid(sep + 1)), key);
         }
     }
     mBuildingUi = false;
+    // loadSettings() runs before the combos exist, so the persisted
+    // style/mood could not be applied then — replay them now that the
+    // combo data is in place (without this every restart fell back to
+    // the first style)
+    {
+        const QString style = AppSupport::getSettings(
+                    QStringLiteral("LyricPanel"), QStringLiteral("style"),
+                    QStringLiteral("noir")).toString();
+        const int sIdx = mStyleCombo->findData(style);
+        if (sIdx >= 0) { mStyleCombo->setCurrentIndex(sIdx); }
+        const QString mood = AppSupport::getSettings(
+                    QStringLiteral("LyricPanel"), QStringLiteral("mood"),
+                    QString()).toString();
+        const int mIdx = mMoodCombo->findData(mood);
+        if (mIdx >= 0) { mMoodCombo->setCurrentIndex(mIdx); }
+    }
 
     // cards
     for (LyricStyleCard *card : mCards) {
@@ -723,7 +806,7 @@ void LyricMotionPanel::rebuildStyleCards() {
     }
     mCards.clear();
     const QString currentStyle = mStyleCombo->currentData().toString();
-    for (const auto &info : mEngine->styles()) {
+    for (const auto &info : styles) {
         // localized copy for the card (name plate + tooltip drive the
         // combo-selection highlight, so they must match the combo text)
         auto zhInfo = info;
@@ -736,11 +819,11 @@ void LyricMotionPanel::rebuildStyleCards() {
             mBuildingUi = false;
             scheduleReplan();
         };
+        card->onHovered = [this, card]() { requestCardPreview(card); };
         mCardLayout->addWidget(card);
         mCards << card;
     }
     mPreviewGeneration++; // stale async results are dropped on arrival
-    pumpPreviewQueue();
 }
 
 void LyricMotionPanel::replanNow() {
@@ -750,7 +833,7 @@ void LyricMotionPanel::replanNow() {
             setStatus(tr("引擎加载失败: %1").arg(err), true);
             return;
         }
-        rebuildStyleCards();
+        rebuildStyleCards(false);
     }
     const auto params = collectParams();
     QString err;
@@ -820,12 +903,25 @@ void LyricMotionPanel::populateCuts() {
         item->setData(0, Qt::UserRole + 1,
                       (c.value(QStringLiteral("start")).toDouble()
                        + c.value(QStringLiteral("end")).toDouble()) * 0.5);
+        item->setData(0, Qt::UserRole + 2,
+                      c.value(QStringLiteral("start")).toDouble());
+        item->setData(0, Qt::UserRole + 3,
+                      c.value(QStringLiteral("end")).toDouble());
     }
     mCutsTree->expandAll();
-    // show something in the big preview right away (clicking any cut
-    // row still re-renders that cut)
-    if (mCutsTree->topLevelItemCount() > 0 && mPreviewWorker) {
-        requestCutPreview(mCutsTree->topLevelItem(0));
+    // show the first CUT (line rows carry no cut data — passing the
+    // top-level line item silently rendered nothing and the preview
+    // stayed black with its hint text)
+    if (mPreviewWorker) {
+        for (int t = 0; t < mCutsTree->topLevelItemCount(); t++) {
+            const auto *line = mCutsTree->topLevelItem(t);
+            for (int c = 0; c < line->childCount(); c++) {
+                if (line->child(c)->data(0, Qt::UserRole).isValid()) {
+                    requestCutPreview(line->child(c));
+                    return;
+                }
+            }
+        }
     }
 }
 

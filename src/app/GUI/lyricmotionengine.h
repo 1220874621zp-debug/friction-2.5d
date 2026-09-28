@@ -64,6 +64,15 @@ public:
     // suggested look {mood, style, fx, colors, seed...} as JSON
     QString omakaseJson(const Params &params, QString *error = nullptr);
 
+    // persisted style/mood catalog (JSON in AppSupport settings):
+    // lets the panel build its gallery instantly at startup instead
+    // of synchronously compiling the planner on the GUI thread; the
+    // engine refreshes the cache after every successful load
+    QString catalogJson() const;
+    static bool catalogFromJson(const QString &json,
+                                QList<StyleInfo> * styles,
+                                QStringList * moods);
+
 private:
     QString runJs(const QString &source, QString *error);
     bool collectCatalog(QString *error);

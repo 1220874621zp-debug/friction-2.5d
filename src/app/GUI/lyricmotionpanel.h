@@ -48,21 +48,28 @@ private:
     LyricMotionEngine::Params collectParams() const;
     void scheduleReplan();
     void replanNow();
-    void rebuildStyleCards();
+    void rebuildStyleCards(bool fromCache);
+    void buildStyleCardsFrom(const QList<LyricMotionEngine::StyleInfo> &styles,
+                             const QStringList &moods);
     void populateCuts();
     void applyToScene();
     void setStatus(const QString &text, const bool error = false);
     void setupPreviewWorker();
-    void pumpPreviewQueue();
+    void requestCardPreview(LyricStyleCard * const card);
     void advancePreviews();
     qreal sceneFps() const;
     void requestCutPreview(class QTreeWidgetItem * const item);
+    LyricStyleCard *findCard(const QString &key) const;
 
     QThread *mPreviewThread = nullptr;
     LyricPreviewWorker *mPreviewWorker = nullptr;
     int mPreviewGeneration = 0;
     bool mApplying = false;
     QTimer mFrameTimer;
+
+    // animated cut-level preview (big rectangle under the gallery)
+    QVector<QPixmap> mCutFrames;
+    int mCutFrameIdx = 0;
 
     LyricMotionEngine *mEngine = nullptr;
 
