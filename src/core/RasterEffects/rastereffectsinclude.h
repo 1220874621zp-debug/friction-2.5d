@@ -53,5 +53,6 @@
 #include "thresholdeffect.h"
 #include "simplechokereffect.h"
 #include "desaturateeffect.h"
+#include "levelseffect.h"
 
 #endif // RASTEREFFECTSINCLUDE_H

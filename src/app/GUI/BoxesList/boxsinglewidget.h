@@ -257,6 +257,8 @@ private:
     PixmapActionButton *mTButton;
     class ParentLinkButton* mParentLinkButton;
     PixmapActionButton *mHwSupportButton;
+    // PS-style Levels editor opener on 色阶 (Levels) effect rows
+    PixmapActionButton *mLevelsButton = nullptr;
     ColorAnimatorButton *mColorButton;
     BoxTargetWidget *mBoxTargetWidget;
 

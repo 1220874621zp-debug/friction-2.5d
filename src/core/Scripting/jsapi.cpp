@@ -1243,7 +1243,8 @@ namespace Friction
             { RasterEffectType::ROUGHEN_EDGES, "roughen_edges|roughen|roughenedges" },
             { RasterEffectType::THRESHOLD, "threshold" },
             { RasterEffectType::SIMPLE_CHOKER, "simple_choker|choker|choke" },
-            { RasterEffectType::DESATURATE, "desaturate|black_white|grayscale|greyscale" }
+            { RasterEffectType::DESATURATE, "desaturate|black_white|grayscale|greyscale" },
+            { RasterEffectType::LEVELS, "levels|color_levels|色阶" }
         };
 
         QString normalizeEffectName(const QString &name)

@@ -529,6 +529,11 @@ NamedScan namedScanFor(const RasterEffectType type) {
         // color <-> grayscale breathing (default 100 would sweep
         // nowhere: 100 * 2.5 clamps back to 100)
         return { "amount", nullptr, 0., 100. };
+    case RasterEffectType::LEVELS:
+        // midtone breathing around the identity gamma 1; the input
+        // points are pre-spread in applyPreviewDefaults so the
+        // curve visibly crushes shadows and highlights too
+        return { "gamma", nullptr, 0.5, 2.1 };
     case RasterEffectType::SIMPLE_CHOKER:
         // negative spread -> positive choke breathing; the to-value
         // stays off the exact 0 grid point - a choke of exactly 0 is
@@ -656,6 +661,12 @@ void setupDefaults(RasterEffect* const eff, const RasterEffectType type) {
         // much stronger frayed edge than the subtle factory default
         setParam("border", 45.);
         setParam("complexity", 5.);
+        break;
+    case RasterEffectType::LEVELS:
+        // factory 0/255 is passthrough on the ends; pre-spread the
+        // input points so the gamma sweep has real range to crush
+        setParam("input black", 40.);
+        setParam("input white", 225.);
         break;
     case RasterEffectType::LAYER_STYLES: {
         // factory default is all-styles-off = null caller; enable a

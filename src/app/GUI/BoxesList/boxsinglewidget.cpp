@@ -45,6 +45,8 @@
 #include "Animators/qrealanimator.h"
 #include "Expressions/expression.h"
 #include "RasterEffects/rastereffectcollection.h"
+#include "RasterEffects/levelseffect.h"
+#include "levelseffectdialog.h"
 #include "Properties/boolproperty.h"
 #include "Properties/boolpropertycontainer.h"
 #include "Animators/qpointfanimator.h"
@@ -131,6 +133,12 @@ QString translatePropertyName(const QString& name) {
         { QStringLiteral("frame step"), BoxSingleWidget::tr("frame step") },
         { QStringLiteral("flip book"), BoxSingleWidget::tr("flip book") },
         { QStringLiteral("seed"), BoxSingleWidget::tr("seed") },
+        { QStringLiteral("channel"), BoxSingleWidget::tr("channel") },
+        { QStringLiteral("input black"), BoxSingleWidget::tr("输入黑场") },
+        { QStringLiteral("gamma"), BoxSingleWidget::tr("灰度系数 (gamma)") },
+        { QStringLiteral("input white"), BoxSingleWidget::tr("输入白场") },
+        { QStringLiteral("output black"), BoxSingleWidget::tr("输出黑场") },
+        { QStringLiteral("output white"), BoxSingleWidget::tr("输出白场") },
         { QStringLiteral("spacing"), BoxSingleWidget::tr("spacing") },
         { QStringLiteral("smoothness"), BoxSingleWidget::tr("smoothness") },
         { QStringLiteral("periodic"), BoxSingleWidget::tr("periodic") },
@@ -950,6 +958,46 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
         }
     });
 
+    // PS-style Levels editor: gradient bar + histogram dialog
+    mLevelsButton = new PixmapActionButton(this);
+    mLevelsButton->setToolTip(tr("打开色阶编辑器 (Levels)"));
+    mLevelsButton->setPixmapChooser([]() {
+        static QPixmap icon;
+        if (icon.isNull()) {
+            const int s = 64;
+            icon = QPixmap(s, s);
+            icon.fill(Qt::transparent);
+            QPainter p(&icon);
+            p.setRenderHint(QPainter::Antialiasing);
+            const QRectF bar(6, 10, 52, 14);
+            QLinearGradient grad(bar.left(), 0, bar.right(), 0);
+            grad.setColorAt(0, Qt::black);
+            grad.setColorAt(1, Qt::white);
+            p.fillRect(bar, grad);
+            p.setPen(QPen(QColor(120, 120, 120), 2));
+            p.drawRoundedRect(bar, 3, 3);
+            const auto tri = [&p](const qreal x, const QColor& c) {
+                QPolygonF poly;
+                poly << QPointF(x - 6, 50) << QPointF(x + 6, 50)
+                     << QPointF(x, 30);
+                p.setPen(QPen(QColor(200, 200, 200), 2));
+                p.setBrush(c);
+                p.drawPolygon(poly);
+            };
+            tri(14, QColor(15, 15, 15));
+            tri(32, QColor(120, 120, 120));
+            tri(50, QColor(240, 240, 240));
+            p.end();
+        }
+        return &icon;
+    });
+    mMainLayout->addWidget(mLevelsButton);
+    connect(mLevelsButton, &BoxesListActionButton::pressed, this, [this]() {
+        if (!mTarget) { return; }
+        const auto eff = enve_cast<LevelsEffect*>(mTarget->getTarget());
+        if (eff) { LevelsEffectDialog::openFor(eff); }
+    });
+
     mFillWidget = new QWidget(this);
     mMainLayout->addWidget(mFillWidget);
     mFillWidget->setObjectName("transparentWidget");
@@ -1511,6 +1559,7 @@ void BoxSingleWidget::setTargetAbstraction(SWT_Abstraction *abs) {
         }
     }
     mHwSupportButton->setVisible(rasterEffect);
+    mLevelsButton->setVisible(enve_cast<LevelsEffect*>(prop));
     {
         const auto targetGroup = getPromoteTargetGroup();
         if(boundingBox && targetGroup) {

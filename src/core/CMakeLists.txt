@@ -234,6 +234,7 @@ set(
     RasterEffects/thresholdeffect.cpp
     RasterEffects/simplechokereffect.cpp
     RasterEffects/desaturateeffect.cpp
+    RasterEffects/levelseffect.cpp
     RasterEffects/colorizeeffect.cpp
     RasterEffects/customrastereffect.cpp
     RasterEffects/motionblureffect.cpp
@@ -634,6 +635,7 @@ set(
     RasterEffects/thresholdeffect.h
     RasterEffects/simplechokereffect.h
     RasterEffects/desaturateeffect.h
+    RasterEffects/levelseffect.h
     RasterEffects/colorizeeffect.h
     RasterEffects/customrastereffect.h
     RasterEffects/motionblureffect.h

@@ -139,7 +139,11 @@ enum class RasterEffectType : short {
     // AE Simple Choker: choke/spread the alpha matte
     SIMPLE_CHOKER,
     // AE Black & White / PS Desaturate: collapse to Rec.601 luminance
-    DESATURATE
+    DESATURATE,
+    // PS Levels: input black/white points + midtone gamma + output
+    // black/white points, per channel or composite (appended last,
+    // never reorder - serialized ids must stay stable)
+    LEVELS
 };
 
 struct BoxRenderData;

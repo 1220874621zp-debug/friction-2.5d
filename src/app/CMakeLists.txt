@@ -250,6 +250,7 @@ set(
     evfileio.cpp
     renderhandler.cpp
     GUI/BoxesList/boxsinglewidget.cpp
+    GUI/BoxesList/levelseffectdialog.cpp
     GUI/BoxesList/boxscrollwidget.cpp
     GUI/BoxesList/boolpropertywidget.cpp
     memorychecker.cpp
@@ -327,6 +328,7 @@ set(
     eimporters.h
     renderhandler.h
     GUI/BoxesList/boxsinglewidget.h
+    GUI/BoxesList/levelseffectdialog.h
     GUI/BoxesList/boxscrollwidget.h
     GUI/BoxesList/boolpropertywidget.h
     memorychecker.h
@@ -389,7 +391,7 @@ add_executable(
     ${WINDOWS_RESOURCE_FILE}
 )
 
-add_executable(friction_effects_test effects_unittest.cpp AI/mcpserver.cpp AI/mcpdispatcher.cpp ${RESOURCES})
+add_executable(friction_effects_test effects_unittest.cpp AI/mcpserver.cpp AI/mcpdispatcher.cpp GUI/BoxesList/levelseffectdialog.cpp ${RESOURCES})
 target_link_directories(
     friction_effects_test
     PRIVATE

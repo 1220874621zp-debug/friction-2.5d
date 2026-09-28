@@ -23,6 +23,7 @@
 
 #include <QCoreApplication>
 #include <QGuiApplication>
+#include <QApplication>
 #include <memory>
 #include <QCryptographicHash>
 #include <QtConcurrent/QtConcurrentMap>
@@ -44,6 +45,7 @@
 #include "Private/esettings.h"
 #include "hardwareinfo.h"
 #include "RasterEffects/rastereffectmenucreator.h"
+#include "GUI/BoxesList/levelseffectdialog.h"
 #include "RasterEffects/effectpreview.h"
 #include "Properties/comboboxproperty.h"
 #include "Psd/psdfile.h"
@@ -81,6 +83,10 @@ RenderInstanceSettings &RenderInstanceWidget::getSettings() {
     alignas(alignof(RenderInstanceSettings)) static char buf[sizeof(RenderInstanceSettings)];
     return reinterpret_cast<RenderInstanceSettings&>(buf);
 }
+// the levels dialog parents itself to the main window when one
+// exists; headless there is none
+MainWindow *MainWindow::sInstance = nullptr;
+MainWindow *MainWindow::sGetInstance() { return sInstance; }
 void MainWindow::toggleTopViewWindow() {}
 bool MainWindow::isTopViewVisible() const { return false; }
 const QMetaObject MainWindow::staticMetaObject = QMainWindow::staticMetaObject;
@@ -103,10 +109,17 @@ int main(int argc, char *argv[])
     // which requires a GUI application instance; only the reorder probe
     // needs it - plain tests (ThemeSupport etc.) stay on QCoreApplication
     // which survives headless
-    const std::unique_ptr<QCoreApplication> app(
-                qEnvironmentVariableIsSet("FRICTION_REORDER_PROBE") ?
-                    static_cast<QCoreApplication*>(new QGuiApplication(argc, argv)) :
-                    static_cast<QCoreApplication*>(new QCoreApplication(argc, argv)));
+    // the reorder probe only touches SWT data (QGuiApplication is
+    // enough); the levels dialog probe builds real widgets
+    QCoreApplication* appInstance = nullptr;
+    if (qEnvironmentVariableIsSet("FRICTION_LEVELS_DIALOG_PROBE")) {
+        appInstance = new QApplication(argc, argv);
+    } else if (qEnvironmentVariableIsSet("FRICTION_REORDER_PROBE")) {
+        appInstance = new QGuiApplication(argc, argv);
+    } else {
+        appInstance = new QCoreApplication(argc, argv);
+    }
+    const std::unique_ptr<QCoreApplication> app(appInstance);
     // surface qWarning from core (psd parser diagnostics) on stderr:
     // the default Windows handler drops them when no real console
     qInstallMessageHandler([](QtMsgType type, const QMessageLogContext&,
@@ -131,6 +144,96 @@ int main(int argc, char *argv[])
             failed++;
         }
     };
+
+    // Levels dialog probe: build a real effect under a real box,
+    // open the PS-style editor, drag the input slider with synthetic
+    // mouse events, double-click-reset, and screenshot the result
+    if (qEnvironmentVariableIsSet("FRICTION_LEVELS_DIALOG_PROBE")) {
+        static eSettings probeSettings(HardwareInfo::sCpuThreads(),
+                                       HardwareInfo::sRamKB());
+        Q_UNUSED(probeSettings)
+        runTest("PROBE: Levels dialog open + drag + reset", [&]() {
+            TaskScheduler probeSched;
+            Document probeDoc(probeSched);
+            const auto scene = probeDoc.createNewScene(false);
+            const auto box = enve::make_shared<RectangleBox>();
+            scene->addContained(box);
+            const auto coll = box->rasterEffectsCollection();
+            const auto eff = enve::make_shared<LevelsEffect>();
+            coll->addChild(eff);
+            if (coll->ca_getNumberOfChildren() != 1) {
+                throw std::runtime_error("effect setup failed");
+            }
+
+            LevelsEffectDialog::openFor(eff.get());
+            // the dialog is parented to MainWindow::sGetInstance()
+            // which is null here - find it as a top-level instead
+            LevelsEffectDialog* dlg = nullptr;
+            for (const auto w : QApplication::topLevelWidgets()) {
+                dlg = qobject_cast<LevelsEffectDialog*>(w);
+                if (dlg) { break; }
+            }
+            if (!dlg) { throw std::runtime_error("dialog not created"); }
+
+            dlg->resize(360, 420);
+            dlg->show();
+            for (int i = 0; i < 20; i++) { QCoreApplication::processEvents(); }
+
+            const auto sliders = dlg->findChildren<LevelsSlider*>();
+            if (sliders.count() < 2) {
+                throw std::runtime_error("sliders not found");
+            }
+            auto* input = sliders.at(0);
+
+            // drag the black handle (leftmost) to ~40% - kept off
+            // the exact center so it never overlaps the gamma handle
+            const int y = input->height() / 2;
+            const qreal dragX = 6.5 + 0.4 * (input->width() - 13);
+            const auto sendMouse = [input](const QEvent::Type type,
+                                           const QPointF& pos) {
+                QMouseEvent ev(type, pos, input->mapToGlobal(pos),
+                               Qt::LeftButton, Qt::LeftButton,
+                               Qt::NoModifier);
+                QApplication::sendEvent(input, &ev);
+            };
+            sendMouse(QEvent::MouseButtonPress, QPointF(8, y));
+            sendMouse(QEvent::MouseMove, QPointF(dragX, y));
+            sendMouse(QEvent::MouseButtonRelease, QPointF(dragX, y));
+            for (int i = 0; i < 10; i++) { QCoreApplication::processEvents(); }
+            const qreal dragged = eff->getInBlackAnimator()
+                    ->getCurrentBaseValue();
+            if (dragged < 96. || dragged > 108.) {
+                throw std::runtime_error("black handle drag did not land "
+                                         "near 40 percent: " +
+                                         std::to_string(dragged));
+            }
+
+            // set an asymmetric state then double-click the black
+            // handle (sitting at the 40 percent mark after the drag):
+            // back to 0, one clean undo step
+            sendMouse(QEvent::MouseButtonDblClick, QPointF(dragX, y));
+            for (int i = 0; i < 10; i++) { QCoreApplication::processEvents(); }
+            if (!qFuzzyIsNull(eff->getInBlackAnimator()
+                              ->getCurrentBaseValue())) {
+                throw std::runtime_error("double-click did not reset");
+            }
+
+            // screenshot for eyeballing
+            const auto shot = dlg->grab();
+            const QString outPath = QString::fromUtf8(
+                        qgetenv("FRICTION_LEVELS_DIALOG_SHOT"));
+            if (!outPath.isEmpty() && !shot.save(outPath)) {
+                throw std::runtime_error("screenshot save failed");
+            }
+
+            dlg->close();
+            for (int i = 0; i < 10; i++) { QCoreApplication::processEvents(); }
+        });
+
+        std::cout << "ALL DONE" << std::endl;
+        std::cout << passed << " passed, " << failed << " failed" << std::endl;
+        return failed == 0 ? 0 : 1;
+    }
 
     // isolated reorder-crash probe: runs on a clean heap before any
     // other test can corrupt it
@@ -237,7 +340,8 @@ int main(int argc, char *argv[])
             RasterEffectType::PAGE_CURL,
             RasterEffectType::THRESHOLD,
             RasterEffectType::SIMPLE_CHOKER,
-            RasterEffectType::DESATURATE
+            RasterEffectType::DESATURATE,
+            RasterEffectType::LEVELS
         };
             for (const auto t : typesAll) {
                 const auto eff = createRasterEffectForNonCustomType(t);
@@ -327,7 +431,8 @@ int main(int argc, char *argv[])
             RasterEffectType::PAGE_CURL,
             RasterEffectType::THRESHOLD,
             RasterEffectType::SIMPLE_CHOKER,
-            RasterEffectType::DESATURATE
+            RasterEffectType::DESATURATE,
+            RasterEffectType::LEVELS
         };
 
         for (const auto t : types) {
@@ -589,7 +694,8 @@ int main(int argc, char *argv[])
             RasterEffectType::CEL_VOLUME,
             RasterEffectType::THRESHOLD,
             RasterEffectType::SIMPLE_CHOKER,
-            RasterEffectType::DESATURATE
+            RasterEffectType::DESATURATE,
+            RasterEffectType::LEVELS
         };
         QString dumpDir;
         if (argc >= 3) {
@@ -952,6 +1058,169 @@ int main(int argc, char *argv[])
             if (std::abs(int(SkColorGetR(halfInvPx)) - 184) > 1 ||
                 std::abs(int(SkColorGetG(halfInvPx)) - 104) > 1) {
                 throw std::runtime_error("invert amount 50 blend is off");
+            }
+        }
+    });
+
+    // Test 2f: PS Levels semantics - input black/white remap, gamma
+    // curve, output range, per-channel targeting, alpha preserved,
+    // defaults = identity = null caller (passthrough), black/white
+    // points can never cross
+    runTest("Test 2f: Levels semantics", [&]() {
+        const auto eff = createRasterEffectForNonCustomType(
+                    RasterEffectType::LEVELS);
+        if (!eff) { throw std::runtime_error("Factory returned null"); }
+        const auto levels = enve_cast<LevelsEffect*>(eff.get());
+        if (!levels) { throw std::runtime_error("Not a LevelsEffect"); }
+
+        const auto renderTiles = [](RasterEffect* eff,
+                                    const SkBitmap& srcBtmp,
+                                    SkBitmap& dstBtmp) {
+            const auto caller = eff->getEffectCaller(0.0, 1.0, 1.0, nullptr);
+            if (!caller) { return false; }
+            const SkIRect tiles[] = { SkIRect::MakeXYWH(0, 0, 32, 64),
+                                      SkIRect::MakeXYWH(32, 0, 32, 64) };
+            for (const auto& tile : tiles) {
+                SkBitmap tileDst;
+                if (!dstBtmp.extractSubset(&tileDst, tile)) {
+                    throw std::runtime_error("extractSubset failed");
+                }
+                CpuRenderTools tools{srcBtmp, tileDst};
+                CpuRenderData data;
+                data.fTexTile = tile;
+                caller->processCpu(tools, data);
+            }
+            return true;
+        };
+        const auto px = [](const SkBitmap& b, const int x, const int y) {
+            return *static_cast<const uint32_t*>(b.getAddr(x, y));
+        };
+
+        SkBitmap src;
+        src.allocN32Pixels(64, 64);
+        src.eraseARGB(0, 0, 0, 0);
+        {
+            SkCanvas c(src);
+            SkPaint p;
+            // translucent alpha probe first, on the empty canvas (an
+            // SrcOver on an opaque base would stay opaque)
+            p.setColor(SkColorSetARGB(180, 200, 128, 32));
+            c.drawRect(SkRect::MakeXYWH(0, 0, 16, 64), p);
+            // opaque body carrying the test ramp 32 / 128 / 200
+            p.setColor(SkColorSetARGB(255, 200, 128, 32));
+            c.drawRect(SkRect::MakeXYWH(16, 0, 48, 64), p);
+        }
+        SkBitmap dst;
+        dst.allocN32Pixels(64, 64);
+
+        // defaults: 0 / 1.0 / 255 / 0 / 255 = identity = no caller
+        dst.eraseARGB(0, 0, 0, 0);
+        if (renderTiles(eff.get(), src, dst)) {
+            throw std::runtime_error("identity levels produced a caller");
+        }
+
+        // input remap: inBlack=64 inWhite=192, gamma=1, out default:
+        // v<=64 -> 0, v>=192 -> 255, v=128 -> (128-64)/128*255 = 127.5
+        levels->getInBlackAnimator()->setCurrentBaseValue(64.);
+        levels->getInWhiteAnimator()->setCurrentBaseValue(192.);
+        dst.eraseARGB(0, 0, 0, 0);
+        if (!renderTiles(eff.get(), src, dst)) {
+            throw std::runtime_error("levels caller is null");
+        }
+        {
+            const auto out = px(dst, 32, 32);
+            if (SkColorGetR(out) != 255) {
+                throw std::runtime_error("200 should clip to 255");
+            }
+            if (std::abs(int(SkColorGetG(out)) - 128) > 1) {
+                throw std::runtime_error("128 remap is off");
+            }
+            if (SkColorGetB(out) != 0) {
+                throw std::runtime_error("32 should crush to 0");
+            }
+            if (SkColorGetA(out) != 255) {
+                throw std::runtime_error("levels lost alpha");
+            }
+        }
+
+        // gamma 2 on a fresh input range (0..255): v=128 ->
+        // (128/255)^(1/2) * 255 = 180.3 -> 180
+        levels->getInBlackAnimator()->setCurrentBaseValue(0.);
+        levels->getInWhiteAnimator()->setCurrentBaseValue(255.);
+        levels->getGammaAnimator()->setCurrentBaseValue(2.);
+        dst.eraseARGB(0, 0, 0, 0);
+        if (!renderTiles(eff.get(), src, dst)) {
+            throw std::runtime_error("gamma caller is null");
+        }
+        {
+            const auto out = px(dst, 32, 32);
+            if (std::abs(int(SkColorGetG(out)) - 180) > 1) {
+                throw std::runtime_error("gamma 2 midtone is off");
+            }
+            // alpha probe: 180-alpha area keeps its alpha, rgb premul
+            // input read straight off the source bytes
+            if (SkColorGetA(px(dst, 8, 32)) != 180) {
+                throw std::runtime_error("gamma lost alpha");
+            }
+        }
+
+        // output range: outBlack=51 outWhite=204 remaps into the
+        // narrowed span: 32 -> 51+32/255*153 = 70, 200 -> 51+120 = 171
+        levels->getGammaAnimator()->setCurrentBaseValue(1.);
+        levels->getOutBlackAnimator()->setCurrentBaseValue(51.);
+        levels->getOutWhiteAnimator()->setCurrentBaseValue(204.);
+        dst.eraseARGB(0, 0, 0, 0);
+        if (!renderTiles(eff.get(), src, dst)) {
+            throw std::runtime_error("output levels caller is null");
+        }
+        {
+            const auto out = px(dst, 32, 32);
+            if (std::abs(int(SkColorGetB(out)) - 70) > 1) {
+                throw std::runtime_error("output black not applied");
+            }
+            if (std::abs(int(SkColorGetR(out)) - 171) > 1) {
+                throw std::runtime_error("output white not applied");
+            }
+        }
+
+        // channel targeting: Red only - r remapped, g/b untouched;
+        // inBlack=64: r=200 -> (200-64)/191... use full 0..255 range:
+        // inWhite default 255 -> t=(200-64)/255 -> 135 (floor+0.5)
+        levels->getOutBlackAnimator()->setCurrentBaseValue(0.);
+        levels->getOutWhiteAnimator()->setCurrentBaseValue(255.);
+        levels->getInBlackAnimator()->setCurrentBaseValue(64.);
+        levels->getChannelProperty()->setCurrentValue(LevelsEffect::Red);
+        dst.eraseARGB(0, 0, 0, 0);
+        if (!renderTiles(eff.get(), src, dst)) {
+            throw std::runtime_error("red channel caller is null");
+        }
+        {
+            const auto out = px(dst, 32, 32);
+            // PS normalizes by the input span: (200-64)/(255-64)*255
+            const int expectR = int((200. - 64.) / (255. - 64.) * 255. + 0.5);
+            if (std::abs(int(SkColorGetR(out)) - expectR) > 1) {
+                throw std::runtime_error("red channel remap is off");
+            }
+            if (SkColorGetG(out) != 128 || SkColorGetB(out) != 32) {
+                throw std::runtime_error("red mode touched g/b");
+            }
+        }
+
+        // white point may never cross below the black point:
+        // inWhite 10 < inBlack 64 clamps back to 65 (channel back to
+        // RGB so the crossed-points curve touches every channel)
+        levels->getChannelProperty()->setCurrentValue(LevelsEffect::RGB);
+        levels->getInWhiteAnimator()->setCurrentBaseValue(10.);
+        dst.eraseARGB(0, 0, 0, 0);
+        if (!renderTiles(eff.get(), src, dst)) {
+            throw std::runtime_error("crossed points caller is null");
+        }
+        {
+            const auto out = px(dst, 32, 32);
+            // with inBlack=64, inWhite=65: only 64 and 65 survive as
+            // non-white; 32 -> 0, 128/200 -> 255
+            if (SkColorGetB(out) != 0 || SkColorGetR(out) != 255) {
+                throw std::runtime_error("crossed points not clamped");
             }
         }
     });
