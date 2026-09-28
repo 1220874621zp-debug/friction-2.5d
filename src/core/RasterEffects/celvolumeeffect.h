@@ -30,6 +30,7 @@ private:
     qsptr<ComboBoxProperty> mShadeMode;
     qsptr<ComboBoxProperty> mTMode;
     qsptr<QrealAnimator> mGradAngle;
+    qsptr<QrealAnimator> mGradGamma;
     qsptr<ColorAnimator> mColWarm;
     qsptr<ColorAnimator> mColMid;
     qsptr<ColorAnimator> mColCool;

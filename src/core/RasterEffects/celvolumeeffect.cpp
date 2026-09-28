@@ -136,17 +136,20 @@ CelVolumeEffect::CelVolumeEffect() :
                 << QObject::tr("\u6bcf\u533a\u57df\u72ec\u7acb") << QObject::tr("\u6574\u56fe\u7edf\u4e00"));
     mTMode->setCurrentValue(1);
     gradGroup->ca_addChild(mTMode);
-    mGradAngle = enve::make_shared<QrealAnimator>(45.0, -360.0, 360.0, 1.0,
+    mGradAngle = enve::make_shared<QrealAnimator>(90.0, -360.0, 360.0, 1.0,
                                                   QObject::tr("\u6e10\u53d8\u65b9\u5411"));
     gradGroup->ca_addChild(mGradAngle);
+    mGradGamma = enve::make_shared<QrealAnimator>(1.8, 0.2, 5.0, 0.1,
+                                                  QObject::tr("\u6e10\u53d8\u96c6\u4e2d\u5ea6"));
+    gradGroup->ca_addChild(mGradGamma);
     mColWarm = enve::make_shared<ColorAnimator>(QObject::tr("\u6696\u7aef\u8272"));
-    mColWarm->setColor(QColor(219, 35, 69, 255));
+    mColWarm->setColor(QColor(204, 26, 10, 255));
     gradGroup->ca_addChild(mColWarm);
     mColMid = enve::make_shared<ColorAnimator>(QObject::tr("\u4e2d\u95f4\u8272"));
-    mColMid->setColor(QColor(150, 55, 185, 255));
+    mColMid->setColor(QColor(148, 7, 184, 255));
     gradGroup->ca_addChild(mColMid);
     mColCool = enve::make_shared<ColorAnimator>(QObject::tr("\u51b7\u7aef\u8272"));
-    mColCool->setColor(QColor(74, 60, 175, 255));
+    mColCool->setColor(QColor(66, 17, 194, 255));
     gradGroup->ca_addChild(mColCool);
     mBgDarken = enve::make_shared<QrealAnimator>(0.0, 0.0, 100.0, 1.0,
                                                  QObject::tr("\u80cc\u666f\u6697\u5316"));
@@ -190,6 +193,7 @@ stdsptr<RasterEffectCaller> CelVolumeEffect::getEffectCaller(
     p.shadeMode = mShadeMode->getCurrentValue();
     p.tMode = mTMode->getCurrentValue();
     p.gradAngleDeg = float(mGradAngle->getEffectiveValue(relFrame));
+    p.gradGamma = float(mGradGamma->getEffectiveValue(relFrame));
     const QColor warm = mColWarm->getColor(relFrame);
     p.colWarm[0] = float(warm.redF());
     p.colWarm[1] = float(warm.greenF());

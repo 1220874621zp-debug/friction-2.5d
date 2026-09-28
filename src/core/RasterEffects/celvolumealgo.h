@@ -61,10 +61,15 @@ struct Params {
     // gradient shading
     int shadeMode = ShadeGradient;
     int tMode = TPerRegion;
-    float gradAngleDeg = 45.f; // axis pointing from the cool end toward the warm end
-    float colWarm[3] = { 0.86f, 0.14f, 0.27f };  // warm-end stop, rgb 0..1
-    float colMid[3]  = { 0.59f, 0.22f, 0.73f };  // middle stop
-    float colCool[3] = { 0.29f, 0.24f, 0.69f };  // cool-end stop
+    float gradAngleDeg = 90.f; // axis pointing from the cool end toward the warm end
+    // stops calibrated against the reference treatment: saturated
+    // pure red / electric purple / blue-violet, all s > 0.9
+    float colWarm[3] = { 0.80f, 0.10f, 0.04f };  // warm-end stop, rgb 0..1
+    float colMid[3]  = { 0.58f, 0.03f, 0.72f };  // middle stop
+    float colCool[3] = { 0.26f, 0.07f, 0.76f };  // cool-end stop
+    float gradGamma = 1.8f;    // t response curve; >1 narrows the warm
+                               // band so the top reads red then falls
+                               // quickly (1.8 fits the reference)
     float mix = 100.f;         // 0 = original .. 100 = fully re-tinted
     float bgDarken = 0.f;      // backdrop (largest border region) darkening, 0..100
     // volumetric shading (shadeMode == ShadeVolumetric)
@@ -440,6 +445,7 @@ inline void compute(const uint32_t* const src, const int w, const int h,
 
     // ---- 4. shading ----------------------------------------------------
     const float mixAmt = detail::clamp01(p.mix / 100.f);
+    const float gradGamma = std::max(0.05f, p.gradGamma);
     const detail::Ramp3 ramp = detail::makeRamp3(p.colCool, p.colMid, p.colWarm);
 
     if (p.shadeMode == ShadeVolumetric) {
@@ -520,8 +526,9 @@ inline void compute(const uint32_t* const src, const int w, const int h,
             if (st.flat) { dst[i] = s; continue; }
             const float proj = (x + 0.5f) * ax + (y + 0.5f) * ay;
             const size_t k = (perRegion && !st.tiny) ? size_t(L) : gk;
-            const float t = detail::clamp01((proj - projMin[k])
-                                            / (projMax[k] - projMin[k]));
+            const float t = std::pow(detail::clamp01((proj - projMin[k])
+                                                     / (projMax[k] - projMin[k])),
+                                     gradGamma);
             if (st.backdrop && bgK < 1.f) {
                 // darken the backdrop before tinting, so a full
                 // darken swallows the gradient too (reference look)
