@@ -25,6 +25,7 @@
 #define LEVELSEFFECT_H
 
 #include "rastereffect.h"
+#include "Animators/staticcomplexanimator.h"
 
 class ComboBoxProperty;
 
@@ -33,6 +34,37 @@ class ComboBoxProperty;
 // the composite (RGB) or a single channel; alpha passes through
 // untouched. Defaults (0 / 1.0 / 255 / 0 / 255) are the identity -
 // the effect then yields no caller at all (AE-style passthrough)
+//
+// the five numbers live inside two wrapper animators ("input levels"
+// / "output levels") whose property rows render as PS-style gradient
+// sliders in the panel; expanding a wrapper reveals the individual
+// keyframable value rows. Child order is the serialized layout.
+
+class LevelsEffect;
+
+// carries input black / gamma / input white; its property row is the
+// three-handle PS input slider
+class CORE_EXPORT LevelsInputAnimator : public StaticComplexAnimator {
+    e_OBJECT
+protected:
+    LevelsInputAnimator();
+public:
+    static constexpr int Black = 0;
+    static constexpr int Gamma = 1;
+    static constexpr int White = 2;
+};
+
+// carries output black / output white; its property row is the
+// two-handle PS output slider
+class CORE_EXPORT LevelsOutputAnimator : public StaticComplexAnimator {
+    e_OBJECT
+protected:
+    LevelsOutputAnimator();
+public:
+    static constexpr int Black = 0;
+    static constexpr int White = 1;
+};
+
 class LevelsEffect : public RasterEffect {
 public:
     LevelsEffect();
@@ -44,7 +76,8 @@ public:
     // channel ids in the combo property
     enum Channel { RGB = 0, Red = 1, Green = 2, Blue = 3 };
 
-    // raw animators for the PS-style dialog and the unit tests
+    // raw animators for the PS-style dialog, the panel slider rows
+    // and the unit tests
     ComboBoxProperty *getChannelProperty() const
     { return mChannel.get(); }
     QrealAnimator *getInBlackAnimator() const { return mInBlack.get(); }

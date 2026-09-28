@@ -50,24 +50,34 @@ LevelsEffect::LevelsEffect() :
 
     mInBlack = enve::make_shared<QrealAnimator>(
                 0.0, 0.0, 253.0, 1.0, "input black");
-    ca_addChild(mInBlack);
-
     mGamma = enve::make_shared<QrealAnimator>(
                 1.0, sMinGamma, sMaxGamma, 0.01, "gamma");
-    ca_addChild(mGamma);
-
     mInWhite = enve::make_shared<QrealAnimator>(
                 255.0, 2.0, 255.0, 1.0, "input white");
-    ca_addChild(mInWhite);
-
     mOutBlack = enve::make_shared<QrealAnimator>(
                 0.0, 0.0, 254.0, 1.0, "output black");
-    ca_addChild(mOutBlack);
-
     mOutWhite = enve::make_shared<QrealAnimator>(
                 255.0, 1.0, 255.0, 1.0, "output white");
-    ca_addChild(mOutWhite);
+
+    // the wrappers own the value animators; their rows render as the
+    // PS gradient sliders, expanding reveals the keyframable rows
+    const auto input = enve::make_shared<LevelsInputAnimator>();
+    input->ca_addChild(mInBlack);
+    input->ca_addChild(mGamma);
+    input->ca_addChild(mInWhite);
+    ca_addChild(input);
+
+    const auto output = enve::make_shared<LevelsOutputAnimator>();
+    output->ca_addChild(mOutBlack);
+    output->ca_addChild(mOutWhite);
+    ca_addChild(output);
 }
+
+LevelsInputAnimator::LevelsInputAnimator() :
+    StaticComplexAnimator("input levels") {}
+
+LevelsOutputAnimator::LevelsOutputAnimator() :
+    StaticComplexAnimator("output levels") {}
 
 class LevelsEffectCaller : public OpenGLRasterEffectCaller {
 public:

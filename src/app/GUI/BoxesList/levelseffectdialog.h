@@ -90,6 +90,9 @@ public:
 
     LevelsSlider(const Mode mode, QWidget * const parent = nullptr);
 
+    // compact: squeezed into a property-row slot (~20px, tighter
+    // bar/handles + a live drag tooltip); full: the dialog look
+    void setCompact(const bool compact);
     void setValues(const qreal black, const qreal gamma,
                    const qreal white);
     qreal black() const { return mBlack; }
@@ -118,6 +121,11 @@ private:
     void setHandleValue(const int handleIdx, const qreal value);
 
     const Mode mMode;
+    bool mCompact = false;
+    int mBarH = 12;
+    int mHandleW = 11;
+    int mHandleH = 8;
+    int mHandleGap = 2;
     qreal mBlack = 0.;
     qreal mGamma = 1.;
     qreal mWhite = 255.;

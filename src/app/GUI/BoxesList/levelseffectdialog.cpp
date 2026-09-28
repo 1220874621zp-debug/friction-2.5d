@@ -31,6 +31,7 @@
 #include <QPainter>
 #include <QPaintEvent>
 #include <QPushButton>
+#include <QToolTip>
 #include <QVBoxLayout>
 
 #include "Animators/qrealanimator.h"
@@ -50,18 +51,15 @@
 // ---------- LevelsSlider ----------
 
 namespace {
-constexpr int sBarH = 12;
-constexpr int sHandleW = 11;
-constexpr int sHandleH = 8;
-constexpr int sHandleGap = 2;
-
-QPolygonF handlePoly(const qreal x, const int barBottom)
+QPolygonF handlePoly(const qreal x, const int barBottom,
+                     const int handleW, const int handleH,
+                     const int handleGap)
 {
     // triangle pointing up at the bar
     QPolygonF poly;
-    poly << QPointF(x - sHandleW / 2., barBottom + sHandleH)
-         << QPointF(x + sHandleW / 2., barBottom + sHandleH)
-         << QPointF(x, barBottom + sHandleGap);
+    poly << QPointF(x - handleW / 2., barBottom + handleH)
+         << QPointF(x + handleW / 2., barBottom + handleH)
+         << QPointF(x, barBottom + handleGap);
     return poly;
 }
 } // namespace
@@ -69,19 +67,38 @@ QPolygonF handlePoly(const qreal x, const int barBottom)
 LevelsSlider::LevelsSlider(const Mode mode, QWidget * const parent) :
     QWidget(parent), mMode(mode) {}
 
+void LevelsSlider::setCompact(const bool compact)
+{
+    mCompact = compact;
+    if (mCompact) {
+        // fit a ~20px property-row slot
+        mBarH = 8;
+        mHandleW = 9;
+        mHandleH = 7;
+        mHandleGap = 1;
+    } else {
+        mBarH = 12;
+        mHandleW = 11;
+        mHandleH = 8;
+        mHandleGap = 2;
+    }
+    updateGeometry();
+    update();
+}
+
 QSize LevelsSlider::sizeHint() const
 {
-    return QSize(240, sBarH + sHandleH + sHandleGap + 4);
+    return QSize(240, mBarH + mHandleH + mHandleGap + 4);
 }
 
 qreal LevelsSlider::spanX() const
 {
-    return width() - sHandleW - 2;
+    return width() - mHandleW - 2;
 }
 
 qreal LevelsSlider::handleX(const int handleIdx) const
 {
-    const qreal x0 = sHandleW / 2. + 1;
+    const qreal x0 = mHandleW / 2. + 1;
     const qreal span = spanX();
     if (handleIdx == Black) { return x0 + mBlack / 255. * span; }
     if (handleIdx == White) { return x0 + mWhite / 255. * span; }
@@ -142,7 +159,7 @@ void LevelsSlider::paintEvent(QPaintEvent *)
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
 
-    const QRectF bar(sHandleW / 2. + 1, 1, spanX(), sBarH);
+    const QRectF bar(mHandleW / 2. + 1, 1, spanX(), mBarH);
     QLinearGradient grad(bar.left(), 0, bar.right(), 0);
     grad.setColorAt(0, Qt::black);
     grad.setColorAt(1, Qt::white);
@@ -154,7 +171,9 @@ void LevelsSlider::paintEvent(QPaintEvent *)
     const int n = mMode == Input ? 3 : 2;
     for (int i = 0; i < n; i++) {
         const qreal x = handleX(i);
-        const QPolygonF poly = ::handlePoly(x, int(bar.bottom()));
+        const QPolygonF poly = ::handlePoly(x, int(bar.bottom()),
+                                             mHandleW, mHandleH,
+                                             mHandleGap);
         QColor fill;
         QColor line;
         if (i == Black) {
@@ -191,7 +210,7 @@ void LevelsSlider::mousePressEvent(QMouseEvent * const e)
 void LevelsSlider::mouseMoveEvent(QMouseEvent * const e)
 {
     if (mDragIdx >= 0) {
-        const qreal x0 = sHandleW / 2. + 1;
+        const qreal x0 = mHandleW / 2. + 1;
         const qreal span = spanX();
         const qreal t = qBound(0., (e->pos().x() - x0) / span, 1.);
         if (mDragIdx == Black) {
@@ -208,6 +227,14 @@ void LevelsSlider::mouseMoveEvent(QMouseEvent * const e)
         }
         emit valuesChanged(mDragIdx, mBlack, mGamma, mWhite);
         update();
+        if (mCompact) {
+            const qreal v = mDragIdx == Black ? mBlack :
+                            mDragIdx == White ? mWhite : mGamma;
+            const QString label = mDragIdx == Gamma ?
+                        tr("灰度系数 %1").arg(v, 0, 'f', 2) :
+                        tr("色阶 %1").arg(qRound(v));
+            QToolTip::showText(QCursor::pos(), label, this);
+        }
         return;
     }
     const int idx = handleAt(e->pos());

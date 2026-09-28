@@ -165,6 +165,134 @@ int main(int argc, char *argv[])
                 throw std::runtime_error("effect setup failed");
             }
 
+            // restructured children: channel / input wrapper(3) /
+            // output wrapper(2); the wrappers drive the panel sliders
+            if (coll->ca_getNumberOfChildren() != 1 ||
+                eff->ca_getNumberOfChildren() != 3) {
+                throw std::runtime_error("unexpected levels children");
+            }
+            const auto inWrap = enve_cast<LevelsInputAnimator*>(
+                        eff->ca_getChildAt(1));
+            const auto outWrap = enve_cast<LevelsOutputAnimator*>(
+                        eff->ca_getChildAt(2));
+            if (!inWrap || inWrap->ca_getNumberOfChildren() != 3 ||
+                !outWrap || outWrap->ca_getNumberOfChildren() != 2) {
+                throw std::runtime_error("wrapper structure is off");
+            }
+            if (enve_cast<QrealAnimator*>(inWrap->ca_getChildAt(
+                        LevelsInputAnimator::Black)) !=
+                eff->getInBlackAnimator()) {
+                throw std::runtime_error("input black child mismatch");
+            }
+            if (enve_cast<QrealAnimator*>(outWrap->ca_getChildAt(
+                        LevelsOutputAnimator::White)) !=
+                eff->getOutWhiteAnimator()) {
+                throw std::runtime_error("output white child mismatch");
+            }
+
+            // the embedded panel-row slider: compact drag wiring with
+            // the same index mapping BoxSingleWidget uses
+            {
+                auto row = std::make_unique<LevelsSlider>(
+                            LevelsSlider::Input);
+                row->setCompact(true);
+                row->resize(300, 20);
+                row->show();
+                QPointer<QrealAnimator> dragAnim;
+                const auto handleAnim = [&inWrap](const int idx) {
+                    return enve_cast<QrealAnimator*>(
+                                inWrap->ca_getChildAt(idx));
+                };
+                QObject::connect(row.get(), &LevelsSlider::handlePressed,
+                                 &*row, [&](const int idx) {
+                    dragAnim = handleAnim(idx);
+                    dragAnim->prp_startTransform();
+                });
+                QObject::connect(row.get(), &LevelsSlider::valuesChanged,
+                                 &*row, [&](const int idx, const qreal b,
+                                            const qreal g, const qreal w) {
+                    if (!dragAnim) { return; }
+                    const qreal v = idx == LevelsSlider::Black ? b :
+                                    idx == LevelsSlider::White ? w : g;
+                    dragAnim->setCurrentBaseValue(
+                                idx == LevelsSlider::Gamma ?
+                                    qBound(LevelsEffect::sMinGamma, v,
+                                           LevelsEffect::sMaxGamma) :
+                                    qBound(0., v, 253.));
+                });
+                QObject::connect(row.get(), &LevelsSlider::handleReleased,
+                                 &*row, [&](const int) {
+                    if (dragAnim) {
+                        dragAnim->prp_finishTransform();
+                        dragAnim.clear();
+                    }
+                });
+                row->setValues(0., 1., 255.);
+                for (int i = 0; i < 10; i++) {
+                    QCoreApplication::processEvents();
+                }
+                const int y = row->height() / 2;
+                const qreal dragX = 4.5 + 0.4 * (row->width() - 11);
+                const auto sendMouse2 = [&row](const QEvent::Type type,
+                                               const QPointF& pos) {
+                    QMouseEvent ev(type, pos, row->mapToGlobal(pos),
+                                   Qt::LeftButton, Qt::LeftButton,
+                                   Qt::NoModifier);
+                    QApplication::sendEvent(&*row, &ev);
+                };
+                sendMouse2(QEvent::MouseButtonPress, QPointF(5, y));
+                sendMouse2(QEvent::MouseMove, QPointF(dragX, y));
+                sendMouse2(QEvent::MouseButtonRelease, QPointF(dragX, y));
+                for (int i = 0; i < 10; i++) {
+                    QCoreApplication::processEvents();
+                }
+                const qreal rowDragged = eff->getInBlackAnimator()
+                        ->getCurrentBaseValue();
+                if (rowDragged < 96. || rowDragged > 108.) {
+                    throw std::runtime_error(
+                            "panel slider drag is off: " +
+                            std::to_string(rowDragged));
+                }
+                sendMouse2(QEvent::MouseButtonDblClick, QPointF(dragX, y));
+                for (int i = 0; i < 10; i++) {
+                    QCoreApplication::processEvents();
+                }
+                if (!qFuzzyIsNull(eff->getInBlackAnimator()
+                                  ->getCurrentBaseValue())) {
+                    throw std::runtime_error("panel slider reset is off");
+                }
+                // strip screenshot for eyeballing the compact rows
+                QFrame strip;
+                strip.setStyleSheet(
+                            "QFrame{background:#2b2b2b;}");
+                const auto lay = new QVBoxLayout(&strip);
+                lay->setContentsMargins(8, 6, 8, 6);
+                const auto mkRow = [&](const char* label,
+                                       LevelsSlider* const sl) {
+                    const auto h = new QHBoxLayout();
+                    h->addWidget(new QLabel(QString::fromUtf8(label)));
+                    sl->setCompact(true);
+                    h->addWidget(sl, 1);
+                    lay->addLayout(h);
+                };
+                mkRow("输入色阶", new LevelsSlider(LevelsSlider::Input));
+                mkRow("输出色阶", new LevelsSlider(LevelsSlider::Output));
+                static_cast<LevelsSlider*>(
+                            strip.findChildren<LevelsSlider*>().at(0))
+                        ->setValues(64., 1.6, 200.);
+                static_cast<LevelsSlider*>(
+                            strip.findChildren<LevelsSlider*>().at(1))
+                        ->setValues(40., 1., 230.);
+                strip.resize(320, 76);
+                strip.show();
+                for (int i = 0; i < 10; i++) {
+                    QCoreApplication::processEvents();
+                }
+                strip.grab().save(QString::fromUtf8(
+                            qgetenv("FRICTION_LEVELS_ROW_SHOT")));
+                row->hide();
+            }
+
             LevelsEffectDialog::openFor(eff.get());
             // the dialog is parented to MainWindow::sGetInstance()
             // which is null here - find it as a top-level instead
