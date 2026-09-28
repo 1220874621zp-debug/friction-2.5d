@@ -1105,6 +1105,157 @@ void splitMatAnimated(CutText &ct) {
     }
 }
 
+// zero-engine per-glyph motion for materialized cuts. The web look
+// animates every glyph, but the preset expressions each own a
+// QJSEngine (hundreds per scene OOM the machine — see 1e36e8d2f), so
+// the lyric-scale glyphs get staggered baked keyframes instead: an
+// enter/exit sweep per glyph family that reads as character
+// animation at zero runtime cost. Returns false when nothing was
+// baked (hard cut both ways, or no lyric-scale glyphs) so the caller
+// can fall back to the group-level fade.
+bool bakeMatTextAnims(Ctx &c, const QList<TextBox*> &texts,
+                      const QJsonObject &cut,
+                      const int fStart, const int fEnd,
+                      const qreal inDur, const qreal outDur) {
+    if (texts.isEmpty()) { return false; }
+    const QString enterKey = cut.value(QStringLiteral("enter")).toString();
+    const QString exitKey = cut.value(QStringLiteral("exit")).toString();
+    const bool hardIn = enterKey == QStringLiteral("cut")
+            || enterKey.isEmpty();
+    const bool hardOut = exitKey == QStringLiteral("cut")
+            || exitKey.isEmpty();
+    if (hardIn && hardOut) { return false; }
+
+    const auto hasAny = [](const QString &key,
+                           std::initializer_list<const char*> keys) {
+        for (const char *k : keys) {
+            if (key == QLatin1String(k)) { return true; }
+        }
+        return false;
+    };
+    const bool inPop = hasAny(enterKey, {"pop", "bounce", "stamp",
+                                         "squashDrop", "rubber",
+                                         "magnet", "domino"});
+    const bool inDrop = hasAny(enterKey, {"drop", "fall", "unroll",
+                                           "fold"});
+    const bool inSlideL = enterKey == QLatin1String("slideL");
+    const bool inSlideR = enterKey == QLatin1String("slideR");
+    const bool inZoom = hasAny(enterKey, {"zoom", "stretch", "blinds",
+                                           "iris", "wipe"});
+    const bool inSpin = hasAny(enterKey, {"spin", "flipX", "flipY",
+                                           "spiralIn", "whip"});
+    const bool outFall = hasAny(exitKey, {"fall", "drift"});
+    const bool outZoom = hasAny(exitKey, {"explode", "scatter",
+                                           "shrink", "stretch",
+                                           "zoom"});
+
+    const int n = texts.size();
+    const int inSpan = qMax(4, qRound(inDur * c.fps));
+    const int outSpan = qMax(4, qRound(outDur * c.fps));
+    const int stagIn = qMax(1, inSpan / (n + 2));
+    const int stagOut = qMax(1, outSpan / (n + 2));
+
+    const auto easeOut = [](const qreal p) {
+        return 1.0 - std::pow(1.0 - p, 3);
+    };
+    const auto easeBack = [](const qreal p) {
+        const qreal c1 = 1.70158;
+        const qreal c3 = c1 + 1.0;
+        const qreal x = p - 1.0;
+        return 1.0 + c3 * x * x * x + c1 * x * x;
+    };
+
+    for (int i = 0; i < n; i++) {
+        TextBox *b = texts.at(i);
+        const auto tr = b->getTransformAnimator();
+        QrealAnimator * const opa = opacityAnim(b);
+        const QPointF pos0 = tr->getPosAnimator()->getBaseValue();
+        const QPointF scl0 = tr->getScaleAnimator()->getBaseValue();
+        const qreal rot0 = tr->getRotAnimator()->getCurrentBaseValue();
+        const qreal alpha0 = opa->getCurrentBaseValue();
+
+        if (!hardIn) {
+            const int fi0 = qMin(fEnd - 1, fStart + i * stagIn);
+            const int fi1 = qMin(fEnd - 1, fi0 + inSpan);
+            const QPointF posFrom = pos0 + QPointF(
+                        inSlideL ? c.cw * 0.07
+                        : inSlideR ? -c.cw * 0.07 : 0,
+                        inDrop ? -c.ch * 0.12 : 0);
+            const QPointF sclFrom = inPop ? QPointF(0.3, 0.3)
+                                 : inZoom ? QPointF(1.7, 1.7) : scl0;
+            const qreal rotFrom = inSpin ? rot0 - 100 : rot0;
+            // pre-hold the start pose from the group's first visible
+            // frame: without it the glyph sits at its final spot
+            // until its stagger turn arrives, then jumps back to
+            // slide in
+            const int fPre = qMax(0, fStart - 1);
+            tr->getPosAnimator()->getXAnimator()->saveValueToKey(
+                        fPre, posFrom.x());
+            tr->getPosAnimator()->getYAnimator()->saveValueToKey(
+                        fPre, posFrom.y());
+            tr->getScaleAnimator()->getXAnimator()->saveValueToKey(
+                        fPre, sclFrom.x());
+            tr->getScaleAnimator()->getYAnimator()->saveValueToKey(
+                        fPre, sclFrom.y());
+            tr->getRotAnimator()->saveValueToKey(fPre, rotFrom);
+            opa->saveValueToKey(fPre, 0.0);
+            if (fi1 > fi0) {
+                bakeSpanXY(tr->getPosAnimator(), c, fi0, fi1,
+                           [&](const qreal p) -> QPointF {
+                    const qreal e = easeOut(p);
+                    return QPointF(pos0.x() + (posFrom.x() - pos0.x()) * (1 - e),
+                                   pos0.y() + (posFrom.y() - pos0.y()) * (1 - e));
+                });
+                if (inPop || inZoom) {
+                    bakeSpanXY(tr->getScaleAnimator(), c, fi0, fi1,
+                               [&](const qreal p) -> QPointF {
+                        const qreal e = inPop ? easeBack(p) : easeOut(p);
+                        return QPointF(sclFrom.x() + (scl0.x() - sclFrom.x()) * e,
+                                       sclFrom.y() + (scl0.y() - sclFrom.y()) * e);
+                    });
+                }
+                if (inSpin) {
+                    bakeSpan(tr->getRotAnimator(), c, fi0, fi1,
+                             [&](const qreal p) {
+                        return rotFrom + (rot0 - rotFrom) * easeOut(p);
+                    });
+                }
+                bakeSpan(opa, c, fi0, fi1, [&](const qreal p) {
+                    return alpha0 * easeOut(p);
+                });
+            }
+        }
+        if (!hardOut) {
+            const int fo1 = qMax(fStart + 1, fEnd - (n - 1 - i) * stagOut);
+            const int fo0 = qMax(fStart + 1, fo1 - outSpan);
+            const QPointF posTo = pos0 + QPointF(
+                        0, outFall ? c.ch * 0.08 : 0);
+            const QPointF sclTo = outZoom
+                    ? QPointF(scl0.x() * 1.25, scl0.y() * 1.25) : scl0;
+            if (fo1 > fo0) {
+                bakeSpanXY(tr->getPosAnimator(), c, fo0, fo1,
+                           [&](const qreal p) -> QPointF {
+                    const qreal e = easeOut(p);
+                    return QPointF(pos0.x() + (posTo.x() - pos0.x()) * e,
+                                   pos0.y() + (posTo.y() - pos0.y()) * e);
+                });
+                if (outZoom) {
+                    bakeSpanXY(tr->getScaleAnimator(), c, fo0, fo1,
+                               [&](const qreal p) -> QPointF {
+                        const qreal e = easeOut(p);
+                        return QPointF(scl0.x() + (sclTo.x() - scl0.x()) * e,
+                                       scl0.y() + (sclTo.y() - scl0.y()) * e);
+                    });
+                }
+                bakeSpan(opa, c, fo0, fo1, [&](const qreal p) {
+                    return alpha0 * (1.0 - easeOut(p));
+                });
+            }
+        }
+    }
+    return true;
+}
+
 MatResult materializeCut(Ctx &c, ContainerBox * const group,
                          const QVector<LyricDrawRec> &recs) {
     MatResult out;
@@ -3358,32 +3509,38 @@ bool LyricMotionNative::build(Canvas * const scene,
                            ct.anchor, ct.mainSize);
             }
 
-            // enter / hold / exit. Materialized cuts get a zero-engine
-            // baked fade (each preset expression owns a QJSEngine —
-            // hundreds per scene OOM the machine); the composition is
-            // already the web look, the anim stays lightweight. Recipe
-            // cuts keep the full preset treatment
+            // enter / hold / exit. Materialized cuts get zero-engine
+            // baked per-glyph motion (each preset expression owns a
+            // QJSEngine — hundreds per scene OOM the machine); the
+            // composition is already the web look, the anim stays
+            // lightweight. Recipe cuts keep the full preset treatment
             if (usedMat) {
-                const QString enterKey = cut.value(
-                            QStringLiteral("enter")).toString();
-                const QString exitKey = cut.value(
-                            QStringLiteral("exit")).toString();
-                const bool hardIn = enterKey == QStringLiteral("cut")
-                        || enterKey.isEmpty();
-                const bool hardOut = exitKey == QStringLiteral("cut")
-                        || exitKey.isEmpty();
-                auto *opa = opacityAnim(group);
-                const int fInEnd = fStart + qRound(inDur * c.fps);
-                const int fOutStart = fEnd - qRound(outDur * c.fps);
-                if (!hardIn && fInEnd > fStart + 1) {
-                    bakeSpan(opa, c, fStart, fInEnd, [](const qreal p) {
-                        return 100.0 * p;
-                    });
-                }
-                if (!hardOut && fOutStart > fInEnd) {
-                    bakeSpan(opa, c, fOutStart, fEnd, [](const qreal p) {
-                        return 100.0 * (1.0 - p);
-                    });
+                const bool glyphAnims = bakeMatTextAnims(
+                            c, ct.boxes, cut, fStart, fEnd, inDur, outDur);
+                if (!glyphAnims) {
+                    // fallback: whole-group fade (also the pre-glyph
+                    // behavior for cuts with only decorative smalls)
+                    const QString enterKey = cut.value(
+                                QStringLiteral("enter")).toString();
+                    const QString exitKey = cut.value(
+                                QStringLiteral("exit")).toString();
+                    const bool hardIn = enterKey == QStringLiteral("cut")
+                            || enterKey.isEmpty();
+                    const bool hardOut = exitKey == QStringLiteral("cut")
+                            || exitKey.isEmpty();
+                    auto *opa = opacityAnim(group);
+                    const int fInEnd = fStart + qRound(inDur * c.fps);
+                    const int fOutStart = fEnd - qRound(outDur * c.fps);
+                    if (!hardIn && fInEnd > fStart + 1) {
+                        bakeSpan(opa, c, fStart, fInEnd, [](const qreal p) {
+                            return 100.0 * p;
+                        });
+                    }
+                    if (!hardOut && fOutStart > fInEnd) {
+                        bakeSpan(opa, c, fOutStart, fEnd, [](const qreal p) {
+                            return 100.0 * (1.0 - p);
+                        });
+                    }
                 }
             } else {
                 applyCutAnims(c, cut, ct.boxes, fStart, fEnd, inDur,
