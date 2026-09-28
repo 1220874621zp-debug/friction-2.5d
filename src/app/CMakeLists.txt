@@ -453,6 +453,41 @@ if(UNIX AND NOT APPLE)
         ${FFMPEG_LIBRARIES}
         ${SKIA_LIBRARIES}
     )
+
+    # plan probes (development tools only)
+    add_executable(keydist keydist.cpp jizura_smoke.qrc
+        GUI/lyricmotionengine.cpp)
+    add_executable(oneplan oneplan.cpp jizura_smoke.qrc
+        GUI/lyricmotionengine.cpp)
+    target_link_directories(
+        keydist
+        PRIVATE
+        ${FFMPEG_LIBRARIES_DIRS}
+        ${SKIA_LIBRARIES_DIRS}
+    )
+    target_link_libraries(
+        keydist
+        PRIVATE
+        ${PROJECT_NAME}core
+        ${QT_LIBRARIES}
+        ${FFMPEG_LIBRARIES}
+        ${SKIA_LIBRARIES}
+    )
+
+    target_link_directories(
+        oneplan
+        PRIVATE
+        ${FFMPEG_LIBRARIES_DIRS}
+        ${SKIA_LIBRARIES_DIRS}
+    )
+    target_link_libraries(
+        oneplan
+        PRIVATE
+        ${PROJECT_NAME}core
+        ${QT_LIBRARIES}
+        ${FFMPEG_LIBRARIES}
+        ${SKIA_LIBRARIES}
+    )
 endif()
 
 if(APPLE)

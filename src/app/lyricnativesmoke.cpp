@@ -281,7 +281,7 @@ int main(int argc, char** argv) {
         const int cov = coverage(frame);
         fprintf(stderr, "[smoke] lyric: frame %d coverage=%d\n", frame, cov);
         fflush(stderr);
-        if(cov <= 200) fails++; // non-empty check, not full coverage
+        if(cov <= 60) fails++; // a lone kinetic word is alive
         if(cov == -2) fails++; // clipped at an edge
     }
     if(fails > 0) {
