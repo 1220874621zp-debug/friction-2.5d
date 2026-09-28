@@ -22,6 +22,8 @@
 */
 
 #include <QCoreApplication>
+#include <QGuiApplication>
+#include <memory>
 #include <QCryptographicHash>
 #include <QtConcurrent/QtConcurrentMap>
 #include <QTranslator>
@@ -34,6 +36,13 @@
 
 #include "RasterEffects/rastereffectsinclude.h"
 #include "RasterEffects/rastereffectcollection.h"
+#include "Boxes/rectangle.h"
+#include "Properties/emimedata.h"
+#include "swt_abstraction.h"
+#include "Private/document.h"
+#include "Private/Tasks/taskscheduler.h"
+#include "Private/esettings.h"
+#include "hardwareinfo.h"
 #include "RasterEffects/rastereffectmenucreator.h"
 #include "RasterEffects/effectpreview.h"
 #include "Properties/comboboxproperty.h"
@@ -90,7 +99,14 @@ static const auto gHashFrames = [](const QList<QImage>& frames) -> QByteArray {
 
 int main(int argc, char *argv[])
 {
-    QCoreApplication app(argc, argv);
+    // SWT_dropInto queries keyboard modifiers (Ctrl = duplicate drop),
+    // which requires a GUI application instance; only the reorder probe
+    // needs it - plain tests (ThemeSupport etc.) stay on QCoreApplication
+    // which survives headless
+    const std::unique_ptr<QCoreApplication> app(
+                qEnvironmentVariableIsSet("FRICTION_REORDER_PROBE") ?
+                    static_cast<QCoreApplication*>(new QGuiApplication(argc, argv)) :
+                    static_cast<QCoreApplication*>(new QCoreApplication(argc, argv)));
     // surface qWarning from core (psd parser diagnostics) on stderr:
     // the default Windows handler drops them when no real console
     qInstallMessageHandler([](QtMsgType type, const QMessageLogContext&,
@@ -115,6 +131,153 @@ int main(int argc, char *argv[])
             failed++;
         }
     };
+
+    // isolated reorder-crash probe: runs on a clean heap before any
+    // other test can corrupt it
+    if (qEnvironmentVariableIsSet("FRICTION_REORDER_PROBE")) {
+        // PathBox ctor reads eSettings (last used stroke width)
+        static eSettings probeSettings(HardwareInfo::sCpuThreads(),
+                                       HardwareInfo::sRamKB());
+        Q_UNUSED(probeSettings)
+        runTest("PROBE: Effect reorder drop (SWT_dropInto)", [&]() {
+            const auto box = enve::make_shared<RectangleBox>();
+            const auto coll = box->rasterEffectsCollection();
+            coll->addChild(enve::make_shared<BlurEffect>());
+            coll->addChild(enve::make_shared<ThresholdEffect>());
+            coll->addChild(enve::make_shared<ShadowEffect>());
+            if (coll->ca_getNumberOfChildren() != 3) {
+                throw std::runtime_error("effect setup failed");
+            }
+            // SWT abstractions like the properties panel creates
+            UpdateFuncs funcs;
+            funcs.fContentUpdateIfIsCurrentRule = [](SWT_BoxRule){};
+            funcs.fContentUpdateIfIsCurrentTarget = [](SingleWidgetTarget*, SWT_Target){};
+            funcs.fContentUpdateIfSearchNotEmpty = [](){};
+            funcs.fUpdateParentHeight = [](){};
+            funcs.fUpdateVisibleWidgetsContent = [](){};
+            box->SWT_createAbstraction(funcs, 4242);
+            const auto collAbs = coll->SWT_getAbstractionForWidget(4242);
+            if (!collAbs) throw std::runtime_error("no collection abstraction");
+            std::cout << "abs children " << collAbs->childrenCount()
+                      << " model children " << coll->ca_getNumberOfChildren() << " | ";
+            for (int round = 0; round < 6; round++) {
+                const int n = coll->ca_getNumberOfChildren();
+                RasterEffect* dragged = coll->getChild(round % 2 ? 0 : n - 1);
+                // round%4==3: drop BELOW the last row = index n (the UI
+                // sends exactly this for move-to-bottom)
+                const int dropId = round % 4 == 3 ? n
+                                 : round % 2 ? n - 1 : 0;
+                const eMimeData mime(QList<RasterEffect*>{ dragged });
+                coll->SWT_dropInto(dropId, &mime);
+                // move-to-bottom must land the dragged effect LAST
+                if (round % 4 == 3 &&
+                        coll->getChild(coll->ca_getNumberOfChildren() - 1) != dragged) {
+                    throw std::runtime_error("move-to-bottom landed at wrong index");
+                }
+                std::cout << "round " << round
+                          << " abs " << collAbs->childrenCount()
+                          << " model " << coll->ca_getNumberOfChildren() << " ; " << std::flush;
+                if (collAbs->childrenCount() != coll->ca_getNumberOfChildren()) {
+                    throw std::runtime_error("abstraction/model desync after reorder");
+                }
+            }
+            std::cout << "PROBE SURVIVED (3-effect minimal) | " << std::flush;
+
+            // ---- full-context storm: real document/scene, ALL effect
+            // types on one layer, reorder + undo/redo interleaved
+            TaskScheduler probeSched;
+            Document probeDoc(probeSched);
+            const auto scene = probeDoc.createNewScene(false);
+            const auto box2 = enve::make_shared<RectangleBox>();
+            scene->addContained(box2);
+            const auto coll2 = box2->rasterEffectsCollection();
+            const RasterEffectType typesAll[] = {
+            RasterEffectType::BLUR,
+            RasterEffectType::SHADOW,
+            RasterEffectType::MOTION_BLUR,
+            RasterEffectType::WIPE,
+            RasterEffectType::NOISE_FADE,
+            RasterEffectType::COLORIZE,
+            RasterEffectType::BRIGHTNESS_CONTRAST,
+            RasterEffectType::VIGNETTE,
+            RasterEffectType::CHROMATIC_ABERRATION,
+            RasterEffectType::LETTERBOX,
+            RasterEffectType::SCANLINES,
+            RasterEffectType::GLOW,
+            RasterEffectType::DIRECTIONAL_BLUR,
+            RasterEffectType::RADIAL_BLUR,
+            RasterEffectType::WAVE_WARP,
+            RasterEffectType::RAIN,
+            RasterEffectType::EDGE_DETECT,
+            RasterEffectType::INVERT,
+            RasterEffectType::TINT,
+            RasterEffectType::PIXELATE,
+            RasterEffectType::NOISE,
+            RasterEffectType::MIRROR,
+            RasterEffectType::GLITCH,
+            RasterEffectType::POSTERIZE,
+            RasterEffectType::TWIRL,
+            RasterEffectType::CHANNEL_BLUR,
+            RasterEffectType::HALFTONE,
+            RasterEffectType::SHAKE,
+            RasterEffectType::DROP_SHADOW,
+            RasterEffectType::ZOOM_BLUR,
+            RasterEffectType::COLOR_GRADING,
+            RasterEffectType::STRIPE,
+            RasterEffectType::MOTION_TILE,
+            RasterEffectType::FRACTAL_NOISE,
+            RasterEffectType::LIGHT_SWEEP,
+            RasterEffectType::DISPLACEMENT_WARP,
+            RasterEffectType::FILM_GRAIN,
+            RasterEffectType::BLACK_WHITE_FLASH,
+            RasterEffectType::LIQUID_GLASS,
+            RasterEffectType::PIXEL_ART,
+            RasterEffectType::CHROMA_KEY,
+            RasterEffectType::LAYER_STYLES,
+            RasterEffectType::PAGE_CURL,
+            RasterEffectType::THRESHOLD,
+            RasterEffectType::SIMPLE_CHOKER,
+            RasterEffectType::DESATURATE
+        };
+            for (const auto t : typesAll) {
+                const auto eff = createRasterEffectForNonCustomType(t);
+                if (eff) coll2->addChild(eff);
+            }
+            const int nAll = coll2->ca_getNumberOfChildren();
+            std::cout << "all-effects children " << nAll << " | " << std::flush;
+            UpdateFuncs funcs2;
+            funcs2.fContentUpdateIfIsCurrentRule = [](SWT_BoxRule){};
+            funcs2.fContentUpdateIfIsCurrentTarget = [](SingleWidgetTarget*, SWT_Target){};
+            funcs2.fContentUpdateIfSearchNotEmpty = [](){};
+            funcs2.fUpdateParentHeight = [](){};
+            funcs2.fUpdateVisibleWidgetsContent = [](){};
+            scene->SWT_createAbstraction(funcs2, 4243);
+            box2->SWT_createAbstraction(funcs2, 4243);
+            for (int round = 0; round < 12; round++) {
+                const int n = coll2->ca_getNumberOfChildren();
+                if (n == 0) throw std::runtime_error("effects vanished");
+                RasterEffect* dragged = coll2->getChild(round % 3 == 0 ? 0 :
+                                              round % 3 == 1 ? n - 1 : n / 2);
+                const eMimeData mime(QList<RasterEffect*>{ dragged });
+                coll2->SWT_dropInto(round % 3 == 2 ? n : round % 2 ? 0 : n - 1, &mime);
+                std::cout << "r" << round << " " << std::flush;
+            }
+            // undo the last few steps, redo them back
+            for (int u = 0; u < 6; u++) {
+                if (!scene->undoRedoStack()->canUndo()) break;
+                scene->undo();
+                std::cout << "u" << u << " " << std::flush;
+            }
+            for (int r = 0; r < 6; r++) {
+                if (!scene->undoRedoStack()->canRedo()) break;
+                scene->redo();
+                std::cout << "d" << r << " " << std::flush;
+            }
+            std::cout << "| PROBE2 SURVIVED" << std::endl;
+        });
+        std::cout << "Summary: " << passed << " passed, " << failed << " failed." << std::endl;
+        return (failed == 0) ? 0 : 1;
+    }
 
     // Test 1: Factory instantiation for all RasterEffectTypes
     runTest("Test 1: createRasterEffectForNonCustomType", [&]() {
@@ -1471,6 +1634,168 @@ int main(int argc, char *argv[])
                 throw std::runtime_error(QString("Invalid data or missing generator in layer preset: %1").arg(id).toStdString());
             }
         }
+    });
+
+    // Test 9: effect reorder drop (properties-panel drag path, was SIGSEGV)
+    runTest("Test 9: Effect reorder drop (SWT_dropInto)", [&]() {
+        // PathBox ctor reads eSettings (last used stroke width)
+        static eSettings probeSettings(HardwareInfo::sCpuThreads(),
+                                       HardwareInfo::sRamKB());
+        Q_UNUSED(probeSettings)
+        const auto box = enve::make_shared<RectangleBox>();
+        const auto coll = box->rasterEffectsCollection();
+        coll->addChild(enve::make_shared<BlurEffect>());
+        coll->addChild(enve::make_shared<ThresholdEffect>());
+        coll->addChild(enve::make_shared<ShadowEffect>());
+        if (coll->ca_getNumberOfChildren() != 3) {
+            throw std::runtime_error("effect setup failed");
+        }
+        const QStringList namesBefore = [&]() {
+            QStringList n;
+            for (int i = 0; i < coll->ca_getNumberOfChildren(); i++) {
+                n << coll->getChild(i)->prp_getName();
+            }
+            return n;
+        }();
+
+        // UI drop path: drag the row of the last effect, drop above the
+        // first (index 0); then drag the first to the bottom, etc.
+        for (int round = 0; round < 6; round++) {
+            const int n = coll->ca_getNumberOfChildren();
+            RasterEffect* dragged = coll->getChild(round % 2 ? 0 : n - 1);
+            // round%4==3 reproduces the move-to-bottom drop (index n,
+            // the pre-removal count) that used to corrupt the heap
+            const int dropId = round % 4 == 3 ? n : round % 2 ? n - 1 : 0;
+            const eMimeData mime(QList<RasterEffect*>{ dragged });
+            coll->SWT_dropInto(dropId, &mime);
+        }
+
+        const int nAfter = coll->ca_getNumberOfChildren();
+        if (nAfter != 3) {
+            throw std::runtime_error(QString("children count changed: %1").arg(nAfter).toStdString());
+        }
+        // same set of effects, just reordered
+        for (int i = 0; i < nAfter; i++) {
+            if (!namesBefore.contains(coll->getChild(i)->prp_getName())) {
+                throw std::runtime_error("effect set changed after reorder");
+            }
+        }
+        std::cout << "order now:";
+        for (int i = 0; i < nAfter; i++) {
+            std::cout << " [" << coll->getChild(i)->prp_getName().toStdString() << "]";
+        }
+        std::cout << " ";
+    });
+
+
+    // Test 10: stacked effects must compose sequentially (AE order
+    // semantics): both effects participate and order matters
+    runTest("Test 10: Effect stacking order semantics (CPU chain)", [&]() {
+        static eSettings settings10(HardwareInfo::sCpuThreads(),
+                                    HardwareInfo::sRamKB());
+        Q_UNUSED(settings10)
+        // gradient source with luma AND alpha variance
+        SkBitmap src0;
+        src0.allocN32Pixels(64, 64);
+        for (int y = 0; y < 64; y++) {
+            for (int x = 0; x < 64; x++) {
+                const int luma = (x * 4 + y * 2) % 256;
+                const int alpha = (x < 32) ? 255 : 128;
+                src0.eraseArea(SkIRect::MakeXYWH(x, y, 1, 1),
+                               SkColorSetARGB(alpha, luma, luma / 2, 255 - luma));
+            }
+        }
+
+        // two CPU-capable effects: threshold (luma binarize) + choker
+        // (alpha choke) - composition must depend on order
+        const auto mkThreshold = []() {
+            const auto e = enve::make_shared<ThresholdEffect>();
+            return e;
+        };
+        const auto mkChoker = []() {
+            const auto e = enve::make_shared<SimpleChokerEffect>();
+            // push the first real param (choke matte) off zero so the
+            // effect actually transforms the image
+            for (int i = 0; i < e->ca_getNumberOfChildren(); i++) {
+                const auto qa = enve_cast<QrealAnimator*>(e->ca_getChildAt(i));
+                if (qa) { qa->setCurrentBaseValue(35.0); break; }
+            }
+            return e;
+        };
+
+        // pipeline-equivalent serial application: each effect consumes
+        // the previous effect's output (EffectSubTaskSpawner pattern)
+        const auto copyBtmp = [](const SkBitmap& src) {
+            SkBitmap dst;
+            dst.allocPixels(src.info());
+            dst.eraseARGB(0, 0, 0, 0);
+            for (int y = 0; y < src.height(); y++) {
+                memcpy(dst.getAddr32(0, y), src.getAddr32(0, y),
+                       src.width() * 4);
+            }
+            return dst;
+        };
+        const auto applyChain = [&](const QList<RasterEffect*>& effs) {
+            SkBitmap cur = copyBtmp(src0);
+            for (const auto e : effs) {
+                const auto caller = e->getEffectCaller(0.0, 1.0, 1.0, nullptr);
+                if (!caller) throw std::runtime_error("null caller in chain");
+                SkBitmap src = copyBtmp(cur);
+                SkBitmap dst;
+                dst.allocPixels(src.info());
+                dst.eraseARGB(0, 0, 0, 0);
+                CpuRenderTools tools{src, dst};
+                CpuRenderData data;
+                data.fTexTile = src.bounds();
+                data.fWidth = static_cast<uint>(src.width());
+                data.fHeight = static_cast<uint>(src.height());
+                caller->processCpu(tools, data);
+                if (caller->srcDstSeparation()) cur = dst; else cur = src;
+            }
+            return cur;
+        };
+
+        const auto hashBtmp = [](const SkBitmap& b) {
+            QCryptographicHash h(QCryptographicHash::Md5);
+            for (int y = 0; y < b.height(); y++) {
+                h.addData(reinterpret_cast<const char*>(b.getAddr32(0, y)),
+                          b.width() * 4);
+            }
+            return h.result();
+        };
+
+        const auto thr1 = mkThreshold();
+        const auto chk1 = mkChoker();
+        const auto chainTC = applyChain({thr1.data(), chk1.data()});
+
+        const auto thr2 = mkThreshold();
+        const auto chk2 = mkChoker();
+        const auto chainCT = applyChain({chk2.data(), thr2.data()});
+
+        const auto thr3 = mkThreshold();
+        const auto onlyT = applyChain({thr3.data()});
+        const auto chk3 = mkChoker();
+        const auto onlyC = applyChain({chk3.data()});
+
+        const auto hTC = hashBtmp(chainTC);
+        const auto hCT = hashBtmp(chainCT);
+        const auto hT = hashBtmp(onlyT);
+        const auto hC = hashBtmp(onlyC);
+        const auto hSrc = hashBtmp(src0);
+
+        // sanity: the effects actually do something
+        if (hT == hSrc || hC == hSrc) {
+            throw std::runtime_error("effect is a no-op on the source");
+        }
+        // order matters (AE-style sequential composition)
+        if (hTC == hCT) {
+            throw std::runtime_error("chain(T,C) == chain(C,T): order ignored");
+        }
+        // both effects participate: result is neither single effect alone
+        if (hTC == hT || hTC == hC || hCT == hT || hCT == hC) {
+            throw std::runtime_error("stacked result equals a single effect: not chained");
+        }
+        std::cout << "(2-effect chain order-sensitive, both applied) ";
     });
 
     std::cout << "\n=========================================" << std::endl;
