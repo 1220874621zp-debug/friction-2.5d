@@ -129,26 +129,18 @@ CelVolumeEffect::CelVolumeEffect() :
             enve::make_shared<StaticComplexAnimator>(QObject::tr("\u4e09\u8272\u6e10\u53d8"));
     mShadeMode = enve::make_shared<ComboBoxProperty>(
                 QObject::tr("\u7740\u8272\u6a21\u5f0f"), QStringList()
-                << QObject::tr("\u65b9\u5411\u6e10\u53d8") << QObject::tr("\u4f53\u79ef\u5149\u5f71"));
+                << QObject::tr("\u5f84\u5411\u6e10\u53d8") << QObject::tr("\u4f53\u79ef\u5149\u5f71"));
     gradGroup->ca_addChild(mShadeMode);
-    mTMode = enve::make_shared<ComboBoxProperty>(
-                QObject::tr("\u6e10\u53d8\u8303\u56f4"), QStringList()
-                << QObject::tr("\u6bcf\u533a\u57df\u72ec\u7acb") << QObject::tr("\u6574\u56fe\u7edf\u4e00"));
-    mTMode->setCurrentValue(1);
-    gradGroup->ca_addChild(mTMode);
-    mGradAngle = enve::make_shared<QrealAnimator>(90.0, -360.0, 360.0, 1.0,
-                                                  QObject::tr("\u6e10\u53d8\u65b9\u5411"));
-    gradGroup->ca_addChild(mGradAngle);
     mGradGamma = enve::make_shared<QrealAnimator>(1.8, 0.2, 5.0, 0.1,
-                                                  QObject::tr("\u6e10\u53d8\u96c6\u4e2d\u5ea6"));
+                                                  QObject::tr("\u4e2d\u5fc3\u8272\u8303\u56f4"));
     gradGroup->ca_addChild(mGradGamma);
-    mColWarm = enve::make_shared<ColorAnimator>(QObject::tr("\u6696\u7aef\u8272"));
+    mColWarm = enve::make_shared<ColorAnimator>(QObject::tr("\u4e2d\u5fc3\u8272"));
     mColWarm->setColor(QColor(204, 26, 10, 255));
     gradGroup->ca_addChild(mColWarm);
     mColMid = enve::make_shared<ColorAnimator>(QObject::tr("\u4e2d\u95f4\u8272"));
     mColMid->setColor(QColor(148, 7, 184, 255));
     gradGroup->ca_addChild(mColMid);
-    mColCool = enve::make_shared<ColorAnimator>(QObject::tr("\u51b7\u7aef\u8272"));
+    mColCool = enve::make_shared<ColorAnimator>(QObject::tr("\u8fb9\u7f18\u8272"));
     mColCool->setColor(QColor(66, 17, 194, 255));
     gradGroup->ca_addChild(mColCool);
     mBgDarken = enve::make_shared<QrealAnimator>(0.0, 0.0, 100.0, 1.0,
@@ -191,8 +183,6 @@ stdsptr<RasterEffectCaller> CelVolumeEffect::getEffectCaller(
     p.colorTol = float(mColorTol->getEffectiveValue(relFrame));
     p.minArea = qMax(1, qRound(mMinArea->getEffectiveValue(relFrame)));
     p.shadeMode = mShadeMode->getCurrentValue();
-    p.tMode = mTMode->getCurrentValue();
-    p.gradAngleDeg = float(mGradAngle->getEffectiveValue(relFrame));
     p.gradGamma = float(mGradGamma->getEffectiveValue(relFrame));
     const QColor warm = mColWarm->getColor(relFrame);
     p.colWarm[0] = float(warm.redF());

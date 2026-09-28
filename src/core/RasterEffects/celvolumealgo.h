@@ -34,9 +34,13 @@
 //   3. inner distance field  - chamfer(1, sqrt2) two passes + masked
 //      box blur; used for the thin-sliver test and the optional
 //      volumetric shading mode
-//   4a. gradient mode (new)  - t is the pixel's projection on the
-//      gradient axis, normalized either per region or globally;
-//      color = HSV 3-stop interpolation
+//   3.5 region merging      - colored specks and strand slivers
+//      fold into their largest adjacent region, so one visual block
+//      (hair with its inner strands, a dress with folds) is ONE
+//      region; only low-saturation line art stays separate
+//   4a. radial mode (new)   - every region gets its own CIRCULAR
+//      3-stop gradient: t = 1 at the region centroid falling to 0
+//      at its outer radius; color = HSV 3-stop interpolation
 //   4b. volumetric mode      - distance-field pseudo normal lambert
 //      + crease ao produce t, then the same 3-stop interpolation
 
@@ -50,26 +54,21 @@
 namespace celvolume {
 
 // shading mode
-enum ShadeMode { ShadeGradient = 0, ShadeVolumetric = 1 };
-// gradient-axis normalization scope
-enum TMode { TPerRegion = 0, TGlobal = 1 };
+enum ShadeMode { ShadeRadial = 0, ShadeVolumetric = 1 };
 
 struct Params {
     // segmentation
     float colorTol = 32.f;    // merge radius for flat-color clustering (rgb units)
-    int minArea = 40;         // regions below this pixel count pass through
-    // gradient shading
-    int shadeMode = ShadeGradient;
-    int tMode = TPerRegion;
-    float gradAngleDeg = 90.f; // axis pointing from the cool end toward the warm end
+    int minArea = 40;         // regions below this pixel count merge into neighbors
+    // radial shading
+    int shadeMode = ShadeRadial;
     // stops calibrated against the reference treatment: saturated
     // pure red / electric purple / blue-violet, all s > 0.9
-    float colWarm[3] = { 0.80f, 0.10f, 0.04f };  // warm-end stop, rgb 0..1
+    float colWarm[3] = { 0.80f, 0.10f, 0.04f };  // region-center stop, rgb 0..1
     float colMid[3]  = { 0.58f, 0.03f, 0.72f };  // middle stop
-    float colCool[3] = { 0.26f, 0.07f, 0.76f };  // cool-end stop
-    float gradGamma = 1.8f;    // t response curve; >1 narrows the warm
-                               // band so the top reads red then falls
-                               // quickly (1.8 fits the reference)
+    float colCool[3] = { 0.26f, 0.07f, 0.76f };  // region-edge stop
+    float gradGamma = 1.8f;    // t response curve; >1 keeps the center
+                               // color wide before falling to the edge
     float mix = 100.f;         // 0 = original .. 100 = fully re-tinted
     float bgDarken = 0.f;      // backdrop (largest border region) darkening, 0..100
     // volumetric shading (shadeMode == ShadeVolumetric)
@@ -86,7 +85,7 @@ struct RegionStat {
     uint32_t color = 0;   // dominant color of the region
     float maxDist = 1.f;  // deepest inner distance after blur
     bool flat = false;    // passed through untouched (thin sliver / line art)
-    bool tiny = false;    // speck region: shaded with the global axis instead of its own
+    bool tiny = false;    // speck/sliver region: folds into its largest neighbor
     bool backdrop = false;// the flat backdrop region (bgDarken target)
 };
 
@@ -440,8 +439,97 @@ inline void compute(const uint32_t* const src, const int w, const int h,
         }
     }
 
+    // ---- 3.5 fold specks and colored slivers into big neighbors ----
+    // one visual block must be ONE region: jpeg crumbs, strand
+    // slivers and backdrop gradient bands merge into the largest
+    // adjacent region so the radial gradient covers the whole block;
+    // low-saturation line art (flat) never merges and never absorbs
+    {
+        std::vector<int32_t> map(regions.size());
+        for (size_t k = 0; k < map.size(); k++) map[k] = int32_t(k);
+        auto find = [&](const int32_t a) {
+            int32_t r = a;
+            while (map[size_t(r)] != r) r = map[size_t(r)];
+            int32_t cur = a;
+            while (map[size_t(cur)] != r) {
+                const int32_t nx = map[size_t(cur)];
+                map[size_t(cur)] = r;
+                cur = nx;
+            }
+            return r;
+        };
+        for (int round = 0; round < 4; round++) {
+            std::vector<std::unordered_map<int32_t, int>> adj(regions.size());
+            for (int y = 0; y < h; y++) {
+                for (int x = 0; x < w; x++) {
+                    const size_t i = size_t(y) * w + x;
+                    const int32_t a = label[i];
+                    if (a < 0) continue;
+                    const int32_t nbrs[2] = { (x > 0) ? label[i - 1] : -1,
+                                              (y > 0) ? label[i - w] : -1 };
+                    for (const int32_t o : nbrs) {
+                        if (o < 0 || o == a) continue;
+                        const int32_t ra = find(a);
+                        const int32_t ro = find(o);
+                        if (ra == ro) continue;
+                        adj[size_t(ra)][ro]++;
+                        adj[size_t(ro)][ra]++;
+                    }
+                }
+            }
+            bool changed = false;
+            for (size_t k = 0; k < regions.size(); k++) {
+                if (!regions[k].tiny || map[k] != int32_t(k)) continue;
+                int32_t best = -1;
+                int bestArea = -1;
+                for (const auto& pr : adj[k]) {
+                    const RegionStat& st = regions[size_t(pr.first)];
+                    if (st.flat || st.tiny) continue;
+                    if (st.area > bestArea) { bestArea = st.area; best = pr.first; }
+                }
+                if (best >= 0) {
+                    map[k] = best;
+                    regions[size_t(best)].area += regions[k].area;
+                    regions[k].tiny = false;
+                    changed = true;
+                }
+            }
+            if (!changed) break;
+        }
+        for (size_t i = 0; i < n; i++) {
+            const int32_t L = label[i];
+            if (L >= 0) label[i] = find(L);
+        }
+    }
+
     if (stats) *stats = regions;
     if (tOut) tOut->assign(n, -1.f);
+
+    // per-region centroid and outer radius for the circular gradient
+    std::vector<double> cx(regions.size(), 0.0), cy(regions.size(), 0.0);
+    std::vector<int> rcnt(regions.size(), 0);
+    for (int y = 0; y < h; y++) {
+        for (int x = 0; x < w; x++) {
+            const int32_t L = label[size_t(y) * w + x];
+            if (L < 0) continue;
+            cx[size_t(L)] += x + 0.5;
+            cy[size_t(L)] += y + 0.5;
+            rcnt[size_t(L)]++;
+        }
+    }
+    for (size_t k = 0; k < regions.size(); k++) {
+        if (rcnt[k] > 0) { cx[k] /= rcnt[k]; cy[k] /= rcnt[k]; }
+    }
+    std::vector<float> rad(regions.size(), 1.f);
+    for (int y = 0; y < h; y++) {
+        for (int x = 0; x < w; x++) {
+            const int32_t L = label[size_t(y) * w + x];
+            if (L < 0) continue;
+            const float d = float(std::hypot(x + 0.5 - cx[size_t(L)],
+                                             y + 0.5 - cy[size_t(L)]));
+            if (d > rad[size_t(L)]) rad[size_t(L)] = d;
+        }
+    }
 
     // ---- 4. shading ----------------------------------------------------
     const float mixAmt = detail::clamp01(p.mix / 100.f);
@@ -487,34 +575,9 @@ inline void compute(const uint32_t* const src, const int w, const int h,
         return;
     }
 
-    // gradient mode: t = projection on the gradient axis, normalized
-    // per region or over the whole image; the axis points from the
-    // cool end toward the warm end (t = 1 hits the warm stop)
-    const float th = p.gradAngleDeg * 3.14159265f / 180.f;
-    const float ax = std::cos(th);
-    const float ay = -std::sin(th); // screen y is down
-
-    const bool perRegion = p.tMode == TPerRegion;
-    std::vector<float> projMin(regions.size() + 1, 1e30f);
-    std::vector<float> projMax(regions.size() + 1, -1e30f);
-    const size_t gk = regions.size(); // global slot, also the tiny-region axis
-    for (int y = 0; y < h; y++) {
-        for (int x = 0; x < w; x++) {
-            const size_t i = size_t(y) * w + x;
-            const int32_t L = label[i];
-            if (L < 0 || regions[size_t(L)].flat) continue;
-            const float proj = (x + 0.5f) * ax + (y + 0.5f) * ay;
-            if (proj < projMin[gk]) projMin[gk] = proj;
-            if (proj > projMax[gk]) projMax[gk] = proj;
-            if (!perRegion || regions[size_t(L)].tiny) continue;
-            if (proj < projMin[size_t(L)]) projMin[size_t(L)] = proj;
-            if (proj > projMax[size_t(L)]) projMax[size_t(L)] = proj;
-        }
-    }
-    for (size_t k = 0; k < projMin.size(); k++) {
-        if (projMax[k] <= projMin[k]) projMax[k] = projMin[k] + 1.f;
-    }
-
+    // radial mode: one CIRCULAR gradient per region - t = 1 at the
+    // centroid (center stop) falling to 0 at the region's outer
+    // radius (edge stop); the gamma curve sizes the center band
     const float bgK = 1.f - detail::clamp01(p.bgDarken / 100.f);
     for (int y = 0; y < h; y++) {
         for (int x = 0; x < w; x++) {
@@ -524,10 +587,9 @@ inline void compute(const uint32_t* const src, const int w, const int h,
             if (L < 0) { dst[i] = s; continue; }
             const RegionStat& st = regions[size_t(L)];
             if (st.flat) { dst[i] = s; continue; }
-            const float proj = (x + 0.5f) * ax + (y + 0.5f) * ay;
-            const size_t k = (perRegion && !st.tiny) ? size_t(L) : gk;
-            const float t = std::pow(detail::clamp01((proj - projMin[k])
-                                                     / (projMax[k] - projMin[k])),
+            const float d = float(std::hypot(x + 0.5 - cx[size_t(L)],
+                                             y + 0.5 - cy[size_t(L)]));
+            const float t = std::pow(detail::clamp01(1.f - d / rad[size_t(L)]),
                                      gradGamma);
             if (st.backdrop && bgK < 1.f) {
                 // darken the backdrop before tinting, so a full

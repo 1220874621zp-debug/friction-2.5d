@@ -518,11 +518,10 @@ NamedScan namedScanFor(const RasterEffectType type) {
         // name is the Chinese tr source string)
         return { "progress", "卷曲进度", 0., 100. };
     case RasterEffectType::CEL_VOLUME:
-        // rotating the gradient axis swings the hue journey around
-        // the character (paramName is decoded as latin1, so the
-        // Chinese animator name travels through altName, page-curl
-        // style)
-        return { "gradient", "渐变方向", 0., 360. };
+        // breathing the center band sizes the radial stops in and
+        // out (paramName is decoded as latin1, so the Chinese
+        // animator name travels through altName, page-curl style)
+        return { "gamma", "中心色范围", 0.6, 2.6 };
     default:
         return { nullptr, nullptr, 0., 0. };
     }

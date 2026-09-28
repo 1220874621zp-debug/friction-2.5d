@@ -26,10 +26,8 @@ private:
     // segmentation
     qsptr<QrealAnimator> mColorTol;
     qsptr<QrealAnimator> mMinArea;
-    // 3-stop gradient
+    // 3-stop radial gradient
     qsptr<ComboBoxProperty> mShadeMode;
-    qsptr<ComboBoxProperty> mTMode;
-    qsptr<QrealAnimator> mGradAngle;
     qsptr<QrealAnimator> mGradGamma;
     qsptr<ColorAnimator> mColWarm;
     qsptr<ColorAnimator> mColMid;
