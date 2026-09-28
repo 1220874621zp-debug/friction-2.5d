@@ -1091,51 +1091,181 @@ CutText buildLayout(Ctx &c, ContainerBox * const group,
         }
         ct.anchor = QPointF(c.cw * 0.5, c.ch * 0.5);
     } else if (has("marquee")) {
+        // faithful port of 06_layouts.js marquee: centered main line
+        // plus 2/4 scrolling strips above/below (outline | dim | box)
         const int rows = params.value(QStringLiteral("rows")).toInt(2);
-        const bool outline = params.value(QStringLiteral("rowStyle"))
-                .toString() == QStringLiteral("outline");
-        const qreal size = qMin(c.ch * 0.42 / qMax(2, rows), c.ch * 0.14);
-        const QString strip = text + QStringLiteral("　") + text
-                + QStringLiteral("　");
-        for (int r = 0; r < rows; r++) {
-            auto *b = mkText(group, strip, lf.family, lf.weight, size,
-                             outline ? QColor() : textCol);
-            if (outline) { setStroke(b, textCol, size * 0.06); }
-            const qreal y = c.ch * (rows == 1 ? 0.5
-                    : (0.28 + 0.44 * r / qreal(rows - 1)));
-            const qreal span = c.cw + size * strip.length() * 0.55;
-            const int f0 = fSec(c, cut.value(QStringLiteral("start"))
-                                .toDouble());
-            const int f1 = fSec(c, cut.value(QStringLiteral("end"))
-                                .toDouble());
-            auto *posX = b->getTransformAnimator()->getPosAnimator()
-                    ->getXAnimator();
-            const qreal dir = (r % 2 == 0) ? -1 : 1;
-            bakeSpan(posX, c, f0, f1, [&, span, dir, y](const qreal p) {
-                return c.cw * 0.5 + dir * (span * 0.5 - span * p);
-            });
+        const QString rowStyle = params.value(QStringLiteral("rowStyle"))
+                .toString(QStringLiteral("dim"));
+        const qreal speed = params.value(QStringLiteral("speed"))
+                .toDouble(0.8);
+        const qreal sx = params.value(QStringLiteral("sx")).toDouble(1.25);
+        const int f0 = fSec(c, cut.value(QStringLiteral("start")).toDouble());
+        const int f1 = qMax(f0 + 2, fSec(c,
+                       cut.value(QStringLiteral("end")).toDouble()));
+        const qreal size = qMin(fitSize(text, lf.family, 900, c.cw * 0.84),
+                                c.ch * 0.3);
+        const qreal rs = size * 0.42;
+        const QString unit = text + QStringLiteral("\u3000");
+        const qreal period = rs * 0.62 * unit.length() + rs * 0.05;
+        const int reps = int(c.cw * 2.4 / period) + 2;
+        const QString strip = unit.repeated(qMax(2, reps));
+        // strip rows: ±1 (2 rows) or ±1/±2 (4 rows), alternating dir
+        const QList<int> ys = rows == 2 ? QList<int>{-1, 1}
+                                        : QList<int>{-2, -1, 1, 2};
+        for (int r = 0; r < ys.size(); r++) {
+            const int k = ys.at(r);
+            const qreal y = c.ch * 0.5
+                    + (k > 0 ? 1 : -1) * (size * 0.5 + rs * 0.95)
+                    + (qAbs(k) - 1) * (k > 0 ? 1 : -1) * rs * 1.25;
+            const qreal dir = r % 2 ? 1 : -1;
+            auto *b = mkText(group, strip, lf.family, lf.weight, rs,
+                             textCol);
+            b->getTransformAnimator()->getScaleAnimator()
+                    ->setBaseValue(QPointF(sx, 1.0));
             b->getTransformAnimator()->getPosAnimator()->getYAnimator()
                     ->setCurrentBaseValue(y);
-            ct.boxes << b;
-            ct.mainSize = qMax(ct.mainSize, size);
+            auto *opa = opacityAnim(b);
+            if (rowStyle == QStringLiteral("outline")) {
+                b->getFillSettings()->setPaintType(PaintType::NOPAINT);
+                setStroke(b, textCol, qMax(1.2, rs * 0.02));
+                opa->setCurrentBaseValue(88);
+            } else if (rowStyle == QStringLiteral("dim")) {
+                b->getFillSettings()->setCurrentColor(sub);
+                opa->setCurrentBaseValue(36);
+            } else { // box: ink band behind, text in bg color
+                auto *band = mkRect(group, QRectF(-10, y - rs * 0.62,
+                                                  c.cw + 20, rs * 1.24),
+                                    parseColor(scheme.value(
+                                        QStringLiteral("ink")), Qt::black));
+                Q_UNUSED(band);
+                b->getFillSettings()->setCurrentColor(parseColor(
+                            scheme.value(QStringLiteral("bg")), Qt::white));
+            }
+            // scroll: off = (lb*speed*W*0.22*dir + r*period*0.37) mod period
+            auto *px = b->getTransformAnimator()->getPosAnimator()
+                    ->getXAnimator();
+            bakeSpan(px, c, f0, f1, [&](const qreal p) {
+                const qreal lb = p * (f1 - f0) / c.fps;
+                const qreal off = std::fmod(std::fmod(
+                            lb * speed * c.cw * 0.22 * dir
+                            + r * period * 0.37, period) + period, period)
+                        - period / 2;
+                return c.cw * 0.5 + off;
+            });
         }
+        auto *main = mkText(group, text, lf.family, 900, size, textCol);
+        main->getTransformAnimator()->getPosAnimator()->setBaseValue(
+                    QPointF(c.cw * 0.5, c.ch * 0.5));
+        main->getTransformAnimator()->getScaleAnimator()
+                ->setBaseValue(QPointF(sx, 1.0));
+        ct.boxes << main;
+        ct.mainSize = size;
         ct.anchor = QPointF(c.cw * 0.5, c.ch * 0.5);
     } else if (has("tile")) {
-        const qreal size = c.ch * 0.08;
-        for (int gy = 0; gy < 3; gy++) {
-            for (int gx = 0; gx < 3; gx++) {
-                const bool center_ = gy == 1 && gx == 1;
-                auto *b = mkText(group, text, lf.family, lf.weight, size,
-                                 textCol);
-                b->getTransformAnimator()->getPosAnimator()->setBaseValue(
-                            QPointF(c.cw * (0.22 + 0.28 * gx),
-                                    c.ch * (0.22 + 0.28 * gy)));
-                opacityAnim(b)->setCurrentBaseValue(center_ ? 100 : 26);
-                if (!center_) { ct.boxes << b; }
-                else { ct.boxes.prepend(b); }
-                ct.mainSize = qMax(ct.mainSize, size);
-            }
+        // faithful port of 06_layouts.js tile: a wall of small strips
+        // scrolling row by row behind the (boxed / hollow) main line
+        const int rowsN = params.value(QStringLiteral("rowsN")).toInt(14);
+        const QString knock = params.value(QStringLiteral("knock"))
+                .toString(QStringLiteral("box"));
+        const QString unitText =
+                params.value(QStringLiteral("unit")).toString()
+                == QStringLiteral("line")
+                ? lineText + QStringLiteral("\u3000")
+                : text + QStringLiteral("\u3000");
+        const int f0 = fSec(c, cut.value(QStringLiteral("start")).toDouble());
+        const qreal inDur = cut.value(QStringLiteral("inDur"))
+                .toDouble(0.3);
+        const qreal rowH = c.ch / rowsN;
+        const qreal ts = rowH * 0.72;
+        const qreal period = ts * 0.62 * unitText.length() + 2;
+        const int reps = int(c.cw * 1.6 / period) + 2;
+        QRandomGenerator rng(quint32(cut.value(QStringLiteral("seed"))
+                                    .toInt(1)) ^ 0x711E);
+        for (int r = 0; r <= rowsN; r++) {
+            // per-row staggered entrance, then a slow alternating drift
+            const qreal ap = rng.generateDouble() * inDur * 1.6;
+            auto *b = mkText(group, unitText.repeated(qMax(2, reps)),
+                             lf.family, 400, ts, sub);
+            b->setTextHAlignment(Qt::AlignLeft);
+            const qreal dir = r % 2 ? 1 : -1;
+            const qreal y = (r + 0.5) * rowH;
+            b->getTransformAnimator()->getPosAnimator()->getYAnimator()
+                    ->setCurrentBaseValue(y);
+            auto *opa = opacityAnim(b);
+            opa->setCurrentBaseValue(42);
+            const int fIn = f0 + qRound(ap * c.fps);
+            opa->saveValueToKey(qMax(f0 - 1, fIn - 1), 0);
+            opa->saveValueToKey(fIn + qRound(0.1 * c.fps), 42);
+            auto *px = b->getTransformAnimator()->getPosAnimator()
+                    ->getXAnimator();
+            const int f1 = qMax(f0 + 2, fSec(c, cut.value(
+                        QStringLiteral("end")).toDouble()));
+            bakeSpan(px, c, f0, f1, [&](const qreal p) {
+                const qreal lb = p * (f1 - f0) / c.fps;
+                const qreal off = std::fmod(std::fmod(
+                            (r % 2) * period * 0.5 + lb * 26 * dir, period)
+                        + period, period);
+                return -period + off - period * 0.5;
+            });
         }
+        const QString mt = portrait ? splitLines(text, 5) : text;
+        const qreal size = qMin(fitSize(mt, lf.family, 900, c.cw * 0.8),
+                                c.ch * 0.3);
+        const QPointF pos(c.cw * 0.5, c.ch * 0.5);
+        if (knock == QStringLiteral("box")) {
+            // bg-colored plate expanding behind the main line
+            const qreal w = size * 0.62 * text.length() + size * 0.7;
+            const qreal h = size * 1.12 * (mt.count(QLatin1Char('\n')) + 1)
+                    + size * 0.56;
+            auto *plate = mkRect(group, QRectF(pos.x() - w / 2,
+                                               pos.y() - h / 2, w, h),
+                                 parseColor(scheme.value(
+                                     QStringLiteral("bg")), Qt::black));
+            auto *pw = plate->getTransformAnimator()->getScaleAnimator()
+                    ->getXAnimator();
+            const int fe = f0 + qRound(qBound(0.22, inDur * 1.4, 0.48)
+                                       * c.fps);
+            pw->saveValueToKey(f0, 0.05);
+            pw->saveValueToKey(fe, 1.0);
+            plate->getTransformAnimator()->getScaleAnimator()
+                    ->getYAnimator()->setCurrentBaseValue(1.0);
+            plate->getBoxTransformAnimator()->getPivotAnimator()
+                    ->setBaseValue(QPointF(w / 2, h / 2));
+        } else {
+            // hollow echo of the main line in bg color under it
+            auto *hollow = mkText(group, mt, lf.family, 900, size, QColor());
+            hollow->getFillSettings()->setPaintType(PaintType::NOPAINT);
+            setStroke(hollow, parseColor(scheme.value(
+                           QStringLiteral("bg")), Qt::black), size * 0.16);
+            hollow->getTransformAnimator()->getPosAnimator()
+                    ->setBaseValue(pos);
+        }
+        auto *main = mkText(group, mt, lf.family, 900, size, textCol);
+        main->getTransformAnimator()->getPosAnimator()->setBaseValue(pos);
+        ct.boxes << main;
+        ct.mainSize = size;
+        ct.anchor = pos;
+    } else if (has("condensed")) {
+        // faithful port: the line repeated in N tall-narrow columns
+        // (sx 0.42-0.58, sy 1.1-1.3)
+        const int count = params.value(QStringLiteral("count")).toInt(1);
+        const qreal sx = params.value(QStringLiteral("sx")).toDouble(0.5);
+        const qreal sy = params.value(QStringLiteral("sy")).toDouble(1.2);
+        const QString flat = text;
+        const qreal slot = c.cw * 0.92 / count;
+        const qreal size = qMin(fitSize(flat, lf.family, 900,
+                                        slot * 0.94) / sx, c.ch * 0.62);
+        for (int i = 0; i < count; i++) {
+            auto *b = mkText(group, flat, lf.family, 900, size, textCol);
+            b->getTransformAnimator()->getPosAnimator()->setBaseValue(
+                        QPointF(c.cw * 0.5
+                                + (i - (count - 1) / 2.0) * slot,
+                                c.ch * 0.5));
+            b->getTransformAnimator()->getScaleAnimator()
+                    ->setBaseValue(QPointF(sx, sy));
+            ct.boxes << b;
+        }
+        ct.mainSize = size;
         ct.anchor = QPointF(c.cw * 0.5, c.ch * 0.5);
     } else if (has("ring")) {
         const qreal R = qMin(c.cw, c.ch)
@@ -1225,14 +1355,6 @@ CutText buildLayout(Ctx &c, ContainerBox * const group,
             t->getTransformAnimator()->getPosAnimator()->setBaseValue(
                         QPointF(x, y));
         }
-    } else if (has("condensed")) {
-        const QString wrapped = splitLines(text, portrait ? 8 : 14);
-        const qreal size = qMin(fitSize(wrapped, lf.family, 900, c.cw * 0.9),
-                                c.ch * 0.5);
-        auto *b = mkMain(wrapped, size, QPointF(c.cw * 0.5, c.ch * 0.5));
-        b->getTransformAnimator()->getScaleAnimator()
-                ->setBaseValue(QPointF(1.0, 0.62));
-        ct.anchor = QPointF(c.cw * 0.5, c.ch * 0.5);
     } else if (has("gloss")) {
         QStringList halves;
         const int mid = qMax(1, text.length() / 2);
@@ -1356,34 +1478,71 @@ CutText buildLayout(Ctx &c, ContainerBox * const group,
     } else if (has("interlude")) {
         // empty window: bg/decor only — handled by the caller
     } else if (has("curtain")) {
-        // stage curtains part to reveal the centered line
-        const qreal size = qMin(fitSize(text, lf.family, 900, c.cw * 0.7),
-                                c.ch * 0.22);
+        // faithful port of 11p_layoutsB curtain (side variant): two
+        // velvet panels part from the center; 7 pleats each in
+        // alternating shade/highlight; main line sits under them
+        const QString variant = params.value(QStringLiteral("variant"))
+                .toString(QStringLiteral("side"));
+        const bool drape = params.value(QStringLiteral("drape")).toBool(true);
+        const bool pleats = params.value(QStringLiteral("pleats"))
+                .toBool(true);
+        const qreal size = qMin(fitSize(text, lf.family, 900,
+                                        drape ? c.cw * 0.7 : c.cw * 0.8),
+                                c.ch * 0.2);
         const QPointF pos(c.cw * 0.5, c.ch * 0.5);
-        mkMain(text, size, pos);
         ct.anchor = pos;
+        ct.mainSize = size;
+        const QColor bgCol = parseColor(scheme.value(
+                                           QStringLiteral("bg")),
+                                       QColor(24, 24, 28));
+        // velvet = mix(bg, accent, 0.5)
+        const QColor panelCol = QColor(
+                    (bgCol.red() + accent.red()) / 2,
+                    (bgCol.green() + accent.green()) / 2,
+                    (bgCol.blue() + accent.blue()) / 2);
+        const QColor shade = QColor::fromRgbF(
+                    panelCol.redF() * 0.78 + bgCol.redF() * 0.22,
+                    panelCol.greenF() * 0.78 + bgCol.greenF() * 0.22,
+                    panelCol.blueF() * 0.78 + bgCol.blueF() * 0.22);
+        const QColor lite = panelCol.lighter(112);
         const qreal f0 = fSec(c, cut.value(QStringLiteral("start"))
                               .toDouble());
-        const int fIn = qRound(0.5 * c.fps);
-        for (int k = 0; k < 2; k++) {
-            const qreal dir = k == 0 ? -1 : 1;
-            const QColor panelCol = parseColor(
-                        scheme.value(QStringLiteral("bg")),
-                        QColor(30, 30, 34)).darker(120);
-            auto *panel = mkRect(group, QRectF(0, -c.ch, c.cw * 0.55,
-                                               c.ch * 2), panelCol);
+        const qreal inDur = cut.value(QStringLiteral("inDur"))
+                .toDouble(0.3);
+        const int fOpen = f0 + qRound(qBound(0.22, inDur * 1.5, 0.48)
+                                      * c.fps);
+        const qreal rest = drape ? c.cw * 0.075 : -c.cw * 0.02;
+        for (int side = 0; side < 2; side++) {
+            const qreal dir = side == 0 ? 1 : -1; // 0 = left panel
+            // panel spans from its outer edge to the moving inner edge;
+            // animate the inner edge by sliding a half-width panel
+            auto *panel = mkRect(group,
+                                 QRectF(0, -5, c.cw * 0.5, c.ch + 10),
+                                 panelCol);
             auto *px = panel->getTransformAnimator()->getPosAnimator()
                     ->getXAnimator();
-            const qreal rest = c.cw * 0.5 + dir * c.cw * 0.53;
-            px->saveValueToKey(f0, dir * c.cw * 0.02);
-            px->saveValueToKey(f0 + fIn, rest);
-            panel->getTransformAnimator()->getPosAnimator()->getYAnimator()
-                    ->setCurrentBaseValue(c.ch * 0.5);
-            if (dir < 0) {
-                panel->getTransformAnimator()->getPosAnimator()
-                        ->getXAnimator()->setCurrentBaseValue(rest);
+            px->saveValueToKey(f0, dir * c.cw * 0.005);
+            px->saveValueToKey(fOpen, dir * (rest - c.cw * 0.5));
+            px->setCurrentBaseValue(dir * (rest - c.cw * 0.5));
+            if (pleats) {
+                for (int i = 1; i < 7; i++) {
+                    const qreal pxr = c.cw * 0.5 * i / 7.0;
+                    auto *pleat = mkRect(group,
+                                         QRectF(pxr, 0, 3, c.ch),
+                                         i % 2 ? shade : lite);
+                    auto *po = opacityAnim(pleat);
+                    po->setCurrentBaseValue(55);
+                    auto *pp = pleat->getTransformAnimator()
+                            ->getPosAnimator()->getXAnimator();
+                    pp->saveValueToKey(f0, dir * c.cw * 0.005);
+                    pp->saveValueToKey(fOpen, dir * (rest - c.cw * 0.5));
+                    pp->setCurrentBaseValue(dir * (rest - c.cw * 0.5));
+                }
             }
         }
+        // main line goes in AFTER the panels: added later renders
+        // below, so the closed curtains actually cover it
+        mkMain(text, size, pos);
     } else if (has("rain")) {
         const qreal size = qMin(fitSize(text, lf.family, lf.weight,
                                         c.cw * 0.7), c.ch * 0.14);
@@ -1408,21 +1567,46 @@ CutText buildLayout(Ctx &c, ContainerBox * const group,
             drop->getTransformAnimator()->getPosAnimator()->getXAnimator()
                     ->setCurrentBaseValue(x);
         }
-    } else if (has("tunnel")) {
-        const qreal size = qMin(fitSize(text, lf.family, 900, c.cw * 0.6),
-                                c.ch * 0.2);
+    } else if (has("tunnel") || has("zoomRepeat")) {
+        // faithful port of the q^L layer flow: K copies at geometric
+        // scales q^L, alternate colors, opacity envelope per layer,
+        // the phase scrolls over the cut (layers continuously recede
+        // toward / rush from the lens)
+        const qreal q = params.value(QStringLiteral("q")).toDouble(1.5);
+        const qreal speed = params.value(QStringLiteral("speed"))
+                .toDouble(0.3);
+        const qreal size = qMin(fitSize(text, lf.family, 900, c.cw * 0.5),
+                                c.ch * 0.18);
         const QPointF pos(c.cw * 0.5, c.ch * 0.5);
-        const int layers = 4;
-        // outer layers first (they sit below), inner on top
-        for (int k = layers; k >= 1; k--) {
-            const qreal s = 1.0 / (1.0 + 0.45 * (k - 1));
-            auto *b = mkText(group, text, lf.family, lf.weight,
-                             size * s, k == 1 ? textCol
-                             : accent.lighter(100 + 8 * k));
+        const int f0 = fSec(c, cut.value(QStringLiteral("start")).toDouble());
+        const int f1 = qMax(f0 + 2, fSec(c, cut.value(QStringLiteral("end"))
+                                .toDouble()));
+        const int K = 6;
+        // outer (largest, faintest) first so inner layers draw on top
+        for (int k = K; k >= 0; k--) {
+            const qreal s = std::pow(q, -k);
+            auto *b = mkText(group, text, lf.family, 900, size,
+                             k == 0 ? textCol
+                             : (k % 2 ? accent : sub));
             b->getTransformAnimator()->getPosAnimator()->setBaseValue(pos);
             b->getTransformAnimator()->getScaleAnimator()
-                    ->setBaseValue(QPointF(1.0, 1.0));
-            opacityAnim(b)->setCurrentBaseValue(k == 1 ? 100 : 60 / k);
+                    ->setBaseValue(QPointF(s, s));
+            if (k > 0) {
+                b->getFillSettings()->setPaintType(PaintType::NOPAINT);
+                setStroke(b, k % 2 ? accent : sub,
+                          qMax(1.0, size * 0.02));
+            }
+            // per-layer opacity envelope over the phase: layer k is
+            // loudest while the phase front crosses it
+            auto *opa = opacityAnim(b);
+            bakeSpan(opa, c, f0, f1, [&](const qreal p) {
+                const qreal lb = p * (f1 - f0) / c.fps;
+                const qreal ph0 = lb * speed;
+                const qreal L = k + ph0 - std::floor(ph0);
+                const qreal a = qBound(0.0, (L - 0.15) / 0.5, 1.0)
+                        * qBound(0.0, (1.0 - L) / 0.5, 1.0);
+                return (k == 0 ? 100 : 62 * a);
+            });
             ct.boxes << b;
         }
         ct.anchor = pos;
@@ -1485,30 +1669,6 @@ CutText buildLayout(Ctx &c, ContainerBox * const group,
         orbitRing->getTransformAnimator()->getScaleAnimator()
                 ->setBaseValue(QPointF(1.0, 0.6));
         ct.anchor = QPointF(c.cw * 0.5, c.ch * 0.5);
-    } else if (has("zoomRepeat")) {
-        const qreal size = qMin(fitSize(text, lf.family, 900, c.cw * 0.7),
-                                c.ch * 0.22);
-        const QPointF pos(c.cw * 0.5, c.ch * 0.5);
-        const int f0 = fSec(c, cut.value(QStringLiteral("start")).toDouble());
-        for (int k = 3; k >= 1; k--) {
-            auto *b = mkText(group, text, lf.family, 900, size,
-                             k == 1 ? textCol : accent);
-            b->getTransformAnimator()->getPosAnimator()->setBaseValue(pos);
-            opacityAnim(b)->setCurrentBaseValue(k == 1 ? 100 : 40);
-            if (k > 1) {
-                auto *sc = b->getTransformAnimator()->getScaleAnimator();
-                auto *sx = sc->getXAnimator();
-                const int fs = f0 + k * 4;
-                sx->saveValueToKey(fs, 0.55 + 0.12 * k);
-                sx->saveValueToKey(fs + qRound(0.4 * c.fps), 1.0);
-                sc->getYAnimator()->saveValueToKey(fs, 0.55 + 0.12 * k);
-                sc->getYAnimator()->saveValueToKey(fs + qRound(0.4 * c.fps), 1.0);
-                opacityAnim(b)->saveValueToKey(fs, 0);
-            }
-            ct.boxes << b;
-        }
-        ct.anchor = pos;
-        ct.mainSize = size;
     } else if (has("mirror")) {
         const qreal size = qMin(fitSize(text, lf.family, lf.weight,
                                         c.cw * 0.72), c.ch * 0.2);
