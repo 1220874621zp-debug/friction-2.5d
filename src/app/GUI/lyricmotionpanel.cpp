@@ -81,7 +81,9 @@ public:
     void setPending(const bool pending) { mPending = pending; }
 
     void advance() {
-        if (mFrames.size() < 2) { return; }
+        // hover-gated: the animation plays only while the pointer is
+        // on this card (all cards looping together was noisy)
+        if (mFrames.size() < 2 || !mHovered) { return; }
         mFrameIdx = (mFrameIdx + 1) % mFrames.size();
         update();
     }
@@ -146,12 +148,24 @@ protected:
         QWidget::mousePressEvent(e);
         if (onClicked) { onClicked(); }
     }
+    void enterEvent(QEnterEvent *e) override {
+        QWidget::enterEvent(e);
+        mHovered = true;
+        mFrameIdx = 0; // restart the loop on hover
+        update();
+    }
+    void leaveEvent(QEvent *e) override {
+        QWidget::leaveEvent(e);
+        mHovered = false;
+        update();
+    }
 private:
     LyricMotionEngine::StyleInfo mInfo;
     QVector<QImage> mFrames;
     int mFrameIdx = 0;
     bool mPending = false;
     bool mSelected = false;
+    bool mHovered = false;
 };
 
 
