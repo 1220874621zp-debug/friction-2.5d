@@ -746,15 +746,32 @@ void recPaintFrom(const QBrush &brush, const QPen &pen,
             r.gradP0 = lg->start();
             r.gradP1 = lg->finalStop();
         }
-        // average color for the flattened fallback
+        // average color for the flattened fallback: weight each
+        // stop's RGB by its alpha and carry the mean alpha. The old
+        // straight RGB average forced alpha=1, turning the web's
+        // near-invisible vignette/center-lift (alpha ≤ 0.045) into an
+        // opaque #808080 fullscreen blanket that washed the whole
+        // background gray
         if (!stops.isEmpty()) {
-            qreal rr = 0, gg = 0, bb = 0;
+            qreal rr = 0, gg = 0, bb = 0, aa = 0;
             for (const QGradientStop &s : stops) {
-                rr += s.second.redF(); gg += s.second.greenF();
-                bb += s.second.blueF();
+                const qreal a = s.second.alphaF();
+                rr += s.second.redF() * a;
+                gg += s.second.greenF() * a;
+                bb += s.second.blueF() * a;
+                aa += a;
             }
-            const int n = stops.size();
-            r.fillColor = QColor::fromRgbF(rr / n, gg / n, bb / n);
+            const qreal meanA = aa / stops.size();
+            QColor flat;
+            if (meanA > 0.003) {
+                flat = QColor::fromRgbF(qBound(0.0, rr / aa, 1.0),
+                                        qBound(0.0, gg / aa, 1.0),
+                                        qBound(0.0, bb / aa, 1.0));
+            } else {
+                flat = QColor(0, 0, 0);
+            }
+            flat.setAlphaF(meanA);
+            r.fillColor = flat;
             r.hasFill = true;
         }
     } else {

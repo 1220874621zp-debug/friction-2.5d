@@ -1569,6 +1569,20 @@ MatResult materializeCut(Ctx &c, ContainerBox * const group,
             out.ct.allTexts << b;
             out.ct.mainSize = qMax(out.ct.mainSize, sizePx);
         } else if (rec.kind == LyricDrawRec::Kind::Rect) {
+            // a fullscreen gradient with low stop alphas is the web's
+            // vignette / center-lift overlay (≤4.5% white): any flat
+            // approximation of it washes the background gray, so drop
+            // it — the opaque scheme-bg rect and the root base layer
+            // already carry the page color
+            if (rec.gradient
+                    && rec.rect.width() >= c.cw * 0.9
+                    && rec.rect.height() >= c.ch * 0.9) {
+                qreal maxStopA = 0;
+                for (const auto &st : rec.gradStops) {
+                    maxStopA = qMax(maxStopA, st.second.alphaF());
+                }
+                if (maxStopA < 0.25) { continue; }
+            }
             if (rec.rect.width() < 1 || rec.rect.height() < 1
                     && !rec.hasStroke) { continue; }
             auto *b = mkRect(group, rec.rect,
@@ -3678,6 +3692,27 @@ bool LyricMotionNative::build(Canvas * const scene,
         auto * const root = rootPtr.get();
         // z-order: last added renders at the bottom, so overlays (HUD,
         // flash) go in first and cut groups after them
+        // opaque page base under everything: the web page is dark
+        // behind the canvas, but the materialized scene only has
+        // whatever fullscreen rects each cut happened to paint — at
+        // cut boundaries and interludes the (gray) editor canvas
+        // showed through. First added → painted first → bottom of
+        // the z-order (empirically: boxes added later paint on top)
+        {
+            const auto c0 = cuts.isEmpty() ? QJsonObject()
+                                           : cuts.first().toObject();
+            const int schIdx = c0.value(QStringLiteral("scheme")).toInt();
+            const auto scheme = c.schemes.isEmpty() ? QJsonObject()
+                    : c.schemes.at(((schIdx % int(c.schemes.size()))
+                                    + int(c.schemes.size()))
+                                   % int(c.schemes.size())).toObject();
+            QColor base = parseColor(scheme.value(
+                        QStringLiteral("bg")), QColor(10, 10, 12));
+            base.setAlpha(255);
+            auto *baseRect = mkRect(root, QRectF(0, 0, c.cw, c.ch), base);
+            baseRect->prp_setName(QStringLiteral("背景基底"));
+            opacityAnim(baseRect)->setCurrentBaseValue(100);
+        }
         buildHud(c, root, plan);
         buildFlashOverlay(c, root);
 

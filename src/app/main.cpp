@@ -27,6 +27,7 @@
 #include "Private/document.h"
 #include "Boxes/boxrenderdata.h"
 #include "Boxes/textbox.h"
+#include "Boxes/rectangle.h"
 #include "Boxes/containerbox.h"
 #include "Animators/transformanimator.h"
 #include <QJsonDocument>
@@ -935,6 +936,47 @@ int main(int argc, char *argv[])
                                    << "texts" << nText << "others" << nOther
                                    << "maxSize" << maxSize
                                    << "sample" << sample;
+                        // rect census (first 2 groups): the largest
+                        // rects carry the background — a washed-out
+                        // gray background means a semi-transparent or
+                        // wrong-color rect (web composites bg fades
+                        // over its own black page; friction has only
+                        // whatever alpha the replay captured)
+                        static int dumpedRects = 0;
+                        if (dumpedRects < 2) {
+                            dumpedRects++;
+                            QList<QPair<qreal, QString>> rects;
+                            for (const auto &tb :
+                                 cutGroup->getContainedBoxes()) {
+                                const auto r =
+                                        dynamic_cast<RectangleBox*>(tb);
+                                if (!r) { continue; }
+                                const QPointF tl = r->getTopLeftAnimator()
+                                        ->getBaseValue();
+                                const QPointF br = r->getBottomRightAnimator()
+                                        ->getBaseValue();
+                                const qreal area = (br.x() - tl.x())
+                                        * (br.y() - tl.y());
+                                const QColor col = r->getFillSettings()
+                                        ->getColor();
+                                rects << qMakePair(area,
+                                        QStringLiteral(
+                                            "%1,%2 %3x%4 %5 a=%6")
+                                        .arg(qRound(tl.x()))
+                                        .arg(qRound(tl.y()))
+                                        .arg(qRound(br.x() - tl.x()))
+                                        .arg(qRound(br.y() - tl.y()))
+                                        .arg(col.name(QColor::HexArgb))
+                                        .arg(r->getBoxTransformAnimator()
+                                             ->getOpacityAnimator()
+                                             ->getCurrentBaseValue()));
+                            }
+                            std::sort(rects.begin(), rects.end());
+                            qWarning() << "[LYRICAPPLY]  rects(top3)"
+                                << (rects.size() >= 3
+                                    ? rects.mid(rects.size() - 3)
+                                    : rects);
+                        }
                         // per-glyph animation census (first 2 cut
                         // groups only): each big glyph must show its
                         // own key window — a dump where every glyph
