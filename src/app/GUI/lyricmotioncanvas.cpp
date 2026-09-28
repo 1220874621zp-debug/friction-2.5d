@@ -1,6 +1,7 @@
 #include "lyricmotioncanvas.h"
 
 #include <QJSEngine>
+#include <QQmlEngine>
 
 #include <QBrush>
 #include <QColor>
@@ -180,6 +181,15 @@ void canvasArcToQt(const qreal start, const qreal end, const bool ccw,
 
 // ------------------------------------------------------------------
 
+void LyricCanvasFactory::ownForSession(QObject * const o) {
+    QQmlEngine::setObjectOwnership(o, QQmlEngine::CppOwnership);
+    mOwned.append(o);
+}
+
+LyricCanvasFactory::~LyricCanvasFactory() {
+    for (const auto &o : mOwned) { delete o.data(); }
+}
+
 LyricCanvasFactory::LyricCanvasFactory(QObject * const parent) :
     QObject(parent) {}
 
@@ -234,6 +244,12 @@ QObject *LyricCanvasFactory::createElement(const QString &tag) {
     if (mEngine && tag.compare(QStringLiteral("canvas"),
                                Qt::CaseInsensitive) == 0) {
         const auto canvas = new JsCanvas2D(this);
+        // the JIZURA renderer caches offscreen canvases (font decompose
+        // tiles) inside JS globals; with the default JavaScriptOwnership
+        // the GC may collect them mid-plan and every later drawImage of
+        // the cache is a use-after-free — keep them alive for the
+        // session and drop them when the factory dies with the engine
+        ownForSession(canvas);
         return canvas;
     }
     return nullptr;
@@ -639,12 +655,14 @@ void JsContext2D::fill(const QString &rule) {
     if (rule == QStringLiteral("evenodd")) { mPath.setFillRule(Qt::OddEvenFill); }
     else { mPath.setFillRule(Qt::WindingFill); }
     if (!mPath.isEmpty()) { mPainter.fillPath(mPath, mPainter.brush()); }
+    recPath(false);
 }
 
 void JsContext2D::stroke() {
     if (mIgnoreDraw) { return; }
     ensurePainter();
     if (!mPath.isEmpty()) { mPainter.strokePath(mPath, mPainter.pen()); }
+    recPath(true);
 }
 
 void JsContext2D::clip(const QString &rule) {
@@ -661,6 +679,7 @@ void JsContext2D::fillRect(const qreal x, const qreal y, const qreal w,
     if (mIgnoreDraw) { return; }
     ensurePainter();
     mPainter.fillRect(QRectF(x, y, w, h), mPainter.brush());
+    recRect(false, QRectF(x, y, w, h));
 }
 
 void JsContext2D::strokeRect(const qreal x, const qreal y, const qreal w,
@@ -670,6 +689,7 @@ void JsContext2D::strokeRect(const qreal x, const qreal y, const qreal w,
     QPainterPath path;
     path.addRect(x, y, w, h);
     mPainter.strokePath(path, mPainter.pen());
+    recRect(true, QRectF(x, y, w, h));
 }
 
 void JsContext2D::clearRect(const qreal x, const qreal y, const qreal w,
@@ -702,6 +722,105 @@ QPointF JsContext2D::alignedTextPos(const QString &text, const qreal x,
     return {px, py};
 }
 
+// ---------------------------------------------------------------------------
+// recording: world-space primitive capture for the native builder
+
+namespace {
+void recPaintFrom(const QBrush &brush, const QPen &pen,
+                  LyricDrawRec &r, const bool stroke) {
+    const QGradient *g = brush.gradient();
+    if (g && g->type() != QGradient::NoGradient) {
+        r.gradient = true;
+        r.gradType = int(g->type()) - 1; // LinearGradient=1→0, Radial=2→1, Conic=3→2
+        r.gradStops.clear();
+        const auto stops = g->stops();
+        for (const QGradientStop &s : stops) {
+            r.gradStops.append({s.first, s.second});
+        }
+        if (g->type() == QGradient::LinearGradient) {
+            const auto *lg = static_cast<const QLinearGradient*>(g);
+            r.gradP0 = lg->start();
+            r.gradP1 = lg->finalStop();
+        }
+        // average color for the flattened fallback
+        if (!stops.isEmpty()) {
+            qreal rr = 0, gg = 0, bb = 0;
+            for (const QGradientStop &s : stops) {
+                rr += s.second.redF(); gg += s.second.greenF();
+                bb += s.second.blueF();
+            }
+            const int n = stops.size();
+            r.fillColor = QColor::fromRgbF(rr / n, gg / n, bb / n);
+            r.hasFill = true;
+        }
+    } else {
+        r.fillColor = brush.color();
+        r.hasFill = brush.style() != Qt::NoBrush;
+    }
+    if (stroke) {
+        r.strokeColor = pen.color();
+        r.strokeWidth = pen.widthF();
+        r.hasStroke = pen.style() != Qt::NoPen && pen.widthF() > 0.05;
+    }
+}
+}
+
+void JsContext2D::recText(const bool stroke, const QString &text,
+                          const QPointF &baselinePos) {
+    if (!mCanvas->mRecording || text.trimmed().isEmpty()) { return; }
+    const QTransform t = mPainter.transform();
+    LyricDrawRec r;
+    r.kind = LyricDrawRec::Kind::Text;
+    r.text = text;
+    r.pos = t.map(baselinePos);
+    const QFont f = mPainter.font();
+    r.family = f.family();
+    const qreal sy = qSqrt(t.m22() * t.m22() + t.m21() * t.m21());
+    const qreal sx = qSqrt(t.m11() * t.m11() + t.m12() * t.m12());
+    r.pointSize = qMax(4.0, f.pointSizeF() * qMax(0.01, sy));
+    r.weight = f.weight();
+    r.stretchX = sy > 0.01 ? sx / sy : 1.0;
+    r.rotation = qRadiansToDegrees(qAtan2(t.m21(), t.m11()));
+    r.alpha = mAlpha;
+    const QFontMetricsF fm(f);
+    r.rect = QRectF(r.pos.x(), r.pos.y() - r.pointSize * 0.8,
+                    fm.horizontalAdvance(text) * qMax(0.01, sx),
+                    r.pointSize * 1.2);
+    recPaintFrom(mPainter.brush(), mPainter.pen(), r, stroke);
+    mCanvas->mRecs.append(r);
+}
+
+void JsContext2D::recRect(const bool stroke, const QRectF &localRect) {
+    if (!mCanvas->mRecording) { return; }
+    const QTransform t = mPainter.transform();
+    LyricDrawRec r;
+    r.kind = LyricDrawRec::Kind::Rect;
+    r.rect = t.mapRect(localRect);
+    r.alpha = mAlpha;
+    const qreal rot = qRadiansToDegrees(qAtan2(t.m21(), t.m11()));
+    if (qAbs(rot) > 0.1 || qAbs(t.m12()) > 0.001) {
+        // sheared/rotated rect → path with the four mapped corners
+        r.kind = LyricDrawRec::Kind::Path;
+        QPainterPath pp;
+        pp.addPolygon(t.map(QPolygonF(localRect)));
+        pp.closeSubpath();
+        r.path = pp;
+    }
+    recPaintFrom(mPainter.brush(), mPainter.pen(), r, stroke);
+    mCanvas->mRecs.append(r);
+}
+
+void JsContext2D::recPath(const bool stroke) {
+    if (!mCanvas->mRecording || mPath.isEmpty()) { return; }
+    const QTransform t = mPainter.transform();
+    LyricDrawRec r;
+    r.kind = LyricDrawRec::Kind::Path;
+    r.path = t.map(mPath);
+    r.alpha = mAlpha;
+    recPaintFrom(mPainter.brush(), mPainter.pen(), r, stroke);
+    mCanvas->mRecs.append(r);
+}
+
 void JsContext2D::fillText(const QString &text, const qreal x,
                            const qreal y) {
     if (mIgnoreDraw) { return; }
@@ -714,6 +833,7 @@ void JsContext2D::fillText(const QString &text, const qreal x,
     mPainter.setPen(pen);
     mPainter.drawText(pos, text);
     mPainter.setPen(old);
+    recText(false, text, pos);
 }
 
 void JsContext2D::strokeText(const QString &text, const qreal x,
@@ -725,6 +845,7 @@ void JsContext2D::strokeText(const QString &text, const qreal x,
     QPainterPath tp;
     tp.addText(pos, mPainter.font(), text);
     mPainter.strokePath(tp, mPainter.pen());
+    recText(true, text, pos);
 }
 
 QVariant JsContext2D::measureText(const QString &text) {
@@ -755,28 +876,52 @@ QVariant JsContext2D::lineDash() const {
 
 QObject *JsContext2D::createLinearGradient(const qreal x0, const qreal y0,
                                            const qreal x1, const qreal y1) {
-    return new JsGradient(JsGradient::Kind::Linear, {x0, y0}, 0, {x1, y1}, 0,
-                          mCanvas);
+    const auto g = new JsGradient(JsGradient::Kind::Linear,
+                                  {x0, y0}, 0, {x1, y1}, 0, mCanvas);
+    if (mCanvas && mCanvas->mFactory) {
+        mCanvas->mFactory->ownForSession(g);
+    } else {
+        QQmlEngine::setObjectOwnership(g, QQmlEngine::CppOwnership);
+    }
+    return g;
 }
 
 QObject *JsContext2D::createRadialGradient(const qreal x0, const qreal y0,
                                            const qreal r0, const qreal x1,
                                            const qreal y1, const qreal r1) {
-    return new JsGradient(JsGradient::Kind::Radial, {x0, y0}, r0, {x1, y1},
-                          r1, mCanvas);
+    const auto g = new JsGradient(JsGradient::Kind::Radial,
+                                  {x0, y0}, r0, {x1, y1}, r1, mCanvas);
+    if (mCanvas && mCanvas->mFactory) {
+        mCanvas->mFactory->ownForSession(g);
+    } else {
+        QQmlEngine::setObjectOwnership(g, QQmlEngine::CppOwnership);
+    }
+    return g;
 }
 
 QObject *JsContext2D::createConicGradient(const qreal startAngle,
                                           const qreal x, const qreal y) {
-    return new JsGradient(JsGradient::Kind::Conic, {x, y}, startAngle,
-                          {x, y}, 0, mCanvas);
+    const auto g = new JsGradient(JsGradient::Kind::Conic,
+                                  {x, y}, startAngle, {x, y}, 0, mCanvas);
+    if (mCanvas && mCanvas->mFactory) {
+        mCanvas->mFactory->ownForSession(g);
+    } else {
+        QQmlEngine::setObjectOwnership(g, QQmlEngine::CppOwnership);
+    }
+    return g;
 }
 
 QObject *JsContext2D::createPattern(const QJSValue &source,
                                     const QString &repetition) {
     const auto canvas = qobject_cast<JsCanvas2D *>(source.toQObject());
     if (!canvas) { return nullptr; }
-    return new JsPattern(canvas->image(), repetition, mCanvas);
+    const auto g = new JsPattern(canvas->image(), repetition, mCanvas);
+    if (mCanvas && mCanvas->mFactory) {
+        mCanvas->mFactory->ownForSession(g);
+    } else {
+        QQmlEngine::setObjectOwnership(g, QQmlEngine::CppOwnership);
+    }
+    return g;
 }
 
 void JsContext2D::drawImage(const QJSValue &source, const qreal a,
@@ -785,7 +930,10 @@ void JsContext2D::drawImage(const QJSValue &source, const qreal a,
                             const qreal h) {
     const auto canvas = qobject_cast<JsCanvas2D *>(source.toQObject());
     if (!canvas || canvas == mCanvas) { return; }
-    const QImage src = canvas->image();
+    // DEEP copy: the renderer routinely re-bases cached source canvases
+    // (font decompose tiles) right after drawing them; a shallow
+    // QImage shares those bits and QPainter then reads freed memory
+    const QImage src = canvas->image().copy();
     if (src.isNull()) { return; }
     if (mIgnoreDraw) { return; }
     ensurePainter();
@@ -873,4 +1021,56 @@ void JsContext2D::putImageData(const QJSValue &imageData, const qreal dx,
 
 bool JsContext2D::isPointInPath(const qreal x, const qreal y) {
     return mPath.contains(QPointF(x, y));
+}
+
+QString LyricCanvasDriver::source() { return QStringLiteral(
+    "(function(){"
+    "  var st = { canvas: null, ctx: null, renderer: null, plan: null };"
+    "  globalThis.__jz = st;"
+    "  globalThis.__jzInit = function(w, h){"
+    "    st.canvas = document.createElement('canvas');"
+    "    st.canvas.width = w; st.canvas.height = h;"
+    "    st.ctx = st.canvas.getContext('2d');"
+    "  };"
+    "  globalThis.__jzPlan = function(styleKey, seed, density, lyrics,"
+    "                                  beatsJson, audioDuration, fps){"
+    "    var pr = J.defaultProject();"
+    "    pr.lyrics = (lyrics && lyrics.length) ? lyrics"
+    "      : \"\\u591c\\u660e\\u3051\\u306e\\u8272\\n*\\u6587\\u5b57* Motion\\n\\u6b4c\\u8a5e\\u30a2\\u30cb\\u30e1\\u3067\\u3059\";"
+    "    pr.style = styleKey; pr.seed = seed;"
+    "    pr.fx.density = (density == null ? 0.55 : density);"
+    "    pr.fps = (fps || 24);"
+    "    pr.timing.bpm = 0;"
+    "    var audio = null;"
+    "    if (beatsJson && beatsJson.length) {"
+    "      audio = { beats: beatsJson, duration: audioDuration || 600 };"
+    "    }"
+    "    st.plan = J.plan(pr, audio);"
+    "    st.renderer = new J.Renderer();"
+    "    return JSON.stringify({ duration: st.plan.duration, cuts: st.plan.cuts.length });"
+    "  };"
+    "  globalThis.__jzFrame = function(i, n){"
+    "    var plan = st.plan;"
+    "    var t = plan.duration * (i + 0.5) / n;"
+    "    st.ctx.setTransform(1, 0, 0, 1, 0, 0);"
+    "    st.ctx.clearRect(0, 0, st.canvas.width, st.canvas.height);"
+    "    st.renderer.frame(st.ctx, plan, t, { scale: st.canvas.width / plan.W });"
+    "    return JSON.stringify({ t: t });"
+    "  };"
+    "  globalThis.__jzFrameAt = function(t, w, h){"
+    "    if (!st.canvas) __jzInit(w, h);"
+    "    if (st.canvas.width !== w) st.canvas.width = w;"
+    "    if (st.canvas.height !== h) st.canvas.height = h;"
+    "    st.ctx.setTransform(1, 0, 0, 1, 0, 0);"
+    "    st.ctx.clearRect(0, 0, w, h);"
+    "    st.renderer.frame(st.ctx, st.plan, t, { scale: w / st.plan.W });"
+    "    return 'ok';"
+    "  };"
+    "  globalThis.__jzRenderTime = function(t){"
+    "    st.ctx.setTransform(1, 0, 0, 1, 0, 0);"
+    "    st.ctx.clearRect(0, 0, st.canvas.width, st.canvas.height);"
+    "    st.renderer.frame(st.ctx, st.plan, t, { scale: st.canvas.width / st.plan.W });"
+    "    return 'ok';"
+    "  };"
+    "})();");
 }

@@ -1,11 +1,14 @@
 #include "lyricmotionnative.h"
 
+#include "lyricmotioncanvas.h"
+#include "lyricmotionengine.h"
 #include "canvas.h"
 #include "Private/document.h"
 #include "Boxes/textbox.h"
 #include "Boxes/containerbox.h"
 #include "Boxes/rectangle.h"
 #include "Boxes/circle.h"
+#include "Boxes/smartvectorpath.h"
 #include "Sound/eindependentsound.h"
 #include "Animators/qrealanimator.h"
 #include "Animators/qstringanimator.h"
@@ -21,7 +24,11 @@
 #include "include/core/SkTypeface.h"
 
 #include <QColor>
+#include <QDirIterator>
+#include <QFile>
 #include <QFileInfo>
+#include <QFontDatabase>
+#include <QJSEngine>
 #include <QHash>
 #include <QJsonArray>
 #include <QRandomGenerator>
@@ -418,12 +425,14 @@ void pulseParam(QrealAnimator * const anim, const Ctx &c,
     anim->saveValueToKey(f1, baseline);
 }
 
+
 // ======================================================================
 // cut text layout (family-level recipes)
 // ======================================================================
 
 struct CutText {
     QList<TextBox*> boxes;   // main text boxes (animation targets)
+    QList<TextBox*> allTexts; // materialized texts incl. decorative
     qreal mainSize = 0;
     QPointF anchor;
 };
@@ -974,6 +983,216 @@ CutText typoEditorial(Ctx &c, ContainerBox * const group,
     }
     return ct;
 }
+
+// ======================================================================
+// render-replay materialization: run the vendored renderer per cut,
+// record every canvas primitive at the cut's midpoint frame, and lay
+// them down as editable friction layers — the web composition (bg,
+// decor, text styling) without hand-porting 860 renderers
+// ======================================================================
+
+class MatSession {
+public:
+    explicit MatSession(const qreal canvasW, const qreal canvasH) {
+        // empirical guard: the 11th consecutive QJSEngine session in a
+        // process crashes inside QV4/drawImage regardless of object
+        // lifetimes (8 verified green, 11th deterministic SEGV). Cap
+        // the session count and fall back to the hand recipes —
+        // restarting the app resets it
+        static QAtomicInt sessionCount = 0;
+        if (sessionCount.fetchAndAddRelaxed(1) >= 10) {
+            mErr = QStringLiteral("物化会话超限(重启恢复)");
+            return;
+        }
+        mFactory = new LyricCanvasFactory(&mEngine);
+        mFactory->install(&mEngine);
+        QFile stub(QStringLiteral(":/jizura/jizura-stub.js"));
+        stub.open(QIODevice::ReadOnly);
+        if (!stub.isOpen()) { mErr = QStringLiteral("stub missing"); return; }
+        const auto stubR = mEngine.evaluate(
+                    QString::fromUtf8(stub.readAll()),
+                    QStringLiteral("jizura-stub.js"));
+        if (stubR.isError()) { mErr = stubR.toString(); return; }
+        QStringList files;
+        QDirIterator it(QStringLiteral(":/jizura"),
+                        {QStringLiteral("*.js")}, QDir::Files);
+        while (it.hasNext()) { files << it.next(); }
+        files.sort();
+        files.removeAll(QStringLiteral(":/jizura/jizura-stub.js"));
+        for (const QString &file : files) {
+            QFile f(file);
+            f.open(QIODevice::ReadOnly);
+            const auto r = mEngine.evaluate(
+                        QString::fromUtf8(f.readAll()), file);
+            if (r.isError()) {
+                mErr = QStringLiteral("%1: %2").arg(
+                            QFileInfo(file).fileName(), r.toString());
+                return;
+            }
+        }
+        const auto drv = mEngine.evaluate(LyricCanvasDriver::source(),
+                                          QStringLiteral("driver"));
+        if (drv.isError()) { mErr = QStringLiteral("driver: %1")
+                    .arg(drv.toString()); return; }
+        mEngine.evaluate(QStringLiteral("__jzInit(%1, %2)")
+                         .arg(qRound(canvasW)).arg(qRound(canvasH)));
+        // the recording canvas is the driver's st.canvas
+        const auto canvasObj = mEngine.globalObject()
+                .property(QStringLiteral("__jz"))
+                .property(QStringLiteral("canvas"));
+        mCanvas = qobject_cast<JsCanvas2D*>(canvasObj.toQObject());
+        if (!mCanvas) { mErr = QStringLiteral("no recording canvas"); }
+    }
+
+    bool ok() const { return mErr.isEmpty() && mCanvas; }
+    const QString &error() const { return mErr; }
+    QJSEngine &engine() { return mEngine; }
+    JsCanvas2D *canvas() const { return mCanvas; }
+
+private:
+    QJSEngine mEngine;
+    LyricCanvasFactory *mFactory = nullptr;
+    JsCanvas2D *mCanvas = nullptr;
+    QString mErr;
+};
+
+// QPainterPath → SkPath (move/line/cubic/close subset — the JIZURA
+// renderer emits no quads)
+SkPath recToSkPath(const QPainterPath &pp) {
+    SkPath sk;
+    for (int i = 0; i < pp.elementCount(); i++) {
+        const QPainterPath::Element &e = pp.elementAt(i);
+        switch (e.type) {
+        case QPainterPath::MoveToElement:
+            sk.moveTo(SkPoint::Make(e.x, e.y)); break;
+        case QPainterPath::LineToElement:
+            sk.lineTo(SkPoint::Make(e.x, e.y)); break;
+        case QPainterPath::CurveToElement: {
+            const auto &c1 = e;
+            const auto &c2 = pp.elementAt(i + 1);
+            const auto &p = pp.elementAt(i + 2);
+            sk.cubicTo(SkPoint::Make(c1.x, c1.y),
+                       SkPoint::Make(c2.x, c2.y),
+                       SkPoint::Make(p.x, p.y));
+            i += 2;
+            break;
+        }
+        default: break;
+        }
+    }
+    if (pp.elementCount() > 1) {
+        const auto &first = pp.elementAt(0);
+        const auto &last = pp.elementAt(pp.elementCount() - 1);
+        if (qFuzzyCompare(first.x, last.x) && qFuzzyCompare(first.y, last.y)) {
+            sk.close();
+        }
+    }
+    return sk;
+}
+
+struct MatResult {
+    CutText ct;      // reuse: boxes feed the anim pass
+    int items = 0;
+};
+
+// split materialized texts into animated (lyric-scale) vs static
+// (decorative smalls) — see the note in materializeCut
+void splitMatAnimated(CutText &ct) {
+    const qreal big = ct.mainSize * 0.55;
+    ct.boxes.clear();
+    for (TextBox *b : ct.allTexts) {
+        if (b->getFontSize() >= big) { ct.boxes << b; }
+    }
+}
+
+MatResult materializeCut(Ctx &c, ContainerBox * const group,
+                         const QVector<LyricDrawRec> &recs) {
+    MatResult out;
+    const QFontDatabase fdb;
+    int dropped = 0;
+    for (const LyricDrawRec &rec : recs) {
+        if (out.items > 260) { dropped++; continue; }
+        if (rec.alpha < 0.04) { continue; }
+        const QColor fill = rec.hasFill ? rec.fillColor : QColor();
+        if (rec.kind == LyricDrawRec::Kind::Text) {
+            const QString family =
+                    fdb.families().contains(rec.family)
+                    ? rec.family : QStringLiteral("Noto Sans CJK JP");
+            const qreal sizePx = qMax(6.0, rec.pointSize);
+            auto *b = mkText(group, rec.text, family,
+                             qBound(100, rec.weight, 900), sizePx,
+                             fill.isValid() ? fill : Qt::white);
+            // recorded pos is the glyph-run baseline-left in world
+            // space; friction text is center-aligned → shift to the
+            // visual center of the recorded run
+            const QPointF center(rec.pos.x() + rec.rect.width() * 0.5,
+                                 rec.pos.y() - sizePx * 0.36);
+            b->getTransformAnimator()->getPosAnimator()->setBaseValue(
+                        center);
+            if (qAbs(rec.stretchX - 1.0) > 0.03) {
+                b->getTransformAnimator()->getScaleAnimator()
+                        ->setBaseValue(QPointF(rec.stretchX, 1.0));
+            }
+            if (qAbs(rec.rotation) > 0.2) {
+                b->getTransformAnimator()->getRotAnimator()
+                        ->setCurrentBaseValue(rec.rotation);
+            }
+            if (rec.hasStroke) {
+                setStroke(b, rec.strokeColor, qMax(0.8, rec.strokeWidth));
+                if (!rec.hasFill) {
+                    b->getFillSettings()->setPaintType(PaintType::NOPAINT);
+                }
+            }
+            opacityAnim(b)->setCurrentBaseValue(qBound(0.0, rec.alpha, 1.0)
+                                                * 100);
+            // animation targets are lyric-scale glyphs only: every
+            // animated preset spawns its own QJSEngine expressions, and
+            // a materialized cut carries dozens of small decorative
+            // texts that must stay static or the scene OOMs
+            out.ct.allTexts << b;
+            out.ct.mainSize = qMax(out.ct.mainSize, sizePx);
+        } else if (rec.kind == LyricDrawRec::Kind::Rect) {
+            if (rec.rect.width() < 1 || rec.rect.height() < 1
+                    && !rec.hasStroke) { continue; }
+            auto *b = mkRect(group, rec.rect,
+                             rec.hasFill ? fill : QColor());
+            if (rec.hasStroke) {
+                b->getStrokeSettings()->setCurrentColor(rec.strokeColor);
+                b->getStrokeSettings()->getStrokeWidthAnimator()
+                        ->setCurrentBaseValue(qMax(0.8, rec.strokeWidth));
+            }
+            opacityAnim(b)->setCurrentBaseValue(qBound(0.0, rec.alpha, 1.0)
+                                                * 100);
+        } else {
+            if (rec.path.isEmpty()) { continue; }
+            const auto box = enve::make_shared<SmartVectorPath>();
+            group->addContained(box);
+            box->prp_setName(QStringLiteral("形状"));
+            box->loadSkPath(recToSkPath(rec.path));
+            if (rec.hasFill) {
+                box->getFillSettings()->setPaintType(PaintType::FLATPAINT);
+                box->getFillSettings()->setCurrentColor(fill);
+            } else {
+                box->getFillSettings()->setPaintType(PaintType::NOPAINT);
+            }
+            if (rec.hasStroke) {
+                auto *st = box->getStrokeSettings();
+                st->setPaintType(PaintType::FLATPAINT);
+                st->setCurrentColor(rec.strokeColor);
+                st->getStrokeWidthAnimator()->setCurrentBaseValue(
+                            qMax(0.8, rec.strokeWidth));
+            }
+            opacityAnim(box.get())->setCurrentBaseValue(
+                        qBound(0.0, rec.alpha, 1.0) * 100);
+        }
+        out.items++;
+    }
+    if (dropped > 0) {
+        c.res->notes << QStringLiteral("物化裁剪 %1 项(超上限)").arg(dropped);
+    }
+    return out;
+}
+
 
 QJsonObject cutParams(const QJsonObject &cut) {
     return cut.value(QStringLiteral("params")).toObject();
@@ -2933,7 +3152,8 @@ bool LyricMotionNative::build(Canvas * const scene,
                               const QString &audioPath,
                               const bool includeAudio,
                               Result * const result,
-                              QString * const error) {
+                              QString * const error,
+                              const void * const rawParams) {
     if (!scene || !result) {
         if (error) { *error = QStringLiteral("invalid arguments"); }
         return false;
@@ -2988,6 +3208,53 @@ bool LyricMotionNative::build(Canvas * const scene,
             sound->prp_setName(QFileInfo(audioPath).completeBaseName());
         }
 
+        // render-replay pass: plan the same inputs through the real
+        // web renderer and materialize each cut's midpoint frame
+        std::unique_ptr<MatSession> mat;
+        int materializedCuts = 0;
+        int matFailStreak = 0;
+        // the QV4 state degrades after a handful of frame renders on
+        // one engine (mid-plan TypeErrors); rebuild the session when
+        // that happens instead of failing every later cut
+        int matRebuilds = 0;
+        const auto planReplay = [&]() -> bool {
+            const auto *params = static_cast<
+                    const LyricMotionEngine::Params*>(rawParams);
+            const auto js = [](const QString &v) {
+                return QString::fromUtf8(QJsonDocument(QJsonArray{v})
+                        .toJson(QJsonDocument::Compact)
+                        .mid(1).chopped(1));
+            };
+            QString beatsSrc = QStringLiteral("null");
+            if (!params->beats.isEmpty()) {
+                QJsonArray arr;
+                for (const qreal b : params->beats) { arr.append(b); }
+                beatsSrc = QString::fromUtf8(QJsonDocument(arr)
+                        .toJson(QJsonDocument::Compact));
+            }
+            const auto planR = mat->engine().evaluate(
+                    QStringLiteral("__jzPlan(%1, %2, %3, %4, %5, %6, %7)")
+                    .arg(js(params->style)).arg(params->seed)
+                    .arg(QString::number(params->density, 'f', 3))
+                    .arg(js(params->lyrics)).arg(beatsSrc)
+                    .arg(QString::number(params->audioDuration, 'f', 4))
+                    .arg(QString::number(c.fps, 'f', 3)));
+            return !planR.isError();
+        };
+        if (rawParams) {
+            mat = std::make_unique<MatSession>(c.cw, c.ch);
+            if (mat->ok()) {
+                if (!planReplay()) {
+                    result->notes << QStringLiteral("渲染重放禁用: plan 失败");
+                    mat.reset();
+                }
+            } else {
+                result->notes << QStringLiteral("渲染重放禁用: %1")
+                        .arg(mat->error().left(60));
+                mat.reset();
+            }
+        }
+
         auto rootPtr = enve::make_shared<ContainerBox>(eBoxType::layer);
         scene->getCurrentGroup()->addContained(rootPtr);
         rootPtr->prp_setName(groupName);
@@ -3020,8 +3287,56 @@ bool LyricMotionNative::build(Canvas * const scene,
             }
             cutGroups[i] = group;
 
-            // text core (layout family recipe)
-            const CutText ct = buildLayout(c, group, cut);
+            // text core: replay-materialized composition first, the
+            // hand-written recipe family as fallback
+            CutText ct;
+            bool usedMat = false;
+            if (mat && mat->ok()) {
+                const qreal midT = (start + end) * 0.5;
+                mat->canvas()->clearRecording();
+                mat->canvas()->setRecording(true);
+                const auto rr = mat->engine().evaluate(
+                            QStringLiteral("__jzRenderTime(%1)")
+                            .arg(QString::number(midT, 'f', 4)));
+                mat->canvas()->setRecording(false);
+                bool replayOk = !rr.isError()
+                        && !mat->canvas()->recordingItems().isEmpty();
+                if (!replayOk) {
+                    matFailStreak++;
+                    // rebuild the session once per degradation streak
+                    if (matFailStreak >= 2 && matRebuilds < 4) {
+                        mat = std::make_unique<MatSession>(c.cw, c.ch);
+                        matRebuilds++;
+                        if (mat->ok() && planReplay()) {
+                            mat->canvas()->clearRecording();
+                            mat->canvas()->setRecording(true);
+                            const auto rr2 = mat->engine().evaluate(
+                                        QStringLiteral("__jzRenderTime(%1)")
+                                        .arg(QString::number(midT, 'f', 4)));
+                            mat->canvas()->setRecording(false);
+                            replayOk = !rr2.isError()
+                                    && !mat->canvas()
+                                       ->recordingItems().isEmpty();
+                        } else {
+                            mat.reset();
+                        }
+                    }
+                } else {
+                    matFailStreak = 0;
+                }
+                if (replayOk) {
+                    const MatResult mr = materializeCut(
+                                c, group, mat->canvas()->recordingItems());
+                    ct = mr.ct;
+                    splitMatAnimated(ct);
+                    ct.anchor = QPointF(c.cw * 0.5, c.ch * 0.5);
+                    usedMat = mr.items > 0;
+                    if (usedMat) { materializedCuts++; matFailStreak = 0; }
+                }
+            }
+            if (!usedMat) {
+                ct = buildLayout(c, group, cut);
+            }
             if (ct.boxes.isEmpty()) { continue; }
 
             // decor (front parts were added by buildLayout before text;
@@ -3043,15 +3358,47 @@ bool LyricMotionNative::build(Canvas * const scene,
                            ct.anchor, ct.mainSize);
             }
 
-            // enter / hold / exit
-            applyCutAnims(c, cut, ct.boxes, fStart, fEnd, inDur, outDur,
-                          group);
+            // enter / hold / exit. Materialized cuts get a zero-engine
+            // baked fade (each preset expression owns a QJSEngine —
+            // hundreds per scene OOM the machine); the composition is
+            // already the web look, the anim stays lightweight. Recipe
+            // cuts keep the full preset treatment
+            if (usedMat) {
+                const QString enterKey = cut.value(
+                            QStringLiteral("enter")).toString();
+                const QString exitKey = cut.value(
+                            QStringLiteral("exit")).toString();
+                const bool hardIn = enterKey == QStringLiteral("cut")
+                        || enterKey.isEmpty();
+                const bool hardOut = exitKey == QStringLiteral("cut")
+                        || exitKey.isEmpty();
+                auto *opa = opacityAnim(group);
+                const int fInEnd = fStart + qRound(inDur * c.fps);
+                const int fOutStart = fEnd - qRound(outDur * c.fps);
+                if (!hardIn && fInEnd > fStart + 1) {
+                    bakeSpan(opa, c, fStart, fInEnd, [](const qreal p) {
+                        return 100.0 * p;
+                    });
+                }
+                if (!hardOut && fOutStart > fInEnd) {
+                    bakeSpan(opa, c, fOutStart, fEnd, [](const qreal p) {
+                        return 100.0 * (1.0 - p);
+                    });
+                }
+            } else {
+                applyCutAnims(c, cut, ct.boxes, fStart, fEnd, inDur,
+                              outDur, group);
+            }
 
             // camera rig on the cut group
             applyCamera(c, group, cut, fStart, fEnd);
             result->cutsBuilt++;
         }
 
+        if (materializedCuts > 0) {
+            result->notes << QStringLiteral("渲染重放物化 %1/%2 切")
+                    .arg(materializedCuts).arg(result->cutsBuilt);
+        }
         applyTransitions(c, cuts, cutGroups);
         applyRootFx(c, root);
 

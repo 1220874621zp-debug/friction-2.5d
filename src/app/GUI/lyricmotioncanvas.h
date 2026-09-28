@@ -13,6 +13,7 @@
 
 class QJSEngine;
 class JsContext2D;
+class JsCanvas2D;
 
 // Canvas2D-over-QPainter shim for the vendored JIZURA render path
 // (09_render / 03_text / 02_fonts / packs). Covers the exact API
@@ -31,6 +32,10 @@ class JsContext2D;
 
 class JsImageData;
 
+// the JS driver glue the preview worker AND the native builder's
+// materialization pass both evaluate after the planner sources
+namespace LyricCanvasDriver { QString source(); }
+
 // document.createElement('canvas') → JsCanvas2D; C++ document object
 // installed as `document` BEFORE the JS stub evaluates (the stub only
 // defines its fake document when none exists).
@@ -39,6 +44,7 @@ class LyricCanvasFactory : public QObject
     Q_OBJECT
 public:
     explicit LyricCanvasFactory(QObject * const parent = nullptr);
+    ~LyricCanvasFactory() override;
     // install as `document` on the engine's global object; also installs
     // the ImageData helper functions (there is no efficient C++<->JS
     // typed-array channel, so C++ round-trips pixel bytes through
@@ -55,12 +61,55 @@ public:
                            const QByteArray &rgba) const;
     QByteArray bytesOfImageData(const QJSValue &imageData) const;
     bool hasHelpers() const { return mMakeImageData.isCallable(); }
+    // register a CppOwnership session object for factory-lifetime
+    void ownForSession(QObject * const o);
 
 private:
+    friend class LyricCanvasFactoryRegistrar;
     QJSEngine *mEngine = nullptr;
     QJSValue mMakeImageData;   // (w, h, byteArray) -> {width,height,data}
     QJSValue mBytesOfImageData; // ({width,height,data}) -> latin1 string
+    // CppOwnership objects created for this session (canvases,
+    // gradients, patterns) — deleted with the factory so JS GC never
+    // frees them early AND C++ never leaks them
+    QList<QPointer<QObject>> mOwned;
 };
+
+// ---------------------------------------------------------------------------
+// draw-call recording: the native builder replays a JIZURA render pass
+// and materializes every primitive as editable friction layers — this
+// is how the panel reproduces the web-version compositions without
+// hand-porting 860 part renderers
+struct LyricDrawRec
+{
+    enum class Kind { Text, Rect, Path };
+    Kind kind = Kind::Rect;
+    // text
+    QString text;
+    QString family;
+    qreal pointSize = 48;
+    int weight = 400;
+    // geometry in WORLD coordinates (ctx transform already applied)
+    QPointF pos;
+    QRectF rect;
+    QPainterPath path;
+    qreal rotation = 0; // degrees, from the ctx transform
+    qreal stretchX = 1;
+    // paint
+    QColor fillColor;
+    bool hasFill = false;
+    QColor strokeColor;
+    qreal strokeWidth = 0;
+    bool hasStroke = false;
+    qreal alpha = 1;
+    // gradient fill (linear stops kept; radial/conic flattened to the
+    // average color by the materializer for now)
+    bool gradient = false;
+    QVector<QPair<qreal, QColor>> gradStops;
+    QPointF gradP0, gradP1;
+    int gradType = 0; // 0 linear 1 radial 2 conic
+};
+// ---------------------------------------------------------------------------
 
 class JsCanvas2D : public QObject
 {
@@ -82,11 +131,20 @@ public:
     const QImage &image() const { return mImage; }
     QImage takeImage() { return mImage; } // shallow; callers must copy
 
+    // recording: while on, every draw call appends a LyricDrawRec
+    // (world-space) instead of only painting pixels
+    void setRecording(const bool on) { mRecording = on; }
+    bool recording() const { return mRecording; }
+    const QVector<LyricDrawRec> &recordingItems() const { return mRecs; }
+    void clearRecording() { mRecs.clear(); }
+
 private:
     friend class JsContext2D;
     QImage mImage{1, 1, QImage::Format_ARGB32_Premultiplied};
     QPointer<JsContext2D> mContext;
     LyricCanvasFactory *mFactory = nullptr;
+    bool mRecording = false;
+    QVector<LyricDrawRec> mRecs;
 };
 
 class JsGradient : public QObject
@@ -310,6 +368,12 @@ private:
                        const bool fillMode);
     QPointF alignedTextPos(const QString &text, const qreal x,
                            const qreal y) const;
+    // recording hooks (append world-space primitives while the owning
+    // canvas has recording on)
+    void recText(const bool stroke, const QString &text,
+                 const QPointF &baselinePos);
+    void recRect(const bool stroke, const QRectF &localRect);
+    void recPath(const bool stroke);
 
     JsCanvas2D *mCanvas = nullptr;
     QPainter mPainter;
