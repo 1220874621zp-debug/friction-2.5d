@@ -762,7 +762,12 @@ void BoundingBox::planUpdate(const UpdateReason reason) {
     else if(!enve_cast<Canvas*>(this)) return;
     if(reason == UpdateReason::userChange) {
         mStateId++;
-        mRenderDataHandler.clear();
+        // cancel in-flight renders of the previous state instead of
+        // letting them finish: with several CPU effects chained, stale
+        // renders occupied the whole task pool and the render of the
+        // CURRENT state queued behind them (canvas went through every
+        // outdated intermediate before showing the final image)
+        mRenderDataHandler.cancelAll();
 #ifdef Q_OS_MAC
         if (const auto canvas = enve_cast<Canvas*>(this)) {
             canvas->invalidateSceneFramesCache();

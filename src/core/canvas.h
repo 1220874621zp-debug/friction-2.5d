@@ -1156,7 +1156,6 @@ protected:
     //PaintTarget mPaintTarget;
     bool mStylusDrawing = false;
 
-    uint mLastStateId = 0;
     int mRenderDataDiscardCount = 0;
     HddCachableCacheHandler mSceneFramesHandler;
 

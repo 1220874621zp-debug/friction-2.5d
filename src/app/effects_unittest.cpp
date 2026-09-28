@@ -31,6 +31,8 @@
 #include <QDebug>
 #include <QFile>
 #include <QDir>
+#include <QElapsedTimer>
+#include <QProcess>
 #include <iostream>
 #include <cassert>
 #include <cstring>
@@ -126,6 +128,90 @@ static const auto gHashFrames = [](const QList<QImage>& frames) -> QByteArray {
     return h.result();
 };
 
+// FRICTION_CANCEL_PROBE body: rapid edits must cancel the in-flight
+// stale renders through the REAL scheduler - canceled tasks must not
+// resurrect, the pool must drain (no hang), and the surviving render
+// must carry the current state id. Needs a QGuiApplication instance
+// (document/scene machinery), so it runs re-exec'd offscreen.
+static void cancelStormBody()
+{
+    // eSettings singleton: Document's grid and the task-que hardware
+    // preference read it (Test 10 does the same before any scheduling);
+    // BoxRenderData's ctor reads eFilterSettings::sRender() (harness
+    // does the same before queuing renders)
+    static eSettings settingsCS(HardwareInfo::sCpuThreads(),
+                                HardwareInfo::sRamKB());
+    Q_UNUSED(settingsCS)
+    eFilterSettings filterSettingsCS;
+    TaskScheduler sched;
+    Document doc(sched);
+    const auto scene = doc.createNewScene(false);
+    const auto box = enve::make_shared<RectangleBox>();
+    // big canvas + big rect = heavy rounds, so renders are still in
+    // flight when the next edit lands (the cancel path always runs)
+    scene->setCanvasSize(2000, 2000);
+    box->setTopLeftPos(QPointF(-800, -800));
+    box->setBottomRightPos(QPointF(800, 800));
+    scene->addContained(box);
+    const auto coll = box->rasterEffectsCollection();
+    coll->addChild(enve::make_shared<ThresholdEffect>());
+    coll->addChild(enve::make_shared<SimpleChokerEffect>());
+    coll->addChild(enve::make_shared<DesaturateEffect>());
+    // push the choker off zero so its caller exists (heavy: blur)
+    const auto choker = enve_cast<SimpleChokerEffect*>(coll->getChild(1));
+    if (choker) {
+        for (int i = 0; i < choker->ca_getNumberOfChildren(); i++) {
+            const auto qa = enve_cast<QrealAnimator*>(choker->ca_getChildAt(i));
+            if (qa) { qa->setCurrentBaseValue(35.0); break; }
+        }
+    }
+
+    const auto pump = [&](const int maxMs) {
+        QElapsedTimer t; t.start();
+        while (!TaskScheduler::sAllTasksFinished()) {
+            QCoreApplication::processEvents(
+                        QEventLoop::AllEvents, 5);
+            if (t.elapsed() > maxMs) {
+                throw std::runtime_error("task pool never drained (hang)");
+            }
+        }
+    };
+
+    // rapid-edit storm: re-queue while the previous round's renders
+    // are still in flight; each bump must cancel the stale ones
+    for (int round = 0; round < 12; round++) {
+        const auto thr = enve_cast<ThresholdEffect*>(coll->getChild(0));
+        if (thr) {
+            for (int i = 0; i < thr->ca_getNumberOfChildren(); i++) {
+                const auto qa = enve_cast<QrealAnimator*>(thr->ca_getChildAt(i));
+                if (qa) { qa->setCurrentBaseValue(20.0 + round); break; }
+            }
+        }
+        box->planUpdate(UpdateReason::userChange);
+        box->queTasks();
+        // brief window so the round actually starts (and gets
+        // canceled by the next bump)
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 2);
+    }
+    pump(60000);
+
+    // the LAST round must land: current render data exists and
+    // carries the box's current state id
+    const auto finalData = box->getCurrentRenderData(
+                box->anim_getCurrentRelFrame());
+    if (!finalData) {
+        throw std::runtime_error("no current render data after storm");
+    }
+    if (finalData->fBoxStateId != box->getBoxStateId()) {
+        throw std::runtime_error("surviving render is stale");
+    }
+    if (!finalData->fRenderedImage) {
+        throw std::runtime_error("surviving render has no image");
+    }
+    std::cout << "(storm x12 drained, final state "
+              << box->getBoxStateId() << ") ";
+}
+
 int main(int argc, char *argv[])
 {
     // SWT_dropInto queries keyboard modifiers (Ctrl = duplicate drop),
@@ -133,11 +219,13 @@ int main(int argc, char *argv[])
     // needs it - plain tests (ThemeSupport etc.) stay on QCoreApplication
     // which survives headless
     // the reorder probe only touches SWT data (QGuiApplication is
-    // enough); the levels dialog probe builds real widgets
+    // enough); the levels dialog probe builds real widgets; the cancel
+    // probe needs the document/scene machinery (also QGuiApplication)
     QCoreApplication* appInstance = nullptr;
     if (qEnvironmentVariableIsSet("FRICTION_LEVELS_DIALOG_PROBE")) {
         appInstance = new QApplication(argc, argv);
-    } else if (qEnvironmentVariableIsSet("FRICTION_REORDER_PROBE")) {
+    } else if (qEnvironmentVariableIsSet("FRICTION_REORDER_PROBE") ||
+               qEnvironmentVariableIsSet("FRICTION_CANCEL_PROBE")) {
         appInstance = new QGuiApplication(argc, argv);
     } else {
         appInstance = new QCoreApplication(argc, argv);
@@ -152,6 +240,24 @@ int main(int argc, char *argv[])
     });
     int passed = 0;
     int failed = 0;
+
+    // cancel-probe mode: run ONLY the scheduler storm (ThemeSupport and
+    // other tests crash or misbehave under a GUI instance)
+    if (qEnvironmentVariableIsSet("FRICTION_CANCEL_PROBE")) {
+        std::cout << "[RUNNING] Test 11: stale render cancellation (real scheduler) ... " << std::flush;
+        try {
+            cancelStormBody();
+            std::cout << "PASSED" << std::endl;
+            passed++;
+        } catch (const std::exception& e) {
+            std::cout << "FAILED: " << e.what() << std::endl;
+            failed++;
+        } catch (...) {
+            std::cout << "FAILED (unknown exception)" << std::endl;
+            failed++;
+        }
+        return (failed == 0) ? 0 : 1;
+    }
 
     const auto runTest = [&](const char* name, auto func) {
         std::cout << "[RUNNING] " << name << " ... ";
@@ -2377,6 +2483,50 @@ int main(int argc, char *argv[])
             throw std::runtime_error("stacked result equals a single effect: not chained");
         }
         std::cout << "(2-effect chain order-sensitive, both applied) ";
+    });
+
+    // Test 11: rapid edits must cancel the in-flight stale renders
+    // through the REAL scheduler - canceled tasks must not resurrect,
+    // the pool must drain (no hang), and the surviving render must
+    // carry the current state id (regression guard for the
+    // stale-render-cancellation machinery).
+    // The document/scene machinery needs a QGuiApplication while the
+    // ThemeSupport tests crash under one (getIconSize headless) - so
+    // the storm runs re-exec'd in FRICTION_CANCEL_PROBE mode (offscreen
+    // QGuiApplication, this test only) and the exit code is asserted
+    runTest("Test 11: stale render cancellation (real scheduler)", [&]() {
+        if (!qEnvironmentVariableIsSet("FRICTION_CANCEL_PROBE")) {
+            QProcessEnvironment env =
+                    QProcessEnvironment::systemEnvironment();
+            env.insert("FRICTION_CANCEL_PROBE", "1");
+            env.insert("QT_QPA_PLATFORM", "offscreen");
+            QProcess proc;
+            proc.setProcessEnvironment(env);
+            proc.setProcessChannelMode(QProcess::MergedChannels);
+            proc.start(QCoreApplication::applicationFilePath());
+            if (!proc.waitForStarted(5000)) {
+                throw std::runtime_error("probe re-exec failed to start");
+            }
+            QElapsedTimer guard; guard.start();
+            while (!proc.waitForFinished(100)) {
+                std::cout << proc.readAllStandardOutput().toStdString()
+                          << std::flush;
+                if (proc.state() != QProcess::Running) break;
+                if (guard.elapsed() > 180000) {
+                    proc.kill();
+                    throw std::runtime_error("probe timed out (hang)");
+                }
+            }
+            std::cout << proc.readAllStandardOutput().toStdString()
+                      << std::flush;
+            if (proc.exitStatus() != QProcess::NormalExit ||
+                proc.exitCode() != 0) {
+                throw std::runtime_error("probe crashed or failed (exit " +
+                                         std::to_string(proc.exitCode()) + ")");
+            }
+            return;
+        }
+        cancelStormBody();
     });
 
     std::cout << "\n=========================================" << std::endl;

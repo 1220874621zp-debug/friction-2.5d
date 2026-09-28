@@ -28,6 +28,8 @@
 
 #include "../smartPointers/ememory.h"
 
+#include <atomic>
+
 enum class eTaskState {
     created,
     qued,
@@ -85,7 +87,9 @@ private:
     void tellDependentThatFinished();
     void cancelDependent();
 
-    bool mCancel = false;
+    // set from the GUI thread while the task may be processing on a
+    // worker (stale-render cancellation) - must be atomic
+    std::atomic<bool> mCancel{false};
     int mNDependancies = 0;
     QList<Dependent> mDependentF;
     QList<stdptr<eTask>> mDependent;

@@ -30,6 +30,11 @@
 #include "GUI/dialogsinterface.h"
 
 void eTaskBase::finishedProcessing() {
+    // a task canceled while qued stays canceled: its dependents were
+    // already canceled by the original cancel() call, and the executor's
+    // finished signal must not resurrect it into the finished state
+    // (which would run afterProcessing on a render nobody wants)
+    if(mState == eTaskState::canceled) return;
     mState = eTaskState::finished;
     if(mCancel) {
         mCancel = false;

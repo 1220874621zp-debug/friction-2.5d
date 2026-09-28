@@ -201,6 +201,13 @@ void TaskScheduler::processNextQuedHddTask() {
     QList<stdsptr<eTask>> tasks;
     for(int i = 0; i < mQuedHddTasks.count(); i++) {
         const auto task = mQuedHddTasks.at(i);
+        // check BEFORE aboutToProcess: it overwrites the state, which
+        // made the old >processing check below dead code and resurrected
+        // canceled tasks
+        if(task->getState() == eTaskState::canceled) {
+            mQuedHddTasks.removeAt(i--);
+            continue;
+        }
         if(!task->readyToBeProcessed()) continue;
         task->aboutToProcess(Hardware::hdd);
         if(task->getState() > eTaskState::processing)

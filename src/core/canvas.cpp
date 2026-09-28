@@ -1308,14 +1308,16 @@ void Canvas::renderDataFinished(BoxRenderData *renderData) {
     if(!renderData->fRenderedImage) { mRenderDataDiscardCount++; return; }
     const bool currentState = renderData->fBoxStateId == mStateId;
     if(currentState) mRenderDataHandler.removeItemAtRelFrame(renderData->fRelFrame);
-    else if(renderData->fBoxStateId < mLastStateId) {
-        // stale completion, will never land in the cache - count it so
-        // the preview pipeline watchdog can re-feed the frame at once
+    else {
+        // stale completion (state bumped while this render was in
+        // flight): never show or cache it. Displaying it made the canvas
+        // step BACK through outdated images before the current render
+        // landed (flicker + "wrong, then correct after a while"). Count
+        // it so the preview pipeline watchdog can re-feed the frame.
         mRenderDataDiscardCount++;
         return;
     }
     const int relFrame = qRound(renderData->fRelFrame);
-    mLastStateId = renderData->fBoxStateId;
 
     auto range = prp_getIdenticalRelRange(relFrame);
     if(!range.inRange(relFrame)) {
@@ -1333,24 +1335,19 @@ void Canvas::renderDataFinished(BoxRenderData *renderData) {
         range = {relFrame, relFrame};
     }
     const auto cont = enve::make_shared<SceneFrameContainer>(
-                this, renderData, range,
-                currentState ? &mSceneFramesHandler : nullptr);
-    if(currentState) {
-        mSceneFramesHandler.add(cont);
-        // event-driven pipeline: wakes the preview/output feeder
-        // immediately instead of waiting for the next timer tick
-        emit sceneFrameCached();
-    } else {
-        // non-current-state completion gets a null handler and never
-        // lands in the cache - count it as a discard as well
-        mRenderDataDiscardCount++;
-    }
+                this, renderData, range, &mSceneFramesHandler);
+    mSceneFramesHandler.add(cont);
+    // event-driven pipeline: wakes the preview/output feeder
+    // immediately instead of waiting for the next timer tick
+    emit sceneFrameCached();
 
     if(!mPreviewing && !mRenderingOutput){
-        bool newerSate = true;
+        // currentState implies the finished state is >= the shown one's
+        // (the scene frame can only hold an older state, or the same
+        // state at a different frame while scrubbing), so only the
+        // frame distance decides whether to switch the display
         bool closerFrame = true;
         if(mSceneFrame) {
-            newerSate = mSceneFrame->fBoxState < renderData->fBoxStateId;
             const int cRelFrame = anim_getCurrentRelFrame();
             const int finishedFrameDist = qMin(qAbs(cRelFrame - range.fMin),
                                                qAbs(cRelFrame - range.fMax));
@@ -1359,8 +1356,8 @@ void Canvas::renderDataFinished(BoxRenderData *renderData) {
                                           qAbs(cRelFrame - cRange.fMax));
             closerFrame = finishedFrameDist < oldFrameDist;
         }
-        if(newerSate || closerFrame) {
-            mSceneFrameOutdated = !currentState;
+        if(closerFrame) {
+            mSceneFrameOutdated = false;
             setSceneFrame(cont);
         }
     }

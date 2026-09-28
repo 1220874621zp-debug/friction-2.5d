@@ -121,7 +121,26 @@ void TaskQue::addTask(const stdsptr<eTask> &task) {
     }
 }
 
+// stale-render cancellation drops tasks from the GUI thread while they
+// may still sit in one of the ques: purge them on take, otherwise
+// aboutToProcess would overwrite the canceled state and resurrect the
+// task (its dependents were already canceled once - resurrecting ran
+// the render anyway and its completion polluted the display path)
+template <typename LIST>
+static void purgeCanceled(LIST &list) {
+    for(int i = 0; i < list.count(); i++) {
+        if(list.at(i)->getState() == eTaskState::canceled) {
+            list.removeAt(i);
+            i--;
+        }
+    }
+}
+
 stdsptr<eTask> TaskQue::takeQuedForCpuProcessing() {
+    purgeCanceled(mCpuOnly);
+    purgeCanceled(mCpuPreffered);
+    purgeCanceled(mGpuPreffered);
+    purgeCanceled(mGpuOnly);
     for(int i = 0; i < mCpuOnly.count(); i++) {
         const auto& task = mCpuOnly.at(i);
         if(task->readyToBeProcessed())
@@ -141,6 +160,10 @@ stdsptr<eTask> TaskQue::takeQuedForCpuProcessing() {
 }
 
 stdsptr<eTask> TaskQue::takeQuedForGpuProcessing() {
+    purgeCanceled(mGpuOnly);
+    purgeCanceled(mGpuPreffered);
+    purgeCanceled(mCpuPreffered);
+    purgeCanceled(mCpuOnly);
     for(int i = 0; i < mGpuOnly.count(); i++) {
         const auto& task = mGpuOnly.at(i);
         if(task->readyToBeProcessed())
