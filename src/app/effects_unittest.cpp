@@ -46,6 +46,9 @@
 #include "hardwareinfo.h"
 #include "RasterEffects/rastereffectmenucreator.h"
 #include "GUI/BoxesList/levelseffectdialog.h"
+#include "GUI/BoxesList/boxsinglewidget.h"
+#include "GUI/BoxesList/boxscroller.h"
+#include "optimalscrollarena/scrollwidget.h"
 #include "RasterEffects/effectpreview.h"
 #include "Properties/comboboxproperty.h"
 #include "Psd/psdfile.h"
@@ -83,6 +86,26 @@ RenderInstanceSettings &RenderInstanceWidget::getSettings() {
     alignas(alignof(RenderInstanceSettings)) static char buf[sizeof(RenderInstanceSettings)];
     return reinterpret_cast<RenderInstanceSettings&>(buf);
 }
+// real-row coverage stubs: BoxSingleWidget's full dependency web
+// (keys view, presets panel, leaf widgets) is not linked into this
+// test binary - only the symbols the row actually touches at
+// assignment time are stubbed
+#include "GUI/keysview.h"
+#include "GUI/effectspresetspanel.h"
+#include "GUI/BoxesList/boolpropertywidget.h"
+#include "GUI/BoxesList/boxtargetwidget.h"
+#include "GUI/timelinehighlightwidget.h"
+#include "Private/esettings.h"
+void KeysView::clearKeySelection() {}
+void KeysView::graphAddViewedAnimator(GraphAnimator*) {}
+int KeysView::graphGetAnimatorId(GraphAnimator*) { return -1; }
+bool KeysView::graphIsSelected(GraphAnimator*) { return false; }
+void KeysView::graphRemoveViewedAnimator(GraphAnimator*) {}
+QColor KeysView::sGetAnimatorColor(int) { return QColor(); }
+const QString& EffectsPresetsPanel::sMimeFormat()
+{ static const QString f; return f; }
+EffectsPresetsPanel::EffectApplyFn EffectsPresetsPanel::takeEffectDrag(
+        const QByteArray&) { return nullptr; }
 // the levels dialog parents itself to the main window when one
 // exists; headless there is none
 MainWindow *MainWindow::sInstance = nullptr;
@@ -291,6 +314,115 @@ int main(int argc, char *argv[])
                 strip.grab().save(QString::fromUtf8(
                             qgetenv("FRICTION_LEVELS_ROW_SHOT")));
                 row->hide();
+            }
+
+            // REAL panel row: a genuine BoxSingleWidget fed the
+            // wrapper abstraction - exactly the assignment that
+            // crashed on the out-of-range child access
+            {
+                UpdateFuncs funcs;
+                funcs.fContentUpdateIfIsCurrentRule = [](SWT_BoxRule){};
+                funcs.fContentUpdateIfIsCurrentTarget = [](SingleWidgetTarget*, SWT_Target){};
+                funcs.fContentUpdateIfSearchNotEmpty = [](){};
+                funcs.fUpdateParentHeight = [](){};
+                funcs.fUpdateVisibleWidgetsContent = [](){};
+                const int pid = 7777;
+                box->SWT_createAbstraction(funcs, pid);
+                const auto inAbs = inWrap->SWT_getAbstractionForWidget(pid);
+                const auto outAbs = outWrap->SWT_getAbstractionForWidget(pid);
+                if (!inAbs || !outAbs) {
+                    throw std::runtime_error("wrapper abstractions "
+                                             "were not created");
+                }
+
+                // heap + explicit teardown order: ScrollWidget
+                // adopts the scroller, so a stack scroller would be
+                // destroyed twice
+                auto scroller = std::unique_ptr<BoxScroller>(
+                            new BoxScroller(nullptr));
+                ScrollWidget* const sw = new ScrollWidget(
+                            scroller.get(), nullptr);
+                // NOTE: the scroller paint path needs a fully set-up
+                // panel, so the parent chain stays unshown - the row
+                // is driven and rendered directly instead
+                auto row = std::make_unique<BoxSingleWidget>(
+                            scroller.get());
+                // wide enough that the name column + row buttons
+                // still leave the slider a real span
+                row->resize(640, 20);
+                row->show();
+
+                // input row: assignment must sync without throwing
+                row->setTargetAbstraction(inAbs);
+                for (int i = 0; i < 10; i++) {
+                    QCoreApplication::processEvents();
+                }
+                LevelsSlider* inRow = row->findChild<LevelsSlider*>(
+                            QStringLiteral("levelsInputRow"));
+                if (!inRow || inRow->isHidden() ||
+                    !qFuzzyIsNull(inRow->black()) ||
+                    !qFuzzyCompare(inRow->white(), 255.)) {
+                    throw std::runtime_error("input row not live-synced");
+                }
+                // drag its black handle to ~40% via the real row widget
+                {
+                    const int y = inRow->height() / 2;
+                    const qreal dragX = 4.5 + 0.4 * (inRow->width() - 11);
+                    const auto sendMouse3 = [inRow](const QEvent::Type type,
+                                                    const QPointF& pos) {
+                        QMouseEvent ev(type, pos, inRow->mapToGlobal(pos),
+                                       Qt::LeftButton, Qt::LeftButton,
+                                       Qt::NoModifier);
+                        QApplication::sendEvent(inRow, &ev);
+                    };
+                    sendMouse3(QEvent::MouseButtonPress, QPointF(5, y));
+                    sendMouse3(QEvent::MouseMove, QPointF(dragX, y));
+                    sendMouse3(QEvent::MouseButtonRelease, QPointF(dragX, y));
+                    for (int i = 0; i < 10; i++) {
+                        QCoreApplication::processEvents();
+                    }
+                    const qreal v = eff->getInBlackAnimator()
+                            ->getCurrentBaseValue();
+                    if (v < 96. || v > 108.) {
+                        throw std::runtime_error(
+                                "real row drag is off: " +
+                                std::to_string(v) + " w=" +
+                                std::to_string(inRow->width()) +
+                                " x=" + std::to_string(dragX));
+                    }
+                    sendMouse3(QEvent::MouseButtonDblClick,
+                               QPointF(dragX, y));
+                    for (int i = 0; i < 10; i++) {
+                        QCoreApplication::processEvents();
+                    }
+                    if (!qFuzzyIsNull(eff->getInBlackAnimator()
+                                      ->getCurrentBaseValue())) {
+                        throw std::runtime_error("real row reset is off");
+                    }
+                }
+
+                // output row: the two-child wrapper - the crash case
+                row->setTargetAbstraction(outAbs);
+                for (int i = 0; i < 10; i++) {
+                    QCoreApplication::processEvents();
+                }
+                LevelsSlider* outRow = row->findChild<LevelsSlider*>(
+                            QStringLiteral("levelsOutputRow"));
+                if (!outRow || outRow->isHidden() ||
+                    !qFuzzyIsNull(outRow->black()) ||
+                    !qFuzzyCompare(outRow->white(), 255.)) {
+                    throw std::runtime_error("output row not live-synced "
+                                             "(original crash case)");
+                }
+                const QString shot = QString::fromUtf8(
+                            qgetenv("FRICTION_LEVELS_PANEL_SHOT"));
+                if (!shot.isEmpty()) {
+                    row->grab().save(shot);
+                }
+                row->hide();
+                row.reset();
+                delete sw; // deletes the scroller it adopted
+                scroller.release();
             }
 
             LevelsEffectDialog::openFor(eff.get());

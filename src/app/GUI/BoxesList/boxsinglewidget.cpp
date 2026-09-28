@@ -1042,6 +1042,8 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
     };
     mLevelsInputRow = new LevelsSlider(LevelsSlider::Input, this);
     mLevelsOutputRow = new LevelsSlider(LevelsSlider::Output, this);
+    mLevelsInputRow->setObjectName(QStringLiteral("levelsInputRow"));
+    mLevelsOutputRow->setObjectName(QStringLiteral("levelsOutputRow"));
     setupLevelsRow(mLevelsInputRow);
     setupLevelsRow(mLevelsOutputRow);
     mLevelsInputRow->setToolTip(
@@ -1063,6 +1065,9 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
         const auto ca = in ? static_cast<ComplexAnimator*>(in) :
                      out ? static_cast<ComplexAnimator*>(out) : nullptr;
         if (!ca) { return nullptr; }
+        if (handleIdx < 0 || handleIdx >= ca->ca_getNumberOfChildren()) {
+            return nullptr;
+        }
         return enve_cast<QrealAnimator*>(ca->ca_getChildAt(handleIdx));
     };
     const auto levelsRowPressed = [this, levelsHandleAnim](
@@ -1654,22 +1659,28 @@ void BoxSingleWidget::setTargetAbstraction(SWT_Abstraction *abs) {
                     static_cast<ComplexAnimator*>(levelsInWrap) :
                     static_cast<ComplexAnimator*>(levelsOutWrap);
         const int nChild = ca->ca_getNumberOfChildren();
-        const auto syncRow = [this, row, ca]() {
-            const auto vb = enve_cast<QrealAnimator*>(
-                        ca->ca_getChildAt(LevelsInputAnimator::Black));
-            const auto vg = enve_cast<QrealAnimator*>(
-                        ca->ca_getChildAt(LevelsInputAnimator::Gamma));
-            const auto vw = enve_cast<QrealAnimator*>(
-                        ca->ca_getChildAt(LevelsInputAnimator::White));
-            if (vb && vw) {
-                row->setValues(vb->getEffectiveValue(),
-                               vg ? vg->getEffectiveValue() : 1.,
-                               vw->getEffectiveValue());
-            }
+        // bounds-checked child access: ca_getChildAt throws on an
+        // out-of-range index, and the two wrappers have different
+        // child counts (input = black/gamma/white, output = black/white)
+        const auto childAt = [ca, nChild](const int idx) -> QrealAnimator* {
+            if (idx < 0 || idx >= nChild) { return nullptr; }
+            return enve_cast<QrealAnimator*>(ca->ca_getChildAt(idx));
+        };
+        const int idxBlack = 0;
+        const int idxGamma = isInput ? 1 : -1;
+        const int idxWhite = isInput ? 2 : 1;
+        const auto syncRow = [this, row, childAt, idxBlack,
+                              idxGamma, idxWhite]() {
+            const auto vb = childAt(idxBlack);
+            const auto vg = childAt(idxGamma);
+            const auto vw = childAt(idxWhite);
+            if (!vb || !vw) { return; }
+            row->setValues(vb->getEffectiveValue(),
+                           vg ? vg->getEffectiveValue() : 1.,
+                           vw->getEffectiveValue());
         };
         for (int i = 0; i < nChild; i++) {
-            if (const auto qa = enve_cast<QrealAnimator*>(
-                        ca->ca_getChildAt(i))) {
+            if (const auto qa = childAt(i)) {
                 mTargetConn << connect(qa, &QrealAnimator::effectiveValueChanged,
                                        this, syncRow);
             }

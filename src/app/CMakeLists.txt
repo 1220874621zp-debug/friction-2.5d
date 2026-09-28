@@ -391,7 +391,7 @@ add_executable(
     ${WINDOWS_RESOURCE_FILE}
 )
 
-add_executable(friction_effects_test effects_unittest.cpp AI/mcpserver.cpp AI/mcpdispatcher.cpp GUI/BoxesList/levelseffectdialog.cpp ${RESOURCES})
+add_executable(friction_effects_test effects_unittest.cpp AI/mcpserver.cpp AI/mcpdispatcher.cpp GUI/BoxesList/levelseffectdialog.cpp GUI/BoxesList/boxsinglewidget.cpp GUI/BoxesList/boxscroller.cpp GUI/BoxesList/boolpropertywidget.cpp GUI/BoxesList/boxtargetwidget.cpp GUI/timelinehighlightwidget.cpp ${RESOURCES})
 target_link_directories(
     friction_effects_test
     PRIVATE
