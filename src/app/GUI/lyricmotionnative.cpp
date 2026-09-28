@@ -1351,6 +1351,269 @@ CutText buildLayout(Ctx &c, ContainerBox * const group,
                                      c.ch * 0.86, 8, 1), sub);
             }
         }
+    } else if (has("keycaps") || has("ticket") || has("notification")
+               || has("chat") || has("searchBar")) {
+        // chip/card family: the line inside a framed capsule
+        const qreal size = qMin(fitSize(text, lf.family, 700, c.cw * 0.5),
+                                c.ch * 0.12);
+        const QPointF pos(c.cw * 0.5, c.ch * 0.5);
+        const qreal w = size * 0.62 * text.length() + size * 2.2;
+        const qreal h = size * 2.4;
+        auto *card = mkRect(group, QRectF(pos.x() - w / 2, pos.y() - h / 2,
+                                          w, h), QColor(),
+                            size * 0.4, size * 0.4);
+        const QColor cardCol = has("ticket") ? QColor(238, 232, 218)
+                : sub;
+        card->getFillSettings()->setPaintType(PaintType::FLATPAINT);
+        card->getFillSettings()->setCurrentColor(
+                    has("notification") || has("chat")
+                    ? QColor(24, 24, 28) : cardCol);
+        card->getStrokeSettings()->setCurrentColor(accent);
+        card->getStrokeSettings()->getStrokeWidthAnimator()
+                ->setCurrentBaseValue(2);
+        if (has("ticket")) {
+            // perforation dots along the middle
+            for (int k = 0; k < 9; k++) {
+                mkCircle(group, QPointF(pos.x() - w / 2 + w * k / 8.0,
+                                        pos.y()), size * 0.07,
+                         QColor(16, 16, 18));
+            }
+        }
+        mkMain(text, size, QPointF(pos.x(), has("ticket")
+                                   ? pos.y() - h * 0.22 : pos.y()));
+        ct.anchor = pos;
+        if (has("searchBar")) {
+            auto *lens = mkCircle(group, QPointF(pos.x() + w * 0.46,
+                                                 pos.y() - h * 0.46),
+                                  size * 0.34, QColor());
+            lens->getStrokeSettings()->setCurrentColor(textCol);
+            lens->getStrokeSettings()->getStrokeWidthAnimator()
+                    ->setCurrentBaseValue(3);
+        }
+        if (has("notification") || has("chat")) {
+            auto *dot = mkCircle(group, QPointF(pos.x() - w * 0.44,
+                                                pos.y() - h * 0.44),
+                                 size * 0.2, accent);
+            Q_UNUSED(dot);
+        }
+    } else if (has("flipBoard") || has("gridCells") || has("dotMatrix")) {
+        // per-glyph cells with swap-in (split-flap board feel)
+        const int n = qMax(1, text.length());
+        const qreal size = qMin(c.cw * 0.74 / n, c.ch * 0.18);
+        const qreal cell = size * 1.35;
+        for (int k = 0; k < n; k++) {
+            const QPointF p(c.cw * 0.5 + (k - (n - 1) / 2.0) * cell,
+                            c.ch * 0.48);
+            auto *back = mkRect(group, QRectF(p.x() - cell / 2,
+                                              p.y() - cell / 2, cell, cell),
+                                has("dotMatrix") ? QColor(18, 18, 22)
+                                                 : QColor(),
+                                size * 0.12, size * 0.12);
+            if (!has("dotMatrix")) {
+                back->getStrokeSettings()->setCurrentColor(sub);
+                back->getStrokeSettings()->getStrokeWidthAnimator()
+                        ->setCurrentBaseValue(1.5);
+            } else {
+                for (int gy = 0; gy < 3; gy++) {
+                    for (int gx = 0; gx < 2; gx++) {
+                        mkCircle(group, QPointF(
+                                     p.x() - cell * 0.25 + gx * cell * 0.5,
+                                     p.y() - cell * 0.3 + gy * cell * 0.3),
+                                 size * 0.05, sub);
+                    }
+                }
+            }
+            auto *b = mkText(group, QString(text.at(k)), lf.family, 900,
+                             size, has("dotMatrix") ? sub : textCol);
+            b->getTransformAnimator()->getPosAnimator()->setBaseValue(
+                        QPointF(p.x(), has("dotMatrix")
+                                ? p.y() + cell * 0.62 : p.y()));
+            ct.boxes << b;
+            if (has("flipBoard")) {
+                scrambleKeys(c, b,
+                             fSec(c, cut.value(QStringLiteral("start"))
+                                  .toDouble()),
+                             fSec(c, cut.value(QStringLiteral("start"))
+                                  .toDouble())
+                             + qRound(0.45 * c.fps),
+                             quint32(cut.value(QStringLiteral("seed"))
+                                     .toInt(1)) + k);
+            }
+        }
+        ct.mainSize = size;
+        ct.anchor = QPointF(c.cw * 0.5, c.ch * 0.48);
+    } else if (has("hanging") || has("sideways") || has("perspective")) {
+        const qreal size = qMin(fitSize(text, lf.family, 700, c.cw * 0.6),
+                                c.ch * 0.16);
+        const QPointF pos(c.cw * 0.5, c.ch * 0.5);
+        auto *b = mkMain(text, size, pos);
+        if (has("hanging")) {
+            // hangs from the top: thread + slight sway
+            mkRect(group, QRectF(pos.x() - 1, c.ch * 0.06, 2,
+                                 pos.y() - c.ch * 0.06 - size * 0.6),
+                   sub);
+            b->getBoxTransformAnimator()->getPivotAnimator()->setBaseValue(
+                        QPointF(0, -size * 0.6));
+            auto *rot = b->getTransformAnimator()->getRotAnimator();
+            const int f0 = fSec(c, cut.value(QStringLiteral("start"))
+                                .toDouble());
+            const int f1 = fSec(c, cut.value(QStringLiteral("end"))
+                                .toDouble());
+            bakeSpan(rot, c, f0, f1, [](const qreal p) {
+                return 3.5 * qSin(p * 6.2831853);
+            });
+        } else if (has("sideways")) {
+            b->getTransformAnimator()->getRotAnimator()
+                    ->setCurrentBaseValue(90);
+        } else {
+            b->getTransformAnimator()->getScaleAnimator()
+                    ->setBaseValue(QPointF(1.0, 0.45));
+            b->getTransformAnimator()->getPosAnimator()->setBaseValue(
+                        QPointF(c.cw * 0.5, c.ch * 0.62));
+        }
+        ct.anchor = pos;
+    } else if (has("columnsBig") || has("justified") || has("dropCap")
+               || has("hanko")) {
+        // editorial columns / drop cap / seal stamp
+        if (has("hanko")) {
+            const qreal s = c.ch * 0.24;
+            const QPointF pos(c.cw * 0.76, c.ch * 0.7);
+            auto *seal = mkRect(group, QRectF(pos.x() - s, pos.y() - s,
+                                              s * 2, s * 2),
+                                QColor(178, 34, 34), s * 0.1, s * 0.1);
+            Q_UNUSED(seal);
+            const QString mark = text.left(2);
+            auto *b = mkText(group, mark,
+                             QStringLiteral("Noto Serif CJK JP"), 900,
+                             s * 0.9, QColor(255, 244, 230));
+            b->getTransformAnimator()->getPosAnimator()->setBaseValue(pos);
+            ct.boxes << b;
+            const qreal size2 = qMin(fitSize(text, lf.family, 700,
+                                             c.cw * 0.5), c.ch * 0.12);
+            auto *m = mkText(group, text, lf.family, 700, size2, textCol);
+            m->getTransformAnimator()->getPosAnimator()->setBaseValue(
+                        QPointF(c.cw * 0.34, c.ch * 0.4));
+            ct.boxes << m;
+            ct.mainSize = size2;
+        } else if (has("dropCap")) {
+            const qreal big = c.ch * 0.34;
+            auto *b0 = mkText(group, text.left(1),
+                              QStringLiteral("Noto Serif CJK JP"), 900,
+                              big, accent);
+            b0->getTransformAnimator()->getPosAnimator()->setBaseValue(
+                        QPointF(c.cw * 0.2, c.ch * 0.42));
+            b0->setTextHAlignment(Qt::AlignLeft);
+            ct.boxes << b0;
+            const QString rest = text.mid(1).trimmed();
+            if (!rest.isEmpty()) {
+                const qreal size = qMin(fitSize(rest, lf.family, 400,
+                                                c.cw * 0.44), c.ch * 0.1);
+                auto *b1 = mkText(group, rest, lf.family, 400, size,
+                                  textCol);
+                b1->getTransformAnimator()->getPosAnimator()->setBaseValue(
+                            QPointF(c.cw * 0.62, c.ch * 0.5));
+                ct.boxes << b1;
+            }
+            ct.anchor = QPointF(c.cw * 0.4, c.ch * 0.45);
+        } else {
+            const int cols = has("columnsBig") ? 2 : 1;
+            const qreal size = qMin(fitSize(text, lf.family, 700,
+                                            c.cw * 0.9 / cols),
+                                    c.ch * 0.2);
+            for (int k = 0; k < cols; k++) {
+                const QString part = cols == 1 ? text : k == 0
+                        ? text.left(text.length() / 2)
+                        : text.mid(text.length() / 2);
+                if (part.trimmed().isEmpty()) { continue; }
+                auto *b = mkText(group, part, lf.family, 700, size,
+                                 k ? accent : textCol);
+                const QPointF pos(cols == 1
+                                  ? QPointF(c.cw * 0.5, c.ch * 0.5)
+                                  : QPointF(c.cw * (k ? 0.72 : 0.28),
+                                            c.ch * 0.5));
+                b->getTransformAnimator()->getPosAnimator()->setBaseValue(pos);
+                if (cols == 1) {
+                    // justified: stretch to the full measure
+                    const qreal stretch = 1.0 * c.cw * 0.86
+                            / (size * 0.62 * text.length() + 1);
+                    b->getTransformAnimator()->getScaleAnimator()
+                            ->setBaseValue(QPointF(qBound(1.0, stretch, 1.6),
+                                                   1.0));
+                }
+                ct.boxes << b;
+                ct.mainSize = qMax(ct.mainSize, size);
+            }
+            ct.anchor = QPointF(c.cw * 0.5, c.ch * 0.5);
+        }
+    } else if (has("stickerBomb") || has("equalizer") || has("credits")) {
+        if (has("credits")) {
+            // end-roll: centered line drifting upward
+            const qreal size = qMin(fitSize(text, lf.family, 500,
+                                            c.cw * 0.5), c.ch * 0.09);
+            const int f0 = fSec(c, cut.value(QStringLiteral("start"))
+                                .toDouble());
+            const int f1 = fSec(c, cut.value(QStringLiteral("end"))
+                                .toDouble());
+            auto *b = mkMain(text, size, QPointF(c.cw * 0.5, c.ch * 0.6));
+            auto *py = b->getTransformAnimator()->getPosAnimator()
+                    ->getYAnimator();
+            bakeSpan(py, c, f0, f1, [&](const qreal p) {
+                return c.ch * (0.62 - 0.26 * p);
+            });
+            ct.anchor = QPointF(c.cw * 0.5, c.ch * 0.5);
+        } else if (has("equalizer")) {
+            const qreal size = qMin(fitSize(text, lf.family, 900,
+                                            c.cw * 0.5), c.ch * 0.16);
+            const QPointF pos(c.cw * 0.5, c.ch * 0.38);
+            mkMain(text, size, pos);
+            ct.anchor = pos;
+            QRandomGenerator rng(quint32(cut.value(QStringLiteral("seed"))
+                                        .toInt(1)) ^ 0xE0);
+            const int bars = 18;
+            for (int k = 0; k < bars; k++) {
+                const qreal h = c.ch * (0.02 + 0.1
+                                        * rng.generateDouble());
+                auto *bar = mkRect(group, QRectF(
+                            c.cw * 0.1 + c.cw * 0.8 * k / bars,
+                            c.ch * 0.9 - h, c.cw * 0.8 / bars - 3, h),
+                                   k % 5 == 0 ? accent : sub);
+                opacityAnim(bar)->setCurrentBaseValue(80);
+            }
+        } else {
+            // sticker shower: rotated labels scattered over the frame
+            const QStringList words = text.split(
+                        QRegularExpression(QStringLiteral("[\\s、，,/]+")),
+                        Qt::SkipEmptyParts);
+            QRandomGenerator rng(quint32(cut.value(QStringLiteral("seed"))
+                                        .toInt(1)) ^ 0x57);
+            const int n = qMax(3, words.size());
+            for (int k = 0; k < n; k++) {
+                const qreal size = c.ch * (0.05 + 0.06
+                                           * rng.generateDouble());
+                const QPointF p(c.cw * (0.12 + 0.76
+                                        * rng.generateDouble()),
+                                c.ch * (0.15 + 0.7
+                                        * rng.generateDouble()));
+                const qreal rot = (rng.generateDouble() - 0.5) * 24;
+                auto *st = mkRect(group, QRectF(
+                            p.x() - size * (words.at(k % words.size())
+                                            .length() * 0.4 + 0.6),
+                            p.y() - size * 0.9,
+                            size * (words.at(k % words.size()).length()
+                                    * 0.8 + 1.2), size * 1.8),
+                                   k % 3 ? QColor(255, 240, 120)
+                                   : accent, size * 0.15, size * 0.15);
+                st->getTransformAnimator()->getRotAnimator()
+                        ->setCurrentBaseValue(rot);
+                auto *b = mkText(group, words.at(k % words.size()),
+                                 lf.family, 900, size, QColor(20, 20, 24));
+                b->getTransformAnimator()->getPosAnimator()->setBaseValue(p);
+                b->getTransformAnimator()->getRotAnimator()
+                        ->setCurrentBaseValue(rot);
+                ct.boxes << b;
+            }
+            ct.anchor = QPointF(c.cw * 0.5, c.ch * 0.5);
+        }
     } else if (has("bubble") || has("bubbles") || has("circleWords")) {
         // words in outlined bubbles / words around a circle
         const QStringList words = text.split(
@@ -1516,6 +1779,15 @@ QString enterPreset(const QString &key, Ctx &c) {
     if (has("mask") || has("wipe")) { return QStringLiteral("smooth-line-slide"); }
     if (has("fan")) { return QStringLiteral("smooth-line-slide"); }
     if (has("brush") || has("ink")) { return QStringLiteral("smooth-cinematic-fade"); }
+    if (has("cursor")) { return QStringLiteral("tech-cursor-stream"); }
+    if (has("skew")) { return QStringLiteral("prop-shear-slash-x"); }
+    if (has("dive") || has("divein")) { return QStringLiteral("sharp-recoil-blast"); }
+    if (has("inertia")) { return QStringLiteral("sharp-gelatin-settle"); }
+    if (has("slam") || has("snaptype")) { return QStringLiteral("sharp-snap-word-slam"); }
+    if (has("gear") || has("roll")) { return QStringLiteral("prop-rot-cw-360"); }
+    if (has("ruby")) { return QStringLiteral("smooth-word-bloom"); }
+    if (has("turn") || has("quarter")) { return QStringLiteral("3d-door-swing-left"); }
+    if (has("seesaw") || has("tumble")) { return QStringLiteral("sharp-domino-fall"); }
     c.res->substitutions++;
     return QStringLiteral("smooth-cinematic-fade");
 }
@@ -1538,6 +1810,16 @@ QString exitPreset(const QString &key, Ctx &c) {
     if (key == QStringLiteral("scatter")) { return QStringLiteral("sharp-rebound-diag"); }
     if (key == QStringLiteral("glitch")) { return QStringLiteral("tech-digital-glitch-drop"); }
     if (has("fan") || has("close")) { return QStringLiteral("smooth-line-slide"); }
+    if (has("shatter") || has("burst")) { return QStringLiteral("sharp-punch-burst"); }
+    if (has("gravity") || has("sink") || has("under")) { return QStringLiteral("sharp-snap-drop"); }
+    if (has("pop") || has("launch")) { return QStringLiteral("sharp-recoil-blast"); }
+    if (has("melt") || has("collapse")) { return QStringLiteral("prop-scale-squeeze-y"); }
+    if (has("burn") || has("ash")) { return QStringLiteral("tech-analog-noise"); }
+    if (has("whip")) { return QStringLiteral("sharp-horizontal-whip"); }
+    if (has("dot") || has("shrink")) { return QStringLiteral("prop-scale-shrink"); }
+    if (has("bracket") || has("cover") || has("sweep")) { return QStringLiteral("smooth-line-curtain"); }
+    if (has("blink") || has("blinkout")) { return QStringLiteral("tech-strobe-alert"); }
+    if (has("diag")) { return QStringLiteral("smooth-drift-diag-br"); }
     c.res->substitutions++;
     return QStringLiteral("smooth-cinematic-fade");
 }
