@@ -779,6 +779,32 @@ int main(int argc, char *argv[])
     if (qEnvironmentVariableIsSet("FRICTION_LYRICAPPLY")) {
         const bool probeGpuOff = qEnvironmentVariable("FRICTION_LYRICAPPLY")
                 != QLatin1String("gpu");
+        // dock-open latency probe: the lyric panel's preview request
+        // used to run synchronously on this thread (a direct call on a
+        // moveToThread'd worker executes in the caller); show the dock
+        // early and heartbeat the event loop to prove the open is
+        // stutter-free — stalls during the later apply/build are the
+        // probe's own synchronous build, not the dock
+        QTimer::singleShot(300, &w, [&w]() {
+            auto *gap = new QElapsedTimer(); // probe-lifetime, no parent
+            gap->start();
+            auto *beat = new QTimer(&w);
+            beat->setInterval(50);
+            QObject::connect(beat, &QTimer::timeout, beat, [gap]() {
+                const qint64 ms = gap->restart();
+                if (ms > 120) {
+                    qWarning() << "[LYRICAPPLY] GUI stall" << ms << "ms";
+                }
+            });
+            beat->start();
+            if (auto *dock = w.findChild<QDockWidget*>(
+                        QStringLiteral("dockLyricMotion"))) {
+                dock->show();
+                dock->raise();
+                qWarning() << "[LYRICAPPLY] lyric dock shown t+"
+                           << gap->elapsed() << "ms";
+            }
+        });
         QTimer::singleShot(800, &w, [&w, &document, probeGpuOff]() {
             // the standalone smoke disables the GPU path before any
             // scene exists; mirror that unless FRICTION_LYRICAPPLY=gpu

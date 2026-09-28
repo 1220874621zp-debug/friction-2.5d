@@ -417,10 +417,25 @@ void LyricMotionPanel::requestCardPreview(LyricStyleCard * const card) {
     if (card->hasFrames() || card->isPending()) { return; }
     card->setPending(true);
     const auto params = collectParams();
-    mPreviewWorker->renderStyle(card->key(), params.seed,
-                                params.density, params.lyrics,
-                                params.beats, params.audioDuration,
-                                sceneFps(), mPreviewGeneration);
+    // queue onto the worker's event loop: a direct call here executes
+    // in the CALLER's thread regardless of moveToThread, which ran
+    // the whole plan + frame render on the GUI thread and froze the
+    // workspace for the duration of every dock-open / hover request
+    auto * const worker = mPreviewWorker;
+    const QString key = card->key();
+    const quint32 seed = params.seed;
+    const qreal density = params.density;
+    const QString lyrics = params.lyrics;
+    const QVector<qreal> beats = params.beats;
+    const qreal audioDuration = params.audioDuration;
+    const qreal fps = sceneFps();
+    const int generation = mPreviewGeneration;
+    QMetaObject::invokeMethod(worker, [worker, key, seed, density,
+                                       lyrics, beats, audioDuration,
+                                       fps, generation]() {
+        worker->renderStyle(key, seed, density, lyrics, beats,
+                            audioDuration, fps, generation);
+    }, Qt::QueuedConnection);
 }
 
 void LyricMotionPanel::advancePreviews() {
