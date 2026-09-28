@@ -58,7 +58,6 @@ private:
     void requestCardPreview(LyricStyleCard * const card);
     void advancePreviews();
     qreal sceneFps() const;
-    void requestCutPreview(class QTreeWidgetItem * const item);
     LyricStyleCard *findCard(const QString &key) const;
 
     QThread *mPreviewThread = nullptr;
@@ -66,10 +65,6 @@ private:
     int mPreviewGeneration = 0;
     bool mApplying = false;
     QTimer mFrameTimer;
-
-    // animated cut-level preview (big rectangle under the gallery)
-    QVector<QPixmap> mCutFrames;
-    int mCutFrameIdx = 0;
 
     LyricMotionEngine *mEngine = nullptr;
 
@@ -85,7 +80,6 @@ private:
     QPushButton *mAudioButton = nullptr;
     QLabel *mAudioLabel = nullptr;
     QCheckBox *mIncludeAudio = nullptr;
-    QLabel *mCutPreview = nullptr;
     QString mAudioPath;
     QString mAppliedAudioPath;
     LyricAudioAnalysis mAudioAnalysis;

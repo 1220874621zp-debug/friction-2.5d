@@ -33,23 +33,6 @@ public slots:
                      const qreal density, const QString &lyrics,
                      const QVector<qreal> &beats, qreal audioDuration,
                      qreal fps, const int generation);
-    // one large frame at an arbitrary time (cut-level preview); reuses
-    // the cached plan when the plan inputs are unchanged
-    void renderCutFrame(const QString &styleKey, const quint32 seed,
-                        const qreal density, const QString &lyrics,
-                        const QVector<qreal> &beats, qreal audioDuration,
-                        qreal fps, const qreal time,
-                        const int width, const int height,
-                        const int generation);
-    // animated cut-level preview: N frames spanning the cut's
-    // [start,end] window at the big-preview size
-    void renderCutAnimation(const QString &styleKey, const quint32 seed,
-                            const qreal density, const QString &lyrics,
-                            const QVector<qreal> &beats, qreal audioDuration,
-                            qreal fps, const qreal startTime,
-                            const qreal endTime, const int frameCount,
-                            const int width, const int height,
-                            const int generation);
 
 signals:
     void engineReady();
@@ -58,9 +41,6 @@ signals:
                      const QVector<QImage> &frames);
     void styleFailed(const QString &styleKey, const int generation,
                      const QString &error);
-    void cutFrameReady(const QImage &frame, const int generation);
-    void cutFramesReady(const QVector<QImage> &frames,
-                        const int generation);
 
 private:
     bool ensureEngine(QString *error);
@@ -69,8 +49,6 @@ private:
                     const QVector<qreal> &beats, qreal audioDuration,
                     qreal fps, QString *error);
     QImage renderFrameAt(const qreal t);
-    QImage renderBigFrameAt(const qreal t, const int width,
-                            const int height);
     qreal planDuration() const;
 
     const int mW, mH, mFrames;

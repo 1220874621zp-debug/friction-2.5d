@@ -176,27 +176,6 @@ int main(int argc, char** argv) {
                                QVector<qreal>(), 0.0, 24.0, 0);
             QApplication::processEvents();
         }
-        // cut-level animated preview (the big rectangle under the
-        // gallery): N frames spanning one cut's window
-        QObject::connect(&worker, &LyricPreviewWorker::cutFramesReady,
-                [](const QVector<QImage>& frames, int) {
-            fprintf(stderr, "[preview] cutFramesReady: %d frames, first %dx%d\n",
-                    frames.size(),
-                    frames.isEmpty() ? 0 : frames.first().width(),
-                    frames.isEmpty() ? 0 : frames.first().height());
-        });
-        QObject::connect(&worker, &LyricPreviewWorker::cutFrameReady,
-                [](const QImage& frame, int) {
-            fprintf(stderr, "[preview] cutFrameReady(single): %dx%d\n",
-                    frame.width(), frame.height());
-        });
-        fprintf(stderr, "[preview] requesting cut animation\n");
-        fflush(stderr);
-        worker.renderCutAnimation(QStringLiteral("noir"), 7, 0.55,
-                                  QStringLiteral("夜明けの色を\n*文字* Motion\nテスト"),
-                                  QVector<qreal>(), 0.0, 24.0,
-                                  0.4, 2.4, 24, 480, 270, 0);
-        QApplication::processEvents();
         return 0;
     }
 

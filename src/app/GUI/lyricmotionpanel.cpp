@@ -397,25 +397,6 @@ void LyricMotionPanel::setupPreviewWorker() {
         if (auto *card = findCard(key)) { card->setPending(false); }
         setStatus(tr("风格预览失败 %1: %2").arg(key, error.left(60)), true);
     }, Qt::QueuedConnection);
-    connect(mPreviewWorker, &LyricPreviewWorker::cutFrameReady, this,
-            [this](const QImage &frame, const int generation) {
-        if (generation != mPreviewGeneration) { return; }
-        mCutFrames.clear();
-        mCutPreview->setPixmap(QPixmap::fromImage(frame));
-    }, Qt::QueuedConnection);
-    connect(mPreviewWorker, &LyricPreviewWorker::cutFramesReady, this,
-            [this](const QVector<QImage> &frames, const int generation) {
-        if (generation != mPreviewGeneration) { return; }
-        mCutFrames.clear();
-        mCutFrames.reserve(frames.size());
-        for (const auto &f : frames) {
-            mCutFrames << QPixmap::fromImage(f);
-        }
-        mCutFrameIdx = 0;
-        if (!mCutFrames.isEmpty()) {
-            mCutPreview->setPixmap(mCutFrames.first());
-        }
-    }, Qt::QueuedConnection);
     // defer the thread start past the boot GL/effects bring-up — the
     // QVSEngine allocation spike landing on that peak crashed startup
     // on memory-pressured machines
@@ -444,11 +425,6 @@ void LyricMotionPanel::requestCardPreview(LyricStyleCard * const card) {
 
 void LyricMotionPanel::advancePreviews() {
     for (LyricStyleCard *card : mCards) { card->advance(); }
-    // loop the animated cut preview alongside the style cards
-    if (mCutFrames.size() > 1) {
-        mCutFrameIdx = (mCutFrameIdx + 1) % mCutFrames.size();
-        mCutPreview->setPixmap(mCutFrames.at(mCutFrameIdx));
-    }
 }
 
 void LyricMotionPanel::setupUi() {
@@ -533,16 +509,6 @@ void LyricMotionPanel::setupUi() {
     mGalleryScroll->setMinimumHeight(96);
     mGalleryScroll->setFrameShape(QFrame::NoFrame);
     mainLayout->addWidget(mGalleryScroll);
-
-    // cut-level large preview (click a cut row to render it)
-    mCutPreview = new QLabel(this);
-    mCutPreview->setMinimumHeight(120);
-    mCutPreview->setMaximumHeight(160);
-    mCutPreview->setAlignment(Qt::AlignCenter);
-    mCutPreview->setStyleSheet(QStringLiteral("background:#0a0a0a; color:#666;"));
-    mCutPreview->setText(tr("切预览渲染中…（点击切行可切换）"));
-    mCutPreview->setScaledContents(true);
-    mainLayout->addWidget(mCutPreview);
 
     // cut list
     mCutsTree = new QTreeWidget(this);
@@ -639,32 +605,6 @@ void LyricMotionPanel::setupUi() {
     });
     connect(mApplyButton, &QPushButton::clicked,
             this, &LyricMotionPanel::applyToScene);
-    connect(mCutsTree, &QTreeWidget::itemClicked, this,
-            [this](QTreeWidgetItem *item, int) {
-        requestCutPreview(item);
-    });
-}
-
-void LyricMotionPanel::requestCutPreview(QTreeWidgetItem * const item) {
-    if (!item || !mPreviewWorker) { return; }
-    const QVariant idxVar = item->data(0, Qt::UserRole);
-    if (!idxVar.isValid()) { return; } // line rows carry no cut data
-    const QVariant tVar = item->data(0, Qt::UserRole + 1);
-    if (!tVar.isValid()) { return; }
-    // cut window for the animated preview (fallback: a 1s window
-    // around the recorded midpoint)
-    const QVariant sVar = item->data(0, Qt::UserRole + 2);
-    const QVariant eVar = item->data(0, Qt::UserRole + 3);
-    const qreal mid = tVar.toDouble();
-    const qreal start = sVar.isValid() ? sVar.toDouble() : mid - 0.5;
-    const qreal end = eVar.isValid() ? eVar.toDouble() : mid + 0.5;
-    mCutFrames.clear(); // drop the old loop immediately
-    const auto params = collectParams();
-    mPreviewWorker->renderCutAnimation(
-                params.style, params.seed, params.density,
-                params.lyrics, params.beats, params.audioDuration,
-                sceneFps(), start, end, 24, 480, 270,
-                mPreviewGeneration);
 }
 
 void LyricMotionPanel::loadSettings() {
@@ -874,7 +814,6 @@ void LyricMotionPanel::populateCuts() {
         item->setText(1, l.value(QStringLiteral("text")).toString());
         lineItems.insert(idx, item);
     }
-    int j = 0;
     for (const auto &cv : cuts) {
         const auto c = cv.toObject();
         QTreeWidgetItem *parent = lineItems.value(
@@ -899,30 +838,8 @@ void LyricMotionPanel::populateCuts() {
         for (int i = 2; i < 5; i++) {
             item->setForeground(i, QColor(140, 140, 140));
         }
-        item->setData(0, Qt::UserRole, j++);
-        item->setData(0, Qt::UserRole + 1,
-                      (c.value(QStringLiteral("start")).toDouble()
-                       + c.value(QStringLiteral("end")).toDouble()) * 0.5);
-        item->setData(0, Qt::UserRole + 2,
-                      c.value(QStringLiteral("start")).toDouble());
-        item->setData(0, Qt::UserRole + 3,
-                      c.value(QStringLiteral("end")).toDouble());
     }
     mCutsTree->expandAll();
-    // show the first CUT (line rows carry no cut data — passing the
-    // top-level line item silently rendered nothing and the preview
-    // stayed black with its hint text)
-    if (mPreviewWorker) {
-        for (int t = 0; t < mCutsTree->topLevelItemCount(); t++) {
-            const auto *line = mCutsTree->topLevelItem(t);
-            for (int c = 0; c < line->childCount(); c++) {
-                if (line->child(c)->data(0, Qt::UserRole).isValid()) {
-                    requestCutPreview(line->child(c));
-                    return;
-                }
-            }
-        }
-    }
 }
 
 void LyricMotionPanel::setStatus(const QString &text, const bool error) {
