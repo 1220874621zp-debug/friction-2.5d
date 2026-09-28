@@ -56,6 +56,7 @@ private:
     void pumpPreviewQueue();
     void advancePreviews();
     qreal sceneFps() const;
+    void requestCutPreview(class QTreeWidgetItem * const item);
 
     QThread *mPreviewThread = nullptr;
     LyricPreviewWorker *mPreviewWorker = nullptr;

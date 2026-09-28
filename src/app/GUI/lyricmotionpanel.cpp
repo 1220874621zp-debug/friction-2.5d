@@ -235,7 +235,7 @@ QString partZh(const QString &group, const QString &key,
     const QString regName = engine ? engine->partName(group, key) : key;
     if (regName != key) {
         static const QRegularExpression kana(
-                    QStringLiteral("[\\u3040-\\u30ff]"));
+                    QStringLiteral("[\\x{3040}-\\x{30ff}]"));
         if (!kana.match(regName).hasMatch()) { return regName; }
     }
     return key;
@@ -588,17 +588,22 @@ void LyricMotionPanel::setupUi() {
             this, &LyricMotionPanel::applyToScene);
     connect(mCutsTree, &QTreeWidget::itemClicked, this,
             [this](QTreeWidgetItem *item, int) {
-        const QVariant idxVar = item->data(0, Qt::UserRole);
-        if (!idxVar.isValid()) { return; } // line rows carry no cut data
-        const QVariant tVar = item->data(0, Qt::UserRole + 1);
-        if (!tVar.isValid() || !mPreviewWorker) { return; }
-        const auto params = collectParams();
-        mPreviewWorker->renderCutFrame(
-                    params.style, params.seed, params.density,
-                    params.lyrics, params.beats, params.audioDuration,
-                    sceneFps(), tVar.toDouble(), 480, 270,
-                    mPreviewGeneration);
+        requestCutPreview(item);
     });
+}
+
+void LyricMotionPanel::requestCutPreview(QTreeWidgetItem * const item) {
+    if (!item || !mPreviewWorker) { return; }
+    const QVariant idxVar = item->data(0, Qt::UserRole);
+    if (!idxVar.isValid()) { return; } // line rows carry no cut data
+    const QVariant tVar = item->data(0, Qt::UserRole + 1);
+    if (!tVar.isValid()) { return; }
+    const auto params = collectParams();
+    mPreviewWorker->renderCutFrame(
+                params.style, params.seed, params.density,
+                params.lyrics, params.beats, params.audioDuration,
+                sceneFps(), tVar.toDouble(), 480, 270,
+                mPreviewGeneration);
 }
 
 void LyricMotionPanel::loadSettings() {
@@ -803,6 +808,11 @@ void LyricMotionPanel::populateCuts() {
                        + c.value(QStringLiteral("end")).toDouble()) * 0.5);
     }
     mCutsTree->expandAll();
+    // show something in the big preview right away (clicking any cut
+    // row still re-renders that cut)
+    if (mCutsTree->topLevelItemCount() > 0 && mPreviewWorker) {
+        requestCutPreview(mCutsTree->topLevelItem(0));
+    }
 }
 
 void LyricMotionPanel::setStatus(const QString &text, const bool error) {
@@ -855,6 +865,17 @@ void LyricMotionPanel::applyToScene() {
     if (!ok) {
         setStatus(tr("应用失败: %1").arg(error), true);
         return;
+    }
+    // the playhead sits at frame 0 on a fresh scene while the first
+    // cut starts frames later — jump into the first cut so the canvas
+    // immediately shows something instead of looking empty
+    {
+        const auto firstCut = plan.value(QStringLiteral("cuts"))
+                .toArray().first().toObject();
+        const qreal mid = (firstCut.value(QStringLiteral("start"))
+                           .toDouble()
+                           + firstCut.value(QStringLiteral("end")).toDouble()) * 0.5;
+        scene->anim_setAbsFrame(qMax(0, qRound(mid * scene->getFps())));
     }
     QString extra;
     const int maxNotes = qMin(3, result.notes.size());
