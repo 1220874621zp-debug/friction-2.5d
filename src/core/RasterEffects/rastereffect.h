@@ -130,7 +130,10 @@ enum class RasterEffectType : short {
     PAGE_CURL,
     // AE Putty-style lattice (FFD) deformation - appended last,
     // never reorder, serialized ids must stay stable
-    LATTICE_WARP
+    LATTICE_WARP,
+    // flat-cel region segmentation + volumetric 4-stop gradient
+    // (appended, never reorder - serialized ids must stay stable)
+    CEL_VOLUME
 };
 
 struct BoxRenderData;

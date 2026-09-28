@@ -322,6 +322,8 @@ qsptr<RasterEffect> createRasterEffectForNonCustomType(const RasterEffectType ty
             return enve::make_shared<PageCurlEffect>();
         case(RasterEffectType::LATTICE_WARP):
             return enve::make_shared<LatticeWarpEffect>();
+        case(RasterEffectType::CEL_VOLUME):
+            return enve::make_shared<CelVolumeEffect>();
         default: return nullptr;
     }
 }

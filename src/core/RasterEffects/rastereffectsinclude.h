@@ -49,5 +49,6 @@
 #include "particleeffect.h"
 #include "pagecurleffect.h"
 #include "latticewarpeffect.h"
+#include "celvolumeeffect.h"
 
 #endif // RASTEREFFECTSINCLUDE_H

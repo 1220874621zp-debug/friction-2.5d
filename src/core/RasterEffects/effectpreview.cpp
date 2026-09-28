@@ -48,7 +48,8 @@ enum class Sample {
     text,      // the embedded user-supplied image on a transparent rim
     green,     // chroma-green backdrop + the image as foreground
     liquid,    // fisheye-lens "liquid glass" look on the image
-    lattice    // the image with a cyan lattice grid (warp readout)
+    lattice,   // the image with a cyan lattice grid (warp readout)
+    cel        // flat-cel character (hair/face/eyes/clothes blocks)
 };
 
 // which demo content shows the effect best
@@ -60,6 +61,8 @@ Sample sampleFor(const RasterEffectType type) {
         return Sample::liquid;
     case RasterEffectType::LATTICE_WARP:
         return Sample::lattice;
+    case RasterEffectType::CEL_VOLUME:
+        return Sample::cel;
     default:
         return Sample::text;
     }
@@ -125,6 +128,68 @@ SkBitmap makeGreenSample(const int w, const int h) {
 
     // foreground: the friction wordmark survives the key
     drawWordmark(c, p, w, h, 0.5);
+    return bmp;
+}
+
+// flat-cel character built from pure color blocks (hair / face /
+// eyes / blush / clothes / line art on a transparent ground) - the
+// input the cel-volume effect is made for; skia's rasterizer paints
+// same-color overlaps as one merged region, like real exported art
+SkBitmap makeCelSample(const int w, const int h) {
+    SkBitmap bmp;
+    bmp.allocN32Pixels(w, h);
+    bmp.eraseARGB(0, 0, 0, 0);
+    SkCanvas c(bmp);
+    SkPaint p;
+    p.setAntiAlias(true);
+    const SkScalar u = SkScalar(qMin(w, h)) / 420.f; // unit from the design grid
+    const auto rect = [&](const float x, const float y,
+                          const float ww, const float hh,
+                          const SkColor col) {
+        p.setColor(col);
+        c.drawRect(SkRect::MakeXYWH(x * u, y * u, ww * u, hh * u), p);
+    };
+    const auto circle = [&](const float cx, const float cy, const float r,
+                            const SkColor col) {
+        p.setColor(col);
+        c.drawCircle(cx * u, cy * u, r * u, p);
+    };
+    const auto oval = [&](const float cx, const float cy,
+                          const float rx, const float ry,
+                          const SkColor col) {
+        p.setColor(col);
+        c.drawOval(SkRect::MakeXYWH((cx - rx) * u, (cy - ry) * u,
+                                    2 * rx * u, 2 * ry * u), p);
+    };
+    // clothes
+    rect(90, 300, 240, 110, SkColorSetRGB(0x2A, 0x7F, 0x9E));
+    rect(110, 280, 200, 22, SkColorSetRGB(0x2A, 0x7F, 0x9E));
+    // hair arch + side locks
+    circle(210, 205, 105, SkColorSetRGB(0x7A, 0x4B, 0x2A));
+    rect(105, 200, 40, 130, SkColorSetRGB(0x7A, 0x4B, 0x2A));
+    rect(275, 200, 40, 130, SkColorSetRGB(0x7A, 0x4B, 0x2A));
+    // face + fringe + fringe buns
+    circle(210, 225, 78, SkColorSetRGB(0xF5, 0xD0, 0xB0));
+    rect(132, 148, 156, 37, SkColorSetRGB(0x7A, 0x4B, 0x2A));
+    circle(150, 175, 24, SkColorSetRGB(0x7A, 0x4B, 0x2A));
+    circle(270, 175, 24, SkColorSetRGB(0x7A, 0x4B, 0x2A));
+    // eyes: whites + dark pupils (kept flat by the effect itself)
+    oval(178, 235, 17, 22, SK_ColorWHITE);
+    oval(242, 235, 17, 22, SK_ColorWHITE);
+    oval(178, 238, 8, 12, SkColorSetRGB(0x2B, 0x23, 0x20));
+    oval(242, 238, 8, 12, SkColorSetRGB(0x2B, 0x23, 0x20));
+    // blush dots
+    circle(158, 268, 9, SkColorSetRGB(0xF0, 0x9A, 0xA0));
+    circle(262, 268, 9, SkColorSetRGB(0xF0, 0x9A, 0xA0));
+    // chin line-art stroke
+    p.setColor(SkColorSetRGB(0x26, 0x21, 0x1E));
+    p.setStyle(SkPaint::kStroke_Style);
+    p.setStrokeWidth(4 * u);
+    p.setStrokeCap(SkPaint::kRound_Cap);
+    SkPath chin;
+    chin.moveTo(140 * u, 285 * u);
+    chin.quadTo(210 * u, 320 * u, 280 * u, 285 * u);
+    c.drawPath(chin, p);
     return bmp;
 }
 
@@ -401,6 +466,7 @@ SkBitmap makeSample(const RasterEffectType type, const QSize& size) {
     case Sample::green: return makeGreenSample(w, h);
     case Sample::liquid: return makeLiquidSample(w, h, 0.);
     case Sample::lattice: return makeLatticeGridSample(w, h, 0.);
+    case Sample::cel: return makeCelSample(w, h);
     case Sample::text:
     default: return makeTextSample(w, h);
     }
@@ -451,6 +517,12 @@ NamedScan namedScanFor(const RasterEffectType type) {
         // across the corner for a real turning look (the animator's
         // name is the Chinese tr source string)
         return { "progress", "卷曲进度", 0., 100. };
+    case RasterEffectType::CEL_VOLUME:
+        // rotating the light around the character reads the volume
+        // best; keep it in the upper half so it always reads lit
+        // (paramName is decoded as latin1, so the Chinese animator
+        // name must travel through altName, like page curl)
+        return { "light", "光照角度", 60., 210. };
     default:
         return { nullptr, nullptr, 0., 0. };
     }

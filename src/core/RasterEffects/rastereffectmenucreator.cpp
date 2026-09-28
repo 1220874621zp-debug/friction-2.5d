@@ -128,6 +128,8 @@ void RasterEffectMenuCreator::forEveryEffectCore(const EffectAdder &add)
         []() { return enve::make_shared<PageCurlEffect>(); });
     add(QObject::tr("晶格变形"), QObject::tr("Distort"),
         []() { return enve::make_shared<LatticeWarpEffect>(); });
+    add(QObject::tr("体积渐变 (Cel Volume)"), QObject::tr("Stylize"),
+        []() { return enve::make_shared<CelVolumeEffect>(); });
     add(QObject::tr("毛边粗糙化 (Roughen Edges)"), QObject::tr("Stylize"),
         []() { return enve::make_shared<RoughenEdgesEffect>(); });
     add(QObject::tr("图层样式"), "",

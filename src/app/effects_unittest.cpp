@@ -417,7 +417,8 @@ int main(int argc, char *argv[])
             RasterEffectType::ROUGHEN_EDGES,
             RasterEffectType::PARTICLE,
             RasterEffectType::PAGE_CURL,
-            RasterEffectType::LATTICE_WARP
+            RasterEffectType::LATTICE_WARP,
+            RasterEffectType::CEL_VOLUME
         };
         QString dumpDir;
         if (argc >= 3) {
