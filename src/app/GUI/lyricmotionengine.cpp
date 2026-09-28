@@ -166,7 +166,40 @@ bool LyricMotionEngine::collectCatalog(QString *error) {
                 .arg(o.value(QStringLiteral("key")).toString(),
                      o.value(QStringLiteral("name")).toString());
     }
+
+    // part display names per group (JIZURA registers Japanese names;
+    // the panel layers a Chinese table on top and uses these as the
+    // readable fallback for keys the table does not cover)
+    const QString namesSrc = QStringLiteral(
+        "(function(){"
+        "  var out = {};"
+        "  J.GROUP_KEYS.forEach(function(g){"
+        "    var reg = J.registry(g); out[g] = {};"
+        "    Object.keys(reg).forEach(function(k){"
+        "      out[g][k] = reg[k].name || k;"
+        "    });"
+        "  });"
+        "  return JSON.stringify(out);"
+        "})()");
+    const QString namesJson = runJs(namesSrc, &err);
+    if (!err.isEmpty()) {
+        if (error) { *error = QStringLiteral("partNames: %1").arg(err); }
+        return false;
+    }
+    mPartNames.clear();
+    const auto groups = QJsonDocument::fromJson(namesJson.toUtf8()).object();
+    for (auto gIt = groups.begin(); gIt != groups.end(); ++gIt) {
+        const auto entries = gIt.value().toObject();
+        for (auto eIt = entries.begin(); eIt != entries.end(); ++eIt) {
+            mPartNames[gIt.key()][eIt.key()] = eIt.value().toString();
+        }
+    }
     return true;
+}
+
+QString LyricMotionEngine::partName(const QString &group,
+                                    const QString &key) const {
+    return mPartNames.value(group).value(key, key);
 }
 
 QString LyricMotionEngine::runJs(const QString &source, QString *error) {

@@ -39,6 +39,7 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QRandomGenerator>
+#include <QRegularExpression>
 #include <QScrollArea>
 #include <QSlider>
 #include <QSpinBox>
@@ -158,6 +159,136 @@ namespace {
 
 QString timeLabel(const qreal t) {
     return QString::number(t, 'f', 2);
+}
+
+// Chinese names for the part keys the panel surfaces (cut list).
+// Covers the core families plus common additions; anything else falls
+// back to the engine's registered name, then to the raw key.
+QHash<QString, QString> makePartZhTable() {
+    QHash<QString, QString> t;
+    const auto add = [&t](const char *group, std::initializer_list<
+                          std::pair<const char*, const char*>> entries) {
+        for (const auto &e : entries) {
+            t.insert(QStringLiteral("%1/%2").arg(
+                         QString::fromUtf8(group),
+                         QString::fromUtf8(e.first)),
+                     QString::fromUtf8(e.second));
+        }
+    };
+    add("layout", {
+        {"center", "中央"}, {"mixed", "大小混排"}, {"vcols", "纵排分栏"},
+        {"marquee", "流动条带"}, {"tile", "平铺磁贴"}, {"scatter", "散布"},
+        {"ring", "圆环排布"}, {"wave", "波形轨迹"}, {"huge", "超大字"},
+        {"labels", "标签贴纸"}, {"condensed", "纵长压缩"},
+        {"gloss", "光泽标题"}, {"type", "打字机"}, {"diag", "斜向条带"},
+        {"circle", "圆窗"}, {"stack", "残像堆叠"}, {"pill", "胶囊框"},
+        {"title", "标题"}, {"interlude", "间奏"},
+    });
+    add("enter", {
+        {"cut", "硬切"}, {"assemble", "分解→集合"}, {"slice", "切片"},
+        {"type", "打字"}, {"pop", "弹出"}, {"drop", "坠落"},
+        {"stretch", "伸缩"}, {"wipe", "擦除"}, {"blur", "模糊显影"},
+        {"spin", "旋转"}, {"flicker", "闪烁"}, {"scramble", "乱码解码"},
+        {"zoom", "缩放"}, {"slideL", "左滑入"}, {"slideR", "右滑入"},
+        {"flipX", "左右翻转"}, {"flipY", "上下翻转"},
+        {"domino", "多米诺"}, {"fold", "折叠展开"}, {"unroll", "卷轴展开"},
+        {"iris", "光圈"}, {"blinds", "百叶窗"}, {"bounce", "弹跳"},
+        {"squashDrop", "压扁落地"}, {"rubber", "橡皮筋"},
+        {"whip", "甩鞭"}, {"echoIn", "残影进入"}, {"spiralIn", "螺旋进入"},
+        {"magnet", "磁吸"}, {"inkBleed", "墨晕"}, {"neonOn", "霓虹点亮"},
+        {"cursorSweep", "光标扫入"}, {"stamp", "盖章"},
+    });
+    add("hold", {
+        {"still", "静止"}, {"jitter", "抖动"}, {"drift", "漂移"},
+        {"breathe", "呼吸"}, {"wave", "波动"}, {"glitchtick", "故障闪烁"},
+    });
+    add("exit", {
+        {"cut", "硬切"}, {"explode", "爆散"}, {"fall", "坠落"},
+        {"drift", "漂移"}, {"slice", "切片"}, {"wipe", "擦除"},
+        {"shrink", "收缩"}, {"blur", "模糊"}, {"stretch", "伸缩"},
+        {"scatter", "飞散"}, {"glitch", "故障"},
+    });
+    add("decor", {
+        {"grid", "网格"}, {"stripes", "条纹"}, {"blobs", "色斑"},
+        {"bars", "粗条"}, {"shapes", "几何形"}, {"counter", "计数器"},
+        {"brackets", "括角标"}, {"rings", "圆环"}, {"dots", "点阵"},
+        {"arrows", "箭头"}, {"slash", "斜杠"}, {"sparks", "火花"},
+        {"leaders", "引出线"}, {"waveform", "波形"}, {"barcode", "条形码"},
+    });
+    add("cam", {{"push", "缓推近"}, {"none", "无"}});
+    add("trans", {
+        {"push", "推移"}, {"cover", "覆盖"}, {"wipe", "擦除"},
+        {"zoom", "变焦"}, {"mosaic", "马赛克"}, {"flash", "闪白"},
+        {"morph", "形变"}, {"none", "无"},
+    });
+    return t;
+}
+
+// part key → localized display name: Chinese table → engine name when
+// it is kanji/ASCII readable (kana names are skipped) → raw key
+QString partZh(const QString &group, const QString &key,
+               const LyricMotionEngine * const engine) {
+    static const auto zhTable = makePartZhTable();
+    const auto it = zhTable.constFind(
+                QStringLiteral("%1/%2").arg(group, key));
+    if (it != zhTable.constEnd()) { return *it; }
+    const QString regName = engine ? engine->partName(group, key) : key;
+    if (regName != key) {
+        static const QRegularExpression kana(
+                    QStringLiteral("[\\u3040-\\u30ff]"));
+        if (!kana.match(regName).hasMatch()) { return regName; }
+    }
+    return key;
+}
+
+// style keys → Chinese (JIZURA names are Japanese; kanji-only names
+// like 深海 already read fine in Chinese and are kept via the
+// kana-skip fallback, the table covers the rest)
+QString styleZh(const QString &key, const QString &name) {
+    static const QHash<QString, QString> t = {
+        {QStringLiteral("noir"), QStringLiteral("黑夜色差")},
+        {QStringLiteral("crimson"), QStringLiteral("绯红信号")},
+        {QStringLiteral("caution"), QStringLiteral("警示")},
+        {QStringLiteral("magenta"), QStringLiteral("波普品红")},
+        {QStringLiteral("paper"), QStringLiteral("纸与墨")},
+        {QStringLiteral("hud"), QStringLiteral("暗色HUD")},
+        {QStringLiteral("mint"), QStringLiteral("薄荷终端")},
+        {QStringLiteral("specimen"), QStringLiteral("标本")},
+        {QStringLiteral("transit"), QStringLiteral("过境")},
+        {QStringLiteral("blueprint"), QStringLiteral("蓝图")},
+        {QStringLiteral("rouge"), QStringLiteral("胭脂渐变")},
+        {QStringLiteral("mono"), QStringLiteral("单色RGB")},
+        {QStringLiteral("sakura"), QStringLiteral("樱")},
+        {QStringLiteral("sunset"), QStringLiteral("夕阳渐变")},
+        {QStringLiteral("forest"), QStringLiteral("森林手帖")},
+        {QStringLiteral("vapor"), QStringLiteral("蒸汽波")},
+        {QStringLiteral("newsprint"), QStringLiteral("报纸")},
+        {QStringLiteral("synth80"), QStringLiteral("合成器80s")},
+        {QStringLiteral("kraft"), QStringLiteral("牛皮纸")},
+        {QStringLiteral("candy"), QStringLiteral("糖果")},
+        {QStringLiteral("acid"), QStringLiteral("迷幻酸")},
+        {QStringLiteral("sumi"), QStringLiteral("墨与朱")},
+        {QStringLiteral("gold"), QStringLiteral("金夜")},
+        {QStringLiteral("hrRuin"), QStringLiteral("废墟")},
+        {QStringLiteral("hrNightRec"), QStringLiteral("深夜录像")},
+        {QStringLiteral("hrCurse"), QStringLiteral("诅咒信件")},
+    };
+    return t.value(key, name);
+}
+
+// mood keys → Chinese
+QString moodZh(const QString &key, const QString &name) {
+    static const QHash<QString, QString> t = {
+        {QStringLiteral("glitch"), QStringLiteral("故障")},
+        {QStringLiteral("calm"), QStringLiteral("柔和")},
+        {QStringLiteral("pop"), QStringLiteral("律动")},
+        {QStringLiteral("graphic"), QStringLiteral("图形")},
+        {QStringLiteral("editorial"), QStringLiteral("版式")},
+        {QStringLiteral("emotional"), QStringLiteral("抒情")},
+        {QStringLiteral("horror"), QStringLiteral("惊悚")},
+        {QStringLiteral("chaos"), QStringLiteral("全开混合")},
+    };
+    return t.value(key, name);
 }
 
 } // namespace
@@ -286,7 +417,7 @@ void LyricMotionPanel::setupUi() {
     mSeedDice->setText(tr("🎲"));
     mSeedDice->setToolTip(tr("随机种子"));
     mOmakaseButton = new QToolButton(this);
-    mOmakaseButton->setText(tr("おまかせ"));
+    mOmakaseButton->setText(tr("随机方案"));
     mOmakaseButton->setToolTip(tr("一键随机整体方案（JIZURA おまかせ）"));
     ctrl1->addWidget(new QLabel(tr("风格"), this), 0);
     ctrl1->addWidget(mStyleCombo, 1);
@@ -545,13 +676,14 @@ void LyricMotionPanel::rebuildStyleCards() {
     mBuildingUi = true;
     if (mStyleCombo->count() == 0) {
         for (const auto &info : mEngine->styles()) {
-            mStyleCombo->addItem(info.name, info.key);
+            mStyleCombo->addItem(styleZh(info.key, info.name), info.key);
         }
     }
     if (mMoodCombo->count() == 1) {
         for (const QString &m : mEngine->moodNames()) {
             const int sep = m.indexOf(QLatin1Char('|'));
-            mMoodCombo->addItem(m.mid(sep + 1), m.left(sep));
+            const QString key = m.left(sep);
+            mMoodCombo->addItem(moodZh(key, m.mid(sep + 1)), key);
         }
     }
     mBuildingUi = false;
@@ -564,7 +696,11 @@ void LyricMotionPanel::rebuildStyleCards() {
     mCards.clear();
     const QString currentStyle = mStyleCombo->currentData().toString();
     for (const auto &info : mEngine->styles()) {
-        const auto card = new LyricStyleCard(info, mGalleryHost);
+        // localized copy for the card (name plate + tooltip drive the
+        // combo-selection highlight, so they must match the combo text)
+        auto zhInfo = info;
+        zhInfo.name = styleZh(info.key, info.name);
+        const auto card = new LyricStyleCard(zhInfo, mGalleryHost);
         card->setSelected(info.key == currentStyle);
         card->onClicked = [this, key = info.key]() {
             mBuildingUi = true;
@@ -638,9 +774,17 @@ void LyricMotionPanel::populateCuts() {
                           timeLabel(c.value(QStringLiteral("start")).toDouble()),
                           timeLabel(c.value(QStringLiteral("end")).toDouble())));
         item->setText(1, c.value(QStringLiteral("text")).toString());
-        item->setText(2, c.value(QStringLiteral("layout")).toString());
-        item->setText(3, c.value(QStringLiteral("enter")).toString());
-        item->setText(4, c.value(QStringLiteral("exit")).toString());
+        const QString layoutKey = c.value(QStringLiteral("layout")).toString();
+        const QString enterKey = c.value(QStringLiteral("enter")).toString();
+        const QString exitKey = c.value(QStringLiteral("exit")).toString();
+        item->setText(2, partZh(QStringLiteral("layout"), layoutKey, mEngine));
+        item->setText(3, partZh(QStringLiteral("enter"), enterKey, mEngine));
+        item->setText(4, partZh(QStringLiteral("exit"), exitKey, mEngine));
+        // the raw keys ride in the tooltip (they are what the plan and
+        // the native builder consume)
+        item->setToolTip(2, layoutKey);
+        item->setToolTip(3, enterKey);
+        item->setToolTip(4, exitKey);
         for (int i = 2; i < 5; i++) {
             item->setForeground(i, QColor(140, 140, 140));
         }

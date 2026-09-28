@@ -5,6 +5,7 @@
 #include <QString>
 #include <QStringList>
 #include <QColor>
+#include <QHash>
 #include <QList>
 #include <memory>
 
@@ -51,6 +52,10 @@ public:
     const QList<StyleInfo> &styles() const { return mStyles; }
     const QStringList &moodNames() const { return mMoods; }
 
+    // display name of a part (layout/enter/hold/exit/decor/... key) as
+    // registered by the vendored JIZURA engine; falls back to the key
+    QString partName(const QString &group, const QString &key) const;
+
     // runs J.plan for the params; returns the full plan as JSON
     // (cuts/lines/style.schemes/...), empty string on error
     QString planJson(const Params &params, QString *error = nullptr);
@@ -67,6 +72,7 @@ private:
     bool mLoaded = false;
     QList<StyleInfo> mStyles;
     QStringList mMoods;
+    QHash<QString, QHash<QString, QString>> mPartNames;
 };
 
 #endif // LYRICMOTIONENGINE_H

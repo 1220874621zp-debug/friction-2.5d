@@ -345,7 +345,7 @@ CutText buildLayout(Ctx &c, ContainerBox * const group,
 
     const auto unknown = [&]() {
         c.res->substitutions++;
-        c.res->notes << QStringLiteral("布局 %1→center").arg(layout);
+        c.res->notes << QStringLiteral("布局 %1 → 中央（近似）").arg(layout);
     };
 
     const auto has = [&layout](const char *s) {
@@ -973,7 +973,7 @@ bool buildDecor(Ctx &c, ContainerBox * const group, const QJsonObject &d,
     // remaining wa parts (seal/chochin/shimenawa/sensu/tsukiKumo/momiji/
     // brushStroke/hanko/postcard/...) land on the nearest shape recipe
     c.res->substitutions++;
-    c.res->notes << QStringLiteral("装饰 %1→几何近似").arg(id);
+    c.res->notes << QStringLiteral("装饰 %1 → 几何近似").arg(id);
     ringShape(QPointF(c.cw * 0.14, c.ch * 0.82), c.ch * 0.045, accent, 3);
     return true;
 }
