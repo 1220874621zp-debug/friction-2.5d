@@ -246,10 +246,33 @@ int main(int argc, char** argv) {
         SkPixmap pm;
         if(!raster || !raster->peekPixels(&pm)) return -1;
         int count = 0;
+        int minX = pm.width(), minY = pm.height(), maxX = -1, maxY = -1;
         const int n = pm.width() * pm.height();
         const auto px = static_cast<const uint32_t*>(pm.addr32());
         for(int i = 0; i < n; i++) {
-            if((px[i] >> 24) > 32) count++;
+            if((px[i] >> 24) > 32) {
+                count++;
+                const int x = i % pm.width();
+                const int y = i / pm.width();
+                if(x < minX) minX = x;
+                if(x > maxX) maxX = x;
+                if(y < minY) minY = y;
+                if(y > maxY) maxY = y;
+            }
+        }
+        if(count > 0) {
+            // content must stay inside the frame with a small margin on
+            // every edge (catches the left/top-origin text offset)
+            const int mx = qMax(1, pm.width() / 50);
+            const int my = qMax(1, pm.height() / 50);
+            fprintf(stderr, "[smoke] lyric: frame %d bbox=[%d..%d x %d..%d] "
+                    "of %dx%d\n", frame, minX, maxX, minY, maxY,
+                    pm.width(), pm.height());
+            fflush(stderr);
+            if(minX < mx || minY < my || maxX >= pm.width() - mx
+                    || maxY >= pm.height() - my) {
+                return -2; // content clipped at an edge
+            }
         }
         return count;
     };
@@ -259,6 +282,7 @@ int main(int argc, char** argv) {
         fprintf(stderr, "[smoke] lyric: frame %d coverage=%d\n", frame, cov);
         fflush(stderr);
         if(cov <= 200) fails++; // non-empty check, not full coverage
+        if(cov == -2) fails++; // clipped at an edge
     }
     if(fails > 0) {
         fprintf(stderr, "[smoke] lyric: FAIL %d empty probe frames\n",

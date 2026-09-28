@@ -176,6 +176,12 @@ TextBox *mkText(ContainerBox * const parent, const QString &text,
                 SkFontStyle(weight, SkFontStyle::kNormal_Width,
                             SkFontStyle::kUpright_Slant));
     box->setFontSize(qMax(6.0, size));
+    // centered alignment: the box origin (and thus the position set by
+    // the layout recipes) lands on the text block's visual center —
+    // the TextBox default is left/top, which pushed wide lyric lines
+    // off the bottom-right of the canvas
+    box->setTextHAlignment(Qt::AlignHCenter);
+    box->setTextVAlignment(Qt::AlignVCenter);
     box->getFillSettings()->setPaintType(PaintType::FLATPAINT);
     box->getFillSettings()->setCurrentColor(fill);
     return box.get();
@@ -493,8 +499,7 @@ CutText buildLayout(Ctx &c, ContainerBox * const group,
             auto *b = mkText(group, QString(text.at(k)), lf.family,
                              lf.weight, size, textCol);
             b->getTransformAnimator()->getPosAnimator()->setBaseValue(
-                        QPointF(c.cw * (0.5 - 0.35) + c.cw * 0.7 * k / qMax(1, n - 1)
-                                + size * 0.5,
+                        QPointF(c.cw * 0.15 + c.cw * 0.7 * k / qMax(1, n - 1),
                                 c.ch * 0.5 + qSin(ph) * amp));
             ct.boxes << b;
         }
@@ -572,12 +577,13 @@ CutText buildLayout(Ctx &c, ContainerBox * const group,
         auto *b = mkMain(text, size, base);
         const int f0 = fSec(c, cut.value(QStringLiteral("start")).toDouble());
         const int f1 = fSec(c, cut.value(QStringLiteral("end")).toDouble());
-        // blinking block cursor baked on the koma grid
+        // blinking block cursor baked on the koma grid; with centered
+        // text the right edge sits at roughly half the advance width
         auto *cursor = mkRect(group, QRectF(0, 0, size * 0.5, size * 0.1),
                               accent);
         cursor->getTransformAnimator()->getPosAnimator()->setBaseValue(
-                    QPointF(base.x() + size * 0.3 * text.length() * 0.25,
-                            base.y() + size * 0.55));
+                    QPointF(base.x() + size * 0.3 * text.length(),
+                            base.y() + size * 0.75));
         bakeSpan(opacityAnim(cursor), c, f0, f1, [](const qreal p) {
             return (int(p * 24) % 2) == 0 ? 100.0 : 0.0;
         });
@@ -597,10 +603,12 @@ CutText buildLayout(Ctx &c, ContainerBox * const group,
             band->getStrokeSettings()->getStrokeWidthAnimator()
                     ->setCurrentBaseValue(size * 0.06);
         }
-        band->getTransformAnimator()->getPosAnimator()->setBaseValue(
-                    QPointF(0, 0));
+        // band spans 3×width so its local center (cw/2, 0) sits at the
+        // canvas center: rotation pivots around the frame middle
         band->getBoxTransformAnimator()->getPivotAnimator()->setBaseValue(
                     QPointF(c.cw * 0.5, 0));
+        band->getTransformAnimator()->getPosAnimator()->setBaseValue(
+                    QPointF(c.cw * 0.5, c.ch * 0.5));
         band->getTransformAnimator()->getRotAnimator()
                 ->setCurrentBaseValue(-ang);
         auto *b = mkMain(text, size, QPointF(c.cw * 0.5, c.ch * 0.5));
