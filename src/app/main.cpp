@@ -909,6 +909,61 @@ int main(int argc, char *argv[])
                                    << "texts" << nText << "others" << nOther
                                    << "maxSize" << maxSize
                                    << "sample" << sample;
+                        // per-glyph animation census (first 2 cut
+                        // groups only): each big glyph must show its
+                        // own key window — a dump where every glyph
+                        // shares the same first key frame is the
+                        // "everything moves together" signature
+                        static int dumpedCuts = 0;
+                        if (dr && dumpedCuts < 2 && nText > 0
+                                && maxSize > 0) {
+                            dumpedCuts++;
+                            const int f0 = dr->getMinAbsFrame() + 1;
+                            int gi = 0;
+                            for (const auto &tb :
+                                 cutGroup->getContainedBoxes()) {
+                                const auto txt =
+                                        dynamic_cast<TextBox*>(tb);
+                                if (!txt || txt->getFontSize()
+                                        < maxSize * 0.55) { continue; }
+                                const auto tr =
+                                        txt->getTransformAnimator();
+                                const auto opa = txt
+                                        ->getBoxTransformAnimator()
+                                        ->getOpacityAnimator();
+                                QStringList alphaTrail;
+                                for (int f = f0; f < f0 + 12; f += 2) {
+                                    alphaTrail << QString::number(
+                                        opa->getEffectiveValueAtAbsFrame(f),
+                                        'f', 0);
+                                }
+                                const int nKeys =
+                                        opa->anim_getKeys().count();
+                                QStringList kv;
+                                for (const auto *k : opa->anim_getKeys()) {
+                                    kv << QStringLiteral("%1=%2")
+                                        .arg(k->getAbsFrame())
+                                        .arg(opa->getEffectiveValueAtAbsFrame(
+                                                 k->getAbsFrame()), 'f', 0);
+                                }
+                                qWarning() << "[LYRICAPPLY]   glyph"
+                                    << gi++ << txt->getCurrentValue()
+                                    << "base" << opa->getCurrentBaseValue()
+                                    << "opaKeys" << nKeys
+                                    << kv.join(QLatin1Char(' '))
+                                    << "alpha@f0+0,2..12"
+                                    << alphaTrail.join(QLatin1Char(','))
+                                    << "sclX@f0"
+                                    << tr->getScaleAnimator()
+                                       ->getXAnimator()
+                                       ->getEffectiveValueAtAbsFrame(f0)
+                                    << "posY@f0"
+                                    << tr->getPosAnimator()
+                                       ->getYAnimator()
+                                       ->getEffectiveValueAtAbsFrame(f0);
+                                if (gi >= 14) { break; }
+                            }
+                        }
                     }
                 }
             }

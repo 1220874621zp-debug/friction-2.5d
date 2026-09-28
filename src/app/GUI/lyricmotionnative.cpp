@@ -33,6 +33,7 @@
 #include <QJsonArray>
 #include <QRandomGenerator>
 #include <QRegularExpression>
+#include <algorithm>
 #include <cmath>
 
 namespace {
@@ -1105,14 +1106,222 @@ void splitMatAnimated(CutText &ct) {
     }
 }
 
+// per-glyph baked pose families. The JIZURA registry exposes ~85
+// enter / ~84 exit keys (11p_enter*.js / 11p_exit*.js) and the web
+// renderer animates every glyph through them; the bake maps every
+// key onto one of these families so any preset still yields
+// per-glyph motion. (The first cut of that table referenced key
+// names that do not exist in the registry, so almost every preset
+// fell through to an alpha-only fade — "everything moves together,
+// no per-character generation".)
+enum class GPose : quint8 {
+    Fade,     // alpha only, sharp per-glyph stagger
+    Rise,     // slide up into place
+    Drop,     // fall from above
+    Pop,      // overshoot scale-in
+    ZoomIn,   // scale from small
+    ZoomOut,  // scale from big
+    Spin,     // rotation sweep
+    SlideL, SlideR,
+    Wave,     // per-glyph phase wobble
+    Track,    // tracking gather / spread
+    FlipX, FlipY,
+    Type      // typewriter cadence (hard per-glyph appearance)
+};
+
+struct GSpec {
+    GPose pose = GPose::Rise;
+    qreal spread = 0.45;     // cascade share of the span (web stg())
+    bool randomOrder = false;
+};
+
+const auto keyIs = [](const QString &key,
+                      std::initializer_list<const char*> keys) {
+    for (const char *k : keys) {
+        if (key == QLatin1String(k)) { return true; }
+    }
+    return false;
+};
+
+GSpec enterSpec(const QString &key) {
+    GSpec s;
+    if (key == QLatin1String("slideWhole")) {
+        s.pose = GPose::SlideL; s.spread = 0.12;   // whole-item read
+    } else if (keyIs(key, {"slideL", "whip", "snapRail", "filmFeed",
+                           "knInertia", "knLoopIn", "knStretchOut"})) {
+        s.pose = GPose::SlideL; s.spread = 0.5;
+    } else if (keyIs(key, {"slideR", "slingshot"})) {
+        s.pose = GPose::SlideR; s.spread = 0.5;
+    } else if (keyIs(key, {"dropMask", "squashDrop", "bounceBall",
+                           "inkDrop", "odometer", "splitFlap",
+                           "matrixRain", "tokoroten", "fold", "unroll",
+                           "domino", "tyRubyDrop", "knHingeDrop",
+                           "knDiveIn", "hrManifest", "hrClawReveal",
+                           "stretch"})) {
+        s.pose = GPose::Drop; s.spread = 0.45;
+    } else if (keyIs(key, {"stamp", "magnet", "rubber", "bounceBig",
+                           "springIn", "rockSettle", "ripple",
+                           "echoIn", "echoCount", "shadowFirst",
+                           "bubbles", "invertBox", "tornJoin",
+                           "splitJoin", "randomOrder", "shuffle",
+                           "stopMotion", "knWordSlam", "knTypeToSlam",
+                           "knPushIn", "knReplaceIn", "hrJumpScare",
+                           "hrMirrorSnap", "tyZoomOne",
+                           "tyDotGrow"})) {
+        s.pose = GPose::Pop; s.spread = 0.5;
+        s.randomOrder = keyIs(key, {"randomOrder", "shuffle",
+                                    "stopMotion"});
+    } else if (keyIs(key, {"iris", "zoomAlt", "loupe", "cylinder"})) {
+        s.pose = GPose::ZoomIn; s.spread = 0.5;
+    } else if (keyIs(key, {"zoomOut", "resolve", "inkBleed",
+                           "crumple"})) {
+        s.pose = GPose::ZoomOut; s.spread = 0.5;
+    } else if (keyIs(key, {"spiralIn", "pendulum", "rollIn",
+                           "tiltUp", "stickerPeel", "fanOpen"})) {
+        s.pose = GPose::Spin; s.spread = 0.5;
+    } else if (key == QLatin1String("flipX")) {
+        s.pose = GPose::FlipX; s.spread = 0.5;
+    } else if (key == QLatin1String("flipY")) {
+        s.pose = GPose::FlipY; s.spread = 0.5;
+    } else if (keyIs(key, {"waveIn", "heatHaze"})) {
+        s.pose = GPose::Wave; s.spread = 0.55;
+    } else if (keyIs(key, {"trackIn", "trackOut", "vSlice",
+                           "glitchIn", "skewIn", "zipper",
+                           "printRegister", "windBlown",
+                           "tyBracketOpen"})) {
+        s.pose = GPose::Track; s.spread = 0.5;
+    } else if (keyIs(key, {"cursorSweep", "type", "loadingBar",
+                           "tyRetype"})) {
+        s.pose = GPose::Type; s.spread = 0.68;
+    } else if (keyIs(key, {"blurStagger", "fadeStagger", "strokeDraw",
+                           "outlineFill", "neonOn", "glint",
+                           "backlight", "lightLeak", "overexpose",
+                           "crtOn", "interlace", "dither",
+                           "strokeOrder", "hrBlinkCreep",
+                      "hrVhold", "hrUneasy"})) {
+        s.pose = GPose::Fade; s.spread = 0.62;
+    } else {
+        // every reveal / mask / wipe key (riseMask, shutter, diagWipe,
+        // blinds, checker, quarters, clockWipe, hatchFill,
+        // brushReveal, liquidFill, noteUnfold, …) and any future key:
+        // the rising reveal reads as the editorial default
+        s.pose = GPose::Rise; s.spread = 0.45;
+    }
+    return s;
+}
+
+GSpec exitSpec(const QString &key) {
+    GSpec s;
+    if (keyIs(key, {"riseOut", "rocketOff", "balloonOff", "knLaunch",
+                    "knPushOut", "knStackAway", "tyLineFeed"})) {
+        s.pose = GPose::Rise; s.spread = 0.45;
+    } else if (key == QLatin1String("whipOut")) {
+        s.pose = GPose::SlideL; s.spread = 0.5;
+    } else if (keyIs(key, {"gravity", "vSliceDrop", "melt", "sandOut",
+                           "matrixOut", "slotOut", "bounceOff",
+                           "deflateOut", "hrDrain", "hrPulledDown",
+                           "hrSwallow", "knCloseGap", "tyUnderSink",
+                           "tyFoldVert", "knDiveGlyph", "knWordKick"})) {
+        s.pose = GPose::Drop; s.spread = 0.45;
+    } else if (keyIs(key, {"popOut", "echoOut", "shatterLite"})) {
+        s.pose = GPose::Pop; s.spread = 0.5;
+    } else if (keyIs(key, {"zoomThrough", "vacuumOut", "irisClose"})) {
+        s.pose = GPose::ZoomIn; s.spread = 0.5;
+    } else if (keyIs(key, {"zoomFar", "collapse", "crumpleOut",
+                           "shockOut", "tyToDot"})) {
+        s.pose = GPose::ZoomOut; s.spread = 0.5;
+    } else if (keyIs(key, {"spinOut", "twist", "tornadoOut",
+                           "rollUpOut", "rollOff", "fanClose",
+                           "peelOff", "hingeOut", "dominoOut",
+                           "clockOut"})) {
+        s.pose = GPose::Spin; s.spread = 0.5;
+    } else if (key == QLatin1String("flipOutX")) {
+        s.pose = GPose::FlipX; s.spread = 0.5;
+    } else if (key == QLatin1String("flipOutY")) {
+        s.pose = GPose::FlipY; s.spread = 0.5;
+    } else if (keyIs(key, {"waveOut", "snakeOut", "flutterOut"})) {
+        s.pose = GPose::Wave; s.spread = 0.55;
+    } else if (keyIs(key, {"trackOutWide", "splitApart",
+                           "glitchDissolve", "tearOut", "shredOut",
+                           "zipOut", "rgbSplitOut", "glassBreak",
+                           "tyBracketClose"})) {
+        s.pose = GPose::Track; s.spread = 0.5;
+    } else if (keyIs(key, {"backspace", "scrambleOut"})) {
+        s.pose = GPose::Type; s.spread = 0.68;
+    } else if (keyIs(key, {"blurOutStagger", "undraw", "outlineOut",
+                           "dissolve", "burn", "scorchOut",
+                           "overexposeOut", "halftoneOut", "eraserOut",
+                           "hazeOut", "lampOff", "slashOut",
+                           "mosaicOut", "scribbleOut", "candleOut",
+                           "hrFlickerDie", "hrLookBack", "hrShiver",
+                           "hrTurnAway", "knWordBlink", "tyStrike",
+                           "tyToIndex", "tyKeyLast"})) {
+        s.pose = GPose::Fade; s.spread = 0.62;
+    } else {
+        // sinkMask, foldOut, squash, diagWipeOut, blindsClose,
+        // checkerOut, sweepCover, scanOut, stripesOut, floodOut,
+        // clapShut, … and any future key: sink reads as the default
+        s.pose = GPose::Drop; s.spread = 0.45;
+    }
+    return s;
+}
+
+// pose offset (relative to the glyph's settled transform) that the
+// glyph starts from (enter) or ends at (exit)
+struct GOff {
+    QPointF pos;
+    QPointF scl;   // absolute scale start value (enter) / end (exit)
+    qreal rot = 0; // delta from the settled rotation
+};
+
+GOff poseOff(const GPose p, const bool entering,
+             const int i, const int n, const Ctx &c,
+             const QPointF &scl0) {
+    const qreal mid = (n - 1) * 0.5;
+    const qreal wavePh = std::sin(i * 2.399);
+    switch (p) {
+    case GPose::Pop:
+        return {{0, 0}, entering ? QPointF(0.3, 0.3)
+                                 : QPointF(1.35, 1.35), 0};
+    case GPose::ZoomIn:
+        return {{0, 0}, entering ? QPointF(0.45, 0.45)
+                                 : QPointF(1.9, 1.9), 0};
+    case GPose::ZoomOut:
+        return {{0, 0}, entering ? QPointF(1.6, 1.6)
+                                 : QPointF(0.25, 0.25), 0};
+    case GPose::Spin:
+        return {{0, 0}, scl0, entering ? -100.0 : 120.0};
+    case GPose::SlideL:
+        return {{entering ? -c.cw * 0.07 : -c.cw * 0.07, 0}, scl0, 0};
+    case GPose::SlideR:
+        return {{c.cw * 0.07, 0}, scl0, 0};
+    case GPose::Wave:
+        return {{0, c.ch * 0.06 * wavePh}, scl0, 0};
+    case GPose::Track:
+        return {{(i - mid) * c.cw * 0.012, 0}, scl0, 0};
+    case GPose::FlipX:
+        return {{0, 0}, QPointF(-0.9, scl0.y()), 0};
+    case GPose::FlipY:
+        return {{0, 0}, QPointF(scl0.x(), -0.9), 0};
+    case GPose::Rise:
+        return {{0, entering ? c.ch * 0.10 : -c.ch * 0.12}, scl0, 0};
+    case GPose::Drop:
+        return {{0, entering ? -c.ch * 0.12 : c.ch * 0.14}, scl0, 0};
+    default:
+        return {{0, 0}, scl0, 0};   // Fade / Type: alpha carries it
+    }
+}
+
 // zero-engine per-glyph motion for materialized cuts. The web look
 // animates every glyph, but the preset expressions each own a
 // QJSEngine (hundreds per scene OOM the machine — see 1e36e8d2f), so
-// the lyric-scale glyphs get staggered baked keyframes instead: an
-// enter/exit sweep per glyph family that reads as character
-// animation at zero runtime cost. Returns false when nothing was
-// baked (hard cut both ways, or no lyric-scale glyphs) so the caller
-// can fall back to the group-level fade.
+// the lyric-scale glyphs get staggered baked keyframes instead. The
+// cascade timing mirrors the web stg(p, k, spread): glyph k starts
+// at spread·k/(n−1) of the span and each glyph animates over the
+// remaining (1−spread), so the whole line sweeps in within one
+// inDur. Returns false when nothing was baked (hard cut both ways,
+// or no lyric-scale glyphs) so the caller can fall back to the
+// group-level fade.
 bool bakeMatTextAnims(Ctx &c, const QList<TextBox*> &texts,
                       const QJsonObject &cut,
                       const int fStart, const int fEnd,
@@ -1126,34 +1335,46 @@ bool bakeMatTextAnims(Ctx &c, const QList<TextBox*> &texts,
             || exitKey.isEmpty();
     if (hardIn && hardOut) { return false; }
 
-    const auto hasAny = [](const QString &key,
-                           std::initializer_list<const char*> keys) {
-        for (const char *k : keys) {
-            if (key == QLatin1String(k)) { return true; }
-        }
-        return false;
-    };
-    const bool inPop = hasAny(enterKey, {"pop", "bounce", "stamp",
-                                         "squashDrop", "rubber",
-                                         "magnet", "domino"});
-    const bool inDrop = hasAny(enterKey, {"drop", "fall", "unroll",
-                                           "fold"});
-    const bool inSlideL = enterKey == QLatin1String("slideL");
-    const bool inSlideR = enterKey == QLatin1String("slideR");
-    const bool inZoom = hasAny(enterKey, {"zoom", "stretch", "blinds",
-                                           "iris", "wipe"});
-    const bool inSpin = hasAny(enterKey, {"spin", "flipX", "flipY",
-                                           "spiralIn", "whip"});
-    const bool outFall = hasAny(exitKey, {"fall", "drift"});
-    const bool outZoom = hasAny(exitKey, {"explode", "scatter",
-                                           "shrink", "stretch",
-                                           "zoom"});
+    const GSpec specIn = enterSpec(enterKey);
+    const GSpec specOut = exitSpec(exitKey);
 
     const int n = texts.size();
     const int inSpan = qMax(4, qRound(inDur * c.fps));
     const int outSpan = qMax(4, qRound(outDur * c.fps));
-    const int stagIn = qMax(1, inSpan / (n + 2));
-    const int stagOut = qMax(1, outSpan / (n + 2));
+    // web stg(): glyph rank r starts at spread·r/(n−1) of the span,
+    // so the whole cascade always fits inside the span. Quantizing
+    // the cadence to ≥1 frame per glyph instead overflows the span
+    // once n ≳ span and the late glyphs clamp to fEnd−1 with their
+    // whole enter span discarded — they kept only the alpha-0
+    // pre-hold key and stayed invisible for the entire cut
+    const auto rankOff = [](const int span, const qreal spread,
+                            const int rank, const int nG) {
+        return nG > 1
+                ? qRound(span * spread * rank / qreal(nG - 1)) : 0;
+    };
+    const int durIn = qMax(3, qRound(inSpan * (1.0 - specIn.spread)));
+    const int durOut = qMax(3, qRound(outSpan * (1.0 - specOut.spread)));
+    // caps keep a ≥2-frame ramp when the span clamps bite
+    const int inCap = qMax(fStart, fEnd - 2);
+    const int outCap = qMin(fEnd, fStart + 2);
+
+    // random-order presets shuffle the cascade ranks from the cut
+    // seed so the sequence is stable across bakes
+    QVector<int> ranks(n);
+    for (int i = 0; i < n; i++) { ranks[i] = i; }
+    if (specIn.randomOrder) {
+        const int seed = cut.value(QStringLiteral("seed")).toInt();
+        std::sort(ranks.begin(), ranks.end(),
+                  [seed](const int a, const int b) {
+            const auto h = [seed](const int v) {
+                quint32 x = quint32(seed) * 2654435761u
+                        + quint32(v) * 40503u;
+                x ^= x >> 13; x *= 1274126177u; x ^= x >> 16;
+                return x;
+            };
+            return h(a) < h(b);
+        });
+    }
 
     const auto easeOut = [](const qreal p) {
         return 1.0 - std::pow(1.0 - p, 3);
@@ -1164,7 +1385,38 @@ bool bakeMatTextAnims(Ctx &c, const QList<TextBox*> &texts,
         const qreal x = p - 1.0;
         return 1.0 + c3 * x * x * x + c1 * x * x;
     };
+    // the web presets turn each glyph on fast (slides use
+    // pow(clamp(q*1.6),1.6)) — a slow full-span alpha ramp reads as
+    // "the whole line fades in together"
+    const auto alphaIn = [&specIn](const qreal p) {
+        if (specIn.pose == GPose::Type) {
+            return p < 0.55 ? 0.0 : 1.0;
+        }
+        if (specIn.pose == GPose::SlideL || specIn.pose == GPose::SlideR) {
+            return std::pow(qBound(0.0, p * 1.6, 1.0), 1.6);
+        }
+        return std::pow(qBound(0.0, p * 1.8, 1.0), 1.5);
+    };
+    const auto alphaOut = [&specOut](const qreal p) {
+        if (specOut.pose == GPose::Type) {
+            return p < 0.5 ? 1.0 : 0.0;
+        }
+        return std::pow(1.0 - p, 1.3);
+    };
 
+    const bool bakeProbe = qEnvironmentVariableIsSet(
+                QStringLiteral("FRICTION_BAKEPROBE").toUtf8().constData());
+    if (bakeProbe) {
+        qWarning() << "[BAKEPROBE]" << cut.value(QStringLiteral("text"))
+                      .toString().left(12) << "enter" << enterKey
+                   << "exit" << exitKey << "n" << n
+                   << "fStart" << fStart << "fEnd" << fEnd
+                   << "inSpan" << inSpan << "outSpan" << outSpan
+                   << "spreadIn" << specIn.spread
+                   << "spreadOut" << specOut.spread
+                   << "poseIn" << int(specIn.pose)
+                   << "poseOut" << int(specOut.pose);
+    }
     for (int i = 0; i < n; i++) {
         TextBox *b = texts.at(i);
         const auto tr = b->getTransformAnimator();
@@ -1173,17 +1425,17 @@ bool bakeMatTextAnims(Ctx &c, const QList<TextBox*> &texts,
         const QPointF scl0 = tr->getScaleAnimator()->getBaseValue();
         const qreal rot0 = tr->getRotAnimator()->getCurrentBaseValue();
         const qreal alpha0 = opa->getCurrentBaseValue();
+        const int rank = ranks.at(i);
 
         if (!hardIn) {
-            const int fi0 = qMin(fEnd - 1, fStart + i * stagIn);
-            const int fi1 = qMin(fEnd - 1, fi0 + inSpan);
-            const QPointF posFrom = pos0 + QPointF(
-                        inSlideL ? c.cw * 0.07
-                        : inSlideR ? -c.cw * 0.07 : 0,
-                        inDrop ? -c.ch * 0.12 : 0);
-            const QPointF sclFrom = inPop ? QPointF(0.3, 0.3)
-                                 : inZoom ? QPointF(1.7, 1.7) : scl0;
-            const qreal rotFrom = inSpin ? rot0 - 100 : rot0;
+            const int fi0 = qMin(inCap, fStart
+                                 + rankOff(inSpan, specIn.spread,
+                                           rank, n));
+            const int fi1 = qMin(fEnd - 1, qMax(fi0 + 2, fi0 + durIn));
+            const GOff off = poseOff(specIn.pose, true, i, n, c, scl0);
+            const QPointF posFrom = pos0 + off.pos;
+            const QPointF sclFrom = off.scl;
+            const qreal rotFrom = rot0 + off.rot;
             // pre-hold the start pose from the group's first visible
             // frame: without it the glyph sits at its final spot
             // until its stagger turn arrives, then jumps back to
@@ -1199,6 +1451,10 @@ bool bakeMatTextAnims(Ctx &c, const QList<TextBox*> &texts,
                         fPre, sclFrom.y());
             tr->getRotAnimator()->saveValueToKey(fPre, rotFrom);
             opa->saveValueToKey(fPre, 0.0);
+            if (bakeProbe && i < 3) {
+                qWarning() << "[BAKEPROBE]  glyph" << i << "rank" << rank
+                           << "fi0" << fi0 << "fi1" << fi1;
+            }
             if (fi1 > fi0) {
                 bakeSpanXY(tr->getPosAnimator(), c, fi0, fi1,
                            [&](const qreal p) -> QPointF {
@@ -1206,32 +1462,36 @@ bool bakeMatTextAnims(Ctx &c, const QList<TextBox*> &texts,
                     return QPointF(pos0.x() + (posFrom.x() - pos0.x()) * (1 - e),
                                    pos0.y() + (posFrom.y() - pos0.y()) * (1 - e));
                 });
-                if (inPop || inZoom) {
+                if (sclFrom != scl0) {
                     bakeSpanXY(tr->getScaleAnimator(), c, fi0, fi1,
                                [&](const qreal p) -> QPointF {
-                        const qreal e = inPop ? easeBack(p) : easeOut(p);
+                        const qreal e = specIn.pose == GPose::Pop
+                                ? easeBack(p) : easeOut(p);
                         return QPointF(sclFrom.x() + (scl0.x() - sclFrom.x()) * e,
                                        sclFrom.y() + (scl0.y() - sclFrom.y()) * e);
                     });
                 }
-                if (inSpin) {
+                if (off.rot != 0) {
                     bakeSpan(tr->getRotAnimator(), c, fi0, fi1,
                              [&](const qreal p) {
                         return rotFrom + (rot0 - rotFrom) * easeOut(p);
                     });
                 }
                 bakeSpan(opa, c, fi0, fi1, [&](const qreal p) {
-                    return alpha0 * easeOut(p);
+                    return alpha0 * alphaIn(p);
                 });
             }
         }
         if (!hardOut) {
-            const int fo1 = qMax(fStart + 1, fEnd - (n - 1 - i) * stagOut);
-            const int fo0 = qMax(fStart + 1, fo1 - outSpan);
-            const QPointF posTo = pos0 + QPointF(
-                        0, outFall ? c.ch * 0.08 : 0);
-            const QPointF sclTo = outZoom
-                    ? QPointF(scl0.x() * 1.25, scl0.y() * 1.25) : scl0;
+            const int fo1 = qMax(outCap, fEnd
+                                 - rankOff(outSpan, specOut.spread,
+                                           n - 1 - rank, n));
+            const int fo0 = qMax(fStart + 1,
+                                 qMin(fo1 - 2, fo1 - durOut));
+            const GOff off = poseOff(specOut.pose, false, i, n, c, scl0);
+            const QPointF posTo = pos0 + off.pos;
+            const QPointF sclTo = off.scl;
+            const qreal rotTo = rot0 + off.rot;
             if (fo1 > fo0) {
                 bakeSpanXY(tr->getPosAnimator(), c, fo0, fo1,
                            [&](const qreal p) -> QPointF {
@@ -1239,7 +1499,7 @@ bool bakeMatTextAnims(Ctx &c, const QList<TextBox*> &texts,
                     return QPointF(pos0.x() + (posTo.x() - pos0.x()) * e,
                                    pos0.y() + (posTo.y() - pos0.y()) * e);
                 });
-                if (outZoom) {
+                if (sclTo != scl0) {
                     bakeSpanXY(tr->getScaleAnimator(), c, fo0, fo1,
                                [&](const qreal p) -> QPointF {
                         const qreal e = easeOut(p);
@@ -1247,8 +1507,14 @@ bool bakeMatTextAnims(Ctx &c, const QList<TextBox*> &texts,
                                        scl0.y() + (sclTo.y() - scl0.y()) * e);
                     });
                 }
+                if (off.rot != 0) {
+                    bakeSpan(tr->getRotAnimator(), c, fo0, fo1,
+                             [&](const qreal p) {
+                        return rot0 + (rotTo - rot0) * easeOut(p);
+                    });
+                }
                 bakeSpan(opa, c, fo0, fo1, [&](const qreal p) {
-                    return alpha0 * (1.0 - easeOut(p));
+                    return alpha0 * alphaOut(p);
                 });
             }
         }
