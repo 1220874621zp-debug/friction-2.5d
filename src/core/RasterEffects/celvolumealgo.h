@@ -58,8 +58,8 @@ enum ShadeMode { ShadeRadial = 0, ShadeVolumetric = 1 };
 
 struct Params {
     // segmentation
-    float colorTol = 32.f;    // merge radius for flat-color clustering (rgb units)
-    int minArea = 40;         // regions below this pixel count merge into neighbors
+    float colorTol = 96.f;    // merge radius for flat-color clustering (rgb units)
+    int minArea = 726;        // regions below this pixel count merge into neighbors
     // radial shading
     int shadeMode = ShadeRadial;
     // stops: center magenta from the user's panel (h .833 s 1 v .794),

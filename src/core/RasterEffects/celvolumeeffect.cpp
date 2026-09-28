@@ -120,10 +120,10 @@ CelVolumeEffect::CelVolumeEffect() :
 {
     const auto segGroup =
             enve::make_shared<StaticComplexAnimator>(QObject::tr("\u533a\u57df\u5206\u5272"));
-    mColorTol = enve::make_shared<QrealAnimator>(32.0, 0.0, 96.0, 0.5,
+    mColorTol = enve::make_shared<QrealAnimator>(96.0, 0.0, 128.0, 0.5,
                                                  QObject::tr("\u989c\u8272\u5bb9\u5dee"));
     segGroup->ca_addChild(mColorTol);
-    mMinArea = enve::make_shared<QrealAnimator>(40.0, 1.0, 5000.0, 1.0,
+    mMinArea = enve::make_shared<QrealAnimator>(725.7, 1.0, 20000.0, 0.1,
                                                 QObject::tr("\u6700\u5c0f\u533a\u57df"));
     segGroup->ca_addChild(mMinArea);
     ca_addChild(segGroup);
