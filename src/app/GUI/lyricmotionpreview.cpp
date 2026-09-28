@@ -107,8 +107,15 @@ bool LyricPreviewWorker::ensureEngine(QString *error) {
         if (!stub.isOpen()) {
             err = QStringLiteral("cannot open stub");
         } else {
-            err = mEngine->evaluate(QString::fromUtf8(stub.readAll()),
-                                    QStringLiteral("jizura-stub.js")).toString();
+            // the stub is an IIFE returning undefined — that is
+            // success; only an actual script error aborts the load
+            // (toString() would turn every undefined into "undefined"
+            // and skip the planner + driver entirely)
+            const auto stubResult = mEngine->evaluate(
+                        QString::fromUtf8(stub.readAll()),
+                        QStringLiteral("jizura-stub.js"));
+            err = stubResult.isError() ? stubResult.toString()
+                                       : QString();
         }
     }
     if (err.isEmpty()) {
@@ -161,6 +168,21 @@ bool LyricPreviewWorker::ensurePlan(const QString &styleKey,
     const QString key = planCacheKey(styleKey, seed, density, lyrics,
                                      beats, audioDuration, fps);
     if (mLoaded && mPlanKey == key) { return true; } // cached plan matches
+    // a genuinely different plan crashes QV4 (vendored global state;
+    // verified with the --preview same2/3-styles probes: cache hits are
+    // fine, a second distinct plan dies mid-render) — rebuild the
+    // engine per plan change
+    if (mLoaded) {
+        mEngine.reset();
+        mFactory = nullptr;
+        mLoaded = false;
+        mPlanKey.clear();
+        QString engineErr;
+        if (!ensureEngine(&engineErr)) {
+            if (error) { *error = engineErr; }
+            return false;
+        }
+    }
     const auto js = [](const QString &v) {
         return QString::fromUtf8(QJsonDocument(QJsonArray{v})
                                  .toJson(QJsonDocument::Compact)

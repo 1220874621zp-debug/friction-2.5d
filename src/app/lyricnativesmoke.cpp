@@ -25,6 +25,7 @@
 #include "Boxes/rectangle.h"
 #include "Boxes/circle.h"
 #include "GUI/lyricmotionengine.h"
+#include "GUI/lyricmotionpreview.h"
 #include "GUI/lyricmotionnative.h"
 
 int main(int argc, char** argv) {
@@ -101,6 +102,47 @@ int main(int argc, char** argv) {
     p.chroma = 0.7;
     p.bpm = 120; // beat grid, no audio file
     p.audioDuration = 11.5;
+    // --preview: run the preview worker synchronously (no thread) and
+    // report how many frames the style cards actually receive
+    if(argc > 1 && QString(argv[1]) == "--preview") {
+        LyricPreviewWorker worker(240, 135, 10);
+        QObject::connect(&worker, &LyricPreviewWorker::framesReady,
+                [](const QString&, int, const QVector<QImage>& frames) {
+            fprintf(stderr, "[preview] framesReady: %d frames, first %dx%d\n",
+                    frames.size(),
+                    frames.isEmpty() ? 0 : frames.first().width(),
+                    frames.isEmpty() ? 0 : frames.first().height());
+        });
+        QObject::connect(&worker, &LyricPreviewWorker::styleFailed,
+                [](const QString& key, int, const QString& error) {
+            fprintf(stderr, "[preview] styleFailed %s: %s\n",
+                    key.toUtf8().constData(), error.toUtf8().constData());
+        });
+        QObject::connect(&worker, &LyricPreviewWorker::engineFailed,
+                [](const QString& error) {
+            fprintf(stderr, "[preview] engineFailed: %s\n",
+                    error.toUtf8().constData());
+        });
+        worker.setup();
+        const QString only = argc > 2 ? QString(argv[2]) : QString();
+        const QStringList keys = only == QStringLiteral("same2")
+                ? QStringList{QStringLiteral("noir"), QStringLiteral("noir")}
+                : only == QStringLiteral("noir")
+                ? QStringList{QStringLiteral("noir")}
+                : QStringList{QStringLiteral("noir"), QStringLiteral("sakura"),
+                              QStringLiteral("ocean")};
+        for(const QString& key : keys) {
+            fprintf(stderr, "[preview] requesting %s\n",
+                    key.toUtf8().constData());
+            fflush(stderr);
+            worker.renderStyle(key, 7, 0.55,
+                               QStringLiteral("夜明けの色を\n*文字* Motion\nテスト"),
+                               QVector<qreal>(), 0.0, 24.0, 0);
+            QApplication::processEvents();
+        }
+        return 0;
+    }
+
     // --stress: rebuild into the SAME scene for 40 seeds — the
     // apply-again-apply-again flow users hit (old group teardown incl.
     // matte links, then a fresh build every time)

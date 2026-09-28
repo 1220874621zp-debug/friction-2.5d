@@ -250,7 +250,21 @@ QObject *LyricCanvasFactory::createElementNS(const QString &ns,
 JsCanvas2D::JsCanvas2D(LyricCanvasFactory *factory) :
     QObject(factory), mFactory(factory) {}
 
-JsCanvas2D::~JsCanvas2D() = default;
+JsCanvas2D::~JsCanvas2D()
+{
+    // members (mImage) destruct BEFORE ~QObject deletes the children,
+    // so a still-active painter inside the context would touch a dead
+    // QPaintDevice ("Cannot destroy paint device that is being
+    // painted" + heap corruption later) — end it while the image is
+    // still alive
+    if (mContext) {
+        if (mContext->mPainting || mContext->mPainter.isActive()) {
+            mContext->mPainter.end();
+            mContext->mPainting = false;
+        }
+        delete mContext.data();
+    }
+}
 
 void JsCanvas2D::setWidth(const int w) {
     if (mContext && mContext->mPainting) {

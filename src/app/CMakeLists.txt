@@ -438,7 +438,8 @@ if(UNIX AND NOT APPLE)
     # headless smoke test for the native lyric builder (development
     # tool only, never installed or deployed)
     add_executable(lyricnativesmoke lyricnativesmoke.cpp jizura_smoke.qrc
-        GUI/lyricmotionengine.cpp GUI/lyricmotionnative.cpp)
+        GUI/lyricmotionengine.cpp GUI/lyricmotionnative.cpp
+        GUI/lyricmotionpreview.cpp GUI/lyricmotioncanvas.cpp)
     target_link_directories(
         lyricnativesmoke
         PRIVATE
