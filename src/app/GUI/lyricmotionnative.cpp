@@ -1411,6 +1411,12 @@ bool bakeMatTextAnims(Ctx &c, const QList<TextBox*> &texts,
                       .toString().left(12) << "enter" << enterKey
                    << "exit" << exitKey << "n" << n
                    << "fStart" << fStart << "fEnd" << fEnd
+                   << "trans" << cut.value(QStringLiteral("trans"))
+                                .toString()
+                   << "transDur" << cut.value(QStringLiteral("transDur"))
+                                   .toDouble()
+                   << "cam" << cut.value(QStringLiteral("cam"))
+                               .toString()
                    << "inSpan" << inSpan << "outSpan" << outSpan
                    << "spreadIn" << specIn.spread
                    << "spreadOut" << specOut.spread
@@ -3295,50 +3301,224 @@ bool buildDecor(Ctx &c, ContainerBox * const group, const QJsonObject &d,
 // camera / transitions / events / hud
 // ======================================================================
 
+// camera rigs over the full JIZURA CAMERA registry (11p_bgcamB.js
+// and friends, 30+ keys). The old substring matcher pushed almost
+// every key through the same gentle zoom, which read as "the panel
+// has no camera work"
+struct CamRig {
+    qreal sclFrom = 1.0, sclTo = 0.0;   // sclTo 0 = 1.03 default
+    qreal rotFrom = 0, rotTo = 0;       // degrees
+    QPointF posFrom, posTo;             // canvas fractions
+    qreal sway = 0;                     // pos sine amp (canvas frac)
+    qreal wobble = 0;                   // scale sine amp
+    qreal shakeAmp = 0;                 // >0 → SHAKE effect instead
+    bool settle = false;                // fast ease-out in first 25%
+};
+
+CamRig camSpec(const QString &cam, const qreal motion) {
+    CamRig r;
+    r.sclTo = 1.0 + 0.03 * motion;
+    const auto set = [&r](const qreal f, const qreal t) {
+        r.sclFrom = f; r.sclTo = t;
+    };
+    // zoom family
+    if (cam == QLatin1String("crashZoom")
+            || cam == QLatin1String("beatPunch")) {
+        set(1.0, 1.0 + 0.15 * motion); r.settle = true;
+    } else if (cam == QLatin1String("pullOut")) {
+        set(1.0 + 0.08 * motion, 1.0);
+    } else if (cam == QLatin1String("whipIn")
+               || cam == QLatin1String("knRushIn")) {
+        set(1.0 + 0.16 * motion, 1.0); r.settle = true;
+    } else if (cam == QLatin1String("snapPan")) {
+        set(1.0 + 0.06 * motion, 1.0); r.settle = true;
+        r.posFrom = QPointF(0.06, 0); r.posTo = QPointF(0, 0);
+    } else if (cam == QLatin1String("knJumpCut")
+               || cam == QLatin1String("stepZoom")) {
+        set(1.0 + 0.1 * motion, 1.0);   // koma grid quantizes = steps
+    } else if (cam == QLatin1String("dollyIn")) {
+        set(1.0, 1.0 + 0.06 * motion);
+    } else if (cam == QLatin1String("focusIn")
+               || cam == QLatin1String("rackFocus")) {
+        set(1.0 + 0.045 * motion, 1.0); // focus pull ≈ gentle settle
+    } else if (cam == QLatin1String("vertigo")) {
+        set(1.0 + 0.08 * motion, 1.0);
+        r.rotFrom = 1.5; r.rotTo = -1.5;
+    } else if (cam == QLatin1String("jelly")
+               || cam == QLatin1String("bounce")) {
+        r.wobble = 0.035;
+    }
+    // rotation family
+    else if (cam == QLatin1String("dutch")
+              || cam == QLatin1String("hrDutchSnap")) {
+        r.rotFrom = -5.5; r.rotTo = 0; r.settle = true;
+        set(1.0 + 0.04 * motion, 1.0);
+    } else if (cam == QLatin1String("roll")) {
+        r.rotFrom = -2.5; r.rotTo = 2.5;
+    } else if (cam == QLatin1String("barrelRoll")) {
+        r.rotFrom = -38; r.rotTo = 0;
+        set(1.0 + 0.1 * motion, 1.0); r.settle = true;
+    } else if (cam == QLatin1String("spiralIn")) {
+        r.rotFrom = -14; r.rotTo = 0;
+        set(1.0 + 0.13 * motion, 1.0); r.settle = true;
+    } else if (cam == QLatin1String("knShearKick")) {
+        r.rotFrom = 4.5; r.rotTo = 0; r.settle = true;
+        r.posFrom = QPointF(0.03, 0); r.posTo = QPointF(0, 0);
+    }
+    // pan / drift family
+    else if (cam == QLatin1String("panL")) {
+        r.posFrom = QPointF(0.05, 0); r.posTo = QPointF(-0.03, 0);
+    } else if (cam == QLatin1String("panR")
+               || cam == QLatin1String("knReadPan")) {
+        r.posFrom = QPointF(-0.05, 0); r.posTo = QPointF(0.03, 0);
+    } else if (cam == QLatin1String("tiltUp")) {
+        r.posFrom = QPointF(0, 0.045); r.posTo = QPointF(0, -0.02);
+    } else if (cam == QLatin1String("tiltDown")
+               || cam == QLatin1String("knTiltKick")) {
+        r.posFrom = QPointF(0, -0.045); r.posTo = QPointF(0, 0.02);
+    } else if (cam == QLatin1String("driftDiag")) {
+        r.posFrom = QPointF(-0.04, -0.03); r.posTo = QPointF(0.03, 0.02);
+    } else if (cam == QLatin1String("floatNoise")
+               || cam == QLatin1String("orbitDrift")
+               || cam == QLatin1String("pendulumSway")) {
+        r.sway = 0.018;
+    }
+    // shake family
+    else if (cam == QLatin1String("earthquake")
+              || cam == QLatin1String("shakeHard")) {
+        r.shakeAmp = 7 + 9 * motion;
+    } else if (cam == QLatin1String("handheld")
+               || cam == QLatin1String("hrNervous")) {
+        r.shakeAmp = 4 + 6 * motion;
+    }
+    // card flip ≈ horizontal squeeze opening
+    else if (cam == QLatin1String("knCardFlip")) {
+        r.posFrom = QPointF(-0.02, 0); r.posTo = QPointF(0, 0);
+        r.rotFrom = -3; r.rotTo = 0; r.settle = true;
+    }
+    return r;
+}
+
 void applyCamera(Ctx &c, ContainerBox * const group,
                  const QJsonObject &cut, const int fStart, const int fEnd) {
     const QString cam = cut.value(QStringLiteral("cam")).toString();
     if (cam.isEmpty() || cam == QStringLiteral("none")) { return; }
-    if (cam != QStringLiteral("push")) {
-        c.res->substitutions++;
-    }
-    const auto has = [&cam](const char *s) {
-        return cam.contains(QLatin1String(s), Qt::CaseInsensitive);
-    };
+    const CamRig r = camSpec(cam, c.motion);
     group->getBoxTransformAnimator()->getPivotAnimator()->setBaseValue(
                 QPointF(c.cw * 0.5, c.ch * 0.5));
-    auto *scale = group->getTransformAnimator()->getScaleAnimator();
-    if (has("handheld") || has("shake")) {
+    if (r.shakeAmp > 0) {
         const auto eff = addEffect(group, RasterEffectType::SHAKE);
         if (auto *a = qparam(eff, {"amplitude", "振幅"})) {
-            a->setCurrentBaseValue(4 + 6 * c.motion);
+            a->setCurrentBaseValue(r.shakeAmp);
         }
         return;
     }
-    qreal from = 1.0, to = 1.0 + 0.03 * c.motion;
-    if (has("crash") || has("punch")) { to = 1.0 + 0.12 * c.motion; }
-    if (has("pull") || has("out")) { from = to; to = 1.0; }
-    bakeSpanXY(scale, c, fStart, fEnd, [from, to](const qreal p) {
-        const qreal s = from + (to - from) * p;
+    auto *scale = group->getTransformAnimator()->getScaleAnimator();
+    const auto settleE = [](const qreal p) {
+        return 1.0 - std::pow(1.0 - qBound(0.0, p / 0.25, 1.0), 3);
+    };
+    const qreal from = r.sclFrom, to = r.sclTo;
+    bakeSpanXY(scale, c, fStart, fEnd,
+               [&](const qreal p) -> QPointF {
+        const qreal e = r.settle ? settleE(p) : p;
+        qreal s = from + (to - from) * e;
+        if (r.wobble > 0) {
+            s += r.wobble * std::sin(p * 6.2831853 * 2.0)
+                    * (1.0 - p * 0.7);
+        }
         return QPointF(s, s);
     });
-    if (has("dutch") || has("roll")) {
+    if (r.rotFrom != r.rotTo) {
         auto *rot = group->getTransformAnimator()->getRotAnimator();
-        bakeSpan(rot, c, fStart, fEnd, [](const qreal p) {
-            return -2.5 + 5.0 * p;
+        bakeSpan(rot, c, fStart, fEnd, [&](const qreal p) {
+            const qreal e = r.settle ? settleE(p) : p;
+            return r.rotFrom + (r.rotTo - r.rotFrom) * e;
         });
     }
-    if (has("pan")) {
+    if (r.posFrom != r.posTo || r.sway > 0) {
         auto *pos = group->getTransformAnimator()->getPosAnimator();
-        const qreal dx = c.cw * 0.08;
-        bakeSpanXY(pos, c, fStart, fEnd, [dx](const qreal p) {
-            return QPointF(-dx * p, 0);
+        const QPointF fromP(r.posFrom.x() * c.cw, r.posFrom.y() * c.ch);
+        const QPointF toP(r.posTo.x() * c.cw, r.posTo.y() * c.ch);
+        const qreal swayPx = r.sway * c.cw;
+        bakeSpanXY(pos, c, fStart, fEnd,
+                   [&](const qreal p) -> QPointF {
+            const qreal e = r.settle ? settleE(p) : p;
+            QPointF pt(fromP.x() + (toP.x() - fromP.x()) * e,
+                       fromP.y() + (toP.y() - fromP.y()) * e);
+            if (swayPx > 0) {
+                pt += QPointF(std::sin(p * 6.2831853) * swayPx,
+                              std::cos(p * 6.2831853 * 0.5) * swayPx * 0.6);
+            }
+            return pt;
         });
     }
 }
 
+// cut-boundary transition rigs over the full JIZURA TRANS registry
+// (11p_treattrans.js and friends, 29 keys). Kind buckets:
+//   WipeFx   → WIPE raster effect sweeping cur in over the seam
+//   Slide    → prev pushes out while cur pushes in (direction/slam)
+//   ZoomFx / PixelFx / GlitchFx / InvertFx → effect pulses on cur
+//   Spin/Cube/FlashBlack → baked group rigs (old code dropped these
+//   to a plain crossfade, which read as "no transition")
+enum class TransKind : quint8 {
+    WipeFx, Slide, ZoomFx, PixelFx, GlitchFx, InvertFx,
+    Spin, Cube, FlashBlack
+};
+
+struct TransRig {
+    TransKind kind = TransKind::Slide;
+    qreal dx = 0.30;        // slide distance (canvas fraction)
+    int dir = 1;            // slide direction
+    bool uncover = false;   // prev moves away, cur stays put
+    bool slam = false;      // hard fast push
+};
+
+TransRig transSpec(const QString &key) {
+    TransRig t;
+    const auto is = [&key](std::initializer_list<const char*> ks) {
+        for (const char *k : ks) {
+            if (key == QLatin1String(k)) { return true; }
+        }
+        return false;
+    };
+    if (is({"wipe", "clockWipe", "blinds", "checker", "diagonalWipe",
+            "tyRuleWipe", "doorsOpen", "tyGridCells", "irisOpen"})) {
+        t.kind = TransKind::WipeFx;
+    } else if (is({"pushSlide", "cover"})) {
+        t.kind = TransKind::Slide; t.dx = 0.30;
+    } else if (key == QLatin1String("whipPan")) {
+        t.kind = TransKind::Slide; t.dx = 0.46; t.slam = true;
+    } else if (key == QLatin1String("knStripSlam")) {
+        t.kind = TransKind::Slide; t.dx = 0.55; t.slam = true;
+    } else if (key == QLatin1String("sliceShift")) {
+        t.kind = TransKind::Slide; t.dx = 0.24; t.dir = -1;
+    } else if (key == QLatin1String("uncover")) {
+        t.kind = TransKind::Slide; t.dx = 0.34; t.uncover = true;
+    } else if (key == QLatin1String("zoomThrough")) {
+        t.kind = TransKind::ZoomFx;
+    } else if (key == QLatin1String("pixelate")) {
+        t.kind = TransKind::PixelFx;
+    } else if (key == QLatin1String("blockDissolve")) {
+        t.kind = TransKind::GlitchFx;
+    } else if (key == QLatin1String("flashCross")) {
+        t.kind = TransKind::InvertFx;
+    } else if (is({"spinOut", "knCornerSwing"})) {
+        t.kind = TransKind::Spin;
+    } else if (key == QLatin1String("cubeTurn")) {
+        t.kind = TransKind::Cube;
+    } else if (is({"hrBlink", "knStutterCut", "hrStaticCut",
+                   "inkBlob", "shatterTiles"})) {
+        t.kind = TransKind::FlashBlack;
+    } else {
+        t.kind = TransKind::WipeFx;   // unknown keys: a wipe reads
+    }                                  // as a transition, not a cut
+    return t;
+}
+
 void applyTransitions(Ctx &c, const QJsonArray &cuts,
-                      const QList<ContainerBox*> &cutGroups) {
+                      const QList<ContainerBox*> &cutGroups,
+                      ContainerBox * const root) {
     for (int i = 1; i < cuts.size(); i++) {
         const auto cut = cuts.at(i).toObject();
         const QString trans = cut.value(QStringLiteral("trans")).toString();
@@ -3357,11 +3537,8 @@ void applyTransitions(Ctx &c, const QJsonArray &cuts,
             const int newMax = qMax(dr->getMaxAbsFrame(), f0 + fTd + 1);
             dr->setFramesDuration(newMax - dr->getMinAbsFrame() + 1);
         }
-        const auto has = [&trans](const char *s) {
-            return trans.contains(QLatin1String(s), Qt::CaseInsensitive);
-        };
-        if (has("wipe") || has("iris") || has("blinds") || has("clock")
-                || has("checker") || has("shutter") || has("curtain")) {
+        const TransRig rig = transSpec(trans);
+        if (rig.kind == TransKind::WipeFx) {
             const auto eff = addEffect(cur, RasterEffectType::WIPE);
             if (auto *tm = qparam(eff, {"time", "时间"})) {
                 tm->setCurrentBaseValue(0);
@@ -3372,37 +3549,107 @@ void applyTransitions(Ctx &c, const QJsonArray &cuts,
             if (auto *sh = qparam(eff, {"sharpness"})) {
                 sh->setCurrentBaseValue(0.15);
             }
-        } else if (has("push") || has("cover") || has("slide")
-                   || has("whip") || has("swap")) {
-            const qreal dx = c.cw * 0.3;
+        } else if (rig.kind == TransKind::Slide) {
+            const qreal dx = c.cw * rig.dx * rig.dir;
+            const qreal expo = rig.slam ? 2.6 : 1.0;
             bakeSpanXY(prev->getTransformAnimator()->getPosAnimator(),
-                       c, f0, f0 + fTd, [dx](const qreal p) {
-                return QPointF(-dx * p, 0);
+                       c, f0, f0 + fTd,
+                       [dx, expo, un = rig.uncover](const qreal p) -> QPointF {
+                const qreal e = std::pow(p, expo);
+                return un ? QPointF(dx * e, 0)
+                          : QPointF(-dx * e, 0);
             });
-            bakeSpanXY(cur->getTransformAnimator()->getPosAnimator(),
-                       c, f0, f0 + fTd, [dx](const qreal p) {
-                return QPointF(dx * (1 - p), 0);
-            });
-        } else if (has("zoom")) {
+            if (!rig.uncover) {
+                bakeSpanXY(cur->getTransformAnimator()->getPosAnimator(),
+                           c, f0, f0 + fTd,
+                           [dx, expo](const qreal p) -> QPointF {
+                    const qreal e = std::pow(p, expo);
+                    return QPointF(dx * (1 - e), 0);
+                });
+            }
+        } else if (rig.kind == TransKind::ZoomFx) {
             const auto eff = addEffect(cur, RasterEffectType::ZOOM_BLUR);
             if (auto *a = qparam(eff, {"amount"})) {
                 pulseParam(a, c, t0, transDur, 60, 0);
             }
-        } else if (has("mosaic") || has("pixel")) {
+        } else if (rig.kind == TransKind::PixelFx) {
             const auto eff = addEffect(cur, RasterEffectType::PIXELATE);
             if (auto *a = qparam(eff, {"pixelSize", "像素大小"})) {
                 pulseParam(a, c, t0, transDur, 28, 1);
             }
-        } else if (has("glitch") || has("dissolve") || has("block")) {
+        } else if (rig.kind == TransKind::GlitchFx) {
             const auto eff = addEffect(cur, RasterEffectType::GLITCH);
             if (auto *a = qparam(eff, {"intensity"})) {
                 pulseParam(a, c, t0, transDur, 70, 0);
             }
-        } else if (has("flash")) {
+        } else if (rig.kind == TransKind::InvertFx) {
             const auto eff = addEffect(cur, RasterEffectType::INVERT);
             if (auto *a = qparam(eff, {"amount"})) {
                 pulseParam(a, c, t0, transDur, 100, 0);
             }
+        } else if (rig.kind == TransKind::Spin) {
+            // prev swings out shrinking, cur settles in from a push
+            prev->getBoxTransformAnimator()->getPivotAnimator()
+                    ->setBaseValue(QPointF(c.cw * 0.5, c.ch * 0.5));
+            auto *ps = prev->getTransformAnimator()->getScaleAnimator();
+            auto *pr = prev->getTransformAnimator()->getRotAnimator();
+            bakeSpanXY(ps, c, f0, f0 + fTd, [](const qreal p) {
+                const qreal s = 1.0 - 0.24 * p;
+                return QPointF(s, s);
+            });
+            bakeSpan(pr, c, f0, f0 + fTd, [](const qreal p) {
+                return 22.0 * std::pow(p, 1.4);
+            });
+            auto *po = opacityAnim(prev);
+            po->saveValueToKey(f0, 100);
+            po->saveValueToKey(f0 + fTd, 0);
+            cur->getBoxTransformAnimator()->getPivotAnimator()
+                    ->setBaseValue(QPointF(c.cw * 0.5, c.ch * 0.5));
+            auto *cs = cur->getTransformAnimator()->getScaleAnimator();
+            bakeSpanXY(cs, c, f0, f0 + fTd, [](const qreal p) {
+                const qreal e = 1.0 - std::pow(1.0 - p, 3);
+                const qreal s = 1.07 - 0.07 * e;
+                return QPointF(s, s);
+            });
+        } else if (rig.kind == TransKind::Cube) {
+            // fake cube turn: prev squeezes horizontally away, cur
+            // unfolds from its edge
+            prev->getBoxTransformAnimator()->getPivotAnimator()
+                    ->setBaseValue(QPointF(c.cw * 0.5, c.ch * 0.5));
+            auto *px = prev->getTransformAnimator()->getScaleAnimator()
+                    ->getXAnimator();
+            bakeSpan(px, c, f0, f0 + fTd, [](const qreal p) {
+                return std::pow(1.0 - p, 1.5);
+            });
+            auto *po = opacityAnim(prev);
+            po->saveValueToKey(f0, 100);
+            po->saveValueToKey(f0 + fTd, 0);
+            cur->getBoxTransformAnimator()->getPivotAnimator()
+                    ->setBaseValue(QPointF(c.cw * 0.5, c.ch * 0.5));
+            auto *cx = cur->getTransformAnimator()->getScaleAnimator()
+                    ->getXAnimator();
+            bakeSpan(cx, c, f0, f0 + fTd, [](const qreal p) {
+                return std::pow(p, 1.5);
+            });
+        } else if (rig.kind == TransKind::FlashBlack) {
+            // blink/stutter family: black frame flash over the seam
+            // plus a quick settle push on the incoming cut
+            auto *flash = mkRect(root, QRectF(0, 0, c.cw, c.ch),
+                                 QColor(4, 4, 6));
+            flash->prp_setName(QStringLiteral("转场黑闪"));
+            auto *fo = opacityAnim(flash);
+            fo->saveValueToKey(f0, 0);
+            fo->saveValueToKey(f0 + qMax(1, fTd / 3), 100);
+            fo->saveValueToKey(f0 + qMax(2, 2 * fTd / 3), 100);
+            fo->saveValueToKey(f0 + fTd, 0);
+            cur->getBoxTransformAnimator()->getPivotAnimator()
+                    ->setBaseValue(QPointF(c.cw * 0.5, c.ch * 0.5));
+            auto *cs = cur->getTransformAnimator()->getScaleAnimator();
+            bakeSpanXY(cs, c, f0, f0 + fTd, [](const qreal p) {
+                const qreal e = 1.0 - std::pow(1.0 - p, 3);
+                const qreal s = 1.06 - 0.06 * e;
+                return QPointF(s, s);
+            });
         } else {
             // morph and unknown transitions: crossfade
             c.res->substitutions++;
@@ -3713,9 +3960,6 @@ bool LyricMotionNative::build(Canvas * const scene,
             baseRect->prp_setName(QStringLiteral("背景基底"));
             opacityAnim(baseRect)->setCurrentBaseValue(100);
         }
-        buildHud(c, root, plan);
-        buildFlashOverlay(c, root);
-
         QList<ContainerBox*> cutGroups(cuts.size(), nullptr);
         for (int i = 0; i < cuts.size(); i++) {
             const auto cut = cuts.at(i).toObject();
@@ -3857,7 +4101,13 @@ bool LyricMotionNative::build(Canvas * const scene,
             result->notes << QStringLiteral("渲染重放物化 %1/%2 切")
                     .arg(materializedCuts).arg(result->cutsBuilt);
         }
-        applyTransitions(c, cuts, cutGroups);
+        // HUD and the fullscreen event flash are overlays: added
+        // AFTER the cut groups they paint on top of the cut
+        // backgrounds (boxes added later paint higher — the old
+        // "overlays go in first" order buried them underneath)
+        buildHud(c, root, plan);
+        buildFlashOverlay(c, root);
+        applyTransitions(c, cuts, cutGroups, root);
         applyRootFx(c, root);
 
         // color ghosting: static chromatic aberration over everything

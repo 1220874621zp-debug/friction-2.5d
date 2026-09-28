@@ -868,6 +868,13 @@ int main(int argc, char *argv[])
                 p.density = 0.36;
             }
             p.chroma = 0.7;
+            // FRICTION_LYRICTRANS=mixed|<key> forces a transition
+            // on every boundary through the planner override channel
+            const QByteArray transEnv = qgetenv("FRICTION_LYRICTRANS");
+            if (!transEnv.isEmpty()) {
+                p.transMode = transEnv == "mixed" ? 1 : 2;
+                p.transKey = QString::fromUtf8(transEnv);
+            }
             const QString json = engine.planJson(p, &err);
             if (json.isEmpty()) {
                 qWarning() << "[LYRICAPPLY] plan failed:" << err;
@@ -942,6 +949,22 @@ int main(int argc, char *argv[])
                         // wrong-color rect (web composites bg fades
                         // over its own black page; friction has only
                         // whatever alpha the replay captured)
+                        // raster-effect census: transitions attach
+                        // WIPE/ZOOM_BLUR/... to the cut group - an
+                        // empty list means the transition never landed
+                        if (const auto rc = cutGroup
+                                ->rasterEffectsCollection()) {
+                            QStringList effs;
+                            for (int ei = 0;
+                                 ei < rc->ca_getNumberOfChildren();
+                                 ei++) {
+                                effs << rc->ca_getChildAt(ei)
+                                        ->prp_getName();
+                            }
+                            qWarning() << "[LYRICAPPLY]  effects"
+                                       << cg->prp_getName()
+                                       << effs;
+                        }
                         static int dumpedRects = 0;
                         if (dumpedRects < 2) {
                             dumpedRects++;
@@ -1038,7 +1061,8 @@ int main(int argc, char *argv[])
             const int fStartF = qMax(0, qRound(fStartS * scene->getFps()));
             const int fEndF = qRound(fEndS * scene->getFps());
             const QList<int> probeFrames = {fStartF, fStartF + 3, frame,
-                                            fEndF - 3, 0};
+                                            fEndF - 3, fEndF - 1,
+                                            fEndF + 2, 0};
             QTimer::singleShot(1500, &w, [&w, scene, probeFrames]() {
                 const auto cw = w.findChild<CanvasWindow*>();
                 if (!cw) {

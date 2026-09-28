@@ -71,6 +71,7 @@ private:
     QPlainTextEdit *mLyricsEdit = nullptr;
     QComboBox *mStyleCombo = nullptr;
     QComboBox *mMoodCombo = nullptr;
+    QComboBox *mTransCombo = nullptr;
     QSpinBox *mSeedSpin = nullptr;
     QToolButton *mSeedDice = nullptr;
     QToolButton *mOmakaseButton = nullptr;

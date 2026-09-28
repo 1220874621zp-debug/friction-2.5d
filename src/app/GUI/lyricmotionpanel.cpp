@@ -503,6 +503,30 @@ void LyricMotionPanel::setupUi() {
     ctrl2->addWidget(mBpmSpin);
     mainLayout->addLayout(ctrl2);
 
+    // controls row 3: cut-boundary transition. The planner only rolls
+    // a transition on ~30% of boundaries by default, which read as
+    // "no transitions at all" — the combo forces one per boundary
+    // through the planner's per-line override channel
+    auto *ctrl3 = new QHBoxLayout();
+    ctrl3->setSpacing(4);
+    mTransCombo = new QComboBox(this);
+    mTransCombo->addItem(tr("转场：自动"), QString());
+    mTransCombo->addItem(tr("每切混合"), QStringLiteral("@mixed"));
+    mTransCombo->addItem(tr("擦除"), QStringLiteral("wipe"));
+    mTransCombo->addItem(tr("推移"), QStringLiteral("pushSlide"));
+    mTransCombo->addItem(tr("甩镜"), QStringLiteral("whipPan"));
+    mTransCombo->addItem(tr("缩放穿越"), QStringLiteral("zoomThrough"));
+    mTransCombo->addItem(tr("白闪"), QStringLiteral("flashCross"));
+    mTransCombo->addItem(tr("对角擦"), QStringLiteral("diagonalWipe"));
+    mTransCombo->addItem(tr("圆虹"), QStringLiteral("irisOpen"));
+    mTransCombo->addItem(tr("立方"), QStringLiteral("cubeTurn"));
+    mTransCombo->addItem(tr("旋转退场"), QStringLiteral("spinOut"));
+    mTransCombo->setToolTip(tr("切间转场：自动=规划器按风格抽样；"
+                               "其余=每个切边界强制使用所选转场"));
+    ctrl3->addWidget(new QLabel(tr("转场"), this), 0);
+    ctrl3->addWidget(mTransCombo, 1);
+    mainLayout->addLayout(ctrl3);
+
     // audio row
     auto *audioRow = new QHBoxLayout();
     audioRow->setSpacing(4);
@@ -556,6 +580,8 @@ void LyricMotionPanel::setupUi() {
         scheduleReplan();
     });
     connect(mMoodCombo, &QComboBox::currentIndexChanged,
+            this, &LyricMotionPanel::scheduleReplan);
+    connect(mTransCombo, &QComboBox::currentIndexChanged,
             this, &LyricMotionPanel::scheduleReplan);
     connect(mSeedSpin, qOverload<int>(&QSpinBox::valueChanged),
             this, &LyricMotionPanel::scheduleReplan);
@@ -648,6 +674,12 @@ void LyricMotionPanel::loadSettings() {
         const int idx = mMoodCombo->findData(mood);
         if (idx >= 0) { mMoodCombo->setCurrentIndex(idx); }
     }
+    const QString trans = AppSupport::getSettings(
+        QStringLiteral("LyricPanel"), QStringLiteral("trans"),
+        QString()).toString();
+    if (const int idx = mTransCombo->findData(trans); idx >= 0) {
+        mTransCombo->setCurrentIndex(idx);
+    }
     mBuildingUi = false;
 }
 
@@ -670,6 +702,9 @@ void LyricMotionPanel::saveSettings() {
     AppSupport::setSettings(QStringLiteral("LyricPanel"),
                             QStringLiteral("bpm"),
                             mBpmSpin->value());
+    AppSupport::setSettings(QStringLiteral("LyricPanel"),
+                            QStringLiteral("trans"),
+                            mTransCombo->currentData().toString());
 }
 
 LyricMotionEngine::Params LyricMotionPanel::collectParams() const {
@@ -682,6 +717,10 @@ LyricMotionEngine::Params LyricMotionPanel::collectParams() const {
     p.density = mDensitySlider->value() / 100.0;
     p.chroma = mChromaSlider->value() / 100.0;
     p.bpm = mBpmSpin->value();
+    const QString tdata = mTransCombo->currentData().toString();
+    p.transMode = tdata == QLatin1String("@mixed") ? 1
+                : tdata.isEmpty() ? 0 : 2;
+    p.transKey = tdata;
     // JIZURA semantics: a manual BPM grid overrides detected beats;
     // detected beats apply while the spin stays on 自动/无
     if (!mAudioPath.isEmpty() && mAudioAnalysis.valid && p.bpm == 0) {

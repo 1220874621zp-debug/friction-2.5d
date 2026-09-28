@@ -40,6 +40,9 @@ public:
         QVector<qreal> beats;       // detected beats (overrides bpm grid)
         qreal audioDuration = 0;    // keeps the plan as long as the song
         qreal chroma = -1;          // <0 = keep the style default
+        int transMode = 0;          // 0 = planner auto, 1 = mixed
+                                    // every boundary, 2 = fixed key
+        QString transKey;           // JIZURA TRANS key when transMode=2
     };
 
     explicit LyricMotionEngine(QObject * const parent = nullptr);
