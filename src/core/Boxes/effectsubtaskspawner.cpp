@@ -71,7 +71,14 @@ void EffectSubTaskSpawner_priv::initialize() {
     mSrcRasterImg = srcImg->makeRasterImage();
     mSrcRasterImg->peekPixels(&pixmap);
     mSrcBitmap.installPixels(pixmap);
-    if(mUseDst) mDstBitmap.allocPixels(mSrcBitmap.info());
+    // allocPixels leaves the pixels UNINITIALIZED - an effect whose
+    // processCpu does not write every pixel of its tile would put raw
+    // heap garbage on the canvas (different every round -> flicker).
+    // Clear once up front; effects overwrite everything they produce.
+    if(mUseDst) {
+        mDstBitmap.allocPixels(mSrcBitmap.info());
+        mDstBitmap.eraseColor(SK_ColorTRANSPARENT);
+    }
     spawn();
 }
 

@@ -95,9 +95,9 @@ public:
         // format, so whole rows move with memcpy
         const auto& tile = data.fTexTile;
         const int xMin = std::max(0, tile.left());
-        const int xMax = std::min(tile.right(), mResult.width() - 1);
+        const int xMax = std::min(tile.right() - 1, mResult.width() - 1);
         const int yMin = std::max(0, tile.top());
-        const int yMax = std::min(tile.bottom(), mResult.height() - 1);
+        const int yMax = std::min(tile.bottom() - 1, mResult.height() - 1);
         for (int yi = yMin; yi <= yMax; yi++) {
             memcpy(dstBtmp.getAddr(0, yi - yMin),
                    mResult.getAddr(xMin, yi),

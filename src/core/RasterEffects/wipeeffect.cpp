@@ -145,9 +145,9 @@ void WipeEffectCaller::processCpu(CpuRenderTools& renderTools,
     const qreal imgHeight = srcBtmp.height();
 
     const int xMin = std::max(0, data.fTexTile.left());
-    const int xMax = std::min((int)data.fTexTile.right(), (int)imgWidth - 1);
+    const int xMax = std::min((int)data.fTexTile.right() - 1, (int)imgWidth - 1);
     const int yMin = std::max(0, data.fTexTile.top());
-    const int yMax = std::min((int)data.fTexTile.bottom(), (int)imgHeight - 1);
+    const int yMax = std::min((int)data.fTexTile.bottom() - 1, (int)imgHeight - 1);
 
     const qreal width = 2 - mSharpness;
     const qreal margin = 0.5*(width - 1);

@@ -97,7 +97,20 @@ RasterEffectCollection::RasterEffectCollection() :
     ca_setHiddenWhenEmpty(true);
 
     connect(this, &ComplexAnimator::ca_childAdded,
-            this, &RasterEffectCollection::updateMaxForcedMargin);
+            this, [this](Property * const child) {
+        // margin-affecting effects (blur radius, particle area, ...)
+        // emit forcedMarginChanged when their parameters change at
+        // runtime - without this hook the collection margin (and with
+        // it the render clamp rect) stayed frozen at the value the
+        // effect had when it was ADDED, so growing e.g. a blur radius
+        // past it clipped the glow at stale bounds
+        if(const auto effect = dynamic_cast<RasterEffect*>(child)) {
+            connect(effect, &RasterEffect::forcedMarginChanged,
+                    this, &RasterEffectCollection::updateMaxForcedMargin,
+                    Qt::UniqueConnection);
+        }
+        updateMaxForcedMargin();
+    });
     connect(this, &ComplexAnimator::ca_childRemoved,
             this, &RasterEffectCollection::updateMaxForcedMargin);
 }

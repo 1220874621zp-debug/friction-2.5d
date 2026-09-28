@@ -1302,6 +1302,10 @@ FrameRange Canvas::prp_getIdenticalRelRange(const int relFrame) const {
 }
 
 void Canvas::renderDataFinished(BoxRenderData *renderData) {
+    // failed round (allocation failure): no image to show or cache.
+    // Installing an empty container would blank the canvas view until
+    // a later round succeeds; keep the last good frame instead.
+    if(!renderData->fRenderedImage) { mRenderDataDiscardCount++; return; }
     const bool currentState = renderData->fBoxStateId == mStateId;
     if(currentState) mRenderDataHandler.removeItemAtRelFrame(renderData->fRelFrame);
     else if(renderData->fBoxStateId < mLastStateId) {

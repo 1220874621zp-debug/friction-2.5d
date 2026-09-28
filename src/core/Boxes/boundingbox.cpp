@@ -2345,6 +2345,20 @@ void BoundingBox::renderDataFinished(BoxRenderData *renderData) {
     const bool currentState = renderData->fBoxStateId == mStateId;
     const qreal relFrame = renderData->fRelFrame;
     if(currentState) mRenderDataHandler.removeItemAtRelFrame(relFrame);
+    // a FAILED round (pixel allocation failure / size-limit bail in
+    // BoxRenderData::process) finishes with no image: installing it
+    // would replace the last good bitmap with a null one - the layer
+    // then vanishes from the canvas until some later round succeeds
+    // (looked like "adds do not show up, appear after a while").
+    // Keep the old image and stay expired so the next round retries.
+    // An empty global rect is a legitimate "box has no pixels" render
+    // and must still clear the container.
+    if(!renderData->fRenderedImage &&
+       renderData->fGlobalRect.width() > 0 &&
+       renderData->fGlobalRect.height() > 0) {
+        mDrawRenderContainer.setExpired(true);
+        return;
+    }
     auto currentRenderData = mDrawRenderContainer.getSrcRenderData();
     bool newerSate = true;
     bool closerFrame = true;

@@ -159,9 +159,9 @@ void EdgeDetectEffectCaller::processCpu(CpuRenderTools& renderTools,
     if (imgWidth <= 0 || imgHeight <= 0) return;
 
     const int xMin = std::max(0, data.fTexTile.left());
-    const int xMax = std::min((int)data.fTexTile.right(), imgWidth - 1);
+    const int xMax = std::min((int)data.fTexTile.right() - 1, imgWidth - 1);
     const int yMin = std::max(0, data.fTexTile.top());
-    const int yMax = std::min((int)data.fTexTile.bottom(), imgHeight - 1);
+    const int yMax = std::min((int)data.fTexTile.bottom() - 1, imgHeight - 1);
 
     const int step = std::max(1, qRound(mThickness));
     const auto getLuma = [&](int x, int y) -> qreal {
