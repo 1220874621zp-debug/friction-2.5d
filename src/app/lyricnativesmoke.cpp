@@ -101,6 +101,86 @@ int main(int argc, char** argv) {
     p.chroma = 0.7;
     p.bpm = 120; // beat grid, no audio file
     p.audioDuration = 11.5;
+    // --stress: rebuild into the SAME scene for 40 seeds — the
+    // apply-again-apply-again flow users hit (old group teardown incl.
+    // matte links, then a fresh build every time)
+    if(argc > 1 && QString(argv[1]) == "--stress") {
+        int fails = 0;
+        for(int seed = 1; seed <= 40; seed++) {
+            LyricMotionEngine::Params p;
+            p.lyrics = QStringLiteral(
+                "[00:01.00]夜明けの色を/覚えてる\n"
+                "[00:03.50]*文字* Motion 歌词动画\n"
+                "[00:05.50]两行歌词 第二句!\n"
+                "[間奏 2]\n"
+                "[00:09.50]ラストライン end");
+            p.style = QStringLiteral("noir");
+            p.seed = seed;
+            p.density = 0.55;
+            p.chroma = 0.7;
+            p.bpm = 120;
+            p.audioDuration = 11.5;
+            const auto json = engine.planJson(p, &err);
+            if(json.isEmpty()) { fprintf(stderr, "[stress] seed %d plan fail\n", seed); fails++; continue; }
+            const auto doc2 = QJsonDocument::fromJson(json.toUtf8());
+            auto plan2 = doc2.object().value(QStringLiteral("plan")).toObject();
+            // same headless trim as the main flow
+            {
+                auto fx2 = plan2.value(QStringLiteral("fx")).toObject();
+                fx2.insert(QStringLiteral("chroma"), 0.0);
+                fx2.insert(QStringLiteral("texture"), 0.0);
+                plan2.insert(QStringLiteral("fx"), fx2);
+                plan2.insert(QStringLiteral("events"), QJsonArray());
+                auto cuts2 = plan2.value(QStringLiteral("cuts")).toArray();
+                for(int i2 = 0; i2 < cuts2.count(); i2++) {
+                    auto cut2 = cuts2.at(i2).toObject();
+                    if(cut2.value(QStringLiteral("enter")).toString() == QStringLiteral("blur"))
+                        cut2.insert(QStringLiteral("enter"), QStringLiteral("wipe"));
+                    if(cut2.value(QStringLiteral("exit")).toString() == QStringLiteral("blur"))
+                        cut2.insert(QStringLiteral("exit"), QStringLiteral("wipe"));
+                    cuts2.replace(i2, cut2);
+                }
+                plan2.insert(QStringLiteral("cuts"), cuts2);
+            }
+            LyricMotionNative::Result r2;
+            QString e2;
+            const bool ok = LyricMotionNative::build(scene, plan2,
+                    doc2.object().value(QStringLiteral("fonts")).toObject(),
+                    QString(), false, &r2, &e2);
+            fprintf(stderr, "[stress] seed %2d ok=%d cuts=%d subs=%d\n",
+                    seed, int(ok), r2.cutsBuilt, r2.substitutions);
+            fflush(stderr);
+            if(!ok) fails++;
+            pump();
+            // select a deep child (a lyric TextBox) like a canvas click
+            // would — the next iteration tears the group down with the
+            // canvas selection still pointing at it (crash repro)
+            BoundingBox* deepSel = nullptr;
+            for(const auto& top : scene->getContainedBoxes()) {
+                if(!top->prp_getName().startsWith(
+                            QStringLiteral("歌词动画"))) continue;
+                if(const auto g = enve::cast<ContainerBox*>(top)) {
+                    for(const auto& cut : g->getContainedBoxes()) {
+                        if(const auto cg =
+                                enve::cast<ContainerBox*>(cut)) {
+                            for(const auto& leaf :
+                                    cg->getContainedBoxes()) {
+                                if(enve::cast<TextBox*>(leaf)) {
+                                    deepSel = leaf; break;
+                                }
+                            }
+                        }
+                        if(deepSel) break;
+                    }
+                }
+                if(deepSel) break;
+            }
+            if(deepSel) scene->addBoxToSelection(deepSel);
+        }
+        fprintf(stderr, "[stress] %s (fails=%d)\n", fails ? "FAIL" : "PASS", fails);
+        return fails ? 1 : 0;
+    }
+
     const auto planJson = engine.planJson(p, &err);
     if(planJson.isEmpty()) {
         fprintf(stderr, "[smoke] lyric: plan failed: %s\n",

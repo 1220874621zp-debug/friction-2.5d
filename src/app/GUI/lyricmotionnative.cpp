@@ -2430,12 +2430,17 @@ bool LyricMotionNative::build(Canvas * const scene,
         c.glitch = c.fx.value(QStringLiteral("glitch")).toDouble(0.55);
         c.res = result;
 
-        // replace the previous generation
+        // replace the previous generation. The canvas keeps raw
+        // pointers to selected boxes (mSelectedBoxes) and draws canvas
+        // controls through them every repaint — deselecting an item
+        // only clears its own flag, so clearing the canvas selection
+        // BEFORE the teardown is what actually prevents a dangling
+        // pointer in drawAllCanvasControls (SIGSEGV on repaint)
         const QString groupName = QStringLiteral("歌词动画");
+        scene->clearBoxesSelection();
         for (const auto &box : scene->getContainedBoxes()) {
             if (box->getBoxType() == eBoxType::layer &&
                 box->prp_getName().startsWith(groupName)) {
-                box->setSelected(false);
                 box->removeFromParent_k();
             }
         }

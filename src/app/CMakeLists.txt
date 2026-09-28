@@ -454,6 +454,11 @@ if(UNIX AND NOT APPLE)
         ${SKIA_LIBRARIES}
     )
 
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug" OR LYRIC_ASAN)
+        target_compile_options(lyricnativesmoke PRIVATE -fsanitize=address -fno-omit-frame-pointer -g)
+        target_link_options(lyricnativesmoke PRIVATE -fsanitize=address)
+    endif()
+
     # plan probes (development tools only)
     add_executable(keydist keydist.cpp jizura_smoke.qrc
         GUI/lyricmotionengine.cpp)
