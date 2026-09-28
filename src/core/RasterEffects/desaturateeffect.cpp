@@ -28,6 +28,7 @@
 #include "Animators/qrealanimator.h"
 #include "Animators/boolanimator.h"
 #include "appsupport.h"
+#include "ReadWrite/evformat.h"
 
 DesaturateEffect::DesaturateEffect() :
     RasterEffect(QObject::tr("去色 (Desaturate)"),
@@ -43,6 +44,13 @@ DesaturateEffect::DesaturateEffect() :
     mInvert = enve::make_shared<BoolAnimator>("invert");
     mInvert->setCurrentBoolValue(false);
     ca_addChild(mInvert);
+}
+
+int DesaturateEffect::ca_readChildCount(const int evFileVersion) const
+{
+    return evFileVersion < EvFormat::desaturateInvert ?
+                qMin(1, ca_getNumberOfChildren()) :
+                ca_getNumberOfChildren();
 }
 
 class DesaturateEffectCaller : public OpenGLRasterEffectCaller {

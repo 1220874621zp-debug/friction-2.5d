@@ -339,6 +339,13 @@ qsptr<RasterEffect> createRasterEffectForNonCustomType(const RasterEffectType ty
 qsptr<RasterEffect> readIdCreateRasterEffect(eReadStream &src) {
     RasterEffectType type;
     src.read(&type, sizeof(RasterEffectType));
+    // out-of-range id = the stream desynced earlier; fail the load
+    // with a clear error instead of fabricating a garbage effect
+    if (int(type) < 0 || int(type) > int(RasterEffectType::LEVELS)) {
+        RuntimeThrow("Invalid raster effect id " +
+                     std::to_string(int(type)) + " at pos " +
+                     std::to_string(src.pos()));
+    }
     auto result = createRasterEffectForNonCustomType(type);
     if(result) return result;
     if(type == RasterEffectType::CUSTOM) {

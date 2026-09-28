@@ -36,13 +36,24 @@ void StaticComplexAnimator::prp_writeProperty_impl(eWriteStream &dst) const {
         prop->prp_writeProperty(dst);
 }
 
+int StaticComplexAnimator::ca_readChildCount(const int evFileVersion) const
+{
+    Q_UNUSED(evFileVersion)
+    return ca_getNumberOfChildren();
+}
+
 void StaticComplexAnimator::prp_readProperty_impl(eReadStream &src)
 {
     const auto& children = ca_getChildren();
+    const int nRead = ca_readChildCount(src.evFileVersion());
+    if (nRead > children.count()) {
+        RuntimeThrow("serialized child count exceeds live children");
+    }
     const auto SVGProperties = QStringList() << "begin event" << "end event";
     const bool isSubPathEffect = prp_getName() == "sub-path effect";
 
-    for (const auto& prop : children) {
+    for (int childIdx = 0; childIdx < nRead; childIdx++) {
+        const auto& prop = children.at(childIdx);
         if (src.evFileVersion() < EvFormat::svgBeginEnd &&
             SVGProperties.contains(prop->prp_getName())) { continue; }
         if (src.evFileVersion() < EvFormat::subPathOffset &&

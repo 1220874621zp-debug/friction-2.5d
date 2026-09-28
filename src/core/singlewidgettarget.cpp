@@ -141,6 +141,15 @@ void SingleWidgetTarget::SWT_writeAbstraction(eWriteStream& dst) const {
 
 void SingleWidgetTarget::SWT_readAbstraction(eReadStream& src) const {
     int count; src >> count;
+    // a garbage open-list count is the first visible symptom of an
+    // upstream stream misalignment; bail out with a load error
+    // instead of walking the file into garbage (or forever at EOF)
+    if (count < 0 || count > 100000 ||
+            (count > 0 && src.atEnd())) {
+        RuntimeThrow("Invalid SWT abstraction open-list count " +
+                     std::to_string(count) + " at pos " +
+                     std::to_string(src.pos()));
+    }
     if(count <= 0) return;
     QVector<int> absOpen;
     absOpen.reserve(count);

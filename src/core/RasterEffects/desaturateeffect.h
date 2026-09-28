@@ -41,6 +41,10 @@ public:
     stdsptr<RasterEffectCaller> getEffectCaller(
             const qreal relFrame, const qreal resolution,
             const qreal influence, BoxRenderData * const data) const override;
+protected:
+    // "invert" was appended as a serialized child in format 52;
+    // older files carry only the amount child (positional layout)
+    int ca_readChildCount(const int evFileVersion) const override;
 private:
     qsptr<QrealAnimator> mAmount;
     qsptr<BoolAnimator> mInvert;

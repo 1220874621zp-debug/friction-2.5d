@@ -107,6 +107,13 @@ namespace EvFormat {
         // X/Y and must skip reading the new pair (positional)
         latticeWarpP1 = 51,
 
+        // Desaturate gained its "invert" bool as a second serialized
+        // child; files saved before this carry only the amount child
+        // and must read one child less (positional child layout -
+        // files saved by the brief dev builds between the invert
+        // commit and this gate are not loadable)
+        desaturateInvert = 52,
+
         nextVersion
     };
 
