@@ -26,6 +26,7 @@
 #include "openglrastereffectcaller.h"
 
 #include "Animators/qrealanimator.h"
+#include "Animators/boolanimator.h"
 #include "appsupport.h"
 
 DesaturateEffect::DesaturateEffect() :
@@ -38,41 +39,50 @@ DesaturateEffect::DesaturateEffect() :
     mAmount = enve::make_shared<QrealAnimator>(
                 100.0, 0.0, 100.0, 1.0, "amount");
     ca_addChild(mAmount);
+
+    mInvert = enve::make_shared<BoolAnimator>("invert");
+    mInvert->setCurrentBoolValue(false);
+    ca_addChild(mInvert);
 }
 
 class DesaturateEffectCaller : public OpenGLRasterEffectCaller {
 public:
     DesaturateEffectCaller(const HardwareSupport hwSupport,
-                           const qreal amount) :
+                           const qreal amount, const bool invert) :
         OpenGLRasterEffectCaller(sInitialized, sProgramId,
                                  ":/shaders/desaturateeffect.frag",
                                  hwSupport),
-        mAmount(amount) {}
+        mAmount(amount), mInvert(invert) {}
 
     void processCpu(CpuRenderTools& renderTools,
                     const CpuRenderData& data);
 protected:
     void iniVars(QGL33 * const gl) const {
         sAmountU = gl->glGetUniformLocation(sProgramId, "amount");
+        sInvertU = gl->glGetUniformLocation(sProgramId, "invert");
     }
 
     void setVars(QGL33 * const gl) const {
         gl->glUseProgram(sProgramId);
         gl->glUniform1f(sAmountU, toSkScalar(mAmount / 100.0));
+        gl->glUniform1i(sInvertU, mInvert ? 1 : 0);
     }
 private:
     static bool sInitialized;
     static GLuint sProgramId;
 
     static GLint sAmountU;
+    static GLint sInvertU;
 
     const qreal mAmount;
+    const bool mInvert;
 };
 
 bool DesaturateEffectCaller::sInitialized = false;
 GLuint DesaturateEffectCaller::sProgramId = 0;
 
 GLint DesaturateEffectCaller::sAmountU = -1;
+GLint DesaturateEffectCaller::sInvertU = -1;
 
 stdsptr<RasterEffectCaller> DesaturateEffect::getEffectCaller(
         const qreal relFrame, const qreal resolution,
@@ -84,9 +94,10 @@ stdsptr<RasterEffectCaller> DesaturateEffect::getEffectCaller(
 
     const qreal amount = qBound(0.0,
             mAmount->getEffectiveValue(relFrame), 100.0);
+    const bool invert = mInvert->getBoolValue(relFrame);
 
     return enve::make_shared<DesaturateEffectCaller>(
-                instanceHwSupport(), amount);
+                instanceHwSupport(), amount, invert);
 }
 
 void DesaturateEffectCaller::processCpu(CpuRenderTools& renderTools,
@@ -110,7 +121,10 @@ void DesaturateEffectCaller::processCpu(CpuRenderTools& renderTools,
     const int yMax = std::min((int)data.fTexTile.bottom(), imgHeight - 1);
 
     // Rec.601 luminance, the same curve as Threshold; kN32 is
-    // little-endian BGRA in memory: byte 0 = B, 1 = G, 2 = R
+    // little-endian BGRA in memory: byte 0 = B, 1 = G, 2 = R.
+    // Normal: blend toward the shared luminance (colors die, values
+    // survive). Invert: blend toward channel-minus-minimum, the pure
+    // chroma component (values die, colors survive)
     const qreal t = mAmount / 100.0;
     const qreal it = 1.0 - t;
 
@@ -124,11 +138,18 @@ void DesaturateEffectCaller::processCpu(CpuRenderTools& renderTools,
             const qreal r = *src++;
             const uchar a = *src++;
 
-            const qreal gray = 0.299 * r + 0.587 * g + 0.114 * b;
+            qreal tb, tg, tr;
+            if (mInvert) {
+                const qreal m = std::min(b, std::min(g, r));
+                tb = b - m; tg = g - m; tr = r - m;
+            } else {
+                const qreal gray = 0.299 * r + 0.587 * g + 0.114 * b;
+                tb = gray; tg = gray; tr = gray;
+            }
 
-            *dst++ = static_cast<uchar>(qBound(0.0, b * it + gray * t + 0.5, 255.0));
-            *dst++ = static_cast<uchar>(qBound(0.0, g * it + gray * t + 0.5, 255.0));
-            *dst++ = static_cast<uchar>(qBound(0.0, r * it + gray * t + 0.5, 255.0));
+            *dst++ = static_cast<uchar>(qBound(0.0, b * it + tb * t + 0.5, 255.0));
+            *dst++ = static_cast<uchar>(qBound(0.0, g * it + tg * t + 0.5, 255.0));
+            *dst++ = static_cast<uchar>(qBound(0.0, r * it + tr * t + 0.5, 255.0));
             *dst++ = a;
         }
     }

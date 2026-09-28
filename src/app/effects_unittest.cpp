@@ -901,6 +901,57 @@ int main(int argc, char *argv[])
                 std::abs(int(SkColorGetG(halfPx)) - 64) > 1) {
                 throw std::runtime_error("amount 50 blend is off");
             }
+
+            // invert: blend toward pure chroma (channel - minimum)
+            // instead of luminance - colors survive, values die
+            const auto findBool = [&eff]() -> BoolAnimator* {
+                const int n = eff->ca_getNumberOfChildren();
+                for (int i = 0; i < n; i++) {
+                    auto* ba = enve_cast<BoolAnimator*>(
+                                eff->ca_getChildAt(i));
+                    if (ba && ba->prp_getName().contains(
+                                QStringLiteral("invert"))) {
+                        return ba;
+                    }
+                }
+                return nullptr;
+            };
+            auto* invert = findBool();
+            if (!invert) { throw std::runtime_error("no invert param"); }
+
+            invert->setCurrentBoolValue(true);
+            amount->setCurrentBaseValue(100.0);
+            dst.eraseARGB(0, 0, 0, 0);
+            if (!renderTiles(eff.get(), src, dst)) {
+                throw std::runtime_error("invert caller is null");
+            }
+            // (200,40,40): min 40 -> chroma (160,0,0); alpha kept
+            const auto chromaPx = px(dst, 32, 32);
+            if (std::abs(int(SkColorGetR(chromaPx)) - 160) > 1 ||
+                SkColorGetG(chromaPx) != 0 ||
+                SkColorGetB(chromaPx) != 0 ||
+                SkColorGetA(chromaPx) != 255) {
+                throw std::runtime_error("invert did not isolate chroma");
+            }
+            // gray input has no chroma: collapses to black, alpha kept
+            const auto grayInPx = px(dst, 8, 32);
+            if (SkColorGetR(grayInPx) != 0 ||
+                SkColorGetA(grayInPx) != 180) {
+                throw std::runtime_error("invert left color on gray input");
+            }
+
+            // invert + amount 50: halfway between source and chroma
+            amount->setCurrentBaseValue(50.0);
+            dst.eraseARGB(0, 0, 0, 0);
+            if (!renderTiles(eff.get(), src, dst)) {
+                throw std::runtime_error("invert 50 caller is null");
+            }
+            const auto halfInvPx = px(dst, 32, 32);
+            // r: 200*0.5+160*0.5 = 180, g/b: 40*0.5+0*0.5 = 20
+            if (std::abs(int(SkColorGetR(halfInvPx)) - 180) > 1 ||
+                std::abs(int(SkColorGetG(halfInvPx)) - 20) > 1) {
+                throw std::runtime_error("invert amount 50 blend is off");
+            }
         }
     });
 
