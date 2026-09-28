@@ -428,7 +428,7 @@ inline void compute(const uint32_t* const src, const int w, const int h,
     // specks, so real-world sources shade evenly instead of keeping
     // original-color holes
     for (auto& st : regions) {
-        if (st.maxDist < 4.5f) {
+        if (st.maxDist < 8.f) {
             float hh, ss, vv;
             detail::rgbToHsv(((st.color >> 16) & 255) / 255.f,
                              ((st.color >> 8) & 255) / 255.f,
@@ -589,8 +589,14 @@ inline void compute(const uint32_t* const src, const int w, const int h,
             if (st.flat) { dst[i] = s; continue; }
             const float d = float(std::hypot(x + 0.5 - cx[size_t(L)],
                                              y + 0.5 - cy[size_t(L)]));
+            // only real blocks (wide AND roomy) run the full journey
+            // to the center stop; small leftover regions shade within
+            // mid..edge tones so no red cores pop out of folds
+            const float tPeak = detail::clamp01(std::min(st.maxDist / 80.f,
+                                                          st.area / 8000.f))
+                              * 0.7f + 0.3f;
             const float t = std::pow(detail::clamp01(1.f - d / rad[size_t(L)]),
-                                     gradGamma);
+                                     gradGamma) * tPeak;
             if (st.backdrop && bgK < 1.f) {
                 // darken the backdrop before tinting, so a full
                 // darken swallows the gradient too (reference look)
