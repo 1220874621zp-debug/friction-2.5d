@@ -50,5 +50,7 @@
 #include "pagecurleffect.h"
 #include "latticewarpeffect.h"
 #include "celvolumeeffect.h"
+#include "thresholdeffect.h"
+#include "simplechokereffect.h"
 
 #endif // RASTEREFFECTSINCLUDE_H

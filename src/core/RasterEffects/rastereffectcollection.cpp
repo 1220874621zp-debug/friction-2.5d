@@ -324,6 +324,10 @@ qsptr<RasterEffect> createRasterEffectForNonCustomType(const RasterEffectType ty
             return enve::make_shared<LatticeWarpEffect>();
         case(RasterEffectType::CEL_VOLUME):
             return enve::make_shared<CelVolumeEffect>();
+        case(RasterEffectType::THRESHOLD):
+            return enve::make_shared<ThresholdEffect>();
+        case(RasterEffectType::SIMPLE_CHOKER):
+            return enve::make_shared<SimpleChokerEffect>();
         default: return nullptr;
     }
 }

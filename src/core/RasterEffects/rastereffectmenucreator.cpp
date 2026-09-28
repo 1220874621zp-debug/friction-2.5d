@@ -64,6 +64,10 @@ void RasterEffectMenuCreator::forEveryEffectCore(const EffectAdder &add)
         []() { return enve::make_shared<TintEffect>(); });
     add(QObject::tr("Posterize"), QObject::tr("Color"),
         []() { return enve::make_shared<PosterizeEffect>(); });
+    add(QObject::tr("阈值 (Threshold)"), QObject::tr("Color"),
+        []() { return enve::make_shared<ThresholdEffect>(); });
+    add(QObject::tr("简单阻塞 (Simple Choker)"), QObject::tr("Matte"),
+        []() { return enve::make_shared<SimpleChokerEffect>(); });
     add(QObject::tr("Chroma Key"), QObject::tr("Color"),
         []() { return enve::make_shared<ChromaKeyEffect>(); });
     add(QObject::tr("Glow"), QObject::tr("Light"),

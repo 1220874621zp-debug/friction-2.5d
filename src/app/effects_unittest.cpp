@@ -161,7 +161,9 @@ int main(int argc, char *argv[])
             RasterEffectType::PIXEL_ART,
             RasterEffectType::CHROMA_KEY,
             RasterEffectType::LAYER_STYLES,
-            RasterEffectType::PAGE_CURL
+            RasterEffectType::PAGE_CURL,
+            RasterEffectType::THRESHOLD,
+            RasterEffectType::SIMPLE_CHOKER
         };
 
         for (const auto t : types) {
@@ -216,7 +218,8 @@ int main(int argc, char *argv[])
             RasterEffectType::BLACK_WHITE_FLASH,
             RasterEffectType::LIQUID_GLASS,
             RasterEffectType::PIXEL_ART,
-            RasterEffectType::PAGE_CURL
+            RasterEffectType::PAGE_CURL,
+            RasterEffectType::THRESHOLD
         };
 
         SkBitmap srcBtmp;
@@ -418,7 +421,9 @@ int main(int argc, char *argv[])
             RasterEffectType::PARTICLE,
             RasterEffectType::PAGE_CURL,
             RasterEffectType::LATTICE_WARP,
-            RasterEffectType::CEL_VOLUME
+            RasterEffectType::CEL_VOLUME,
+            RasterEffectType::THRESHOLD,
+            RasterEffectType::SIMPLE_CHOKER
         };
         QString dumpDir;
         if (argc >= 3) {
@@ -531,6 +536,150 @@ int main(int argc, char *argv[])
                   << mismatches << " mismatches) ";
         if (mismatches > 0) {
             throw std::runtime_error("parallel rendering is not deterministic");
+        }
+    });
+
+    // Test 2e: AE semantics of Threshold (luminance binarize, alpha
+    // preserved) and Simple Choker (positive chokes the matte inward,
+    // negative spreads it outward; choke 0 = no caller = passthrough)
+    runTest("Test 2e: Threshold + Simple Choker semantics", [&]() {
+        const auto findParam = [](RasterEffect* eff,
+                                  const char* name) -> QrealAnimator* {
+            const int n = eff->ca_getNumberOfChildren();
+            for (int i = 0; i < n; i++) {
+                auto* qa = enve_cast<QrealAnimator*>(
+                            eff->ca_getChildAt(i));
+                if (qa && qa->prp_getName().contains(
+                            QString::fromLatin1(name))) {
+                    return qa;
+                }
+            }
+            return nullptr;
+        };
+        const auto renderTiles = [](RasterEffect* eff,
+                                    const SkBitmap& srcBtmp,
+                                    SkBitmap& dstBtmp) {
+            const auto caller = eff->getEffectCaller(0.0, 1.0, 1.0, nullptr);
+            if (!caller) { return false; }
+            const SkIRect tiles[] = { SkIRect::MakeXYWH(0, 0, 32, 64),
+                                      SkIRect::MakeXYWH(32, 0, 32, 64) };
+            for (const auto& tile : tiles) {
+                SkBitmap tileDst;
+                if (!dstBtmp.extractSubset(&tileDst, tile)) {
+                    throw std::runtime_error("extractSubset failed");
+                }
+                CpuRenderTools tools{srcBtmp, tileDst};
+                CpuRenderData data;
+                data.fTexTile = tile;
+                caller->processCpu(tools, data);
+            }
+            return true;
+        };
+        const auto px = [](const SkBitmap& b, const int x, const int y) {
+            return *static_cast<const uint32_t*>(b.getAddr(x, y));
+        };
+
+        // --- threshold: Rec.601 luminance vs level, alpha untouched ---
+        {
+            const auto eff = createRasterEffectForNonCustomType(
+                        RasterEffectType::THRESHOLD);
+            auto* level = findParam(eff.get(), "level");
+            if (!level) { throw std::runtime_error("no level param"); }
+            level->setCurrentBaseValue(50.);
+
+            SkBitmap src;
+            src.allocN32Pixels(64, 64);
+            src.eraseARGB(0, 0, 0, 0);
+            {
+                SkCanvas c(src);
+                SkPaint p;
+                // lum = 0.299*200+0.587*40+0.114*40 = 87.8 < 127.5 -> black
+                p.setColor(SkColorSetARGB(255, 200, 40, 40));
+                c.drawRect(SkRect::MakeXYWH(16, 16, 32, 32), p);
+                // lum = 240 >= 127.5 -> white, alpha 180 must survive
+                p.setColor(SkColorSetARGB(180, 240, 240, 240));
+                c.drawRect(SkRect::MakeXYWH(0, 0, 16, 64), p);
+            }
+            SkBitmap dst;
+            dst.allocN32Pixels(64, 64);
+            dst.eraseARGB(0, 0, 0, 0);
+            if (!renderTiles(eff.get(), src, dst)) {
+                throw std::runtime_error("threshold caller is null");
+            }
+            const auto darkPx = px(dst, 32, 32);
+            if (SkColorGetR(darkPx) != 0 || SkColorGetG(darkPx) != 0 ||
+                SkColorGetB(darkPx) != 0 || SkColorGetA(darkPx) != 255) {
+                throw std::runtime_error("below-level pixel not black");
+            }
+            const auto lightPx = px(dst, 8, 32);
+            if (SkColorGetR(lightPx) != 255 || SkColorGetG(lightPx) != 255 ||
+                SkColorGetB(lightPx) != 255 || SkColorGetA(lightPx) != 180) {
+                throw std::runtime_error("above-level pixel not white "
+                                         "with preserved alpha");
+            }
+        }
+
+        // --- simple choker: opaque 32x32 square on transparency ---
+        {
+            const auto eff = createRasterEffectForNonCustomType(
+                        RasterEffectType::SIMPLE_CHOKER);
+            auto* choke = findParam(eff.get(), "choke matte");
+            if (!choke) { throw std::runtime_error("no choke param"); }
+
+            SkBitmap src;
+            src.allocN32Pixels(64, 64);
+            src.eraseARGB(0, 0, 0, 0);
+            {
+                SkCanvas c(src);
+                SkPaint p;
+                p.setAntiAlias(false);
+                p.setColor(SkColorSetARGB(255, 255, 255, 255));
+                // square spans x[16,48) y[16,48), hard un-antialiased edge
+                c.drawRect(SkRect::MakeXYWH(16, 16, 32, 32), p);
+            }
+            SkBitmap dst;
+            dst.allocN32Pixels(64, 64);
+
+            // choke 0 must be a no-op (null caller, AE passthrough)
+            choke->setCurrentBaseValue(0.0);
+            dst.eraseARGB(0, 0, 0, 0);
+            if (renderTiles(eff.get(), src, dst)) {
+                throw std::runtime_error("choke 0 produced a caller");
+            }
+
+            // choke +4 shrinks the matte ~4px inward
+            choke->setCurrentBaseValue(4.0);
+            dst.eraseARGB(0, 0, 0, 0);
+            if (!renderTiles(eff.get(), src, dst)) {
+                throw std::runtime_error("choke 4 caller is null");
+            }
+            if (SkColorGetA(px(dst, 32, 32)) < 250) {
+                throw std::runtime_error("choked matte lost its core");
+            }
+            // 2px inside the old edge is past the ~4.8px shrink: gone
+            if (SkColorGetA(px(dst, 18, 32)) > 100) {
+                throw std::runtime_error("choke did not eat the rim");
+            }
+            // outside the old edge must stay empty
+            if (SkColorGetA(px(dst, 14, 32)) != 0) {
+                throw std::runtime_error("choke leaked outside the matte");
+            }
+
+            // choke -4 spreads the matte ~4px outward
+            choke->setCurrentBaseValue(-4.0);
+            dst.eraseARGB(0, 0, 0, 0);
+            if (!renderTiles(eff.get(), src, dst)) {
+                throw std::runtime_error("choke -4 caller is null");
+            }
+            if (SkColorGetA(px(dst, 13, 32)) < 100) {
+                throw std::runtime_error("spread did not grow the matte");
+            }
+            if (SkColorGetA(px(dst, 32, 32)) < 250) {
+                throw std::runtime_error("spread lost the matte core");
+            }
+            if (SkColorGetA(px(dst, 8, 32)) > 30) {
+                throw std::runtime_error("spread bled too far out");
+            }
         }
     });
 

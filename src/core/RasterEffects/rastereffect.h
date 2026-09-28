@@ -133,7 +133,11 @@ enum class RasterEffectType : short {
     LATTICE_WARP,
     // flat-cel region segmentation + volumetric 4-stop gradient
     // (appended, never reorder - serialized ids must stay stable)
-    CEL_VOLUME
+    CEL_VOLUME,
+    // AE Threshold: binarize luminance at a level percent
+    THRESHOLD,
+    // AE Simple Choker: choke/spread the alpha matte
+    SIMPLE_CHOKER
 };
 
 struct BoxRenderData;

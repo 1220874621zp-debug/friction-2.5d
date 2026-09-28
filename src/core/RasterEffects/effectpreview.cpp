@@ -522,6 +522,14 @@ NamedScan namedScanFor(const RasterEffectType type) {
         // out (paramName is decoded as latin1, so the Chinese
         // animator name travels through altName, page-curl style)
         return { "gamma", "中心色范围", 0.6, 2.6 };
+    case RasterEffectType::THRESHOLD:
+        // full-range sweep flips the silhouette in/out of white
+        return { "level", nullptr, 10., 90. };
+    case RasterEffectType::SIMPLE_CHOKER:
+        // negative spread -> positive choke breathing; the to-value
+        // stays off the exact 0 grid point - a choke of exactly 0 is
+        // a passthrough and would flash one empty frame mid-loop
+        return { "choke matte", nullptr, -6., 5.9 };
     default:
         return { nullptr, nullptr, 0., 0. };
     }

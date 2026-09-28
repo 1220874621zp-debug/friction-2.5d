@@ -231,6 +231,8 @@ set(
     RasterEffects/pagecurleffect.cpp
     RasterEffects/latticewarpeffect.cpp
     RasterEffects/celvolumeeffect.cpp
+    RasterEffects/thresholdeffect.cpp
+    RasterEffects/simplechokereffect.cpp
     RasterEffects/colorizeeffect.cpp
     RasterEffects/customrastereffect.cpp
     RasterEffects/motionblureffect.cpp
@@ -628,6 +630,8 @@ set(
     RasterEffects/latticewarpeffect.h
     RasterEffects/celvolumealgo.h
     RasterEffects/celvolumeeffect.h
+    RasterEffects/thresholdeffect.h
+    RasterEffects/simplechokereffect.h
     RasterEffects/colorizeeffect.h
     RasterEffects/customrastereffect.h
     RasterEffects/motionblureffect.h
