@@ -780,6 +780,23 @@ void BoundingBox::planUpdate(const UpdateReason reason) {
         if(const auto canvas = enve_cast<Canvas*>(this)) {
             canvas->bumpContentGen();
         }
+        // schedule a deferred scheduler kick: the render only starts
+        // when someone calls TaskScheduler::queTasks, and the usual
+        // drivers are task-finish events or explicit UI pumps
+        // (QDoubleSlider, actionFinished). An edit that runs without
+        // either (custom widgets, script value writes without undo
+        // close) would otherwise leave mUpdatePlanned set forever and
+        // the canvas frozen. One kick per event-loop pass, coalesced.
+        if(const auto sched = TaskScheduler::instance()) {
+            static bool sKickQueued = false; // GUI-thread only flag
+            if(!sKickQueued) {
+                sKickQueued = true;
+                QMetaObject::invokeMethod(qApp, [sched]() {
+                    sKickQueued = false;
+                    sched->queTasks();
+                }, Qt::QueuedConnection);
+            }
+        }
     }
 
     mDrawRenderContainer.setExpired(true);
