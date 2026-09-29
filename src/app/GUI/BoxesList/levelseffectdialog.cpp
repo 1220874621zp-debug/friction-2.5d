@@ -38,6 +38,7 @@
 #include "Properties/comboboxproperty.h"
 #include "Boxes/boundingbox.h"
 #include "GUI/mainwindow.h"
+#include "Private/document.h"
 #include "themesupport.h"
 
 #include "include/core/SkBitmap.h"
@@ -493,6 +494,9 @@ LevelsEffectDialog::LevelsEffectDialog(LevelsEffect * const effect,
                            LevelsEffect::sMaxGamma);
             }
             mDragAnim->setCurrentBaseValue(v);
+            // dialog grabs the mouse: pump the render scheduler like
+            // QDoubleSlider's drag does (CanvasWindow events never fire)
+            Document::sInstance->updateScenes();
         } else {
             // double-click reset path (no drag session): one clean
             // undo step on the reset handle's animator
@@ -514,6 +518,7 @@ LevelsEffectDialog::LevelsEffectDialog(LevelsEffect * const effect,
         if (mDragAnim) {
             mDragAnim->prp_finishTransform();
             mDragAnim.clear();
+            Document::sInstance->actionFinished();
         }
     };
     connect(mInputSlider, &LevelsSlider::handlePressed,

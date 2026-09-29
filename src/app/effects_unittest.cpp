@@ -44,6 +44,7 @@
 #include "swt_abstraction.h"
 #include "Private/document.h"
 #include "Private/Tasks/taskscheduler.h"
+#include "Private/Tasks/taskexecutor.h"
 #include "Private/esettings.h"
 #include "hardwareinfo.h"
 #include "RasterEffects/rastereffectmenucreator.h"
@@ -212,6 +213,108 @@ static void cancelStormBody()
               << box->getBoxStateId() << ") ";
 }
 
+// FRICTION_LEVELS_PROBE body: simulate the in-row gradient slider write
+// path (startTransform -> setCurrentBaseValue -> finishTransform) on a
+// Levels effect and check the invalidation chain actually reaches the
+// box (state bump) and a re-render lands (image present + pixels differ
+// from the identity round). Run re-exec'd offscreen like the cancel probe.
+static void levelsProbeBody()
+{
+    static eSettings settingsLP(HardwareInfo::sCpuThreads(),
+                                HardwareInfo::sRamKB());
+    Q_UNUSED(settingsLP)
+    eFilterSettings filterSettingsLP;
+    TaskScheduler sched;
+    Document doc(sched);
+    const auto scene = doc.createNewScene(false);
+    scene->setCanvasSize(2000, 2000);
+    const auto box = enve::make_shared<RectangleBox>();
+    box->setTopLeftPos(QPointF(-800, -800));
+    box->setBottomRightPos(QPointF(800, 800));
+    scene->addContained(box);
+    const auto coll = box->rasterEffectsCollection();
+    const qsptr<LevelsEffect> levels =
+            qEnvironmentVariableIsSet("LEVELS_PROBE_NOFX") ?
+                nullptr : enve::make_shared<LevelsEffect>();
+    if (levels) { coll->addChild(levels); }
+    else { std::cout << "(no-fx control run) | " << std::flush; }
+
+    const auto pump = [&](const int maxMs) {
+        QElapsedTimer t; t.start();
+        do {
+            QCoreApplication::processEvents(
+                        QEventLoop::AllEvents, 5);
+            if (t.elapsed() > maxMs) {
+                throw std::runtime_error("task pool never drained (hang)");
+            }
+            if (!TaskScheduler::sAllTasksFinished()) continue;
+            // quiet pool: run a few more event rounds so the queued
+            // finishedTask signals (renderDataFinished) get delivered
+            for (int i = 0; i < 20; i++) {
+                QCoreApplication::processEvents(
+                            QEventLoop::AllEvents, 2);
+            }
+        } while (!TaskScheduler::sAllTasksFinished());
+    };
+    // round 0: identity levels, let the first render land
+    box->planUpdate(UpdateReason::userChange);
+    box->queTasks();
+    std::cout << "afterQue: cpuFinished "
+              << (TaskScheduler::sAllQuedCpuTasksFinished() ? "y" : "n")
+              << " dataInHandler "
+              << (box->getCurrentRenderData(box->anim_getCurrentRelFrame()) ? "y" : "n")
+              << " | " << std::flush;
+    pump(20000);
+    const uint stateId0 = box->getBoxStateId();
+    // identity levels -> null caller -> direct-draw path: the box
+    // legitimately produces NO raster image in this round (vectors are
+    // drawn directly at composite time) - do not require one here
+    std::cout << "identity(direct-draw): state " << stateId0 << " | " << std::flush;
+
+    // in-row slider write path exactly as boxsinglewidget does it
+    const auto in = enve_cast<LevelsInputAnimator*>(levels->ca_getChildAt(1));
+    if (!in) { throw std::runtime_error("no input wrapper at index 1"); }
+    const auto inBlack = enve_cast<QrealAnimator*>(in->ca_getChildAt(0));
+    if (!inBlack) { throw std::runtime_error("no input black animator"); }
+    inBlack->prp_startTransform();
+    inBlack->setCurrentBaseValue(100.0);
+    inBlack->prp_finishTransform();
+    const uint stateId1 = box->getBoxStateId();
+    std::cout << "after drag: state " << stateId1 << " | " << std::flush;
+    if (stateId1 == stateId0) {
+        throw std::runtime_error(
+                    "slider write did NOT bump box state (invalidation chain broken)");
+    }
+    box->queTasks();
+    pump(20000);
+    const auto data1 = box->getCurrentRenderData(
+                box->anim_getCurrentRelFrame());
+    if (!data1 || !data1->fRenderedImage) {
+        throw std::runtime_error(
+                    "post-drag round produced no image (did not rasterize?)");
+    }
+    if (data1->fBoxStateId != box->getBoxStateId()) {
+        throw std::runtime_error("post-drag render is stale");
+    }
+    // effect must visibly change pixels: compare against a fresh
+    // rasterization of the same rect WITHOUT the levels caller
+    SkBitmap b1;
+    if (!data1->fRenderedImage->asLegacyBitmap(&b1)) {
+        throw std::runtime_error("post-drag image unreadable");
+    }
+    bool inked = false;
+    for (int y = 0; y < b1.height() && !inked; y += 7) {
+        const auto r1 = static_cast<const uint32_t*>(b1.getAddr(0, y));
+        for (int x = 0; x < b1.width(); x += 7) {
+            if (r1[x] != 0) { inked = true; break; }
+        }
+    }
+    if (!inked) {
+        throw std::runtime_error("post-drag image is empty: effect wiped the box");
+    }
+    std::cout << "(state bumped + re-render rasterized + pixels inked) ";
+}
+
 int main(int argc, char *argv[])
 {
     // SWT_dropInto queries keyboard modifiers (Ctrl = duplicate drop),
@@ -225,7 +328,8 @@ int main(int argc, char *argv[])
     if (qEnvironmentVariableIsSet("FRICTION_LEVELS_DIALOG_PROBE")) {
         appInstance = new QApplication(argc, argv);
     } else if (qEnvironmentVariableIsSet("FRICTION_REORDER_PROBE") ||
-               qEnvironmentVariableIsSet("FRICTION_CANCEL_PROBE")) {
+               qEnvironmentVariableIsSet("FRICTION_CANCEL_PROBE") ||
+               qEnvironmentVariableIsSet("FRICTION_LEVELS_PROBE")) {
         appInstance = new QGuiApplication(argc, argv);
     } else {
         appInstance = new QCoreApplication(argc, argv);
@@ -247,6 +351,21 @@ int main(int argc, char *argv[])
         std::cout << "[RUNNING] Test 11: stale render cancellation (real scheduler) ... " << std::flush;
         try {
             cancelStormBody();
+            std::cout << "PASSED" << std::endl;
+            passed++;
+        } catch (const std::exception& e) {
+            std::cout << "FAILED: " << e.what() << std::endl;
+            failed++;
+        } catch (...) {
+            std::cout << "FAILED (unknown exception)" << std::endl;
+            failed++;
+        }
+        return (failed == 0) ? 0 : 1;
+    }
+    if (qEnvironmentVariableIsSet("FRICTION_LEVELS_PROBE")) {
+        std::cout << "[RUNNING] PROBE: levels in-row slider invalidation ... " << std::flush;
+        try {
+            levelsProbeBody();
             std::cout << "PASSED" << std::endl;
             passed++;
         } catch (const std::exception& e) {

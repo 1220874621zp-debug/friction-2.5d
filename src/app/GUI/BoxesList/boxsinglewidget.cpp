@@ -1097,12 +1097,18 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
                        LevelsEffect::sMaxGamma);
         }
         mLevelsDragAnim->setCurrentBaseValue(v);
+        // the in-row slider grabs the mouse, so CanvasWindow's mouse
+        // events (the usual edit->render pump) never fire: drive the
+        // scheduler here, exactly like QDoubleSlider's drag does
+        Document::sInstance->updateScenes();
     };
     const auto levelsRowReleased = [this](const int) {
         if (mLevelsDragAnim) {
             mLevelsDragAnim->prp_finishTransform();
             mLevelsDragAnim.clear();
             QToolTip::hideText();
+            // close the undo transaction and mark the document changed
+            Document::sInstance->actionFinished();
         }
     };
     for (auto row : {mLevelsInputRow, mLevelsOutputRow}) {
