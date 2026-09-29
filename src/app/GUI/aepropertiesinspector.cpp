@@ -28,8 +28,10 @@
 #include "RasterEffects/rastereffect.h"
 #include "RasterEffects/rastereffectmenucreator.h"
 #include "RasterEffects/blureffect.h"
+#include "RasterEffects/levelseffect.h"
 #include "Properties/comboboxproperty.h"
 #include "GUI/BoxesList/boxsinglewidget.h"
+#include "GUI/BoxesList/levelseffectdialog.h"
 #include "themesupport.h"
 #include "Private/document.h"
 #include "clipboardcontainer.h"
@@ -1263,7 +1265,130 @@ void AEPropertiesInspector::setupEffectPropertyControl(QGridLayout *grid, int ro
 
     const QString propName = translatePropertyName(prop->prp_getName());
 
-    if (auto qrealAnim = enve_cast<QrealAnimator*>(prop)) {
+    // PS Levels wrappers ("input levels"/"output levels"): the five
+    // numbers live inside these two StaticComplexAnimators, so they
+    // would otherwise fall into the edit-in-timeline hint below and
+    // the panel shows no sliders at all. Render the compact gradient
+    // sliders with the exact timeline-row interaction (drag = one
+    // undo step, double-click a handle = reset it, keyframable from
+    // the expanded wrapper rows in the timeline)
+    const auto levelsIn = enve_cast<LevelsInputAnimator*>(prop);
+    const auto levelsOut = enve_cast<LevelsOutputAnimator*>(prop);
+    if (levelsIn || levelsOut) {
+        const bool isInput = levelsIn;
+        const qptr<ComplexAnimator> wrapGuard(isInput ?
+                    static_cast<ComplexAnimator*>(levelsIn) :
+                    static_cast<ComplexAnimator*>(levelsOut));
+        auto lbl = new QLabel(propName);
+        lbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        lbl->setStyleSheet(QStringLiteral("color: #ffffff; font-size: 12px;"));
+        grid->addWidget(lbl, rowIdx, 1);
+
+        const auto slider = new LevelsSlider(
+                    isInput ? LevelsSlider::Input : LevelsSlider::Output);
+        slider->setCompact(true);
+        slider->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        grid->addWidget(slider, rowIdx, 2);
+
+        // bounds-checked child access: the input wrapper carries
+        // black/gamma/white, the output one only black/white
+        // (ca_getChildAt throws on an out-of-range index)
+        const int nChild = wrapGuard->ca_getNumberOfChildren();
+        const auto childAt = [wrapGuard, nChild](const int idx)
+                -> QrealAnimator* {
+            if (!wrapGuard || idx < 0 || idx >= nChild) { return nullptr; }
+            return enve_cast<QrealAnimator*>(wrapGuard->ca_getChildAt(idx));
+        };
+        const int idxBlack = 0;
+        const int idxGamma = isInput ? 1 : -1;
+        const int idxWhite = isInput ? 2 : 1;
+        const auto syncSlider = [slider, childAt, idxBlack,
+                                 idxGamma, idxWhite]() {
+            const auto vb = childAt(idxBlack);
+            const auto vg = childAt(idxGamma);
+            const auto vw = childAt(idxWhite);
+            if (!vb || !vw) { return; }
+            slider->setValues(vb->getEffectiveValue(),
+                              vg ? vg->getEffectiveValue() : 1.,
+                              vw->getEffectiveValue());
+        };
+        for (int i = 0; i < nChild; i++) {
+            if (const auto qa = childAt(i)) {
+                connect(qa, &QrealAnimator::effectiveValueChanged,
+                        slider, syncSlider);
+            }
+        }
+        syncSlider();
+
+        // one press/drag/release (or a double-click reset, which
+        // replays the same triple) = one undo step on the whole
+        // wrapper; the slider grabs the mouse, so drive the render
+        // pump exactly like the timeline rows do
+        connect(slider, &LevelsSlider::handlePressed, slider,
+                [wrapGuard](const int) {
+            if (wrapGuard) { wrapGuard->prp_startTransform(); }
+        });
+        connect(slider, &LevelsSlider::valuesChanged, slider,
+                [childAt, idxBlack, idxGamma, idxWhite, isInput]
+                (const int handleIdx, const qreal black,
+                 const qreal gamma, const qreal white) {
+            const auto anim = childAt(
+                        handleIdx == LevelsSlider::White ? idxWhite :
+                        handleIdx == LevelsSlider::Gamma ? idxGamma :
+                        idxBlack);
+            if (!anim) { return; }
+            qreal v = handleIdx == LevelsSlider::White ? white :
+                      handleIdx == LevelsSlider::Gamma ? gamma : black;
+            if (handleIdx == LevelsSlider::Black) {
+                v = qBound(0., v, isInput ? 253. : 254.);
+            } else if (handleIdx == LevelsSlider::White) {
+                v = qBound(isInput ? 2. : 1., v, 255.);
+            } else {
+                v = qBound(LevelsEffect::sMinGamma, v,
+                           LevelsEffect::sMaxGamma);
+            }
+            anim->setCurrentBaseValue(v);
+            Document::sInstance->updateScenes();
+        });
+        connect(slider, &LevelsSlider::handleReleased, slider,
+                [wrapGuard](const int) {
+            if (wrapGuard) { wrapGuard->prp_finishTransform(); }
+            Document::sInstance->actionFinished();
+        });
+
+        auto resetBtn = new QToolButton();
+        resetBtn->setObjectName(QStringLiteral("FlatButton"));
+        resetBtn->setText(QStringLiteral("↺"));
+        resetBtn->setFixedSize(14, 16);
+        resetBtn->setStyleSheet(QStringLiteral("font-size: 9px; color: #c8c8d0; padding: 0; border: none; background: transparent;"));
+        resetBtn->setToolTip(tr("重置"));
+        connect(resetBtn, &QToolButton::clicked, slider, [wrapGuard,
+                isInput, this]() {
+            if (wrapGuard) {
+                wrapGuard->prp_startTransform();
+                const int n = wrapGuard->ca_getNumberOfChildren();
+                for (int i = 0; i < n; i++) {
+                    const auto qa = enve_cast<QrealAnimator*>(
+                                wrapGuard->ca_getChildAt(i));
+                    if (!qa) { continue; }
+                    if (isInput) {
+                        qa->setCurrentBaseValue(
+                                    i == LevelsInputAnimator::Gamma ? 1. :
+                                    i == LevelsInputAnimator::White ? 255. :
+                                    0.);
+                    } else {
+                        qa->setCurrentBaseValue(
+                                    i == LevelsOutputAnimator::Black ? 0. :
+                                    255.);
+                    }
+                }
+                wrapGuard->prp_finishTransform();
+            }
+            if (mScene) { mScene->requestUpdate(); }
+            refreshValues();
+        });
+        grid->addWidget(resetBtn, rowIdx, 3, Qt::AlignCenter);
+    } else if (auto qrealAnim = enve_cast<QrealAnimator*>(prop)) {
         grid->addWidget(createKeyframeNav(qrealAnim), rowIdx, 0, Qt::AlignCenter);
 
         auto lbl = new QLabel(propName);
