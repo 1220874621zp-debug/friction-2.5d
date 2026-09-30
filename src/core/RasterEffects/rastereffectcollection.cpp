@@ -97,7 +97,20 @@ RasterEffectCollection::RasterEffectCollection() :
     ca_setHiddenWhenEmpty(true);
 
     connect(this, &ComplexAnimator::ca_childAdded,
-            this, &RasterEffectCollection::updateMaxForcedMargin);
+            this, [this](Property * const child) {
+        // margin-affecting effects (blur radius, particle area, ...)
+        // emit forcedMarginChanged when their parameters change at
+        // runtime - without this hook the collection margin (and with
+        // it the render clamp rect) stayed frozen at the value the
+        // effect had when it was ADDED, so growing e.g. a blur radius
+        // past it clipped the glow at stale bounds
+        if(const auto effect = dynamic_cast<RasterEffect*>(child)) {
+            connect(effect, &RasterEffect::forcedMarginChanged,
+                    this, &RasterEffectCollection::updateMaxForcedMargin,
+                    Qt::UniqueConnection);
+        }
+        updateMaxForcedMargin();
+    });
     connect(this, &ComplexAnimator::ca_childRemoved,
             this, &RasterEffectCollection::updateMaxForcedMargin);
 }
@@ -322,6 +335,16 @@ qsptr<RasterEffect> createRasterEffectForNonCustomType(const RasterEffectType ty
             return enve::make_shared<PageCurlEffect>();
         case(RasterEffectType::LATTICE_WARP):
             return enve::make_shared<LatticeWarpEffect>();
+        case(RasterEffectType::CEL_VOLUME):
+            return enve::make_shared<CelVolumeEffect>();
+        case(RasterEffectType::THRESHOLD):
+            return enve::make_shared<ThresholdEffect>();
+        case(RasterEffectType::SIMPLE_CHOKER):
+            return enve::make_shared<SimpleChokerEffect>();
+        case(RasterEffectType::DESATURATE):
+            return enve::make_shared<DesaturateEffect>();
+        case(RasterEffectType::LEVELS):
+            return enve::make_shared<LevelsEffect>();
         default: return nullptr;
     }
 }
@@ -329,6 +352,13 @@ qsptr<RasterEffect> createRasterEffectForNonCustomType(const RasterEffectType ty
 qsptr<RasterEffect> readIdCreateRasterEffect(eReadStream &src) {
     RasterEffectType type;
     src.read(&type, sizeof(RasterEffectType));
+    // out-of-range id = the stream desynced earlier; fail the load
+    // with a clear error instead of fabricating a garbage effect
+    if (int(type) < 0 || int(type) > int(RasterEffectType::LEVELS)) {
+        RuntimeThrow("Invalid raster effect id " +
+                     std::to_string(int(type)) + " at pos " +
+                     std::to_string(src.pos()));
+    }
     auto result = createRasterEffectForNonCustomType(type);
     if(result) return result;
     if(type == RasterEffectType::CUSTOM) {

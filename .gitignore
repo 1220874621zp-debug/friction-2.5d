@@ -38,20 +38,3 @@ src/scripts/flatpak/remote
 
 *.AppImage
 __pycache__/
-
-# local scratch / debug artifacts (never part of the build)
-Temp/
-textanim_frames/
-*.obj
-*.log
-capture_resp.json
-qogl.html
-qogl_extract.txt
-qrep.html
-qt6_stdout.txt
-qt6_stderr.txt
-src/version.txt
-s3.jpg
-shot_locate.jpg
-canvas_big.png
-diag_*.png

@@ -87,6 +87,9 @@ public:
     }
 
     int evFileVersion() const;
+    // stream position for desync diagnostics
+    qint64 pos() const { return mSrc->pos(); }
+    bool atEnd() const { return mSrc->atEnd(); }
 private:
     std::map<int, BoundingBox*> mReadBoxes;
     QList<ReadStreamDoneTask> mDoneTasks;

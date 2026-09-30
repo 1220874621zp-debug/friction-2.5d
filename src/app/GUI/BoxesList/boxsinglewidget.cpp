@@ -45,6 +45,8 @@
 #include "Animators/qrealanimator.h"
 #include "Expressions/expression.h"
 #include "RasterEffects/rastereffectcollection.h"
+#include "RasterEffects/levelseffect.h"
+#include "levelseffectdialog.h"
 #include "Properties/boolproperty.h"
 #include "Properties/boolpropertycontainer.h"
 #include "Animators/qpointfanimator.h"
@@ -79,6 +81,7 @@
 #include <cmath>
 
 #include <QMessageBox>
+#include <QToolTip>
 
 #include "Boxes/circle.h"
 #include "Boxes/rectangle.h"
@@ -131,6 +134,14 @@ QString translatePropertyName(const QString& name) {
         { QStringLiteral("frame step"), BoxSingleWidget::tr("frame step") },
         { QStringLiteral("flip book"), BoxSingleWidget::tr("flip book") },
         { QStringLiteral("seed"), BoxSingleWidget::tr("seed") },
+        { QStringLiteral("channel"), BoxSingleWidget::tr("channel") },
+        { QStringLiteral("input black"), BoxSingleWidget::tr("输入黑场") },
+        { QStringLiteral("gamma"), BoxSingleWidget::tr("灰度系数 (gamma)") },
+        { QStringLiteral("input white"), BoxSingleWidget::tr("输入白场") },
+        { QStringLiteral("output black"), BoxSingleWidget::tr("输出黑场") },
+        { QStringLiteral("output white"), BoxSingleWidget::tr("输出白场") },
+        { QStringLiteral("input levels"), BoxSingleWidget::tr("输入色阶") },
+        { QStringLiteral("output levels"), BoxSingleWidget::tr("输出色阶") },
         { QStringLiteral("spacing"), BoxSingleWidget::tr("spacing") },
         { QStringLiteral("smoothness"), BoxSingleWidget::tr("smoothness") },
         { QStringLiteral("periodic"), BoxSingleWidget::tr("periodic") },
@@ -950,6 +961,46 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
         }
     });
 
+    // PS-style Levels editor: gradient bar + histogram dialog
+    mLevelsButton = new PixmapActionButton(this);
+    mLevelsButton->setToolTip(tr("打开色阶编辑器 (Levels)"));
+    mLevelsButton->setPixmapChooser([]() {
+        static QPixmap icon;
+        if (icon.isNull()) {
+            const int s = 64;
+            icon = QPixmap(s, s);
+            icon.fill(Qt::transparent);
+            QPainter p(&icon);
+            p.setRenderHint(QPainter::Antialiasing);
+            const QRectF bar(6, 10, 52, 14);
+            QLinearGradient grad(bar.left(), 0, bar.right(), 0);
+            grad.setColorAt(0, Qt::black);
+            grad.setColorAt(1, Qt::white);
+            p.fillRect(bar, grad);
+            p.setPen(QPen(QColor(120, 120, 120), 2));
+            p.drawRoundedRect(bar, 3, 3);
+            const auto tri = [&p](const qreal x, const QColor& c) {
+                QPolygonF poly;
+                poly << QPointF(x - 6, 50) << QPointF(x + 6, 50)
+                     << QPointF(x, 30);
+                p.setPen(QPen(QColor(200, 200, 200), 2));
+                p.setBrush(c);
+                p.drawPolygon(poly);
+            };
+            tri(14, QColor(15, 15, 15));
+            tri(32, QColor(120, 120, 120));
+            tri(50, QColor(240, 240, 240));
+            p.end();
+        }
+        return &icon;
+    });
+    mMainLayout->addWidget(mLevelsButton);
+    connect(mLevelsButton, &BoxesListActionButton::pressed, this, [this]() {
+        if (!mTarget) { return; }
+        const auto eff = enve_cast<LevelsEffect*>(mTarget->getTarget());
+        if (eff) { LevelsEffectDialog::openFor(eff); }
+    });
+
     mFillWidget = new QWidget(this);
     mMainLayout->addWidget(mFillWidget);
     mFillWidget->setObjectName("transparentWidget");
@@ -980,6 +1031,94 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
 
     mValueSlider = new QrealAnimatorValueSlider(nullptr, this);
     mMainLayout->addWidget(mValueSlider, Qt::AlignRight);
+
+    // PS gradient sliders living directly in the levels property
+    // rows: drag = live edit (one undo step per drag), double-click
+    // a handle = reset it; expand the row for the keyframable values
+    const auto setupLevelsRow = [this](LevelsSlider * const row) {
+        row->setCompact(true);
+        row->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        mMainLayout->addWidget(row);
+    };
+    mLevelsInputRow = new LevelsSlider(LevelsSlider::Input, this);
+    mLevelsOutputRow = new LevelsSlider(LevelsSlider::Output, this);
+    mLevelsInputRow->setObjectName(QStringLiteral("levelsInputRow"));
+    mLevelsOutputRow->setObjectName(QStringLiteral("levelsOutputRow"));
+    setupLevelsRow(mLevelsInputRow);
+    setupLevelsRow(mLevelsOutputRow);
+    mLevelsInputRow->setToolTip(
+                tr("输入色阶：拖动黑/灰/白柄调整，双击柄复位；"
+                   "展开行可打关键帧"));
+    mLevelsOutputRow->setToolTip(
+                tr("输出色阶：拖动黑/白柄限定输出范围，"
+                   "双击柄复位"));
+
+    // current row's wrapper -> handle index -> its value animator
+    const auto levelsHandleAnim = [this](const int handleIdx,
+                                         const bool isInput) -> QrealAnimator* {
+        if (!mTarget) { return nullptr; }
+        const auto target = mTarget->getTarget();
+        const auto in = isInput ?
+                    enve_cast<LevelsInputAnimator*>(target) : nullptr;
+        const auto out = !isInput ?
+                    enve_cast<LevelsOutputAnimator*>(target) : nullptr;
+        const auto ca = in ? static_cast<ComplexAnimator*>(in) :
+                     out ? static_cast<ComplexAnimator*>(out) : nullptr;
+        if (!ca) { return nullptr; }
+        if (handleIdx < 0 || handleIdx >= ca->ca_getNumberOfChildren()) {
+            return nullptr;
+        }
+        return enve_cast<QrealAnimator*>(ca->ca_getChildAt(handleIdx));
+    };
+    const auto levelsRowPressed = [this, levelsHandleAnim](
+            const int handleIdx) {
+        if (mLevelsDragAnim) { return; }
+        const bool isInput = sender() == mLevelsInputRow;
+        QrealAnimator* const a = levelsHandleAnim(handleIdx, isInput);
+        if (!a) { return; }
+        mLevelsDragAnim = a;
+        a->prp_startTransform();
+    };
+    const auto levelsRowChanged = [this, levelsHandleAnim](
+            const int handleIdx, const qreal black,
+            const qreal gamma, const qreal white) {
+        if (!mLevelsDragAnim) { return; }
+        const bool isInput = sender() == mLevelsInputRow;
+        QrealAnimator* const a = levelsHandleAnim(handleIdx, isInput);
+        if (!a || a != mLevelsDragAnim.data()) { return; }
+        qreal v = handleIdx == LevelsSlider::Black ? black :
+                  handleIdx == LevelsSlider::White ? white : gamma;
+        if (handleIdx == LevelsSlider::Black) {
+            v = qBound(0., v, isInput ? 253. : 254.);
+        } else if (handleIdx == LevelsSlider::White) {
+            v = qBound(isInput ? 2. : 1., v, 255.);
+        } else {
+            v = qBound(LevelsEffect::sMinGamma, v,
+                       LevelsEffect::sMaxGamma);
+        }
+        mLevelsDragAnim->setCurrentBaseValue(v);
+        // the in-row slider grabs the mouse, so CanvasWindow's mouse
+        // events (the usual edit->render pump) never fire: drive the
+        // scheduler here, exactly like QDoubleSlider's drag does
+        Document::sInstance->updateScenes();
+    };
+    const auto levelsRowReleased = [this](const int) {
+        if (mLevelsDragAnim) {
+            mLevelsDragAnim->prp_finishTransform();
+            mLevelsDragAnim.clear();
+            QToolTip::hideText();
+            // close the undo transaction and mark the document changed
+            Document::sInstance->actionFinished();
+        }
+    };
+    for (auto row : {mLevelsInputRow, mLevelsOutputRow}) {
+        connect(row, &LevelsSlider::handlePressed,
+                this, levelsRowPressed);
+        connect(row, &LevelsSlider::valuesChanged,
+                this, levelsRowChanged);
+        connect(row, &LevelsSlider::handleReleased,
+                this, levelsRowReleased);
+    }
 
     // scale X/Y proportional link: the bone parent-link chain glyph;
     // linking stores the state in the "linkedScale" dynamic property
@@ -1511,6 +1650,49 @@ void BoxSingleWidget::setTargetAbstraction(SWT_Abstraction *abs) {
         }
     }
     mHwSupportButton->setVisible(rasterEffect);
+    mLevelsButton->setVisible(enve_cast<LevelsEffect*>(prop));
+
+    // levels wrapper rows render as embedded PS gradient sliders
+    const auto levelsInWrap = enve_cast<LevelsInputAnimator*>(prop);
+    const auto levelsOutWrap = enve_cast<LevelsOutputAnimator*>(prop);
+    mLevelsInputRow->setVisible(levelsInWrap);
+    mLevelsOutputRow->setVisible(levelsOutWrap);
+    if (levelsInWrap || levelsOutWrap) {
+        const bool isInput = levelsInWrap;
+        LevelsSlider* const row = isInput ?
+                    mLevelsInputRow : mLevelsOutputRow;
+        const auto ca = isInput ?
+                    static_cast<ComplexAnimator*>(levelsInWrap) :
+                    static_cast<ComplexAnimator*>(levelsOutWrap);
+        const int nChild = ca->ca_getNumberOfChildren();
+        // bounds-checked child access: ca_getChildAt throws on an
+        // out-of-range index, and the two wrappers have different
+        // child counts (input = black/gamma/white, output = black/white)
+        const auto childAt = [ca, nChild](const int idx) -> QrealAnimator* {
+            if (idx < 0 || idx >= nChild) { return nullptr; }
+            return enve_cast<QrealAnimator*>(ca->ca_getChildAt(idx));
+        };
+        const int idxBlack = 0;
+        const int idxGamma = isInput ? 1 : -1;
+        const int idxWhite = isInput ? 2 : 1;
+        const auto syncRow = [this, row, childAt, idxBlack,
+                              idxGamma, idxWhite]() {
+            const auto vb = childAt(idxBlack);
+            const auto vg = childAt(idxGamma);
+            const auto vw = childAt(idxWhite);
+            if (!vb || !vw) { return; }
+            row->setValues(vb->getEffectiveValue(),
+                           vg ? vg->getEffectiveValue() : 1.,
+                           vw->getEffectiveValue());
+        };
+        for (int i = 0; i < nChild; i++) {
+            if (const auto qa = childAt(i)) {
+                mTargetConn << connect(qa, &QrealAnimator::effectiveValueChanged,
+                                       this, syncRow);
+            }
+        }
+        syncRow();
+    }
     {
         const auto targetGroup = getPromoteTargetGroup();
         if(boundingBox && targetGroup) {

@@ -28,7 +28,10 @@
 namespace {
 
 // deterministic hash-based random: same (seed, particle id, channel)
-// always yields the same value, on any thread, for any render order
+// always yields the same value, on any thread, for any render order;
+// every key passes through a full PCG mixing round before the next is
+// folded in, so structured ids cannot collide through linear sums of
+// the inputs
 uint pcgHash(uint v) {
     v = v * 747796405u + 2891336453u;
     const uint w = ((v >> ((v >> 28u) + 4u)) ^ v) * 277803737u;
@@ -36,9 +39,24 @@ uint pcgHash(uint v) {
 }
 
 qreal frand(const uint seed, const uint id, const uint channel) {
-    const uint h = pcgHash(seed * 374761393u + id * 668265263u
-                           + channel * 2246822519u + 0x9E3779B9u);
+    uint h = pcgHash(seed ^ 0x9E3779B9u);
+    h = pcgHash(h ^ (id * 0x85EBCA6Bu));
+    h = pcgHash(h ^ (channel * 0xC2B2AE35u));
     return qreal(h & 0xFFFFFFu) / 16777216.0;
+}
+
+// cumulative particles emitted from startF through f at a constant
+// rate r; the per-frame count is its finite difference. This replaces
+// the chained fractional accumulator whose carry depended on where
+// the birth walk started, which made the particle set of a given
+// birth frame shift with the rendered frame
+qint64 cumEmit(const qreal r, const int f, const int startF) {
+    const qreal span = qreal(f - startF + 1);
+    return span <= 0.0 ? 0 : qint64(r * span);
+}
+
+int emitCount(const qreal r, const int f, const int startF) {
+    return int(cumEmit(r, f, startF) - cumEmit(r, f - 1, startF));
 }
 
 // (1 - e^(-k*tau)) / k, stable for k*tau ~ 0
@@ -593,21 +611,24 @@ stdsptr<RasterEffectCaller> ParticleEffect::getEffectCaller(
 
     const uint seed = uint(qRound(mSeed->getEffectiveValue(relFrame)));
     const int emitterType = mEmitterType->getCurrentValue();
-    const qreal life = mLife->getEffectiveValue(relFrame);
-    const qreal lifeVar = mLifeVar->getEffectiveValue(relFrame) / 100.0;
-    const qreal lifeMax = life * (1.0 + lifeVar);
-    const qreal speedVar = mSpeedVar->getEffectiveValue(relFrame) / 100.0;
+    // lifeMax at the rendered frame only bounds the birth walk window;
+    // each particle's own stats are sampled at its birth frame below
+    const qreal lifeMax = mLife->getEffectiveValue(relFrame)
+            * (1.0 + mLifeVar->getEffectiveValue(relFrame) / 100.0);
     const int startF = qRound(mStartFrame->getEffectiveValue(relFrame));
     const int burst = qRound(mBurst->getEffectiveValue(relFrame));
+    // worst-case spread for the margin estimate only; particle stats
+    // themselves roll at the birth frame
+    const qreal speedVar = mSpeedVar->getEffectiveValue(relFrame) / 100.0;
 
     // only frames that can still hold living particles are walked;
-    // the fractional-rate accumulator keeps emission deterministic
+    // emission is a closed-form function of the absolute frame, so
+    // starting the walk mid-stream cannot change any birth's set
     const int minBirth = qMax(startF, qCeil(relFrame - lifeMax / f.timeScale));
     const int maxBirth = qFloor(relFrame);
 
     std::vector<ParticleSpawn> spawns;
     const int hardCap = 20000;
-    qreal carry = 0.0;
     for (int fr = minBirth; fr <= maxBirth; fr++) {
         // emitter parameters are sampled at the spawn frame so a
         // keyframed emitter leaves a trail of particles behind it
@@ -621,14 +642,21 @@ stdsptr<RasterEffectCaller> ParticleEffect::getEffectCaller(
         const qreal speed = qMax(0.0, mSpeed->getEffectiveValue(fr) * resolution);
 
         const qreal rateF = qMax(0.0, mRate->getEffectiveValue(fr));
-        const int n = int(rateF + carry);
-        carry = rateF + carry - n;
+        const int n = emitCount(rateF, fr, startF);
         const int nBurst = (fr == startF) ? burst : 0;
+
+        // per-particle stats roll at the birth frame (planning-phase
+        // semantics): a particle keeps the life/size/speed spread it
+        // was born with even if the animators change afterwards
+        const qreal bLife = mLife->getEffectiveValue(fr);
+        const qreal bLifeVar = mLifeVar->getEffectiveValue(fr) / 100.0;
+        const qreal bSizeVar = mSizeVar->getEffectiveValue(fr) / 100.0;
+        const qreal bSpeedVar = mSpeedVar->getEffectiveValue(fr) / 100.0;
 
         const auto addSpawn = [&](const uint id, const qreal birth) {
             ParticleSpawn s;
             s.birth = float(birth);
-            s.life = float(qMax(1.0, life * (1.0 + (frand(seed, id, 5) * 2.0 - 1.0) * lifeVar)));
+            s.life = float(qMax(1.0, bLife * (1.0 + (frand(seed, id, 5) * 2.0 - 1.0) * bLifeVar)));
             const qreal u = frand(seed, id, 1);
             const qreal v = frand(seed, id, 2);
             qreal dx = 0.0, dy = 0.0;
@@ -665,10 +693,10 @@ stdsptr<RasterEffectCaller> ParticleEffect::getEffectCaller(
             s.x0 = float(ex + dx);
             s.y0 = float(ey + dy);
             const qreal ang = dirRad + (frand(seed, id, 3) * 2.0 - 1.0) * spreadRad;
-            const qreal spd = speed * (1.0 + (frand(seed, id, 4) * 2.0 - 1.0) * speedVar);
+            const qreal spd = speed * (1.0 + (frand(seed, id, 4) * 2.0 - 1.0) * bSpeedVar);
             s.vx0 = float(std::cos(ang) * spd);
             s.vy0 = float(std::sin(ang) * spd);
-            s.sizeMul = float(1.0 + (frand(seed, id, 6) * 2.0 - 1.0) * sizeVar);
+            s.sizeMul = float(1.0 + (frand(seed, id, 6) * 2.0 - 1.0) * bSizeVar);
             s.spinSign = frand(seed, id, 7) < 0.5 ? -1.0f : 1.0f;
             s.rot0 = float(frand(seed, id, 8) * 360.0);
             s.w1 = float(0.5 + frand(seed, id, 9));
@@ -677,13 +705,17 @@ stdsptr<RasterEffectCaller> ParticleEffect::getEffectCaller(
             spawns.push_back(s);
         };
 
+        // particle identity is anchored to the absolute birth frame and
+        // slot, independent of startF: keyframing the start frame never
+        // re-rolls the properties of already-born particles
+        const uint frSlot = uint(qint64(fr) * 4096);
         for (int j = 0; j < n && int(spawns.size()) < hardCap; j++) {
-            const uint id = uint(fr - startF) * 4096u + uint(j);
+            const uint id = frSlot + uint(j);
             addSpawn(id, qreal(fr) + frand(seed, id, 0));
         }
         for (int j = 0; j < nBurst && int(spawns.size()) < hardCap; j++) {
             // burst particles spawn exactly on the emission start frame
-            const uint id = uint(fr - startF) * 4096u + 2048u + uint(j);
+            const uint id = frSlot + 2048u + uint(j);
             addSpawn(id, qreal(fr));
         }
     }

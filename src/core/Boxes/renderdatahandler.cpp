@@ -25,6 +25,17 @@
 
 #include "renderdatahandler.h"
 
+void RenderDataHandler::cancelAll() {
+    for(const auto& it : mFrameToData) {
+        const auto& data = it.second;
+        // finished entries only linger when their completion was stale;
+        // canceling those would re-fire cancelDependent on dependents
+        // that already heard the finish
+        if(data->getState() != eTaskState::finished) data->cancel();
+    }
+    mFrameToData.clear();
+}
+
 bool RenderDataHandler::removeItem(const stdsptr<BoxRenderData>& item) {
     return removeItemAtRelFrame(item->fRelFrame);
 }

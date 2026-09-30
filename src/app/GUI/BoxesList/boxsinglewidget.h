@@ -257,6 +257,12 @@ private:
     PixmapActionButton *mTButton;
     class ParentLinkButton* mParentLinkButton;
     PixmapActionButton *mHwSupportButton;
+    // PS-style Levels editor opener on 色阶 (Levels) effect rows
+    PixmapActionButton *mLevelsButton = nullptr;
+    // PS gradient sliders embedded in the input/output levels rows
+    class LevelsSlider *mLevelsInputRow = nullptr;
+    class LevelsSlider *mLevelsOutputRow = nullptr;
+    QPointer<class QrealAnimator> mLevelsDragAnim;
     ColorAnimatorButton *mColorButton;
     BoxTargetWidget *mBoxTargetWidget;
 

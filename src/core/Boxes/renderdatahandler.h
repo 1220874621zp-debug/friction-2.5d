@@ -31,6 +31,11 @@
 class CORE_EXPORT RenderDataHandler {
 public:
     void clear() { mFrameToData.clear(); }
+    // cancel every in-flight render data, then drop them all: used on
+    // state bumps so outdated renders stop burning the task pool (the
+    // newest render no longer queues behind stale ones) and never reach
+    // the display path
+    void cancelAll();
     bool removeItem(const stdsptr<BoxRenderData> &item);
     bool removeItemAtRelFrame(const qreal frame);
     BoxRenderData *getItemAtRelFrame(const qreal frame) const;

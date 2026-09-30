@@ -60,4 +60,46 @@
         <file>icons/hicolor/scalable/apps/graphics.friction.Friction.svg</file>
         <file>icons/friction-splash.png</file>
     </qresource>
+    <qresource prefix="/jizura">
+        <file alias="01_util.js">jizura/01_util.js</file>
+        <file alias="02_fonts.js">jizura/02_fonts.js</file>
+        <file alias="02b_lang.js">jizura/02b_lang.js</file>
+        <file alias="03_text.js">jizura/03_text.js</file>
+        <file alias="04_styles.js">jizura/04_styles.js</file>
+        <file alias="05_anim.js">jizura/05_anim.js</file>
+        <file alias="05b_registry.js">jizura/05b_registry.js</file>
+        <file alias="06_layouts.js">jizura/06_layouts.js</file>
+        <file alias="07_decor.js">jizura/07_decor.js</file>
+        <file alias="08_planner.js">jizura/08_planner.js</file>
+        <file alias="08b_omakase.js">jizura/08b_omakase.js</file>
+        <file alias="09_render.js">jizura/09_render.js</file>
+        <file alias="10_audio.js">jizura/10_audio.js</file>
+        <file alias="11_export.js">jizura/11_export.js</file>
+        <file alias="11p_bgcamB.js">jizura/11p_bgcamB.js</file>
+        <file alias="11p_decor.js">jizura/11p_decor.js</file>
+        <file alias="11p_decorB.js">jizura/11p_decorB.js</file>
+        <file alias="11p_enter.js">jizura/11p_enter.js</file>
+        <file alias="11p_enterB.js">jizura/11p_enterB.js</file>
+        <file alias="11p_exit.js">jizura/11p_exit.js</file>
+        <file alias="11p_exitB.js">jizura/11p_exitB.js</file>
+        <file alias="11p_fxB.js">jizura/11p_fxB.js</file>
+        <file alias="11p_horror1.js">jizura/11p_horror1.js</file>
+        <file alias="11p_horror2.js">jizura/11p_horror2.js</file>
+        <file alias="11p_horror3.js">jizura/11p_horror3.js</file>
+        <file alias="11p_kinetic1.js">jizura/11p_kinetic1.js</file>
+        <file alias="11p_kinetic2.js">jizura/11p_kinetic2.js</file>
+        <file alias="11p_kinetic3.js">jizura/11p_kinetic3.js</file>
+        <file alias="11p_layoutsA.js">jizura/11p_layoutsA.js</file>
+        <file alias="11p_layoutsB.js">jizura/11p_layoutsB.js</file>
+        <file alias="11p_layoutsC.js">jizura/11p_layoutsC.js</file>
+        <file alias="11p_layoutsD.js">jizura/11p_layoutsD.js</file>
+        <file alias="11p_looks.js">jizura/11p_looks.js</file>
+        <file alias="11p_styles.js">jizura/11p_styles.js</file>
+        <file alias="11p_treattrans.js">jizura/11p_treattrans.js</file>
+        <file alias="11p_typo1.js">jizura/11p_typo1.js</file>
+        <file alias="11p_typo2.js">jizura/11p_typo2.js</file>
+        <file alias="11p_typo3.js">jizura/11p_typo3.js</file>
+        <file alias="11q_sets.js">jizura/11q_sets.js</file>
+        <file alias="jizura-stub.js">jizura/jizura-stub.js</file>
+    </qresource>
 </RCC>
