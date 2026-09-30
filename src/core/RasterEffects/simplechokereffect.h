@@ -32,7 +32,7 @@
 // gaussian-blurred alpha re-leveled asymmetrically around 50% - the
 // same family as the layer-styles PS spread formula, so the amount
 // saturates smoothly like AE's instead of eroding without bound
-class SimpleChokerEffect : public RasterEffect {
+class CORE_EXPORT SimpleChokerEffect : public RasterEffect {
 public:
     SimpleChokerEffect();
 

@@ -154,6 +154,18 @@ stdsptr<eTask> TaskQue::takeTask(const QList<QList<stdsptr<eTask>>*> &lists,
     return nullptr;
 }
 
+// drop tasks canceled while sitting in the que (RenderDataHandler::
+// cancelAll marks them in place) - used by TaskQue::flushCanceled
+template <typename LIST>
+static void purgeCanceled(LIST &list) {
+    for(int i = 0; i < list.count(); i++) {
+        if(list.at(i)->getState() == eTaskState::canceled) {
+            list.removeAt(i);
+            i--;
+        }
+    }
+}
+
 int TaskQue::flushCanceled() {
     const int before = countQued();
     purgeCanceled(mCpuOnly);

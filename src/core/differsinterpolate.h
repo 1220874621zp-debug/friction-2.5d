@@ -25,8 +25,9 @@
 
 #ifndef DIFFERSINTERPOLATE_H
 #define DIFFERSINTERPOLATE_H
+#include "core_global.h"
 #include <QString>
-extern bool gDiffers(const QString& val1, const QString& val2);
+extern CORE_EXPORT bool gDiffers(const QString& val1, const QString& val2);
 
 extern bool gDiffers(const bool val1, const bool val2);
 

@@ -65,7 +65,7 @@ public:
     static constexpr int White = 1;
 };
 
-class LevelsEffect : public RasterEffect {
+class CORE_EXPORT LevelsEffect : public RasterEffect {
 public:
     LevelsEffect();
 

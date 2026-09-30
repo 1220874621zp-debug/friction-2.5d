@@ -34,7 +34,7 @@ class BoolAnimator;
 // grayscale (100, the AE/PS default behavior). With "invert" on the
 // grayscale target is reversed (255 - gray), i.e. a negative of the
 // desaturated image
-class DesaturateEffect : public RasterEffect {
+class CORE_EXPORT DesaturateEffect : public RasterEffect {
 public:
     DesaturateEffect();
 

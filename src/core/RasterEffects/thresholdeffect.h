@@ -29,7 +29,7 @@
 // AE "Threshold" (Color Correction): binarize the pixel luminance -
 // values at or above the level become white, below become black; the
 // alpha channel passes through untouched
-class ThresholdEffect : public RasterEffect {
+class CORE_EXPORT ThresholdEffect : public RasterEffect {
 public:
     ThresholdEffect();
 
