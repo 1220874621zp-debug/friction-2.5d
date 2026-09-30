@@ -33,6 +33,7 @@
 #include "GUI/dialogsinterface.h"
 #include "svgimporter.h"
 #include "Psd/ocaimporter.h"
+#include "Private/Tasks/taskscheduler.h"
 
 #include <QMessageBox>
 #include <QStandardItemModel>
@@ -1031,8 +1032,16 @@ void Actions::setSkinPinMode() {
 }
 
 
+void Actions::startSmoothChange() {
+    mSmoothChange = true;
+    // interactive window: render tasks created from here on are taken
+    // before background work (preview warm-up, tmp reloads)
+    TaskScheduler::sSetInteractionActive(true);
+}
+
 void Actions::finishSmoothChange() {
     mSmoothChange = false;
+    TaskScheduler::sSetInteractionActive(false);
     //    mDocument.actionFinished();
 }
 

@@ -47,6 +47,12 @@ public:
     { return mHandledByMemoryHandler; }
 
     bool inUse() const { return mInUse; }
+
+    // Time this container was last (re)inserted into the memory
+    // management list. MemoryHandler uses it to avoid evicting data the
+    // canvas has just drawn (eviction is what blanks the frame until the
+    // asynchronous tmp reload lands).
+    qint64 lastUseMs() const { return mLastUseMs; }
 protected:
     void addToMemoryManagment();
     void removeFromMemoryManagment();
@@ -56,6 +62,7 @@ private:
     void decInUse();
 
     bool mHandledByMemoryHandler = false;
+    qint64 mLastUseMs = 0;
     int mInUse = 0;
 };
 

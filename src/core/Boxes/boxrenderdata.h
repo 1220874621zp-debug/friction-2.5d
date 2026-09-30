@@ -67,6 +67,26 @@ public:
                                    SkPaint& paint);
     void drawOnParentLayer(SkCanvas * const canvas);
 
+    // This render data can paint something (an image, or a direct-draw
+    // payload). Used to avoid replacing a usable frame with an empty one
+    // when an allocation failed.
+    virtual bool hasDrawableContent() const;
+
+    // Rendering the box image of a modest layer is cheap and its result is
+    // immediately visible, so it stays allowed while the scheduler is in
+    // the critical memory state (see TaskScheduler::processNextTasks).
+    // Effects stages (blur etc.) and large rasters are not.
+    bool allowedInCriticalMemory() const override;
+
+    // May rasterizeWithFallback() degrade the resolution when the full-size
+    // allocation fails? False for render data that is drawn at its natural
+    // size (the scene frame), where a smaller raster would show up scaled.
+    virtual bool supportsReducedResolutionFallback() const { return true; }
+
+    // Marked while the user is interacting with the canvas - those tasks
+    // are taken before background work
+    bool interactive() const override { return mInteractive; }
+
     virtual QPointF getCenterPosition() {
         return fRelBoundingRect.center();
     }
@@ -146,6 +166,9 @@ public:
     BoundingBox* fBlendEffectIdentifier;
     sk_sp<SkImage> fRenderedImage;
 
+    // set when the rasterization could not allocate at any resolution -
+    // the owner keeps the previous image instead of blanking the layer
+    bool fRasterizationFailed = false;
     void dataSet();
 
     void addEffect(const stdsptr<RasterEffectCaller>& effect) {
@@ -171,7 +194,12 @@ protected:
     SkBitmap mBitmap;
     bool mDelayDataSet = false;
     bool mDataSet = false;
+    bool mInteractive = false;
 private:
+    // Progressive-degrade rasterization: when the allocation for the full
+    // raster fails (memory pressure), retry at a reduced resolution
+    // instead of producing nothing. Returns null if every attempt failed.
+    sk_sp<SkImage> rasterizeWithFallback();
     Step mStep = Step::BOX_IMAGE;
     EffectsRenderer mEffectsRenderer;
 };

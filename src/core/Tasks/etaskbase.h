@@ -28,8 +28,6 @@
 
 #include "../smartPointers/ememory.h"
 
-#include <atomic>
-
 enum class eTaskState {
     created,
     qued,
@@ -81,15 +79,15 @@ protected:
 
     void moveDependent(eTaskBase* const to);
 private:
-    void decDependencies() { mNDependancies--; }
+    // clamped: readyToBeProcessed() tests == 0, so an over-release would
+    // leave the task permanently un-runnable and wedge its TaskQue
+    void decDependencies() { if(mNDependancies > 0) mNDependancies--; }
     void incDependencies() { mNDependancies++; }
 
     void tellDependentThatFinished();
     void cancelDependent();
 
-    // set from the GUI thread while the task may be processing on a
-    // worker (stale-render cancellation) - must be atomic
-    std::atomic<bool> mCancel{false};
+    bool mCancel = false;
     int mNDependancies = 0;
     QList<Dependent> mDependentF;
     QList<stdptr<eTask>> mDependent;

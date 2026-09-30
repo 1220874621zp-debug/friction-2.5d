@@ -33,6 +33,7 @@
 #include "taskquehandler.h"
 #include "Private/esettings.h"
 
+class QTimer;
 class Canvas;
 class CpuExecController;
 class HddExecController;
@@ -87,6 +88,14 @@ public:
 
     void setAlwaysQue(const bool alwaysQue);
 
+    // "The user is waiting for exactly this render" window, set while a
+    // canvas interaction (drawing a shape, dragging a layer) is running.
+    // Render tasks created inside the window are marked interactive and
+    // are taken before background work, so preview warm-up or tmp reloads
+    // cannot starve what the user is looking at.
+    static void sSetInteractionActive(const bool active);
+    static bool sInteractionActive();
+
     // while set, only this scene is fed CPU tasks (output rendering);
     // other visible scenes would just steal thread-pool slots without
     // their frames ever being consumed
@@ -110,8 +119,14 @@ private:
 
     void processNextQuedHddTask();
     void processNextQuedCpuTask();
+    // critical-memory dispatch: only tasks flagged allowedInCriticalMemory
+    void processNextQuedCpuCriticalOnly();
     bool processNextQuedGpuTask();
     void processNextTasks();
+
+    // watchdog: a batch that cannot be progressed would otherwise stop the
+    // pipeline from being fed forever (overflowed() stays true)
+    void checkForStuckQues();
 
     bool shouldQueMoreCpuTasks() const;
     bool shouldQueMoreHddTasks() const;
@@ -126,6 +141,10 @@ private:
     bool mAlwaysQue = false;
     bool mCpuQueing = false;
 
+    QTimer* mStuckQueWatchdog = nullptr;
+    int mStuckQueStrikes = 0;
+    qint64 mStuckQueLastLogMs = 0;
+
     QList<qsptr<ComplexTask>> mComplexTasks;
 
     TaskQueHandler mQuedCGTasks;
@@ -133,7 +152,6 @@ private:
 
     QList<stdsptr<CpuExecController>> mCpuExecs;
     stdsptr<GpuExecController> mGpuExec;
-    bool mGpuInitialized = false;
     stdsptr<HddExecController> mHddExec;
 
     QPointer<Canvas> mOutputRenderScene;

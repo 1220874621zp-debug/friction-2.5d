@@ -166,17 +166,45 @@ void MemoryChecker::checkMemory() {
     intKB usedKB;
     sGetFreeKB(procFreeKB, sysFreeKB, usedKB);
 
-    if(sysFreeKB < mLowFreeKB) {
+    const intKB totKB = HardwareInfo::sRamKB();
+    const qint64 ownKB = qMax<qint64>(0, usedKB.fValue);
+
+    // The thresholds below are SYSTEM-WIDE free memory, so a screen
+    // recorder, a browser or any other application can push us below 10%
+    // without Friction being the one holding the memory. Evicting our own
+    // caches cannot fix such a deficit, and escalating it to the critical
+    // state stops all CPU/GPU render dispatch (see
+    // TaskScheduler::processNextTasks), which is why the canvas stopped
+    // showing newly drawn content. Only claim the critical state when we
+    // are a major contributor ourselves.
+    const qint64 usedByOthersKB = qMax<qint64>(0, totKB.fValue -
+                                               qint64(sysFreeKB.fValue) - ownKB);
+    const bool ownIsMajorContributor = ownKB > kOwnCriticalKB ||
+                                       ownKB > usedByOthersKB;
+
+    const bool criticalCandidate = sysFreeKB < mCriticalFreeKB &&
+                                   ownIsMajorContributor;
+    if(criticalCandidate) {
+        mCriticalStreak++;
+        mNormalStreak = 0;
+    } else {
+        mCriticalStreak = 0;
+        mNormalStreak++;
+    }
+
+    if(mCriticalStreak >= kStateConfirmations) {
+        emit handleMemoryState(CRITICAL_MEMORY_STATE, longB(mLowFreeKB - sysFreeKB));
+        mLastMemoryState = CRITICAL_MEMORY_STATE;
+    } else if(mLastMemoryState == CRITICAL_MEMORY_STATE &&
+              mNormalStreak < kStateConfirmations) {
+        // hold the critical state until we are confirmed out of it - a
+        // flapping state would start/stop the render pipeline every poll
+        emit handleMemoryState(CRITICAL_MEMORY_STATE, longB(mLowFreeKB - sysFreeKB));
+    } else if(sysFreeKB < mLowFreeKB) {
         const intKB toFree = mLowFreeKB - sysFreeKB;
-        if(sysFreeKB < mCriticalFreeKB) {
-            emit handleMemoryState(CRITICAL_MEMORY_STATE, longB(toFree));
-            mLastMemoryState = CRITICAL_MEMORY_STATE;
-        } else if(usedKB.fValue < HardwareInfo::sRamKB().fValue * 40 / 100) {
-            // external pressure: another program ate the system RAM. Evicting
-            // our few hundred MB of image caches cannot fix that deficit - it
-            // only blanks the canvas while the async tmp reloads run. Only
-            // treat system-wide pressure as ours once our own working set is
-            // a major contributor (critical states always pass through).
+        if(usedKB.fValue < totKB.fValue*40/100) {
+            // external pressure: another program ate the system RAM, our
+            // few hundred MB of caches cannot fix that deficit
             emit handleMemoryState(NORMAL_MEMORY_STATE, longB(0));
             mLastMemoryState = NORMAL_MEMORY_STATE;
         } else if(sysFreeKB < mVeryLowFreeKB) {
@@ -187,12 +215,12 @@ void MemoryChecker::checkMemory() {
             mLastMemoryState = LOW_MEMORY_STATE;
         }
     } else if(procFreeKB.fValue < 0) {
-        emit handleMemoryState(LOW_MEMORY_STATE, longB(-procFreeKB));
+        emit handleMemoryState(LOW_MEMORY_STATE, longB(-procFreeKB.fValue));
         mLastMemoryState = LOW_MEMORY_STATE;
     } else/* if(mLastMemoryState != NORMAL_MEMORY_STATE)*/ {
         emit handleMemoryState(NORMAL_MEMORY_STATE, longB(0));
         mLastMemoryState = NORMAL_MEMORY_STATE;
     }
 
-    emit memoryCheckedKB(sysFreeKB, HardwareInfo::sRamKB(), usedKB);
+    emit memoryCheckedKB(sysFreeKB, totKB, usedKB);
 }

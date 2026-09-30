@@ -34,6 +34,12 @@ struct CORE_EXPORT CanvasRenderData : public ContainerBoxRenderData {
     SkColor fBgColor;
 
     SkColor eraseColor() const { return fBgColor; }
+
+    // the scene frame is drawn by the frame cache at its natural size (the
+    // resolution scale is applied on the canvas), so a reduced-resolution
+    // fallback raster would show up visibly scaled - the scene must fail
+    // loudly instead and let the pipeline re-feed the frame
+    bool supportsReducedResolutionFallback() const override { return false; }
 protected:
     void updateGlobalRect();
     void updateRelBoundingRect();

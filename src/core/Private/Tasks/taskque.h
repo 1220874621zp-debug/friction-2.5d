@@ -42,10 +42,31 @@ protected:
 
     stdsptr<eTask> takeQuedForCpuProcessing();
     stdsptr<eTask> takeQuedForGpuProcessing();
+    // Critical-memory path: only tasks cheap enough to run while the
+    // system is out of memory (see eTask::allowedInCriticalMemory).
+    // gpuOnly tasks are excluded - this path dispatches to the CPU pool.
+    stdsptr<eTask> takeQuedForCriticalProcessing();
+
+    // Drops tasks that will never be processed again (canceled) so the
+    // batch can still reach "all done" and release the scheduler's
+    // overflow gate.
+    int discardDeadTasks();
+    int countDeadTasks();
+    int countBlockedTasks();
+
+    // no task of this batch was taken for longer than limitMs - a healthy
+    // batch drains within milliseconds, so this means something is wedged
+    bool stuckSince(const qint64 nowMs, const qint64 limitMs) const;
+    qint64 ageMs(const qint64 nowMs) const { return nowMs - mCreatedMs; }
 private:
+    stdsptr<eTask> takeTask(const QList<QList<stdsptr<eTask>>*>& lists,
+                            const bool requireCriticalAllowed);
+
     QList<stdsptr<eTask>> mGpuOnly;
     QList<stdsptr<eTask>> mGpuPreffered;
     QList<stdsptr<eTask>> mCpuPreffered;
     QList<stdsptr<eTask>> mCpuOnly;
+    qint64 mCreatedMs = 0;
+    qint64 mLastProgressMs = 0;
 };
 #endif // TASKQUE_H

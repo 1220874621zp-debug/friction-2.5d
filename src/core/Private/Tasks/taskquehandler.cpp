@@ -63,6 +63,20 @@ stdsptr<eTask> TaskQueHandler::takeQuedForCpuProcessing() {
     return nullptr;
 }
 
+stdsptr<eTask> TaskQueHandler::takeQuedForCriticalProcessing() {
+    int queId = 0;
+    for(const auto& que : mQues) {
+        const auto task = que->takeQuedForCriticalProcessing();
+        if(task) {
+            if(que->allDone()) queDone(que.get(), queId);
+            mTaskCount--;
+            return task;
+        }
+        queId++;
+    }
+    return nullptr;
+}
+
 void TaskQueHandler::beginQue() {
     if(mCurrentQue) RuntimeThrow("Previous list not ended");
     mQues << std::make_shared<TaskQue>();
@@ -96,4 +110,63 @@ void TaskQueHandler::endQue() {
 void TaskQueHandler::queDone(const TaskQue * const que, const int queId) {
     if(que == mCurrentQue) return;
     mQues.removeAt(queId);
+}
+
+bool TaskQueHandler::hasStuckQue(const qint64 nowMs,
+                                 const qint64 limitMs) const {
+    for(const auto& que : mQues) {
+        if(que && que->stuckSince(nowMs, limitMs)) return true;
+    }
+    return false;
+}
+
+int TaskQueHandler::discardDeadTasks() {
+    int count = 0;
+    for(int i = 0; i < mQues.count();) {
+        const auto& que = mQues.at(i);
+        if(!que) { mQues.removeAt(i); continue; }
+        const int dead = que->discardDeadTasks();
+        if(dead > 0) {
+            count += dead;
+            mTaskCount = qMax(0, mTaskCount - dead);
+        }
+        if(que->allDone() && que.get() != mCurrentQue) {
+            mQues.removeAt(i);
+            continue;
+        }
+        i++;
+    }
+    return count;
+}
+
+int TaskQueHandler::dropStuckQues(const qint64 nowMs, const qint64 limitMs) {
+    int dropped = 0;
+    for(int i = 0; i < mQues.count();) {
+        const auto& que = mQues.at(i);
+        if(!que) { mQues.removeAt(i); continue; }
+        if(que.get() == mCurrentQue || !que->stuckSince(nowMs, limitMs)) {
+            i++;
+            continue;
+        }
+        mTaskCount = qMax(0, mTaskCount - que->countQued());
+        // dropping the last reference destroys the batch, whose destructor
+        // cancels the contained tasks (they are derived state - the next
+        // queTasks() rebuilds them)
+        mQues.removeAt(i);
+        dropped++;
+    }
+    return dropped;
+}
+
+QString TaskQueHandler::describeStuckQues(const qint64 nowMs) const {
+    QString result;
+    for(const auto& que : mQues) {
+        if(!que) continue;
+        result += QStringLiteral(" [age=%1ms tasks=%2 dead=%3 blocked=%4]")
+                .arg(que->ageMs(nowMs))
+                .arg(que->countQued())
+                .arg(que->countDeadTasks())
+                .arg(que->countBlockedTasks());
+    }
+    return result;
 }

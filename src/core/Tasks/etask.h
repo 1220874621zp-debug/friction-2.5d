@@ -50,6 +50,19 @@ public:
 
     virtual bool nextStep() { return false; }
 
+    // May this task run while the scheduler is in the critical memory
+    // state? That state used to block every CPU/GPU dispatch, which made
+    // the canvas stop showing content the user had just drawn - the very
+    // tasks that are cheap and immediately visible (a small layer
+    // rasterization) must stay allowed.
+    virtual bool allowedInCriticalMemory() const { return false; }
+
+    // Task created by an edit the user is waiting on (drawing a shape,
+    // dragging a layer). Interactive tasks are taken first, so a
+    // background backlog (preview warm-up, tmp reloads) cannot starve the
+    // thing the user is looking at.
+    virtual bool interactive() const { return false; }
+
     bool queTask();
 
     void aboutToProcess(const Hardware hw);

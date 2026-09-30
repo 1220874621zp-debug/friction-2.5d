@@ -43,6 +43,14 @@ public:
     // canvas flickers with blank frames.
     void setAutoCheckPaused(const bool paused);
 
+    // Suspends the automatic check while the user is interacting with the
+    // canvas (drawing a shape, dragging a layer). The cache containers
+    // being evicted are the very ones the visible frame is drawn from -
+    // evicting them mid-edit leaves the canvas without its images and
+    // forces an async tmp reload. A hard cap guards against a lost
+    // release disabling memory management for good.
+    void setInteractionActive(const bool active);
+
     static MemoryHandler *sInstance;
     static MemoryState sMemoryState();
 signals:
@@ -58,10 +66,15 @@ private:
     void memoryChecked(const intKB memKb,
                        const intKB totMemKb,
                        const intKB usedKb);
+    void updateTimerState();
 
     MemoryDataHandler mDataHandler;
     MemoryState mMemoryState = NORMAL_MEMORY_STATE;
     QTimer *mTimer;
+    // expires the interaction pause even if the release event never came
+    QTimer *mInteractionCapTimer;
+    bool mAutoCheckPaused = false;
+    bool mInteractionActive = false;
     QThread *mMemoryChekerThread;
     MemoryChecker *mMemoryChecker;
 };

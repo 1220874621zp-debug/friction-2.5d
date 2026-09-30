@@ -30,6 +30,7 @@
 #include "efiltersettings.h"
 #include "Private/Tasks/taskscheduler.h"
 #include "Private/Tasks/gputaskexecutor.h"
+#include <QDebug>
 
 BoxRenderData::BoxRenderData(BoundingBox * const parent) :
     fFilterQuality(eFilterSettings::sRender()) {
@@ -130,9 +131,10 @@ void BoxRenderData::drawOnParentLayer(SkCanvas * const canvas,
        fBlendMode == SkBlendMode::kModulate ||
        fBlendMode == SkBlendMode::kSrcOut) {
         canvas->save();
+        // the target rect, not the image size: a reduced-resolution
+        // fallback image is smaller than the rect it has to cover
         auto rect = SkRect::MakeXYWH(fGlobalRect.x(), fGlobalRect.y(),
-                                     fRenderedImage->width(),
-                                     fRenderedImage->height());
+                                     fGlobalRect.width(), fGlobalRect.height());
         rect.inset(1, 1);
         canvas->clipRect(rect, SkClipOp::kDifference, false);
         canvas->clear(SK_ColorTRANSPARENT);
@@ -141,7 +143,14 @@ void BoxRenderData::drawOnParentLayer(SkCanvas * const canvas,
     paint.setAlpha(static_cast<U8CPU>(qRound(fOpacity*2.55)));
     paint.setBlendMode(fBlendMode);
     paint.setAntiAlias(fAntiAlias);
-    canvas->drawImage(fRenderedImage, fGlobalRect.x(), fGlobalRect.y(), &paint);
+    // drawImageRect (instead of drawImage at natural size) so a
+    // reduced-resolution fallback raster still covers the whole global
+    // rect; for a full-resolution image the rect matches exactly and the
+    // result is identical
+    const SkRect dst = SkRect::MakeXYWH(fGlobalRect.x(), fGlobalRect.y(),
+                                        fGlobalRect.width(),
+                                        fGlobalRect.height());
+    canvas->drawImageRect(fRenderedImage, dst, &paint);
 }
 
 void BoxRenderData::processGpu(QGL33 * const gl,
@@ -180,9 +189,20 @@ void BoxRenderData::processGpu(QGL33 * const gl,
                                                      kTopLeft_GrSurfaceOrigin,
                                                      kRGBA_8888_SkColorType);
     if(mEffectsRenderer.isEmpty() ||
-       mEffectsRenderer.nextHardwareSupport() == HardwareSupport::cpuOnly)
-        fRenderedImage = fRenderedImage->makeRasterImage();
-    else mEffectsRenderer.processGpu(gl, context, this);
+       mEffectsRenderer.nextHardwareSupport() == HardwareSupport::cpuOnly) {
+        // Readback to a CPU image. The readback allocates, so it can fail
+        // under memory pressure - keep the (already valid) GPU-backed
+        // image in that case instead of assigning a null one, which used
+        // to make the layer disappear entirely.
+        const auto raster = fRenderedImage ?
+                    fRenderedImage->makeRasterImage() : sk_sp<SkImage>();
+        if(raster) {
+            fRenderedImage = raster;
+        } else if(fRenderedImage.get() && fParentBox) {
+            qWarning() << "RENDER: CPU readback failed, keeping the GPU image for"
+                       << fParentBox->prp_getName();
+        }
+    } else mEffectsRenderer.processGpu(gl, context, this);
 //    if(mEffectsRenderer.isEmpty()) return;
 //    const auto nextEffectHw = mEffectsRenderer.nextHardwareSupport();
 //    if(nextEffectHw != HardwareSupport::cpuOnly) {
@@ -203,20 +223,79 @@ void BoxRenderData::process()
         return;
     }
 
-    const auto info = SkiaHelpers::getPremulRGBAInfo(fGlobalRect.width(),
-                                                     fGlobalRect.height());
+    fRenderedImage = rasterizeWithFallback();
+    fRasterizationFailed = !fRenderedImage.get();
+}
 
-    mBitmap.allocPixels(info);
+sk_sp<SkImage> BoxRenderData::rasterizeWithFallback() {
+    const int w = fGlobalRect.width();
+    const int h = fGlobalRect.height();
+    // Progressive degrade. Under memory pressure the full-size allocation
+    // can fail; rasterizing at a reduced resolution is far better than
+    // producing nothing at all (the box used to just vanish, or the empty
+    // result replaced a perfectly good previous frame). The paint path
+    // stretches the image back to fGlobalRect, so the placement on the
+    // canvas stays correct.
+    static const qreal kScales[] = {1.0, 0.75, 0.5, 0.25};
+    const int nScales = supportsReducedResolutionFallback() ? 4 : 1;
+    for(int si = 0; si < nScales; si++) {
+        const qreal scale = kScales[si];
+        const int sw = qMax(1, qRound(w*scale));
+        const int sh = qMax(1, qRound(h*scale));
+        const auto info = SkiaHelpers::getPremulRGBAInfo(sw, sh);
 
-    if (mBitmap.getPixels() == nullptr) { return; }
+        SkBitmap bitmap;
+        // tryAllocPixels rather than allocPixels: the latter is
+        // SkASSERT_RELEASE(tryAllocPixels) in skia, which calls SK_ABORT
+        // (abort()) on failure in release builds as well
+        if(!bitmap.tryAllocPixels(info)) continue;
+        if(bitmap.getPixels() == nullptr) continue;
 
-    mBitmap.eraseColor(eraseColor());
-    SkCanvas canvas(mBitmap);
-    transformRenderCanvas(canvas);
+        bitmap.eraseColor(eraseColor());
+        SkCanvas canvas(bitmap);
+        if(scale != 1.0) {
+            const SkScalar sx = SkScalar(sw)/w;
+            const SkScalar sy = SkScalar(sh)/h;
+            canvas.scale(sx, sy);
+        }
+        transformRenderCanvas(canvas);
 
-    drawSk(&canvas);
+        drawSk(&canvas);
 
-    fRenderedImage = SkiaHelpers::transferDataToSkImage(mBitmap);
+        auto image = SkiaHelpers::transferDataToSkImage(bitmap);
+        if(image) {
+            if(scale != 1.0 && fParentBox) {
+                qWarning() << "RENDER: rasterized at reduced resolution"
+                           << scale << fParentBox->prp_getName()
+                           << w << "x" << h << "->" << sw << "x" << sh;
+            }
+            return image;
+        }
+    }
+    if(fParentBox) {
+        qWarning() << "RENDER: could not rasterize"
+                   << fParentBox->prp_getName()
+                   << "- every allocation attempt failed,"
+                   << "keeping the previous image if there is one";
+    }
+    return sk_sp<SkImage>();
+}
+
+bool BoxRenderData::hasDrawableContent() const {
+    return fRenderedImage.get() != nullptr;
+}
+
+bool BoxRenderData::allowedInCriticalMemory() const {
+    // only the box-image stage - the effects stage (blur, shadows, ...) is
+    // where the expensive allocations happen
+    if(mStep == Step::EFFECTS) return false;
+    if(!fRelBoundingRectSet) return false;
+    const qreal area = fRelBoundingRect.width()*fRelBoundingRect.height();
+    if(area <= 0) return false;
+    // ~4M pixels / 16MB per layer: comfortable for what is drawn while
+    // editing, far away from the multi-hundred-MB rasters that a critical
+    // memory state cannot afford
+    return area <= qreal(2048)*2048;
 }
 
 void BoxRenderData::beforeProcessing(const Hardware hw) {
@@ -255,6 +334,10 @@ HardwareSupport BoxRenderData::hardwareSupport() const {
 }
 
 void BoxRenderData::queTaskNow() {
+    // capture the interaction window at queue time: tasks the user is
+    // waiting on are taken before background work, so a preview warm-up or
+    // a burst of tmp reloads cannot delay what is being drawn
+    mInteractive = TaskScheduler::sInteractionActive();
     TaskScheduler::instance()->queCpuTask(ref<eTask>());
 }
 

@@ -56,6 +56,17 @@ private:
     intKB mVeryLowFreeKB = intKB(0);
     intKB mCriticalFreeKB = intKB(0);
 
+    // entering/leaving the critical state both need this many consecutive
+    // confirmations - the check runs every 250ms under pressure, so a
+    // single transient dip used to flip the state and stop the whole
+    // render pipeline for one poll
+    static constexpr int kStateConfirmations = 3;
+    // below this own working set (1GB) we never claim the system-wide
+    // deficit as ours, unless we are the bigger consumer of the two
+    static constexpr qint64 kOwnCriticalKB = 1024*1024;
+    int mCriticalStreak = 0;
+    int mNormalStreak = 0;
+
     static MemoryChecker *mInstance;
 signals:
     void memoryCheckedKB(intKB, intKB, intKB);

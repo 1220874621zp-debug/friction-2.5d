@@ -38,6 +38,7 @@
 #include "GUI/global.h"
 #include "MovablePoints/movablepoint.h"
 #include "Private/Tasks/taskscheduler.h"
+#include "simpletask.h"
 #include "RasterEffects/rastereffectcollection.h"
 #include "Animators/transformanimator.h"
 #include "Animators/complexanimator.h"
@@ -762,12 +763,7 @@ void BoundingBox::planUpdate(const UpdateReason reason) {
     else if(!enve_cast<Canvas*>(this)) return;
     if(reason == UpdateReason::userChange) {
         mStateId++;
-        // cancel in-flight renders of the previous state instead of
-        // letting them finish: with several CPU effects chained, stale
-        // renders occupied the whole task pool and the render of the
-        // CURRENT state queued behind them (canvas went through every
-        // outdated intermediate before showing the final image)
-        mRenderDataHandler.cancelAll();
+        mRenderDataHandler.clear();
 #ifdef Q_OS_MAC
         if (const auto canvas = enve_cast<Canvas*>(this)) {
             canvas->invalidateSceneFramesCache();
@@ -779,23 +775,6 @@ void BoundingBox::planUpdate(const UpdateReason reason) {
         // feedback-looped with rendering)
         if(const auto canvas = enve_cast<Canvas*>(this)) {
             canvas->bumpContentGen();
-        }
-        // schedule a deferred scheduler kick: the render only starts
-        // when someone calls TaskScheduler::queTasks, and the usual
-        // drivers are task-finish events or explicit UI pumps
-        // (QDoubleSlider, actionFinished). An edit that runs without
-        // either (custom widgets, script value writes without undo
-        // close) would otherwise leave mUpdatePlanned set forever and
-        // the canvas frozen. One kick per event-loop pass, coalesced.
-        if(const auto sched = TaskScheduler::instance()) {
-            static bool sKickQueued = false; // GUI-thread only flag
-            if(!sKickQueued) {
-                sKickQueued = true;
-                QMetaObject::invokeMethod(qApp, [sched]() {
-                    sKickQueued = false;
-                    sched->queTasks();
-                }, Qt::QueuedConnection);
-            }
         }
     }
 
@@ -2363,24 +2342,33 @@ bool BoundingBox::SWT_drop(const QMimeData * const data) {
     return false;
 }
 
+void BoundingBox::scheduleRenderRetry() {
+    if(mRenderRetryScheduled) return;
+    if(mRenderRetryCount >= kMaxRenderRetries) return;
+    mRenderRetryScheduled = true;
+    SimpleTask::sScheduleContexted(this, [this]() {
+        mRenderRetryScheduled = false;
+        mRenderRetryCount++;
+        // planUpdate invalidates the (empty) render data so the next
+        // queTasks() pass renders this box again
+        planUpdate(UpdateReason::userChange);
+        if(const auto scene = getParentScene()) emit scene->requestUpdate();
+    });
+}
+
 void BoundingBox::renderDataFinished(BoxRenderData *renderData) {
     const bool currentState = renderData->fBoxStateId == mStateId;
     const qreal relFrame = renderData->fRelFrame;
     if(currentState) mRenderDataHandler.removeItemAtRelFrame(relFrame);
-    // a FAILED round (pixel allocation failure / size-limit bail in
-    // BoxRenderData::process) finishes with no image: installing it
-    // would replace the last good bitmap with a null one - the layer
-    // then vanishes from the canvas until some later round succeeds
-    // (looked like "adds do not show up, appear after a while").
-    // Keep the old image and stay expired so the next round retries.
-    // An empty global rect is a legitimate "box has no pixels" render
-    // and must still clear the container.
-    if(!renderData->fRenderedImage &&
-       renderData->fGlobalRect.width() > 0 &&
-       renderData->fGlobalRect.height() > 0) {
-        mDrawRenderContainer.setExpired(true);
-        return;
-    }
+
+    // A result without any drawable content (a rasterization that ran out
+    // of memory at every resolution, or an image that failed to load)
+    // must not replace the image currently on screen - doing so is what
+    // made a finished layer disappear entirely - and it needs another
+    // attempt once memory is available again.
+    const bool drawable = renderData->hasDrawableContent();
+    if(drawable) mRenderRetryCount = 0;
+
     auto currentRenderData = mDrawRenderContainer.getSrcRenderData();
     bool newerSate = true;
     bool closerFrame = true;
@@ -2392,12 +2380,30 @@ void BoundingBox::renderDataFinished(BoxRenderData *renderData) {
                 qAbs(anim_getCurrentRelFrame() - currentRenderData->fRelFrame);
         closerFrame = finishedFrameDist < oldFrameDist;
     }
-    if(newerSate || closerFrame) {
-        mDrawRenderContainer.setSrcRenderData(renderData);
-        const bool currentFrame = isZero4Dec(relFrame - anim_getCurrentRelFrame());
-        const bool expired = !currentState || !currentFrame;
-        mDrawRenderContainer.setExpired(expired);
-        if(expired) updateDrawRenderContainerTransform();
+    const bool currentHasContent = currentRenderData &&
+            currentRenderData->hasDrawableContent();
+    if(drawable || !currentHasContent) {
+        if(newerSate || closerFrame) {
+            mDrawRenderContainer.setSrcRenderData(renderData);
+            const bool currentFrame = isZero4Dec(relFrame - anim_getCurrentRelFrame());
+            const bool expired = !currentState || !currentFrame;
+            mDrawRenderContainer.setExpired(expired);
+            if(expired) updateDrawRenderContainerTransform();
+        }
+    } else if(renderData->fRasterizationFailed) {
+        // keep drawing the previous image and schedule a bounded retry:
+        // the memory pressure may well be gone by the next pass
+        scheduleRenderRetry();
+    }
+
+    // Repaint as soon as this box is current, instead of waiting for the
+    // whole task queue to drain: Document::updateScenes() (the only other
+    // automatic repaint trigger) runs on 'all tasks finished', so a
+    // finished layer used to stay invisible until some unrelated task
+    // completed.
+    if(currentState && !mDrawRenderContainer.isExpired() &&
+       isVisibleAndInVisibleDurationRect()) {
+        if(const auto scene = getParentScene()) emit scene->requestUpdate();
     }
 }
 

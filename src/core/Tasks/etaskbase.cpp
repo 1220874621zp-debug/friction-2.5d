@@ -30,11 +30,6 @@
 #include "GUI/dialogsinterface.h"
 
 void eTaskBase::finishedProcessing() {
-    // a task canceled while qued stays canceled: its dependents were
-    // already canceled by the original cancel() call, and the executor's
-    // finished signal must not resurrect it into the finished state
-    // (which would run afterProcessing on a render nobody wants)
-    if(mState == eTaskState::canceled) return;
     mState = eTaskState::finished;
     if(mCancel) {
         mCancel = false;
@@ -85,6 +80,7 @@ void eTaskBase::cancel() {
         mCancel = true;
         return;
     }
+    if(mState == eTaskState::canceled) return;
     mState = eTaskState::canceled;
     cancelDependent();
     afterCanceled();
@@ -127,12 +123,24 @@ void eTaskBase::tellDependentThatFinished() {
 }
 
 void eTaskBase::cancelDependent() {
-    for(const auto& dependent : mDependent) {
-        if(dependent) dependent->cancel();
-    }
+    // Cancelling must release the dependency count as well. A dependent
+    // that is only cancelled (or whose producer was cancelled) used to
+    // keep mNDependancies > 0 forever, so readyToBeProcessed() stayed
+    // false, the task was never taken out of its TaskQue, that que never
+    // emptied and TaskScheduler::overflowed() became permanently true -
+    // the whole render pipeline stopped being fed and newly drawn content
+    // never appeared again. One exception under memory pressure (or one
+    // canceled tmp save) was enough to wedge it.
+    const auto dependents = mDependent;
     mDependent.clear();
-    for(const auto& dependent : mDependentF) {
-        if(dependent.fCanceled) dependent.fCanceled();
+    for(const auto& dependent : dependents) {
+        if(!dependent) continue;
+        dependent->decDependencies();
+        dependent->cancel();
     }
+    const auto dependentF = mDependentF;
     mDependentF.clear();
+    for(const auto& f : dependentF) {
+        if(f.fCanceled) f.fCanceled();
+    }
 }

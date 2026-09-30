@@ -26,6 +26,7 @@
 #ifndef TASKQUEHANDLER_H
 #define TASKQUEHANDLER_H
 #include "taskque.h"
+#include <QString>
 
 class CORE_EXPORT TaskQueHandler {
 public:
@@ -36,6 +37,8 @@ public:
 
     stdsptr<eTask> takeQuedForGpuProcessing();
     stdsptr<eTask> takeQuedForCpuProcessing();
+    // Critical-memory path - see TaskQue::takeQuedForCriticalProcessing
+    stdsptr<eTask> takeQuedForCriticalProcessing();
 
     void beginQue();
 
@@ -44,6 +47,19 @@ public:
     void endQue();
 
     int taskCount() const { return mTaskCount; }
+
+    // ---- stalled-queue watchdog support ------------------------------
+    // A batch that was not progressed for longer than limitMs is wedged:
+    // its tasks can never be taken (their dependency count never reaches
+    // zero), so the batch never empties and TaskScheduler::overflowed()
+    // stays true forever, which stops the pipeline from being fed at all.
+    bool hasStuckQue(const qint64 nowMs, const qint64 limitMs) const;
+    // Reclaims tasks that can never run again; returns how many.
+    int discardDeadTasks();
+    // Last resort: abandons whole stalled batches. Their content is
+    // rebuildable derived state, so dropping is safe; returns how many.
+    int dropStuckQues(const qint64 nowMs, const qint64 limitMs);
+    QString describeStuckQues(const qint64 nowMs) const;
 private:
     void queDone(const TaskQue * const que, const int queId);
 

@@ -45,6 +45,20 @@ Q_DECLARE_METATYPE(MemoryState)
 Q_DECLARE_METATYPE(longB)
 Q_DECLARE_METATYPE(intKB)
 
+namespace {
+const int kAutoCheckIntervalMs = 1000;
+const int kPressureCheckIntervalMs = 250;
+const int kLowCheckIntervalMs = 500;
+// hard cap for the interaction pause: a lost mouse-release must not
+// disable memory management for the rest of the session
+const int kInteractionMaxPauseMs = 30000;
+// containers touched more recently than this are skipped while the
+// pressure is not critical - they hold what the canvas is drawing right
+// now, and evicting them only blanks the frame until the async reload
+// lands (the deficit is caused by other programs anyway)
+const qint64 kEvictExemptAgeMs = 3000;
+}
+
 MemoryHandler::MemoryHandler(QObject * const parent) : QObject(parent) {
     Q_ASSERT(!sInstance);
     sInstance = this;
@@ -63,7 +77,16 @@ MemoryHandler::MemoryHandler(QObject * const parent) : QObject(parent) {
     mTimer = new QTimer(this);
     connect(mTimer, &QTimer::timeout,
             mMemoryChecker, &MemoryChecker::checkMemory);
-    mTimer->start(1000);
+    mTimer->start(kAutoCheckIntervalMs);
+
+    mInteractionCapTimer = new QTimer(this);
+    mInteractionCapTimer->setSingleShot(true);
+    mInteractionCapTimer->setInterval(kInteractionMaxPauseMs);
+    connect(mInteractionCapTimer, &QTimer::timeout, this, [this]() {
+        mInteractionActive = false;
+        updateTimerState();
+    });
+
     mMemoryChekerThread->start();
 
     // tmp cache files are only referenced by the session that created
@@ -98,11 +121,27 @@ void MemoryHandler::clearMemory() {
 }
 
 void MemoryHandler::setAutoCheckPaused(const bool paused) {
-    if(paused) {
-        mTimer->stop();
+    mAutoCheckPaused = paused;
+    updateTimerState();
+}
+
+void MemoryHandler::setInteractionActive(const bool active) {
+    if(mInteractionActive == active) return;
+    mInteractionActive = active;
+    if(active) {
+        mInteractionCapTimer->start();
     } else {
-        mTimer->start(1000);
+        mInteractionCapTimer->stop();
     }
+    updateTimerState();
+}
+
+void MemoryHandler::updateTimerState() {
+    if(mAutoCheckPaused || mInteractionActive) {
+        if(mTimer->isActive()) mTimer->stop();
+        return;
+    }
+    if(!mTimer->isActive()) mTimer->start(kAutoCheckIntervalMs);
 }
 
 MemoryState MemoryHandler::sMemoryState() {
@@ -111,20 +150,19 @@ MemoryState MemoryHandler::sMemoryState() {
 
 void MemoryHandler::freeMemory(const MemoryState newState,
                                const longB &minFreeBytes) {
-    if(newState != mMemoryState) {
+    const bool stateChanged = newState != mMemoryState;
+    if(stateChanged) {
         if(newState == NORMAL_MEMORY_STATE) {
-            mTimer->setInterval(1000);
+            mTimer->setInterval(kAutoCheckIntervalMs);
         } else if(newState >= VERY_LOW_MEMORY_STATE) {
             if(mMemoryState < VERY_LOW_MEMORY_STATE) {
-                mTimer->setInterval(250);
+                mTimer->setInterval(kPressureCheckIntervalMs);
             }
         } else {
-            mTimer->setInterval(500);
+            mTimer->setInterval(kLowCheckIntervalMs);
         }
         if(mMemoryState == CRITICAL_MEMORY_STATE) {
             emit finishedCriticalState();
-        } else if(newState == CRITICAL_MEMORY_STATE) {
-
         }
         mMemoryState = newState;
     }
@@ -162,8 +200,27 @@ void MemoryHandler::freeMemory(const MemoryState newState,
         emit memoryFreed();
         return;
     }
+    // While the pressure is not critical, skip the containers that were
+    // used within the last few seconds: those hold the pixels the visible
+    // frame is drawn from, and their eviction is what blanks the canvas
+    // (the reload is asynchronous). Under real critical pressure
+    // everything is fair game again.
+    const qint64 exemptBefore = newState == CRITICAL_MEMORY_STATE ?
+                std::numeric_limits<qint64>::max() :
+                QDateTime::currentMSecsSinceEpoch() - kEvictExemptAgeMs;
+    int skipped = 0;
+    const int scanLimit = mDataHandler.count();
     while(memToFree > 0 && mDataHandler.count() > minKeep) {
         const auto contRaw = mDataHandler.takeFirst();
+        if(!contRaw) continue;
+        if(contRaw->lastUseMs() > exemptBefore && ++skipped < scanLimit) {
+            // freshly used - put it back at the back of the list (LRU).
+            // takeFirst() cleared the handled flag, restore it so the
+            // container still unregisters itself on destruction
+            contRaw->mHandledByMemoryHandler = true;
+            mDataHandler.addContainer(contRaw);
+            continue;
+        }
         // hold a strong reference while evicting: free_RAM_k() may
         // release the last owner of the container (e.g. noDataLeft_k
         // resetting the owning data handler), destroying it mid-call
@@ -177,7 +234,7 @@ void MemoryHandler::freeMemory(const MemoryState newState,
     // (e.g. system memory is consumed by other applications) must not
     // trigger allMemoryUsed in a loop, which used to break the preview
     // state machine (playback became unresponsive).
-    if(newState == CRITICAL_MEMORY_STATE) {
+    if(stateChanged && newState == CRITICAL_MEMORY_STATE) {
         mMemoryState = CRITICAL_MEMORY_STATE;
         emit enteredCriticalState();
         emit allMemoryUsed();

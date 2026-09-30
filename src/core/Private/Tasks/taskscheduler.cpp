@@ -33,7 +33,21 @@
 #include "Private/document.h"
 #include "Boxes/boxrenderdata.h"
 
+#include <QTimer>
+#include <QDateTime>
+
 TaskScheduler *TaskScheduler::sInstance = nullptr;
+
+namespace {
+// a healthy batch drains within milliseconds; several seconds without a
+// single take means the batch is wedged (its tasks can never become ready)
+const qint64 kStuckQueLimitMs = 5000;
+const int kStuckQueWatchdogIntervalMs = 2000;
+// repeated reports of the same stall are throttled to this rate
+const qint64 kStuckQueLogThrottleMs = 10000;
+// set while the user is interacting with a canvas
+bool sInteractionFlag = false;
+}
 
 TaskScheduler::TaskScheduler() {
     Q_ASSERT(!sInstance);
@@ -55,10 +69,22 @@ TaskScheduler::TaskScheduler() {
     mGpuExec = std::make_shared<GpuExecController>(this);
     connect(mGpuExec.get(), &ExecController::finishedTaskSignal,
             this, &TaskScheduler::afterCpuGpuTaskFinished);
+
+    // stalled-queue watchdog: the render pipeline is a closed loop
+    // (paint -> feed -> render -> repaint) and a batch that never empties
+    // keeps overflowed() true forever, which stops the loop from being fed
+    // at all - newly drawn content then never appears again. Nothing else
+    // observes this condition, so poll for it.
+    mStuckQueWatchdog = new QTimer(this);
+    mStuckQueWatchdog->setInterval(kStuckQueWatchdogIntervalMs);
+    connect(mStuckQueWatchdog, &QTimer::timeout,
+            this, &TaskScheduler::checkForStuckQues);
+    mStuckQueWatchdog->start();
 }
 
 TaskScheduler::~TaskScheduler()
 {
+    if(mStuckQueWatchdog) mStuckQueWatchdog->stop();
     mGpuExec->stop(); // workaround for deadlock, waiting will not work here
     // may result in "QThread: Destroyed while thread is still running" during shutdown
 
@@ -94,7 +120,6 @@ void TaskScheduler::sClearTasks() {
 void TaskScheduler::initializeGpu() {
     try {
         mGpuExec->initialize();
-        mGpuInitialized = true;
     } catch(...) {
         RuntimeThrow("Failed to initialize GPU execution controller.");
     }
@@ -115,6 +140,10 @@ void TaskScheduler::queCpuTask(const stdsptr<eTask>& task) {
     // (0xC0000005 in QList detach). Defer to the outer loop's
     // endQue + processNextTasks
     if(mCpuQueing) return;
+    // in the critical memory state only the cheap, immediately visible
+    // tasks may start; the rest waits for the state to lift (where
+    // finishCriticalMemoryState() refeeds everything)
+    if(mCriticalMemoryState && !task->allowedInCriticalMemory()) return;
     if(task->readyToBeProcessed()) {
         if(task->hardwareSupport() == HardwareSupport::cpuOnly ||
            !processNextQuedGpuTask()) {
@@ -147,9 +176,15 @@ void TaskScheduler::callAllTasksFinishedFunc() const {
 }
 
 bool TaskScheduler::shouldQueMoreCpuTasks() const {
+    // NOTE: this used to demand GpuTaskExecutor::sUsageCount() == 0, i.e.
+    // a single in-flight GPU task stopped the CPU side from being fed at
+    // all. Under external load (a screen recorder competing for the GPU)
+    // that made renders arrive in bursts, so newly drawn shapes took
+    // seconds to appear. A stalled GPU stage is already bounded by the
+    // waiting-task count, which is what we check here.
     return !mCpuQueing && !overflowed() &&
             availableCpuThreads() > 0 &&
-            (mAlwaysQue || GpuTaskExecutor::sUsageCount() == 0);
+            (mAlwaysQue || GpuTaskExecutor::sWaitingTasks() < 8);
 }
 
 bool TaskScheduler::shouldQueMoreHddTasks() const {
@@ -201,13 +236,6 @@ void TaskScheduler::processNextQuedHddTask() {
     QList<stdsptr<eTask>> tasks;
     for(int i = 0; i < mQuedHddTasks.count(); i++) {
         const auto task = mQuedHddTasks.at(i);
-        // check BEFORE aboutToProcess: it overwrites the state, which
-        // made the old >processing check below dead code and resurrected
-        // canceled tasks
-        if(task->getState() == eTaskState::canceled) {
-            mQuedHddTasks.removeAt(i--);
-            continue;
-        }
         if(!task->readyToBeProcessed()) continue;
         task->aboutToProcess(Hardware::hdd);
         if(task->getState() > eTaskState::processing)
@@ -227,7 +255,16 @@ void TaskScheduler::processNextTasks() {
     // encoder - blocking HDD dispatch here deadlocked output rendering
     // once memory filled up (render frozen at full RAM, zero disk I/O)
     processNextQuedHddTask();
-    if(mCriticalMemoryState) return;
+    if(mCriticalMemoryState) {
+        // The critical state used to stop every CPU/GPU dispatch. That is
+        // too blunt for an interactive editor: the user is drawing right
+        // now, and a small layer rasterization is cheap while blocking it
+        // leaves the canvas showing nothing at all. Dispatch the tasks
+        // that opt in (see eTask::allowedInCriticalMemory) and let the
+        // rest wait for finishCriticalMemoryState().
+        processNextQuedCpuCriticalOnly();
+        return;
+    }
     processNextQuedGpuTask();
     processNextQuedCpuTask();
     if(mTaskUnderflowFunc) {
@@ -237,11 +274,89 @@ void TaskScheduler::processNextTasks() {
     }
 }
 
+void TaskScheduler::processNextQuedCpuCriticalOnly() {
+    bool finished = false;
+    QList<stdsptr<eTask>> tasks;
+    for(int i = 0; i < 2; i++) {
+        const auto task = mQuedCGTasks.takeQuedForCriticalProcessing();
+        if(!task) break;
+        task->aboutToProcess(Hardware::cpu);
+        if(task->getState() > eTaskState::processing) {
+            finished = true;
+            i--; continue;
+        }
+        tasks << task;
+    }
+    if(!tasks.isEmpty()) CpuTaskExecutor::sAddTasks(tasks);
+    if(finished) processNextTasks();
+    emit cpuUsageChanged(busyCpuThreads());
+}
+
+void TaskScheduler::checkForStuckQues() {
+    if(mQuedCGTasks.isEmpty()) {
+        mStuckQueStrikes = 0;
+        return;
+    }
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if(!mQuedCGTasks.hasStuckQue(now, kStuckQueLimitMs)) {
+        mStuckQueStrikes = 0;
+        return;
+    }
+    const auto diag = mQuedCGTasks.describeStuckQues(now);
+    const int reclaimed = mQuedCGTasks.discardDeadTasks();
+    if(reclaimed > 0) {
+        qWarning() << "QUE-WATCHDOG: reclaimed" << reclaimed
+                   << "dead tasks from a stalled batch" << diag;
+        mStuckQueStrikes = 0;
+        queTasks();
+        processNextTasks();
+        callAllTasksFinishedFunc();
+        return;
+    }
+    if(mStuckQueStrikes < 1) {
+        // first sighting: report it, but do not throw work away yet - the
+        // tasks may be waiting on a slow (but healthy) disk load
+        mStuckQueStrikes++;
+        if(now - mStuckQueLastLogMs > kStuckQueLogThrottleMs) {
+            mStuckQueLastLogMs = now;
+            qWarning() << "QUE-WATCHDOG: batch stalled for more than"
+                       << kStuckQueLimitMs << "ms" << diag
+                       << "cpuBusy=" << busyCpuThreads()
+                       << "hddBusy=" << busyHddThreads()
+                       << "gpuBusy=" << GpuTaskExecutor::sUsageCount();
+        }
+        return;
+    }
+    // Confirmed stall. Only act when nothing is running at all: if a pool
+    // is busy the batch is probably waiting on real (slow) work.
+    const bool idle = busyCpuThreads() == 0 && busyHddThreads() == 0 &&
+                      GpuTaskExecutor::sUsageCount() == 0;
+    if(!idle) {
+        if(now - mStuckQueLastLogMs > kStuckQueLogThrottleMs) {
+            mStuckQueLastLogMs = now;
+            qWarning() << "QUE-WATCHDOG: stalled batch kept, pool still busy"
+                       << diag;
+        }
+        return;
+    }
+    const int dropped = mQuedCGTasks.dropStuckQues(now, kStuckQueLimitMs);
+    mStuckQueStrikes = 0;
+    qWarning() << "QUE-WATCHDOG: dropped" << dropped
+               << "stalled batch(es), refeeding the pipeline" << diag;
+    queTasks();
+    processNextTasks();
+    callAllTasksFinishedFunc();
+}
+
+void TaskScheduler::sSetInteractionActive(const bool active) {
+    sInteractionFlag = active;
+}
+
+bool TaskScheduler::sInteractionActive() {
+    return sInteractionFlag;
+}
+
 bool TaskScheduler::processNextQuedGpuTask() {
-    // without a started GPU thread the taken tasks would sit in the
-    // static executor list forever (headless/CLI contexts never call
-    // initializeGpu); route everything to the CPU executors instead
-    if(!mGpuInitialized) return false;
     bool finished = false;
     QList<stdsptr<eTask>> tasks;
     const int count = 3 - GpuTaskExecutor::sWaitingTasks();

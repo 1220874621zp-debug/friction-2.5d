@@ -45,6 +45,13 @@ struct CORE_EXPORT PathBoxRenderData : public BoxRenderData
     void updateRelBoundingRect();
     QPointF getCenterPosition();
 
+    // a direct-draw path raster is a vector payload, not an image: it can
+    // paint without any allocation
+    bool hasDrawableContent() const override {
+        if(mDirectDraw) return !fFillPath.isEmpty() || !fOutlinePath.isEmpty();
+        return BoxRenderData::hasDrawableContent();
+    }
+
 protected:
     void setupRenderData();
     void drawSk(SkCanvas * const canvas);

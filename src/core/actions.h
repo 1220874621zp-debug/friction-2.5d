@@ -136,7 +136,7 @@ public:
     void setPickPaintSettingsMode();
 //
     bool smoothChange() const { return mSmoothChange; }
-    void startSmoothChange() { mSmoothChange = true; }
+    void startSmoothChange();
     void finishSmoothChange();
 
     Action* deleteSceneAction;

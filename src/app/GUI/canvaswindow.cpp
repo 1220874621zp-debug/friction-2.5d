@@ -51,6 +51,7 @@
 #include "videoencoder.h"
 #include "memorychecker.h"
 #include "memoryhandler.h"
+#include "Private/Tasks/taskscheduler.h"
 #include "simpletask.h"
 #include "eevent.h"
 #include "appsupport.h"
@@ -1242,6 +1243,17 @@ void CanvasWindow::grabMouse()
     QWidget::grabMouse();
 #endif
     Actions::sInstance->startSmoothChange();
+    // While the user is drawing/dragging, the cache containers being
+    // evicted are the very ones the visible frame is drawn from - evicting
+    // them mid-edit leaves the canvas without its images until an async
+    // tmp reload lands, which is exactly the "shape does not show up"
+    // report. Suspend the automatic memory check for the interaction (it
+    // self-expires if the release never arrives) and additionally mark the
+    // renders created in this window as interactive.
+    if(MemoryHandler::sInstance) {
+        MemoryHandler::sInstance->setInteractionActive(true);
+    }
+    TaskScheduler::sSetInteractionActive(true);
 }
 
 void CanvasWindow::releaseMouse()
@@ -1251,6 +1263,10 @@ void CanvasWindow::releaseMouse()
     QWidget::releaseMouse();
 #endif
     Actions::sInstance->finishSmoothChange();
+    if(MemoryHandler::sInstance) {
+        MemoryHandler::sInstance->setInteractionActive(false);
+    }
+    TaskScheduler::sSetInteractionActive(false);
 }
 
 bool CanvasWindow::isMouseGrabber()

@@ -25,6 +25,7 @@
 
 #include "cachecontainer.h"
 #include "memorydatahandler.h"
+#include <QDateTime>
 
 CacheContainer::CacheContainer() {
     addToMemoryManagment();
@@ -45,6 +46,7 @@ void CacheContainer::addToMemoryManagment() {
     if(mHandledByMemoryHandler || mInUse) return;
     MemoryDataHandler::sInstance->addContainer(this);
     mHandledByMemoryHandler = true;
+    mLastUseMs = QDateTime::currentMSecsSinceEpoch();
 }
 
 void CacheContainer::removeFromMemoryManagment() {
@@ -54,6 +56,7 @@ void CacheContainer::removeFromMemoryManagment() {
 }
 
 void CacheContainer::updateInMemoryManagment() {
+    mLastUseMs = QDateTime::currentMSecsSinceEpoch();
     if(!mHandledByMemoryHandler) addToMemoryManagment();
     else MemoryDataHandler::sInstance->containerUpdated(this);
 }

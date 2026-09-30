@@ -693,6 +693,13 @@ private:
     bool mUpdatePlanned = false;
     UpdateReason mPlannedReason;
 
+    // Bounded re-render after a failed (allocation) render: without it the
+    // layer stays without an image until the user edits it again
+    void scheduleRenderRetry();
+    static constexpr int kMaxRenderRetries = 3;
+    int mRenderRetryCount = 0;
+    bool mRenderRetryScheduled = false;
+
     QPointF mSavedTransformPivot;
 
     QRectF mRelRect;

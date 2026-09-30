@@ -1302,22 +1302,24 @@ FrameRange Canvas::prp_getIdenticalRelRange(const int relFrame) const {
 }
 
 void Canvas::renderDataFinished(BoxRenderData *renderData) {
-    // failed round (allocation failure): no image to show or cache.
-    // Installing an empty container would blank the canvas view until
-    // a later round succeeds; keep the last good frame instead.
-    if(!renderData->fRenderedImage) { mRenderDataDiscardCount++; return; }
+    if(renderData->fRasterizationFailed) {
+        // the scene raster could not allocate at any resolution: caching
+        // it would put a blank frame in the frame cache (and the canvas
+        // draws the cached frame in preview/clip mode). Count it as a
+        // discard so the preview watchdog re-feeds the frame instead.
+        mRenderDataDiscardCount++;
+        return;
+    }
     const bool currentState = renderData->fBoxStateId == mStateId;
     if(currentState) mRenderDataHandler.removeItemAtRelFrame(renderData->fRelFrame);
-    else {
-        // stale completion (state bumped while this render was in
-        // flight): never show or cache it. Displaying it made the canvas
-        // step BACK through outdated images before the current render
-        // landed (flicker + "wrong, then correct after a while"). Count
-        // it so the preview pipeline watchdog can re-feed the frame.
+    else if(renderData->fBoxStateId < mLastStateId) {
+        // stale completion, will never land in the cache - count it so
+        // the preview pipeline watchdog can re-feed the frame at once
         mRenderDataDiscardCount++;
         return;
     }
     const int relFrame = qRound(renderData->fRelFrame);
+    mLastStateId = renderData->fBoxStateId;
 
     auto range = prp_getIdenticalRelRange(relFrame);
     if(!range.inRange(relFrame)) {
@@ -1335,19 +1337,24 @@ void Canvas::renderDataFinished(BoxRenderData *renderData) {
         range = {relFrame, relFrame};
     }
     const auto cont = enve::make_shared<SceneFrameContainer>(
-                this, renderData, range, &mSceneFramesHandler);
-    mSceneFramesHandler.add(cont);
-    // event-driven pipeline: wakes the preview/output feeder
-    // immediately instead of waiting for the next timer tick
-    emit sceneFrameCached();
+                this, renderData, range,
+                currentState ? &mSceneFramesHandler : nullptr);
+    if(currentState) {
+        mSceneFramesHandler.add(cont);
+        // event-driven pipeline: wakes the preview/output feeder
+        // immediately instead of waiting for the next timer tick
+        emit sceneFrameCached();
+    } else {
+        // non-current-state completion gets a null handler and never
+        // lands in the cache - count it as a discard as well
+        mRenderDataDiscardCount++;
+    }
 
     if(!mPreviewing && !mRenderingOutput){
-        // currentState implies the finished state is >= the shown one's
-        // (the scene frame can only hold an older state, or the same
-        // state at a different frame while scrubbing), so only the
-        // frame distance decides whether to switch the display
+        bool newerSate = true;
         bool closerFrame = true;
         if(mSceneFrame) {
+            newerSate = mSceneFrame->fBoxState < renderData->fBoxStateId;
             const int cRelFrame = anim_getCurrentRelFrame();
             const int finishedFrameDist = qMin(qAbs(cRelFrame - range.fMin),
                                                qAbs(cRelFrame - range.fMax));
@@ -1356,8 +1363,8 @@ void Canvas::renderDataFinished(BoxRenderData *renderData) {
                                           qAbs(cRelFrame - cRange.fMax));
             closerFrame = finishedFrameDist < oldFrameDist;
         }
-        if(closerFrame) {
-            mSceneFrameOutdated = false;
+        if(newerSate || closerFrame) {
+            mSceneFrameOutdated = !currentState;
             setSceneFrame(cont);
         }
     }

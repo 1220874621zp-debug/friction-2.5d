@@ -25,8 +25,13 @@
 
 #include "taskque.h"
 #include "Private/esettings.h"
+#include <QDateTime>
 
-TaskQue::TaskQue() {}
+TaskQue::TaskQue() {
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    mCreatedMs = now;
+    mLastProgressMs = now;
+}
 
 TaskQue::~TaskQue() {
     for(const auto& task : mCpuOnly) task->cancel();
@@ -43,6 +48,7 @@ int TaskQue::countQued() const {
 bool TaskQue::allDone() const { return countQued() == 0; }
 
 void TaskQue::addTask(const stdsptr<eTask> &task) {
+    mLastProgressMs = QDateTime::currentMSecsSinceEpoch();
     const auto hwSupport = task->hardwareSupport();
     switch(eSettings::sInstance->fAccPreference) {
         case AccPreference::gpuStrongPreference:
@@ -121,63 +127,92 @@ void TaskQue::addTask(const stdsptr<eTask> &task) {
     }
 }
 
-// stale-render cancellation drops tasks from the GUI thread while they
-// may still sit in one of the ques: purge them on take, otherwise
-// aboutToProcess would overwrite the canceled state and resurrect the
-// task (its dependents were already canceled once - resurrecting ran
-// the render anyway and its completion polluted the display path)
-template <typename LIST>
-static void purgeCanceled(LIST &list) {
-    for(int i = 0; i < list.count(); i++) {
-        if(list.at(i)->getState() == eTaskState::canceled) {
-            list.removeAt(i);
-            i--;
+stdsptr<eTask> TaskQue::takeTask(const QList<QList<stdsptr<eTask>>*> &lists,
+                                const bool requireCriticalAllowed) {
+    // two passes: interactive tasks (the user is waiting for exactly
+    // those) win over the regular order, so a background backlog such as
+    // preview warm-up or tmp reloads cannot starve the box being drawn
+    for(const auto list : lists) {
+        for(int i = 0; i < list->count(); i++) {
+            const auto& task = list->at(i);
+            if(!task || !task->readyToBeProcessed()) continue;
+            if(!task->interactive()) continue;
+            if(requireCriticalAllowed && !task->allowedInCriticalMemory()) continue;
+            mLastProgressMs = QDateTime::currentMSecsSinceEpoch();
+            return list->takeAt(i);
         }
     }
+    for(const auto list : lists) {
+        for(int i = 0; i < list->count(); i++) {
+            const auto& task = list->at(i);
+            if(!task || !task->readyToBeProcessed()) continue;
+            if(requireCriticalAllowed && !task->allowedInCriticalMemory()) continue;
+            mLastProgressMs = QDateTime::currentMSecsSinceEpoch();
+            return list->takeAt(i);
+        }
+    }
+    return nullptr;
 }
 
 stdsptr<eTask> TaskQue::takeQuedForCpuProcessing() {
-    purgeCanceled(mCpuOnly);
-    purgeCanceled(mCpuPreffered);
-    purgeCanceled(mGpuPreffered);
-    purgeCanceled(mGpuOnly);
-    for(int i = 0; i < mCpuOnly.count(); i++) {
-        const auto& task = mCpuOnly.at(i);
-        if(task->readyToBeProcessed())
-            return mCpuOnly.takeAt(i);
-    }
-    for(int i = 0; i < mCpuPreffered.count(); i++) {
-        const auto& task = mCpuPreffered.at(i);
-        if(task->readyToBeProcessed())
-            return mCpuPreffered.takeAt(i);
-    }
-    for(int i = 0; i < mGpuPreffered.count(); i++) {
-        const auto& task = mGpuPreffered.at(i);
-        if(task->readyToBeProcessed())
-            return mGpuPreffered.takeAt(i);
-    }
-    return nullptr;
+    return takeTask({&mCpuOnly, &mCpuPreffered, &mGpuPreffered}, false);
 }
 
 stdsptr<eTask> TaskQue::takeQuedForGpuProcessing() {
-    purgeCanceled(mGpuOnly);
-    purgeCanceled(mGpuPreffered);
-    purgeCanceled(mCpuPreffered);
-    purgeCanceled(mCpuOnly);
-    for(int i = 0; i < mGpuOnly.count(); i++) {
-        const auto& task = mGpuOnly.at(i);
-        if(task->readyToBeProcessed())
-            return mGpuOnly.takeAt(i);
+    return takeTask({&mGpuOnly, &mGpuPreffered, &mCpuPreffered}, false);
+}
+
+stdsptr<eTask> TaskQue::takeQuedForCriticalProcessing() {
+    // gpuOnly tasks are left alone: they need the GPU context, which this
+    // path (CPU pool) does not provide
+    return takeTask({&mCpuOnly, &mCpuPreffered, &mGpuPreffered}, true);
+}
+
+int TaskQue::discardDeadTasks() {
+    int count = 0;
+    const auto all = {&mGpuOnly, &mGpuPreffered, &mCpuPreffered, &mCpuOnly};
+    for(const auto list : all) {
+        for(int i = 0; i < list->count();) {
+            const auto& task = list->at(i);
+            const auto state = task ? task->getState() : eTaskState::canceled;
+            if(state == eTaskState::canceled || state == eTaskState::finished) {
+                list->removeAt(i);
+                count++;
+            } else {
+                i++;
+            }
+        }
     }
-    for(int i = 0; i < mGpuPreffered.count(); i++) {
-        const auto& task = mGpuPreffered.at(i);
-        if(task->readyToBeProcessed())
-            return mGpuPreffered.takeAt(i);
+    if(count > 0) mLastProgressMs = QDateTime::currentMSecsSinceEpoch();
+    return count;
+}
+
+int TaskQue::countDeadTasks() {
+    int count = 0;
+    const auto all = {&mGpuOnly, &mGpuPreffered, &mCpuPreffered, &mCpuOnly};
+    for(const auto list : all) {
+        for(const auto& task : *list) {
+            if(!task) { count++; continue; }
+            const auto state = task->getState();
+            if(state == eTaskState::canceled || state == eTaskState::finished)
+                count++;
+        }
     }
-    for(int i = 0; i < mCpuPreffered.count(); i++) {
-        const auto& task = mCpuPreffered.at(i);
-        if(task->readyToBeProcessed())
-            return mCpuPreffered.takeAt(i);
+    return count;
+}
+
+int TaskQue::countBlockedTasks() {
+    int count = 0;
+    const auto all = {&mGpuOnly, &mGpuPreffered, &mCpuPreffered, &mCpuOnly};
+    for(const auto list : all) {
+        for(const auto& task : *list) {
+            if(!task || !task->readyToBeProcessed()) count++;
+        }
     }
-    return nullptr;
+    return count;
+}
+
+bool TaskQue::stuckSince(const qint64 nowMs, const qint64 limitMs) const {
+    if(allDone()) return false;
+    return nowMs - mLastProgressMs > limitMs;
 }
