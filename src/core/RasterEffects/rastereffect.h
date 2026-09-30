@@ -130,20 +130,7 @@ enum class RasterEffectType : short {
     PAGE_CURL,
     // AE Putty-style lattice (FFD) deformation - appended last,
     // never reorder, serialized ids must stay stable
-    LATTICE_WARP,
-    // flat-cel region segmentation + volumetric 4-stop gradient
-    // (appended, never reorder - serialized ids must stay stable)
-    CEL_VOLUME,
-    // AE Threshold: binarize luminance at a level percent
-    THRESHOLD,
-    // AE Simple Choker: choke/spread the alpha matte
-    SIMPLE_CHOKER,
-    // AE Black & White / PS Desaturate: collapse to Rec.601 luminance
-    DESATURATE,
-    // PS Levels: input black/white points + midtone gamma + output
-    // black/white points, per channel or composite (appended last,
-    // never reorder - serialized ids must stay stable)
-    LEVELS
+    LATTICE_WARP
 };
 
 struct BoxRenderData;

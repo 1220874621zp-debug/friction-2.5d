@@ -144,11 +144,7 @@ void ComplexAnimator::ca_insertChild(const qsptr<Property>& child,
         if(ca_mHiddenEmpty) SWT_setVisible(true);
     }
 
-    // guard every caller (drop indices, undo replays with stale
-    // positions): QList::insert past the end is undefined behavior and
-    // corrupts the heap
-    const int boundId = qBound(0, id, ca_mChildren.count());
-    ca_mChildren.insert(boundId, child);
+    ca_mChildren.insert(id, child);
     child->setParent(this);
     child->prp_setInheritedFrameShift(prp_getTotalFrameShift(), this);
     if(child->prp_drawsOnCanvas() ||
@@ -176,7 +172,7 @@ void ComplexAnimator::ca_insertChild(const qsptr<Property>& child,
     }
 
     child->SWT_setAncestorDisabled(SWT_isDisabled());
-    SWT_addChildAt(child.get(), boundId);
+    SWT_addChildAt(child.get(), id);
     if(changeInfluence) {
         const auto childRange = child->prp_absInfluenceRange();
         const auto changedRange = childRange*prp_absInfluenceRange();

@@ -30,7 +30,6 @@
 #include <QByteArray>
 #include <QImage>
 #include <QMap>
-#include <QSet>
 #include <functional>
 #include "RasterEffects/rastereffect.h"
 
@@ -74,27 +73,20 @@ public:
     EffectPreviewArea(QWidget* const parent = nullptr);
 
     void setFrames(const QList<QImage>& frames);
-    bool hasFrames() const { return !mFrames.isEmpty(); }
     void advance();
     void setPlaceholder(const QString& text);
     // dark shadows are invisible on the dark default base: shadow
     // effects get a light backdrop instead
     void setLightBase(const bool light);
-    // pins a small button to the preview's bottom-right corner (the
-    // favorite star); repositioned on every resize
-    void setCornerButton(QToolButton* const btn);
 
 protected:
     void paintEvent(QPaintEvent* const e) override;
-    void resizeEvent(QResizeEvent* const e) override;
 
 private:
-    void positionCornerButton();
     QList<QImage> mFrames;
     int mFrame = 0;
     QString mPlaceholder;
     bool mLightBase = false;
-    QToolButton* mCornerBtn = nullptr;
 };
 
 // one effect card: preview, name, category tag and an apply button;
@@ -109,11 +101,6 @@ public:
                       QWidget* const parent = nullptr);
 
     RasterEffectType effectType() const { return mType; }
-    bool hasFrames() const
-    { return mPreviewArea && mPreviewArea->hasFrames(); }
-    // favorite star state (persisted by the panel, keyed by type id)
-    bool isFavorite() const { return mFavorite; }
-    void setFavorite(const bool favorite);
     void setChecked(const bool checked);
     void advance() { if (mPreviewArea) { mPreviewArea->advance(); } }
     void applyNow() { if (mApply) { mApply(nullptr); } }
@@ -136,8 +123,6 @@ public:
 signals:
     void applyRequested(EffectPreviewTile* tile);
     void tileClicked(EffectPreviewTile* tile);
-    // the corner star was toggled (panel persists + refilters)
-    void favoriteToggled(EffectPreviewTile* tile, bool favorite);
 
 protected:
     void mousePressEvent(QMouseEvent* const e) override;
@@ -154,12 +139,10 @@ private:
     QString mCategory;
     EffectApplyFn mApply;
     EffectPreviewArea* mPreviewArea = nullptr;
-    QToolButton* mFavBtn = nullptr;
     QLabel* mNameLabel = nullptr;
     QLabel* mTagLabel = nullptr;
     QPushButton* mApplyBtn = nullptr;
     bool mChecked = false;
-    bool mFavorite = false;
     QPoint mDragStart;
     bool mDragging = false;
 };
@@ -203,7 +186,6 @@ private slots:
     void onViewModeToggled(const bool checked);
     void onTileApplyRequested(EffectPreviewTile *tile);
     void onTileClicked(EffectPreviewTile *tile);
-    void onTileFavoriteToggled(EffectPreviewTile *tile, bool favorite);
 
 protected:
     void showEvent(QShowEvent* const e) override;
@@ -223,9 +205,6 @@ private:
     void filterTiles();
     void updatePlayTimer();
     QString categoryTag(const QString& category) const;
-    // favorite effect type ids <-> "EffectsPanel/favorites" settings
-    void loadFavorites();
-    void saveFavorites() const;
 
     MainWindow *mMainWindow = nullptr;
     QLineEdit *mSearchEdit = nullptr;
@@ -250,9 +229,6 @@ private:
     QSlider* mTileSizeSlider = nullptr;
     int mTileSize = 130;
     bool mGalleryPaused = false;
-    // favorited effect type ids (int of RasterEffectType), persisted
-    // as a comma list under "EffectsPanel/favorites"
-    QSet<int> mFavorites;
     // render requested while the grid view was hidden or the panel
     // invisible; honored on the next showEvent / view switch
     bool mRenderOnShow = false;

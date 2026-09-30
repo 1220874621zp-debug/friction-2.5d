@@ -748,9 +748,9 @@ void BlackWhiteFlashEffectCaller::processCpu(CpuRenderTools& renderTools,
     // Final composite, AE Render16 tail: lerp(bg, flash, v) then
     // lerp(src, that, flashIntensity), alpha passed through untouched.
     const int xMin = std::max(0, data.fTexTile.left());
-    const int xMax = std::min(data.fTexTile.right() - 1, w - 1);
+    const int xMax = std::min(data.fTexTile.right(), w - 1);
     const int yMin = std::max(0, data.fTexTile.top());
-    const int yMax = std::min(data.fTexTile.bottom() - 1, h - 1);
+    const int yMax = std::min(data.fTexTile.bottom(), h - 1);
     const int tileL = data.fTexTile.left();
     const int tileT = data.fTexTile.top();
 

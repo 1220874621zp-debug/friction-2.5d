@@ -71,14 +71,7 @@ void EffectSubTaskSpawner_priv::initialize() {
     mSrcRasterImg = srcImg->makeRasterImage();
     mSrcRasterImg->peekPixels(&pixmap);
     mSrcBitmap.installPixels(pixmap);
-    // allocPixels leaves the pixels UNINITIALIZED - an effect whose
-    // processCpu does not write every pixel of its tile would put raw
-    // heap garbage on the canvas (different every round -> flicker).
-    // Clear once up front; effects overwrite everything they produce.
-    if(mUseDst) {
-        mDstBitmap.allocPixels(mSrcBitmap.info());
-        mDstBitmap.eraseColor(SK_ColorTRANSPARENT);
-    }
+    if(mUseDst) mDstBitmap.allocPixels(mSrcBitmap.info());
     spawn();
 }
 
@@ -92,11 +85,6 @@ void EffectSubTaskSpawner_priv::splitSpawn(CpuRenderData& data,
         const auto decRemaining = [self]() { self->decRemaining_k(); };
         const auto subTask = enve::make_shared<eCustomCpuTask>(nullptr,
             [self, data]() {
-                // stale-render cancellation: skip the tile work once the
-                // parent render data died, decBelow still runs via the
-                // finish callbacks so the chain accounting stays intact
-                if(self->mData->getState() == eTaskState::canceled ||
-                   self->mData->waitingToCancel()) return;
                 SkBitmap dstBitmap;
                 if(self->mUseDst) {
                     self->mDstBitmap.extractSubset(&dstBitmap, data.fTexTile);
@@ -157,9 +145,7 @@ void EffectSubTaskSpawner_priv::spawn() {
 
 void EffectSubTaskSpawner_priv::decRemaining_k() {
     if(--mRemaining > 0) return;
-    const bool dead = mData->getState() == eTaskState::canceled ||
-                      mData->waitingToCancel();
-    if(!dead) {
+    if(mData->getState() != eTaskState::canceled) {
         if(mUseDst) {
             mData->fRenderedImage = SkiaHelpers::transferDataToSkImage(
                                         mDstBitmap);
@@ -171,12 +157,6 @@ void EffectSubTaskSpawner_priv::decRemaining_k() {
         } else {
             mData->finishedProcessing();
         }
-    } else {
-        // canceled between chain steps (state bump during effect
-        // processing): route through finishedProcessing so the pending
-        // cancel converts to canceled and the dependents (parent canvas
-        // composite) hear about it; already-canceled tasks no-op inside
-        mData->finishedProcessing();
     }
     // no delete: the last subtask lambda releasing its shared_ptr
     // destroys this spawner

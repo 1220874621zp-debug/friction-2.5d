@@ -64,15 +64,6 @@ void TaskExecutor::processLoop() {
         stdsptr<eTask> task;
         if(!mTasks.waitTakeFirst(task, mStop)) break;
         mUseCount++;
-        if(task->getState() == eTaskState::canceled) {
-            // canceled while sitting in the executor list (stale-render
-            // cancellation): skip the work entirely, the finished signal
-            // only pops it from the scheduler's accounting
-            sTaskFinishSignals++;
-            emit finishedTask(task);
-            mUseCount--;
-            continue;
-        }
         try {
             processTask(*task);
         } catch(...) {

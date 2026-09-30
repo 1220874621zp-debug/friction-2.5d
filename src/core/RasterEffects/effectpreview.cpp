@@ -48,8 +48,7 @@ enum class Sample {
     text,      // the embedded user-supplied image on a transparent rim
     green,     // chroma-green backdrop + the image as foreground
     liquid,    // fisheye-lens "liquid glass" look on the image
-    lattice,   // the image with a cyan lattice grid (warp readout)
-    cel        // flat-cel character (hair/face/eyes/clothes blocks)
+    lattice    // the image with a cyan lattice grid (warp readout)
 };
 
 // which demo content shows the effect best
@@ -61,8 +60,6 @@ Sample sampleFor(const RasterEffectType type) {
         return Sample::liquid;
     case RasterEffectType::LATTICE_WARP:
         return Sample::lattice;
-    case RasterEffectType::CEL_VOLUME:
-        return Sample::cel;
     default:
         return Sample::text;
     }
@@ -128,68 +125,6 @@ SkBitmap makeGreenSample(const int w, const int h) {
 
     // foreground: the friction wordmark survives the key
     drawWordmark(c, p, w, h, 0.5);
-    return bmp;
-}
-
-// flat-cel character built from pure color blocks (hair / face /
-// eyes / blush / clothes / line art on a transparent ground) - the
-// input the cel-volume effect is made for; skia's rasterizer paints
-// same-color overlaps as one merged region, like real exported art
-SkBitmap makeCelSample(const int w, const int h) {
-    SkBitmap bmp;
-    bmp.allocN32Pixels(w, h);
-    bmp.eraseARGB(0, 0, 0, 0);
-    SkCanvas c(bmp);
-    SkPaint p;
-    p.setAntiAlias(true);
-    const SkScalar u = SkScalar(qMin(w, h)) / 420.f; // unit from the design grid
-    const auto rect = [&](const float x, const float y,
-                          const float ww, const float hh,
-                          const SkColor col) {
-        p.setColor(col);
-        c.drawRect(SkRect::MakeXYWH(x * u, y * u, ww * u, hh * u), p);
-    };
-    const auto circle = [&](const float cx, const float cy, const float r,
-                            const SkColor col) {
-        p.setColor(col);
-        c.drawCircle(cx * u, cy * u, r * u, p);
-    };
-    const auto oval = [&](const float cx, const float cy,
-                          const float rx, const float ry,
-                          const SkColor col) {
-        p.setColor(col);
-        c.drawOval(SkRect::MakeXYWH((cx - rx) * u, (cy - ry) * u,
-                                    2 * rx * u, 2 * ry * u), p);
-    };
-    // clothes
-    rect(90, 300, 240, 110, SkColorSetRGB(0x2A, 0x7F, 0x9E));
-    rect(110, 280, 200, 22, SkColorSetRGB(0x2A, 0x7F, 0x9E));
-    // hair arch + side locks
-    circle(210, 205, 105, SkColorSetRGB(0x7A, 0x4B, 0x2A));
-    rect(105, 200, 40, 130, SkColorSetRGB(0x7A, 0x4B, 0x2A));
-    rect(275, 200, 40, 130, SkColorSetRGB(0x7A, 0x4B, 0x2A));
-    // face + fringe + fringe buns
-    circle(210, 225, 78, SkColorSetRGB(0xF5, 0xD0, 0xB0));
-    rect(132, 148, 156, 37, SkColorSetRGB(0x7A, 0x4B, 0x2A));
-    circle(150, 175, 24, SkColorSetRGB(0x7A, 0x4B, 0x2A));
-    circle(270, 175, 24, SkColorSetRGB(0x7A, 0x4B, 0x2A));
-    // eyes: whites + dark pupils (kept flat by the effect itself)
-    oval(178, 235, 17, 22, SK_ColorWHITE);
-    oval(242, 235, 17, 22, SK_ColorWHITE);
-    oval(178, 238, 8, 12, SkColorSetRGB(0x2B, 0x23, 0x20));
-    oval(242, 238, 8, 12, SkColorSetRGB(0x2B, 0x23, 0x20));
-    // blush dots
-    circle(158, 268, 9, SkColorSetRGB(0xF0, 0x9A, 0xA0));
-    circle(262, 268, 9, SkColorSetRGB(0xF0, 0x9A, 0xA0));
-    // chin line-art stroke
-    p.setColor(SkColorSetRGB(0x26, 0x21, 0x1E));
-    p.setStyle(SkPaint::kStroke_Style);
-    p.setStrokeWidth(4 * u);
-    p.setStrokeCap(SkPaint::kRound_Cap);
-    SkPath chin;
-    chin.moveTo(140 * u, 285 * u);
-    chin.quadTo(210 * u, 320 * u, 280 * u, 285 * u);
-    c.drawPath(chin, p);
     return bmp;
 }
 
@@ -466,7 +401,6 @@ SkBitmap makeSample(const RasterEffectType type, const QSize& size) {
     case Sample::green: return makeGreenSample(w, h);
     case Sample::liquid: return makeLiquidSample(w, h, 0.);
     case Sample::lattice: return makeLatticeGridSample(w, h, 0.);
-    case Sample::cel: return makeCelSample(w, h);
     case Sample::text:
     default: return makeTextSample(w, h);
     }
@@ -517,28 +451,6 @@ NamedScan namedScanFor(const RasterEffectType type) {
         // across the corner for a real turning look (the animator's
         // name is the Chinese tr source string)
         return { "progress", "卷曲进度", 0., 100. };
-    case RasterEffectType::CEL_VOLUME:
-        // breathing the center band sizes the radial stops in and
-        // out (paramName is decoded as latin1, so the Chinese
-        // animator name travels through altName, page-curl style)
-        return { "gamma", "中心色范围", 0.6, 2.6 };
-    case RasterEffectType::THRESHOLD:
-        // full-range sweep flips the silhouette in/out of white
-        return { "level", nullptr, 10., 90. };
-    case RasterEffectType::DESATURATE:
-        // color <-> grayscale breathing (default 100 would sweep
-        // nowhere: 100 * 2.5 clamps back to 100)
-        return { "amount", nullptr, 0., 100. };
-    case RasterEffectType::LEVELS:
-        // midtone breathing around the identity gamma 1; the input
-        // points are pre-spread in applyPreviewDefaults so the
-        // curve visibly crushes shadows and highlights too
-        return { "gamma", nullptr, 0.5, 2.1 };
-    case RasterEffectType::SIMPLE_CHOKER:
-        // negative spread -> positive choke breathing; the to-value
-        // stays off the exact 0 grid point - a choke of exactly 0 is
-        // a passthrough and would flash one empty frame mid-loop
-        return { "choke matte", nullptr, -6., 5.9 };
     default:
         return { nullptr, nullptr, 0., 0. };
     }
@@ -661,12 +573,6 @@ void setupDefaults(RasterEffect* const eff, const RasterEffectType type) {
         // much stronger frayed edge than the subtle factory default
         setParam("border", 45.);
         setParam("complexity", 5.);
-        break;
-    case RasterEffectType::LEVELS:
-        // factory 0/255 is passthrough on the ends; pre-spread the
-        // input points so the gamma sweep has real range to crush
-        setParam("input black", 40.);
-        setParam("input white", 225.);
         break;
     case RasterEffectType::LAYER_STYLES: {
         // factory default is all-styles-off = null caller; enable a

@@ -28,14 +28,6 @@
 #include "complexanimator.h"
 
 class CORE_EXPORT StaticComplexAnimator : public ComplexAnimator {
-protected:
-    // how many leading children a file of the given version carries
-    // in this animator's record: classes that APPENDED children after
-    // some format version override this so older files read one child
-    // less instead of desyncing the whole stream (the format is
-    // child-sequential - no per-record child count is stored)
-    virtual int ca_readChildCount(const int evFileVersion) const;
-
     e_OBJECT
 protected:
     StaticComplexAnimator(const QString &name);

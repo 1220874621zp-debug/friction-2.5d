@@ -26,7 +26,6 @@
 #ifndef DYNAMICCOMPLEXANIMATOR_H
 #define DYNAMICCOMPLEXANIMATOR_H
 #include <QApplication>
-#include <QGuiApplication>
 #include "complexanimator.h"
 #include "typemenu.h"
 #include "Properties/emimedata.h"
@@ -56,11 +55,7 @@ public:
     bool SWT_dropInto(const int index, const QMimeData* const data) {
         const auto eData = static_cast<const eMimeData*>(data);
         const auto bData = static_cast<const eDraggedObjects*>(eData);
-        // queryKeyboardModifiers requires a QGuiApplication instance:
-        // treat non-GUI contexts (headless tests) as no modifier
-        const bool duplicate =
-                qobject_cast<QGuiApplication*>(qApp) &&
-                QGuiApplication::queryKeyboardModifiers() & Qt::CTRL;
+        const bool duplicate = QApplication::queryKeyboardModifiers() & Qt::CTRL;
         const auto objects = bData->getObjects<T>();
         int i = index;
         for(const auto iObj : objects) {
@@ -85,11 +80,7 @@ public:
                      const int index)
     {
         clearOldParent(child);
-        // index comes from drop positions / undo replays computed against
-        // the list BEFORE the removal above shrank it (move-to-bottom
-        // passes the old count): clamp to the current count, otherwise
-        // QList::insert writes past the end and corrupts the heap
-        ca_insertChild(child, qBound(0, index, ca_getNumberOfChildren()));
+        ca_insertChild(child, index);
 
         {
             prp_pushUndoRedoName(tr("Insert ") + child->prp_getName());

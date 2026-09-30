@@ -577,9 +577,9 @@ void PixelateEffectCaller::processCpu(CpuRenderTools& renderTools,
     // Final write, AE RenderPixelArt tail: straight -> premul for the
     // Skia pipeline, truncating casts like the AE 8-bit path.
     const int xMin = std::max(0, data.fTexTile.left());
-    const int xMax = std::min(data.fTexTile.right() - 1, outW - 1);
+    const int xMax = std::min(data.fTexTile.right(), outW - 1);
     const int yMin = std::max(0, data.fTexTile.top());
-    const int yMax = std::min(data.fTexTile.bottom() - 1, outH - 1);
+    const int yMax = std::min(data.fTexTile.bottom(), outH - 1);
     const int tileL = data.fTexTile.left();
     const int tileT = data.fTexTile.top();
 

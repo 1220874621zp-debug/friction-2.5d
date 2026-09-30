@@ -50,7 +50,6 @@
 #include <QMouseEvent>
 #include <QButtonGroup>
 #include <QPainter>
-#include <cmath>
 #include <QtConcurrent/QtConcurrentMap>
 
 #include "Boxes/boundingbox.h"
@@ -162,30 +161,6 @@ void EffectPreviewArea::setLightBase(const bool light)
     update();
 }
 
-void EffectPreviewArea::setCornerButton(QToolButton* const btn)
-{
-    mCornerBtn = btn;
-    if (mCornerBtn) {
-        mCornerBtn->setParent(this);
-        mCornerBtn->raise();
-        positionCornerButton();
-    }
-}
-
-void EffectPreviewArea::positionCornerButton()
-{
-    if (!mCornerBtn) { return; }
-    const int m = 3;
-    mCornerBtn->move(width() - mCornerBtn->width() - m,
-                     height() - mCornerBtn->height() - m);
-}
-
-void EffectPreviewArea::resizeEvent(QResizeEvent* const e)
-{
-    QWidget::resizeEvent(e);
-    positionCornerButton();
-}
-
 void EffectPreviewArea::paintEvent(QPaintEvent* const e)
 {
     Q_UNUSED(e)
@@ -217,50 +192,6 @@ void EffectPreviewArea::paintEvent(QPaintEvent* const e)
     p.restore();
 }
 
-// five-point favorite star pinned over the preview's bottom-right
-// corner: a translucent contrast disc under a self-drawn star (no
-// theme-icon dependency), gray outline when idle, gold when checked
-class EffectFavButton : public QToolButton {
-public:
-    explicit EffectFavButton(QWidget* const parent)
-        : QToolButton(parent)
-    {
-        setCheckable(true);
-        setCursor(Qt::PointingHandCursor);
-        setToolTip(QString::fromUtf8("收藏"));
-        setFocusPolicy(Qt::NoFocus);
-        setFixedSize(24, 24);
-    }
-protected:
-    void paintEvent(QPaintEvent* const e) override {
-        Q_UNUSED(e)
-        QPainter p(this);
-        p.setRenderHint(QPainter::Antialiasing);
-        p.setPen(Qt::NoPen);
-        p.setBrush(QColor(0, 0, 0,
-                          underMouse() || isChecked() ? 175 : 115));
-        p.drawEllipse(rect().adjusted(1, 1, -1, -1));
-        QPolygonF star;
-        const QPointF c(width() / 2., height() / 2.);
-        const qreal rO = qMin(width(), height()) * 0.36;
-        const qreal rI = rO * 0.45;
-        for (int i = 0; i < 10; i++) {
-            const qreal ang = -M_PI / 2. + i * M_PI / 5.;
-            const qreal r = (i % 2 == 0) ? rO : rI;
-            star << QPointF(c.x() + r * std::cos(ang),
-                            c.y() + r * std::sin(ang));
-        }
-        if (isChecked()) {
-            p.setBrush(QColor(245, 197, 24));
-            p.setPen(QPen(QColor(120, 90, 0), 1));
-        } else {
-            p.setBrush(QColor(235, 235, 235, underMouse() ? 255 : 205));
-            p.setPen(QPen(QColor(150, 150, 150), 1));
-        }
-        p.drawPolygon(star);
-    }
-};
-
 EffectPreviewTile::EffectPreviewTile(const RasterEffectType type,
                                      const QString& name,
                                      const QString& category,
@@ -279,13 +210,6 @@ EffectPreviewTile::EffectPreviewTile(const RasterEffectType type,
     mPreviewArea = new EffectPreviewArea(this);
     mPreviewArea->setFixedSize(130, 130);
     lay->addWidget(mPreviewArea, 0, Qt::AlignHCenter);
-
-    mFavBtn = new EffectFavButton(mPreviewArea);
-    mPreviewArea->setCornerButton(mFavBtn);
-    connect(mFavBtn, &QToolButton::toggled, this, [this](const bool on) {
-        mFavorite = on;
-        emit favoriteToggled(this, on);
-    });
 
     mNameLabel = new QLabel(mName, this);
     QFont nf = mNameLabel->font();
@@ -340,15 +264,6 @@ void EffectPreviewTile::setLoading()
 {
     if (mPreviewArea) {
         mPreviewArea->setPlaceholder(QString::fromUtf8("渲染中..."));
-    }
-}
-
-void EffectPreviewTile::setFavorite(const bool favorite)
-{
-    mFavorite = favorite;
-    if (mFavBtn && mFavBtn->isChecked() != favorite) {
-        const QSignalBlocker block(mFavBtn);
-        mFavBtn->setChecked(favorite);
     }
 }
 
@@ -604,7 +519,6 @@ EffectsPresetsPanel::EffectsPresetsPanel(MainWindow * const mainWindow,
         }
     });
 
-    loadFavorites();
     populateEffects();
 
     // restore the last view mode (card grid is the default: it is the
@@ -750,25 +664,6 @@ void EffectsPresetsPanel::populateEffects()
         });
 
     mTreeWidget->expandAll();
-
-    // the card gallery is built once; a refresh (import / delete /
-    // reload) must rebuild it too, or new effects never show up there.
-    // The generation bump invalidates any in-flight render batch
-    // started against the old tiles.
-    if (mTilesBuilt) {
-        mTileGeneration++;
-        mTilesBuilt = false;
-        for (const auto tile : mTiles) {
-            if (tile) { tile->deleteLater(); }
-        }
-        mTiles.clear();
-        if (mStack && mStack->currentIndex() == 1) {
-            buildTiles();
-            queueTileRender();
-        } else {
-            mRenderOnShow = true;
-        }
-    }
 }
 
 QWidget* EffectsPresetsPanel::buildGridView()
@@ -907,12 +802,9 @@ void EffectsPresetsPanel::buildTiles()
         mCatLayout->addWidget(btn);
     };
     addPill(QString::fromUtf8("全部"), QStringLiteral("all"));
-    addPill(QString::fromUtf8("收藏"), QStringLiteral("fav"));
     for (const auto& c : cats) { addPill(c, c); }
     mCatLayout->addStretch(1);
-    if (mActiveCategory != QStringLiteral("all") &&
-        mActiveCategory != QStringLiteral("fav") &&
-        !cats.contains(mActiveCategory)) {
+    if (mActiveCategory != QStringLiteral("all") && !cats.contains(mActiveCategory)) {
         mActiveCategory = QStringLiteral("all");
         const auto btns = mCatGroup->buttons();
         if (!btns.isEmpty()) { btns.first()->setChecked(true); }
@@ -929,10 +821,6 @@ void EffectsPresetsPanel::buildTiles()
                 this, &EffectsPresetsPanel::onTileApplyRequested);
         connect(tile, &EffectPreviewTile::tileClicked,
                 this, &EffectsPresetsPanel::onTileClicked);
-        // 收藏星：面板侧持久化+收藏视图下即时增删
-        connect(tile, &EffectPreviewTile::favoriteToggled,
-                this, &EffectsPresetsPanel::onTileFavoriteToggled);
-        tile->setFavorite(mFavorites.contains(int(e.type)));
         mFlow->addWidget(tile);
         mTiles << tile;
         if (mTileSize != 130) { tile->setPreviewSize(mTileSize); }
@@ -962,10 +850,6 @@ void EffectsPresetsPanel::queueTileRender()
     QVector<QPointer<EffectPreviewTile>> targets;
     for (const auto tile : mTiles) {
         if (!tile || !EffectPreview::canPreview(tile->effectType())) { continue; }
-        // frames depend on nothing mutable (fixed 160x160 source), so
-        // a tile that already holds frames never needs a re-render;
-        // this keeps tree->grid toggles from redoing the whole batch
-        if (tile->hasFrames()) { continue; }
         TileRenderParams p;
         p.type = tile->effectType();
         p.nFrames = 16;
@@ -1004,16 +888,8 @@ void EffectsPresetsPanel::queueTileRender()
 void EffectsPresetsPanel::filterTiles()
 {
     const QString filter = mSearchEdit ? mSearchEdit->text().trimmed() : QString();
-    // the favorite view crosses categories: category matching is
-    // bypassed, only the star (and the search box) decides
-    const QString matchTag = mActiveCategory == QStringLiteral("fav")
-            ? QStringLiteral("all") : mActiveCategory;
     for (const auto tile : mTiles) {
-        if (!tile) { continue; }
-        const bool vis = tile->matches(filter, matchTag) &&
-                (mActiveCategory != QStringLiteral("fav") ||
-                 tile->isFavorite());
-        tile->setVisible(vis);
+        if (tile) { tile->setVisible(tile->matches(filter, mActiveCategory)); }
     }
     // hiding tiles alone leaves the scroll area's cached extent stale
     // (trailing blank space under the grid); force a re-measure, same
@@ -1030,43 +906,6 @@ void EffectsPresetsPanel::updatePlayTimer()
                         && !mGalleryPaused;
     if (active) { mPlayTimer->start(); }
     else { mPlayTimer->stop(); }
-}
-
-void EffectsPresetsPanel::loadFavorites()
-{
-    mFavorites.clear();
-    const QString raw = AppSupport::getSettings(
-                QStringLiteral("EffectsPanel"),
-                QStringLiteral("favorites")).toString();
-    const auto parts = raw.split(',', Qt::SkipEmptyParts);
-    for (const auto& part : parts) {
-        bool ok = false;
-        const int id = part.trimmed().toInt(&ok);
-        if (ok) { mFavorites.insert(id); }
-    }
-}
-
-void EffectsPresetsPanel::saveFavorites() const
-{
-    QStringList ids;
-    for (const int id : mFavorites) { ids << QString::number(id); }
-    AppSupport::setSettings(QStringLiteral("EffectsPanel"),
-                            QStringLiteral("favorites"), ids.join(','));
-}
-
-void EffectsPresetsPanel::onTileFavoriteToggled(EffectPreviewTile* const tile,
-                                                const bool favorite)
-{
-    if (!tile) { return; }
-    const int id = int(tile->effectType());
-    if (favorite) { mFavorites.insert(id); }
-    else { mFavorites.remove(id); }
-    saveFavorites();
-    // starring from the favorite view should not evict the tile
-    // before the click registers; unstarring should remove it at once
-    if (mActiveCategory == QStringLiteral("fav")) {
-        filterTiles();
-    }
 }
 
 void EffectsPresetsPanel::onViewModeToggled(const bool checked)

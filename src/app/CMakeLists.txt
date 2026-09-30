@@ -250,7 +250,6 @@ set(
     evfileio.cpp
     renderhandler.cpp
     GUI/BoxesList/boxsinglewidget.cpp
-    GUI/BoxesList/levelseffectdialog.cpp
     GUI/BoxesList/boxscrollwidget.cpp
     GUI/BoxesList/boolpropertywidget.cpp
     memorychecker.cpp
@@ -265,13 +264,6 @@ set(
     GUI/animationdockwidget.cpp
     GUI/easingpresetspanel.cpp
     GUI/effectspresetspanel.cpp
-    GUI/lyricmotionpanel.cpp
-    GUI/lyricmotionengine.cpp
-    GUI/lyricmotionnative.cpp
-    GUI/lyricmotionpreview.cpp
-    GUI/lyricmotioncanvas.cpp
-    GUI/lyricmotionaudio.cpp
-    GUI/lyricmotionaudiocore.cpp
     GUI/quickeffectsearchdialog.cpp
     GUI/scriptmanager.cpp
     GUI/scriptconsole.cpp
@@ -328,7 +320,6 @@ set(
     eimporters.h
     renderhandler.h
     GUI/BoxesList/boxsinglewidget.h
-    GUI/BoxesList/levelseffectdialog.h
     GUI/BoxesList/boxscrollwidget.h
     GUI/BoxesList/boolpropertywidget.h
     memorychecker.h
@@ -343,13 +334,6 @@ set(
     GUI/animationdockwidget.h
     GUI/easingpresetspanel.h
     GUI/effectspresetspanel.h
-    GUI/lyricmotionpanel.h
-    GUI/lyricmotionengine.h
-    GUI/lyricmotionnative.h
-    GUI/lyricmotionpreview.h
-    GUI/lyricmotioncanvas.h
-    GUI/lyricmotionaudio.h
-    GUI/lyricmotionaudiocore.h
     GUI/quickeffectsearchdialog.h
     GUI/scriptmanager.h
     GUI/scriptconsole.h
@@ -391,7 +375,7 @@ add_executable(
     ${WINDOWS_RESOURCE_FILE}
 )
 
-add_executable(friction_effects_test effects_unittest.cpp AI/mcpserver.cpp AI/mcpdispatcher.cpp GUI/BoxesList/levelseffectdialog.cpp GUI/BoxesList/boxsinglewidget.cpp GUI/BoxesList/boxscroller.cpp GUI/BoxesList/boolpropertywidget.cpp GUI/BoxesList/boxtargetwidget.cpp GUI/timelinehighlightwidget.cpp ${RESOURCES})
+add_executable(friction_effects_test effects_unittest.cpp AI/mcpserver.cpp AI/mcpdispatcher.cpp ${RESOURCES})
 target_link_directories(
     friction_effects_test
     PRIVATE
@@ -428,68 +412,6 @@ if(WIN32)
 
     target_link_libraries(
         friction_harness
-        PRIVATE
-        ${PROJECT_NAME}core
-        ${QT_LIBRARIES}
-        ${FFMPEG_LIBRARIES}
-        ${SKIA_LIBRARIES}
-    )
-endif()
-
-if(UNIX AND NOT APPLE)
-    # headless smoke test for the native lyric builder (development
-    # tool only, never installed or deployed)
-    add_executable(lyricnativesmoke lyricnativesmoke.cpp jizura_smoke.qrc
-        GUI/lyricmotionengine.cpp GUI/lyricmotionnative.cpp
-        GUI/lyricmotionpreview.cpp GUI/lyricmotioncanvas.cpp)
-    target_link_directories(
-        lyricnativesmoke
-        PRIVATE
-        ${FFMPEG_LIBRARIES_DIRS}
-        ${SKIA_LIBRARIES_DIRS}
-    )
-    target_link_libraries(
-        lyricnativesmoke
-        PRIVATE
-        ${PROJECT_NAME}core
-        ${QT_LIBRARIES}
-        ${FFMPEG_LIBRARIES}
-        ${SKIA_LIBRARIES}
-    )
-
-    if(CMAKE_BUILD_TYPE STREQUAL "Debug" OR LYRIC_ASAN)
-        target_compile_options(lyricnativesmoke PRIVATE -fsanitize=address -fno-omit-frame-pointer -g)
-        target_link_options(lyricnativesmoke PRIVATE -fsanitize=address)
-    endif()
-
-    # plan probes (development tools only)
-    add_executable(keydist keydist.cpp jizura_smoke.qrc
-        GUI/lyricmotionengine.cpp)
-    add_executable(oneplan oneplan.cpp jizura_smoke.qrc
-        GUI/lyricmotionengine.cpp)
-    target_link_directories(
-        keydist
-        PRIVATE
-        ${FFMPEG_LIBRARIES_DIRS}
-        ${SKIA_LIBRARIES_DIRS}
-    )
-    target_link_libraries(
-        keydist
-        PRIVATE
-        ${PROJECT_NAME}core
-        ${QT_LIBRARIES}
-        ${FFMPEG_LIBRARIES}
-        ${SKIA_LIBRARIES}
-    )
-
-    target_link_directories(
-        oneplan
-        PRIVATE
-        ${FFMPEG_LIBRARIES_DIRS}
-        ${SKIA_LIBRARIES_DIRS}
-    )
-    target_link_libraries(
-        oneplan
         PRIVATE
         ${PROJECT_NAME}core
         ${QT_LIBRARIES}

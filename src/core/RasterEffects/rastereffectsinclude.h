@@ -49,10 +49,5 @@
 #include "particleeffect.h"
 #include "pagecurleffect.h"
 #include "latticewarpeffect.h"
-#include "celvolumeeffect.h"
-#include "thresholdeffect.h"
-#include "simplechokereffect.h"
-#include "desaturateeffect.h"
-#include "levelseffect.h"
 
 #endif // RASTEREFFECTSINCLUDE_H
