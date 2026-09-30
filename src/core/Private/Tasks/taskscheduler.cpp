@@ -206,7 +206,15 @@ bool TaskScheduler::sOutputRenderActive() {
 }
 
 void TaskScheduler::queScheduledCpuTasks() {
-    if(!mAlwaysQue && !shouldQueMoreCpuTasks()) return;
+    if(!mAlwaysQue && !shouldQueMoreCpuTasks()) {
+        // a round canceled while its tasks sat in the que leaves
+        // canceled entries and emptied ques behind; both keep
+        // overflowed() true forever, which would refuse every future
+        // collection (the canvas freezes on the next edit). Flush the
+        // husks and re-test before giving up
+        mQuedCGTasks.flushCanceled();
+        if(!shouldQueMoreCpuTasks()) return;
+    }
     mCpuQueing = true;
     mQuedCGTasks.beginQue();
     for(const auto& it : Document::sInstance->fVisibleScenes) {

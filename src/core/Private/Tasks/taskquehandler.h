@@ -60,6 +60,11 @@ public:
     // rebuildable derived state, so dropping is safe; returns how many.
     int dropStuckQues(const qint64 nowMs, const qint64 limitMs);
     QString describeStuckQues(const qint64 nowMs) const;
+
+    // purge canceled tasks from every settled que and drop the ques
+    // that emptied that way; without this a cancel-during-que leaves
+    // husks that keep TaskScheduler::overflowed() true forever
+    int flushCanceled();
 private:
     void queDone(const TaskQue * const que, const int queId);
 

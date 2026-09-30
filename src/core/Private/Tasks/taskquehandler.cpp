@@ -37,28 +37,43 @@ void TaskQueHandler::clear() {
 
 stdsptr<eTask> TaskQueHandler::takeQuedForGpuProcessing() {
     int queId = 0;
-    for(const auto& que : mQues) {
+    while(queId < mQues.count()) {
+        const auto& que = mQues.at(queId);
         const auto task = que->takeQuedForGpuProcessing();
         if(task) {
             if(que->allDone()) queDone(que.get(), queId);
+            else queId++;
             mTaskCount--;
             return task;
         }
-        queId++;
+        if(que->allDone()) {
+            queDone(que.get(), queId);
+        } else {
+            queId++;
+        }
     }
     return nullptr;
 }
 
 stdsptr<eTask> TaskQueHandler::takeQuedForCpuProcessing() {
     int queId = 0;
-    for(const auto& que : mQues) {
+    while(queId < mQues.count()) {
+        const auto& que = mQues.at(queId);
         const auto task = que->takeQuedForCpuProcessing();
         if(task) {
             if(que->allDone()) queDone(que.get(), queId);
+            else queId++;
             mTaskCount--;
             return task;
         }
-        queId++;
+        // a cancel-only pass can empty the que without yielding a
+        // task: drop the husk here or it counts toward overflowed()
+        // forever and jams the whole collection gate
+        if(que->allDone()) {
+            queDone(que.get(), queId);
+        } else {
+            queId++;
+        }
     }
     return nullptr;
 }
@@ -169,4 +184,22 @@ QString TaskQueHandler::describeStuckQues(const qint64 nowMs) const {
                 .arg(que->countBlockedTasks());
     }
     return result;
+}
+
+int TaskQueHandler::flushCanceled() {
+    int flushed = 0;
+    int queId = 0;
+    while(queId < mQues.count()) {
+        const auto& que = mQues.at(queId);
+        flushed += que->flushCanceled();
+        // the que being assembled belongs to the collector on this
+        // thread; everything else drains or drops here
+        if(que->allDone() && que.get() != mCurrentQue) {
+            queDone(que.get(), queId);
+        } else {
+            queId++;
+        }
+    }
+    mTaskCount -= flushed;
+    return flushed;
 }

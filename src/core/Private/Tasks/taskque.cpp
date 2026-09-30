@@ -154,6 +154,15 @@ stdsptr<eTask> TaskQue::takeTask(const QList<QList<stdsptr<eTask>>*> &lists,
     return nullptr;
 }
 
+int TaskQue::flushCanceled() {
+    const int before = countQued();
+    purgeCanceled(mCpuOnly);
+    purgeCanceled(mCpuPreffered);
+    purgeCanceled(mGpuPreffered);
+    purgeCanceled(mGpuOnly);
+    return before - countQued();
+}
+
 stdsptr<eTask> TaskQue::takeQuedForCpuProcessing() {
     return takeTask({&mCpuOnly, &mCpuPreffered, &mGpuPreffered}, false);
 }

@@ -152,9 +152,16 @@ void EffectSubTaskSpawner_priv::decRemaining_k() {
         } else {
             mData->fRenderedImage = mSrcRasterImg;
         }
-        if(mData->nextStep()) {
-            mData->queTask();
-        } else {
+        // nextStep() fully dispositions the task itself: a cpuOnly
+        // next effect spawns its own subtask chain, anything else goes
+        // straight to the GPU executor (sAddTask). Re-queuing here sent
+        // the SAME task through the scheduler a second time - its
+        // beforeProcessing then ran with the effects renderer already
+        // consumed, ImageRenderData fell back to setupDirectDraw and
+        // stomped fRenderedImage with the RAW image (every CPU-effect
+        // round lost its GPU/CPU effect output and the canvas froze on
+        // the pre-edit frame)
+        if(!mData->nextStep()) {
             mData->finishedProcessing();
         }
     }

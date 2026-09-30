@@ -37,6 +37,9 @@ public:
     ~TaskQue();
 protected:
     int countQued() const;
+    // drop tasks canceled while sitting in the que (RenderDataHandler::
+    // cancelAll marks them in place); returns how many were removed
+    int flushCanceled();
     bool allDone() const;
     void addTask(const stdsptr<eTask>& task);
 
