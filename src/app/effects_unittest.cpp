@@ -88,6 +88,214 @@ static const auto gHashFrames = [](const QList<QImage>& frames) -> QByteArray {
     return h.result();
 };
 
+// FRICTION_CANCEL_PROBE body: rapid edits must cancel the in-flight
+// stale renders through the REAL scheduler - canceled tasks must not
+// resurrect, the pool must drain (no hang), and the surviving render
+// must carry the current state id. Needs a QGuiApplication instance
+// (document/scene machinery), so it runs re-exec'd offscreen.
+static void cancelStormBody()
+{
+    // eSettings singleton: Document's grid and the task-que hardware
+    // preference read it (Test 10 does the same before any scheduling);
+    // BoxRenderData's ctor reads eFilterSettings::sRender() (harness
+    // does the same before queuing renders)
+    static eSettings settingsCS(HardwareInfo::sCpuThreads(),
+                                HardwareInfo::sRamKB());
+    Q_UNUSED(settingsCS)
+    eFilterSettings filterSettingsCS;
+    TaskScheduler sched;
+    Document doc(sched);
+    const auto scene = doc.createNewScene(false);
+    const auto box = enve::make_shared<RectangleBox>();
+    // big canvas + big rect = heavy rounds, so renders are still in
+    // flight when the next edit lands (the cancel path always runs)
+    scene->setCanvasSize(2000, 2000);
+    box->setTopLeftPos(QPointF(-800, -800));
+    box->setBottomRightPos(QPointF(800, 800));
+    scene->addContained(box);
+    const auto coll = box->rasterEffectsCollection();
+    coll->addChild(enve::make_shared<ThresholdEffect>());
+    coll->addChild(enve::make_shared<SimpleChokerEffect>());
+    coll->addChild(enve::make_shared<DesaturateEffect>());
+    // push the choker off zero so its caller exists (heavy: blur)
+    const auto choker = enve_cast<SimpleChokerEffect*>(coll->getChild(1));
+    if (choker) {
+        for (int i = 0; i < choker->ca_getNumberOfChildren(); i++) {
+            const auto qa = enve_cast<QrealAnimator*>(choker->ca_getChildAt(i));
+            if (qa) { qa->setCurrentBaseValue(35.0); break; }
+        }
+    }
+
+    const auto pump = [&](const int maxMs) {
+        QElapsedTimer t; t.start();
+        while (!TaskScheduler::sAllTasksFinished()) {
+            QCoreApplication::processEvents(
+                        QEventLoop::AllEvents, 5);
+            if (t.elapsed() > maxMs) {
+                throw std::runtime_error("task pool never drained (hang)");
+            }
+        }
+    };
+
+    // rapid-edit storm: re-queue while the previous round's renders
+    // are still in flight; each bump must cancel the stale ones
+    for (int round = 0; round < 12; round++) {
+        const auto thr = enve_cast<ThresholdEffect*>(coll->getChild(0));
+        if (thr) {
+            for (int i = 0; i < thr->ca_getNumberOfChildren(); i++) {
+                const auto qa = enve_cast<QrealAnimator*>(thr->ca_getChildAt(i));
+                if (qa) { qa->setCurrentBaseValue(20.0 + round); break; }
+            }
+        }
+        box->planUpdate(UpdateReason::userChange);
+        box->queTasks();
+        // brief window so the round actually starts (and gets
+        // canceled by the next bump)
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 2);
+    }
+    pump(60000);
+
+    // the LAST round must land: current render data exists and
+    // carries the box's current state id
+    const auto finalData = box->getCurrentRenderData(
+                box->anim_getCurrentRelFrame());
+    if (!finalData) {
+        throw std::runtime_error("no current render data after storm");
+    }
+    if (finalData->fBoxStateId != box->getBoxStateId()) {
+        throw std::runtime_error("surviving render is stale");
+    }
+    if (!finalData->fRenderedImage) {
+        throw std::runtime_error("surviving render has no image");
+    }
+    std::cout << "(storm x12 drained, final state "
+              << box->getBoxStateId() << ") ";
+}
+
+// FRICTION_LEVELS_PROBE body: simulate the in-row gradient slider write
+// path (startTransform -> setCurrentBaseValue -> finishTransform) on a
+// Levels effect and check the invalidation chain actually reaches the
+// box (state bump) and a re-render lands (image present + pixels differ
+// from the identity round). Run re-exec'd offscreen like the cancel probe.
+static void levelsProbeBody()
+{
+    static eSettings settingsLP(HardwareInfo::sCpuThreads(),
+                                HardwareInfo::sRamKB());
+    Q_UNUSED(settingsLP)
+    eFilterSettings filterSettingsLP;
+    TaskScheduler sched;
+    // Levels is a GPU-preferred effect: without the GPU executor its
+    // EFFECTS step lands in GpuTaskExecutor's list and nobody drains it
+    // (the very "parameter has no effect" class of failure we hunt)
+    try {
+        sched.initializeGpu();
+        std::cout << "gpu exec OK | " << std::flush;
+    } catch (const std::exception& e) {
+        std::cout << "gpu exec UNAVAILABLE (" << e.what() << ") | " << std::flush;
+    }
+    Document doc(sched);
+    const auto scene = doc.createNewScene(false);
+    scene->setCanvasSize(2000, 2000);
+    const auto box = enve::make_shared<RectangleBox>();
+    box->setTopLeftPos(QPointF(-800, -800));
+    box->setBottomRightPos(QPointF(800, 800));
+    scene->addContained(box);
+    const auto coll = box->rasterEffectsCollection();
+    const qsptr<LevelsEffect> levels =
+            qEnvironmentVariableIsSet("LEVELS_PROBE_NOFX") ?
+                nullptr : enve::make_shared<LevelsEffect>();
+    if (levels) { coll->addChild(levels); }
+    else { std::cout << "(no-fx control run) | " << std::flush; }
+
+    const auto pump = [&](const int maxMs) {
+        QElapsedTimer t; t.start();
+        do {
+            QCoreApplication::processEvents(
+                        QEventLoop::AllEvents, 5);
+            if (t.elapsed() > maxMs) {
+                throw std::runtime_error("task pool never drained (hang)");
+            }
+            if (!TaskScheduler::sAllTasksFinished()) continue;
+            // quiet pool: run a few more event rounds so the queued
+            // finishedTask signals (renderDataFinished) get delivered
+            for (int i = 0; i < 20; i++) {
+                QCoreApplication::processEvents(
+                            QEventLoop::AllEvents, 2);
+            }
+        } while (!TaskScheduler::sAllTasksFinished());
+    };
+    // round 0: identity levels, let the first render land
+    box->planUpdate(UpdateReason::userChange);
+    box->queTasks();
+    std::cout << "afterQue: cpuFinished "
+              << (TaskScheduler::sAllQuedCpuTasksFinished() ? "y" : "n")
+              << " dataInHandler "
+              << (box->getCurrentRenderData(box->anim_getCurrentRelFrame()) ? "y" : "n")
+              << " | " << std::flush;
+    pump(20000);
+    const uint stateId0 = box->getBoxStateId();
+    // identity levels -> null caller -> direct-draw path: the box
+    // legitimately produces NO raster image in this round (vectors are
+    // drawn directly at composite time) - do not require one here
+    std::cout << "identity(direct-draw): state " << stateId0 << " | " << std::flush;
+
+    // in-row slider write path exactly as boxsinglewidget does it
+    const auto in = enve_cast<LevelsInputAnimator*>(levels->ca_getChildAt(1));
+    if (!in) { throw std::runtime_error("no input wrapper at index 1"); }
+    const auto inBlack = enve_cast<QrealAnimator*>(in->ca_getChildAt(0));
+    if (!inBlack) { throw std::runtime_error("no input black animator"); }
+
+    // two DIFFERENT parameter rounds: the effect must make them differ
+    const auto dragRound = [&](const qreal v, const int maxMs)
+            -> stdsptr<BoxRenderData> {
+        inBlack->prp_startTransform();
+        inBlack->setCurrentBaseValue(v);
+        inBlack->prp_finishTransform();
+        const uint before = box->getBoxStateId();
+        box->queTasks();
+        pump(maxMs);
+        const auto d = box->getCurrentRenderData(
+                    box->anim_getCurrentRelFrame());
+        if (!d || !d->fRenderedImage) {
+            throw std::runtime_error(
+                        "render round produced no image (GPU chain stalled?)");
+        }
+        if (d->fBoxStateId != box->getBoxStateId() ||
+            box->getBoxStateId() == before) {
+            throw std::runtime_error("render round is stale or not re-queued");
+        }
+        return d;
+    };
+    const auto imgHash = [](const stdsptr<BoxRenderData>& d) {
+        SkBitmap b;
+        if (!d->fRenderedImage->asLegacyBitmap(&b)) return QByteArray();
+        QCryptographicHash h(QCryptographicHash::Md5);
+        for (int y = 0; y < b.height(); y++) {
+            h.addData(reinterpret_cast<const char*>(b.getAddr(0, y)),
+                      b.width() * 4);
+        }
+        return h.result();
+    };
+
+    const auto dataA = dragRound(50.0, 60000);
+    const auto hashA = imgHash(dataA);
+    std::cout << "round A(inBlack=50) state "
+              << dataA->fBoxStateId << " | " << std::flush;
+    const auto dataB = dragRound(200.0, 60000);
+    const auto hashB = imgHash(dataB);
+    std::cout << "round B(inBlack=200) state "
+              << dataB->fBoxStateId << " | " << std::flush;
+
+    if (hashA.isEmpty() || hashB.isEmpty()) {
+        throw std::runtime_error("round images unreadable");
+    }
+    if (hashA == hashB) {
+        throw std::runtime_error(
+                    "inBlack 50 vs 200 produced IDENTICAL images: effect not applied");
+    }
+    std::cout << "(state bumped + re-rendered + levels visibly applied) ";
+}
+
 int main(int argc, char *argv[])
 {
     QCoreApplication app(argc, argv);
