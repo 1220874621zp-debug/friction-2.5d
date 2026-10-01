@@ -756,6 +756,54 @@ QList<QImage> renderEffectFrames(const RasterEffectType type,
             return result;
         }
 
+        // corner pin: run the real caller with the four pins
+        // animated - the generic sweep cannot reach the nested
+        // per-point u/v animators
+        if (type == RasterEffectType::CORNER_PIN) {
+            const auto eff = createRasterEffectForNonCustomType(type);
+            const auto pinEff = enve_cast<CornerPinEffect*>(eff.get());
+            if (!pinEff) { return result; }
+            const SkBitmap src = makeTextSample(imgSize.width(),
+                                                imgSize.height());
+            for (int i = 0; i < nFrames; i++) {
+                const qreal t = i / static_cast<qreal>(nFrames);
+                const qreal s = std::sin(2. * M_PI * t);
+                const qreal c = std::cos(2. * M_PI * t);
+                // pin u/v in property order UL, UR, LL, LR:
+                // opposite corners drift in/out for a perspective feel
+                const qreal uv[4][2] = {
+                    { -0.16 * s,       -0.16 * c       },
+                    {  1.0 + 0.20 * c, -0.10 * s       },
+                    { -0.12 * c,        1.0 + 0.22 * c },
+                    {  1.0 + 0.08 * s,  1.0 + 0.16 * s }
+                };
+                for (int p = 0; p < 4; p++) {
+                    auto* pt = pinEff->point(p);
+                    if (!pt) { continue; }
+                    pt->uAnim()->setCurrentBaseValue(uv[p][0]);
+                    pt->vAnim()->setCurrentBaseValue(uv[p][1]);
+                }
+                SkBitmap dst;
+                dst.allocN32Pixels(imgSize.width(), imgSize.height());
+                dst.eraseARGB(0, 0, 0, 0);
+                const auto caller = eff->getEffectCaller(0.0, 1.0, 1.0,
+                                                         nullptr);
+                if (caller) {
+                    CpuRenderTools tools{src, dst};
+                    CpuRenderData data;
+                    data.fTexTile = dst.bounds();
+                    caller->processCpu(tools, data);
+                }
+                QImage img(imgSize, QImage::Format_ARGB32_Premultiplied);
+                if (img.sizeInBytes() > 0) {
+                    memcpy(img.bits(), dst.getPixels(),
+                           static_cast<size_t>(img.sizeInBytes()));
+                }
+                result << img;
+            }
+            return result;
+        }
+
         const auto eff = createRasterEffectForNonCustomType(type);
         if (!eff) { return result; }
         setupDefaults(eff.get(), type);

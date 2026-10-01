@@ -76,6 +76,7 @@ public:
     // pin-point accessors used by the canvas handles; ids 0..3 are
     // property order: 0 UL, 1 UR, 2 LL, 3 LR
     int pointCount() const;
+    CornerPinPointValues *point(const int id) const;
     QPointF pointLocalPos(const int id) const;
     void setPointLocalPos(const int id, const QPointF &pos);
     void startPointTransform(const int id);
@@ -86,7 +87,6 @@ public:
 private:
     // content bounds in box-local coordinates (the pin rest domain)
     QRectF calcRestRectLocal() const;
-    CornerPinPointValues *point(const int id) const;
     QMargins calcMargin(const qreal relFrame, const qreal resolution) const;
     void syncHandler();
 

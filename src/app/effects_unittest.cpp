@@ -849,7 +849,8 @@ int main(int argc, char *argv[])
             RasterEffectType::SIMPLE_CHOKER,
             RasterEffectType::DESATURATE,
             RasterEffectType::LEVELS,
-            RasterEffectType::ECHO
+            RasterEffectType::ECHO,
+            RasterEffectType::CORNER_PIN
         };
             for (const auto t : typesAll) {
                 const auto eff = createRasterEffectForNonCustomType(t);
@@ -941,7 +942,8 @@ int main(int argc, char *argv[])
             RasterEffectType::SIMPLE_CHOKER,
             RasterEffectType::DESATURATE,
             RasterEffectType::LEVELS,
-            RasterEffectType::ECHO
+            RasterEffectType::ECHO,
+            RasterEffectType::CORNER_PIN
         };
 
         for (const auto t : types) {
@@ -1205,7 +1207,8 @@ int main(int argc, char *argv[])
             RasterEffectType::SIMPLE_CHOKER,
             RasterEffectType::DESATURATE,
             RasterEffectType::LEVELS,
-            RasterEffectType::ECHO
+            RasterEffectType::ECHO,
+            RasterEffectType::CORNER_PIN
         };
         QString dumpDir;
         if (argc >= 3) {
@@ -1731,6 +1734,114 @@ int main(int argc, char *argv[])
             // non-white; 32 -> 0, 128/200 -> 255
             if (SkColorGetB(out) != 0 || SkColorGetR(out) != 255) {
                 throw std::runtime_error("crossed points not clamped");
+            }
+        }
+    });
+
+    // Test 5a: Corner Pin semantics - identity passthrough, quad fit,
+    // degenerate (bowtie) rejection, planning margin
+    runTest("Test 5a: Corner Pin semantics", [&]() {
+        const auto renderAll = [](RasterEffect* eff,
+                                  const SkBitmap& srcBtmp,
+                                  SkBitmap& dstBtmp) {
+            const auto caller = eff->getEffectCaller(0.0, 1.0, 1.0, nullptr);
+            if (!caller) { throw std::runtime_error("caller is null"); }
+            CpuRenderTools tools{srcBtmp, dstBtmp};
+            CpuRenderData data;
+            data.fTexTile = dstBtmp.bounds();
+            caller->processCpu(tools, data);
+        };
+        const auto px = [](const SkBitmap& b, const int x, const int y) {
+            return *static_cast<const uint32_t*>(b.getAddr(x, y));
+        };
+        const auto setPin = [](CornerPinEffect* const pin, const int id,
+                               const qreal u, const qreal v) {
+            auto* pt = pin->point(id);
+            if (!pt) { throw std::runtime_error("missing pin point"); }
+            pt->uAnim()->setCurrentBaseValue(u);
+            pt->vAnim()->setCurrentBaseValue(v);
+        };
+
+        // opaque red source: in-quad = red, out-of-quad = transparent
+        SkBitmap src;
+        src.allocN32Pixels(64, 64);
+        src.eraseARGB(255, 220, 30, 30);
+
+        // identity: every sampled pixel must survive bit-exact
+        {
+            const auto eff = createRasterEffectForNonCustomType(
+                        RasterEffectType::CORNER_PIN);
+            const auto pin = enve_cast<CornerPinEffect*>(eff.get());
+            if (!pin) { throw std::runtime_error("not a CornerPinEffect"); }
+            SkBitmap dst;
+            dst.allocN32Pixels(64, 64);
+            dst.eraseARGB(0, 0, 0, 0);
+            renderAll(eff.get(), src, dst);
+            for (int y = 0; y < 64; y += 7) {
+                for (int x = 0; x < 64; x += 7) {
+                    if (px(dst, x, y) != px(src, x, y)) {
+                        throw std::runtime_error("identity altered pixels");
+                    }
+                }
+            }
+        }
+
+        // UL pulled inward to (0.4, 0.4): the vacated top-left region
+        // must clear, pixels beyond the quad edge must clear, and the
+        // pinned far corner keeps its content
+        {
+            const auto eff = createRasterEffectForNonCustomType(
+                        RasterEffectType::CORNER_PIN);
+            const auto pin = enve_cast<CornerPinEffect*>(eff.get());
+            setPin(pin, 0, 0.4, 0.4);
+            SkBitmap dst;
+            dst.allocN32Pixels(64, 64);
+            dst.eraseARGB(0, 0, 0, 0);
+            renderAll(eff.get(), src, dst);
+            if (SkColorGetA(px(dst, 2, 2)) != 0) {
+                throw std::runtime_error("unpinned region not cleared");
+            }
+            if (SkColorGetA(px(dst, 5, 40)) != 0) {
+                throw std::runtime_error("outside the quad not cleared");
+            }
+            if (SkColorGetA(px(dst, 62, 62)) != 255 ||
+                SkColorGetR(px(dst, 62, 62)) != 220) {
+                throw std::runtime_error("pinned far corner lost content");
+            }
+        }
+
+        // bowtie (top edge flipped): no valid perspective map -
+        // renders empty instead of garbage
+        {
+            const auto eff = createRasterEffectForNonCustomType(
+                        RasterEffectType::CORNER_PIN);
+            const auto pin = enve_cast<CornerPinEffect*>(eff.get());
+            setPin(pin, 0, 1.0, 0.0);
+            setPin(pin, 1, 0.0, 0.0);
+            SkBitmap dst;
+            dst.allocN32Pixels(64, 64);
+            dst.eraseARGB(0, 0, 0, 0);
+            renderAll(eff.get(), src, dst);
+            if (SkColorGetA(px(dst, 32, 32)) != 0) {
+                throw std::runtime_error("bowtie rendered garbage");
+            }
+        }
+
+        // planning margin: default state pads only the AA rim (+2);
+        // pulling UL outward by half the rest size grows it
+        {
+            const auto eff = createRasterEffectForNonCustomType(
+                        RasterEffectType::CORNER_PIN);
+            const auto pin = enve_cast<CornerPinEffect*>(eff.get());
+            const QMargins rest = pin->getMargin();
+            if (rest.left() != 2 || rest.top() != 2 ||
+                rest.right() != 2 || rest.bottom() != 2) {
+                throw std::runtime_error("default margin not the AA rim");
+            }
+            setPin(pin, 0, -0.5, -0.5);
+            const QMargins grown = pin->getMargin();
+            if (grown.left() < 50 || grown.top() < 50) {
+                throw std::runtime_error("margin did not grow outward");
             }
         }
     });

@@ -685,6 +685,7 @@ set(
     RasterEffects/fractalnoiseeffect.h
     RasterEffects/rampeffect.h
     RasterEffects/grideffect.h
+    RasterEffects/cornerpineffect.h
     RasterEffects/lightsweepeffect.h
     RasterEffects/displacementwarpeffect.h
     RasterEffects/filmgraineffect.h
