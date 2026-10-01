@@ -238,6 +238,7 @@ set(
     RasterEffects/thresholdeffect.cpp
     RasterEffects/simplechokereffect.cpp
     RasterEffects/desaturateeffect.cpp
+    RasterEffects/curveseffect.cpp
     RasterEffects/levelseffect.cpp
     RasterEffects/huesaturationeffect.cpp
     RasterEffects/echoeffect.cpp
@@ -648,6 +649,7 @@ set(
     RasterEffects/thresholdeffect.h
     RasterEffects/simplechokereffect.h
     RasterEffects/desaturateeffect.h
+    RasterEffects/curveseffect.h
     RasterEffects/levelseffect.h
     RasterEffects/huesaturationeffect.h
     RasterEffects/colorizeeffect.h

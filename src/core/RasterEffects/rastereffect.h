@@ -151,6 +151,10 @@ enum class RasterEffectType : short {
     // lightness scaling (appended last, never reorder - serialized
     // ids must stay stable)
     HUE_SATURATION,
+    // PS/AE Curves: five-anchor monotone spline per channel plus a
+    // composite master curve (appended last, never reorder -
+    // serialized ids must stay stable)
+    CURVES,
     // AE Gradient Ramp: two-color linear/radial gradient generator
     // (appended, never reorder - serialized ids must stay stable)
     RAMP,

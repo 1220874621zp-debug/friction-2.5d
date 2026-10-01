@@ -345,6 +345,8 @@ qsptr<RasterEffect> createRasterEffectForNonCustomType(const RasterEffectType ty
             return enve::make_shared<DesaturateEffect>();
         case(RasterEffectType::LEVELS):
             return enve::make_shared<LevelsEffect>();
+        case(RasterEffectType::CURVES):
+            return enve::make_shared<CurvesEffect>();
         case(RasterEffectType::HUE_SATURATION):
             return enve::make_shared<HueSaturationEffect>();
         case(RasterEffectType::ECHO):

@@ -534,6 +534,11 @@ NamedScan namedScanFor(const RasterEffectType type) {
         // points are pre-spread in applyPreviewDefaults so the
         // curve visibly crushes shadows and highlights too
         return { "gamma", nullptr, 0.5, 2.1 };
+    case RasterEffectType::CURVES:
+        // breathing the mids anchor bends the curve S <-> inverse;
+        // the anchor animator is named in Chinese (tr source string),
+        // so it travels through altName (page-curl style)
+        return { "mids", "中间调", 40., 216. };
     case RasterEffectType::HUE_SATURATION:
         // full wheel swing reads instantly even at thumbnail size
         return { "hue", nullptr, -180., 180. };
@@ -675,6 +680,12 @@ void setupDefaults(RasterEffect* const eff, const RasterEffectType type) {
         // input points so the gamma sweep has real range to crush
         setParam("input black", 40.);
         setParam("input white", 225.);
+        break;
+    case RasterEffectType::CURVES:
+        // factory = identity = null caller; a bold S-curve so the
+        // tile reads as graded, with the mids anchor free to sweep
+        setParam("暗部", 40.);
+        setParam("亮部", 216.);
         break;
     case RasterEffectType::LAYER_STYLES: {
         // factory default is all-styles-off = null caller; enable a

@@ -401,7 +401,9 @@ int main(int argc, char *argv[])
     }
 
     const auto runTest = [&](const char* name, auto func) {
-        std::cout << "[RUNNING] " << name << " ... ";
+        // flush so the running test name survives a hard crash (the
+        // output is block-buffered when redirected to a file)
+        std::cout << "[RUNNING] " << name << " ... " << std::flush;
         try {
             func();
             std::cout << "PASSED" << std::endl;
@@ -849,6 +851,7 @@ int main(int argc, char *argv[])
             RasterEffectType::SIMPLE_CHOKER,
             RasterEffectType::DESATURATE,
             RasterEffectType::LEVELS,
+            RasterEffectType::CURVES,
             RasterEffectType::ECHO,
             RasterEffectType::CORNER_PIN,
             RasterEffectType::TURBULENT_DISPLACE
@@ -943,6 +946,7 @@ int main(int argc, char *argv[])
             RasterEffectType::SIMPLE_CHOKER,
             RasterEffectType::DESATURATE,
             RasterEffectType::LEVELS,
+            RasterEffectType::CURVES,
             RasterEffectType::ECHO,
             RasterEffectType::CORNER_PIN,
             RasterEffectType::TURBULENT_DISPLACE
@@ -1209,6 +1213,7 @@ int main(int argc, char *argv[])
             RasterEffectType::SIMPLE_CHOKER,
             RasterEffectType::DESATURATE,
             RasterEffectType::LEVELS,
+            RasterEffectType::CURVES,
             RasterEffectType::ECHO,
             RasterEffectType::CORNER_PIN,
             RasterEffectType::TURBULENT_DISPLACE
@@ -1738,6 +1743,161 @@ int main(int argc, char *argv[])
             if (SkColorGetB(out) != 0 || SkColorGetR(out) != 255) {
                 throw std::runtime_error("crossed points not clamped");
             }
+        }
+    });
+
+    // Test 2g: Curves semantics - identity passthrough, the spline
+    // passes exactly through every anchor input, master -> per-channel
+    // composite order (PS), per-channel targeting, alpha preserved,
+    // monotone LUT for monotone anchors
+    runTest("Test 2g: Curves semantics", [&]() {
+        const auto eff = createRasterEffectForNonCustomType(
+                    RasterEffectType::CURVES);
+        if (!eff) { throw std::runtime_error("Factory returned null"); }
+        const auto curves = enve_cast<CurvesEffect*>(eff.get());
+        if (!curves) { throw std::runtime_error("Not a CurvesEffect"); }
+
+        const auto renderTiles = [](RasterEffect* eff,
+                                    const SkBitmap& srcBtmp,
+                                    SkBitmap& dstBtmp) {
+            const auto caller = eff->getEffectCaller(0.0, 1.0, 1.0, nullptr);
+            if (!caller) { return false; }
+            const SkIRect tiles[] = { SkIRect::MakeXYWH(0, 0, 32, 64),
+                                      SkIRect::MakeXYWH(32, 0, 32, 64) };
+            for (const auto& tile : tiles) {
+                SkBitmap tileDst;
+                if (!dstBtmp.extractSubset(&tileDst, tile)) {
+                    throw std::runtime_error("extractSubset failed");
+                }
+                CpuRenderTools tools{srcBtmp, tileDst};
+                CpuRenderData data;
+                data.fTexTile = tile;
+                caller->processCpu(tools, data);
+            }
+            return true;
+        };
+        const auto px = [](const SkBitmap& b, const int x, const int y) {
+            return *static_cast<const uint32_t*>(b.getAddr(x, y));
+        };
+        const auto setAnchors = [](CurvesChannelAnimator* wrap,
+                                   const qreal* ys) {
+            for (int i = 0; i < CurvesChannelAnimator::Count; i++) {
+                const auto anchor = wrap->getAnchor(i);
+                if (!anchor) { throw std::runtime_error("missing anchor"); }
+                anchor->setCurrentBaseValue(ys[i]);
+            }
+        };
+        const qreal sCurve[5] = { 0., 40., 128., 216., 255. };
+        const qreal identityY[5] = { 0., 64., 128., 192., 255. };
+
+        // defaults = identity = no caller
+        if (eff->getEffectCaller(0., 1., 1., nullptr)) {
+            throw std::runtime_error("identity curves produced a caller");
+        }
+
+        // LUT: monotone anchors -> monotone LUT, spline passes exactly
+        // through the anchor inputs, endpoints exact
+        {
+            uint8_t lut[256];
+            CurvesEffect::buildLUT(sCurve, lut);
+            if (lut[0] != 0 || lut[255] != 255) {
+                throw std::runtime_error("curve endpoints are off");
+            }
+            if (lut[64] != 40 || lut[128] != 128 || lut[192] != 216) {
+                throw std::runtime_error("spline misses an anchor");
+            }
+            for (int v = 1; v < 256; v++) {
+                if (lut[v] < lut[v - 1]) {
+                    throw std::runtime_error("monotone curve bent backwards");
+                }
+            }
+        }
+
+        SkBitmap src;
+        src.allocN32Pixels(64, 64);
+        src.eraseARGB(0, 0, 0, 0);
+        {
+            SkCanvas c(src);
+            SkPaint p;
+            p.setColor(SkColorSetARGB(180, 200, 128, 32));
+            c.drawRect(SkRect::MakeXYWH(0, 0, 16, 64), p);
+            p.setColor(SkColorSetARGB(255, 200, 128, 32));
+            c.drawRect(SkRect::MakeXYWH(16, 0, 48, 64), p);
+        }
+        SkBitmap dst;
+        dst.allocN32Pixels(64, 64);
+
+        // S-curve on the master: g=128 rides the mids anchor exactly,
+        // the bright half lifts, the dark half sinks
+        setAnchors(curves->getChannelAnimator(CurvesEffect::RGB), sCurve);
+        dst.eraseARGB(0, 0, 0, 0);
+        if (!renderTiles(eff.get(), src, dst)) {
+            throw std::runtime_error("curves caller is null");
+        }
+        {
+            const auto out = px(dst, 32, 32);
+            if (SkColorGetG(out) != 128) {
+                throw std::runtime_error("mids anchor input moved");
+            }
+            if (SkColorGetR(out) < 216) {
+                throw std::runtime_error("S-curve did not lift highlights");
+            }
+            if (SkColorGetB(out) > 40) {
+                throw std::runtime_error("S-curve did not sink shadows");
+            }
+            if (SkColorGetA(out) != 255) {
+                throw std::runtime_error("curves lost alpha");
+            }
+            if (SkColorGetA(px(dst, 8, 32)) != 180) {
+                throw std::runtime_error("curves lost alpha probe");
+            }
+        }
+
+        // per-channel targeting: green mids crushed to 0, r/b
+        // untouched (master back to identity first)
+        setAnchors(curves->getChannelAnimator(CurvesEffect::RGB), identityY);
+        const qreal greenCrush[5] = { 0., 64., 0., 192., 255. };
+        setAnchors(curves->getChannelAnimator(CurvesEffect::Green),
+                   greenCrush);
+        dst.eraseARGB(0, 0, 0, 0);
+        if (!renderTiles(eff.get(), src, dst)) {
+            throw std::runtime_error("green channel caller is null");
+        }
+        {
+            const auto out = px(dst, 32, 32);
+            if (SkColorGetG(out) != 0) {
+                throw std::runtime_error("green mids crush missing");
+            }
+            if (SkColorGetR(out) != 200 || SkColorGetB(out) != 32) {
+                throw std::runtime_error("green mode touched r/b");
+            }
+        }
+
+        // composite order (PS): master first, then the channel curve.
+        // master lifts 128 -> 255, green maps 255 -> 255; reversed
+        // order would give green(128) = 0 -> master(0) = 0
+        const qreal masterLift[5] = { 0., 64., 255., 192., 255. };
+        setAnchors(curves->getChannelAnimator(CurvesEffect::RGB),
+                   masterLift);
+        dst.eraseARGB(0, 0, 0, 0);
+        if (!renderTiles(eff.get(), src, dst)) {
+            throw std::runtime_error("composite caller is null");
+        }
+        {
+            const auto out = px(dst, 32, 32);
+            if (SkColorGetG(out) != 255) {
+                throw std::runtime_error("composite order is not "
+                                         "master -> channel");
+            }
+        }
+
+        // back to defaults = passthrough again
+        setAnchors(curves->getChannelAnimator(CurvesEffect::Green),
+                   identityY);
+        setAnchors(curves->getChannelAnimator(CurvesEffect::RGB),
+                   identityY);
+        if (eff->getEffectCaller(0., 1., 1., nullptr)) {
+            throw std::runtime_error("reset curves produced a caller");
         }
     });
 

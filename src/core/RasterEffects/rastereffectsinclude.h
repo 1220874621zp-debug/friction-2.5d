@@ -53,6 +53,7 @@
 #include "thresholdeffect.h"
 #include "simplechokereffect.h"
 #include "desaturateeffect.h"
+#include "curveseffect.h"
 #include "levelseffect.h"
 #include "huesaturationeffect.h"
 #include "echoeffect.h"

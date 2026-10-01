@@ -26,6 +26,7 @@
         <file alias="posterizeeffect.frag">RasterEffects/posterizeeffect.frag</file>
         <file alias="thresholdeffect.frag">RasterEffects/thresholdeffect.frag</file>
         <file alias="desaturateeffect.frag">RasterEffects/desaturateeffect.frag</file>
+        <file alias="curveseffect.frag">RasterEffects/curveseffect.frag</file>
         <file alias="levelseffect.frag">RasterEffects/levelseffect.frag</file>
         <file alias="huesaturationeffect.frag">RasterEffects/huesaturationeffect.frag</file>
         <file alias="twirleffect.frag">RasterEffects/twirleffect.frag</file>

@@ -74,6 +74,8 @@ void RasterEffectMenuCreator::forEveryEffectCore(const EffectAdder &add)
         []() { return enve::make_shared<DesaturateEffect>(); });
     add(QObject::tr("色阶 (Levels)"), QObject::tr("Color"),
         []() { return enve::make_shared<LevelsEffect>(); });
+    add(QObject::tr("曲线 (Curves)"), QObject::tr("Color"),
+        []() { return enve::make_shared<CurvesEffect>(); });
     add(QObject::tr("色相/饱和度 (Hue-Saturation)"), QObject::tr("Color"),
         []() { return enve::make_shared<HueSaturationEffect>(); });
     add(QObject::tr("简单阻塞 (Simple Choker)"), QObject::tr("Matte"),

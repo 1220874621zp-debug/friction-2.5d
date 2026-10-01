@@ -1294,6 +1294,7 @@ namespace Friction
             { RasterEffectType::SIMPLE_CHOKER, "simple_choker|choker|choke" },
             { RasterEffectType::DESATURATE, "desaturate|black_white|grayscale|greyscale" },
             { RasterEffectType::LEVELS, "levels|color_levels|色阶" },
+            { RasterEffectType::CURVES, "curves|color_curves|曲线" },
             { RasterEffectType::HUE_SATURATION, "hue_saturation|huesaturation|色相饱和度" },
             { RasterEffectType::ECHO, "echo|echoes|残影" },
             { RasterEffectType::SET_MATTE, "set_matte|setmatte|设置遮罩" },

@@ -280,6 +280,7 @@ set(
     GUI/keysview.cpp
     GUI/mainwindow.cpp
     GUI/aepropertiesinspector.cpp
+    GUI/curveseditor.cpp
     GUI/hangwatchdog.cpp
     GUI/extraactions.cpp
     GUI/effectactions.cpp
@@ -292,6 +293,7 @@ set(
 set(
     HEADERS
     GUI/aepropertiesinspector.h
+    GUI/curveseditor.h
     GUI/BoxesList/boxscroller.h
     GUI/Dialogs/dialogsinterfaceimpl.h
     GUI/Dialogs/animationtopaintdialog.h

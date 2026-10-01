@@ -28,10 +28,12 @@
 #include "RasterEffects/rastereffect.h"
 #include "RasterEffects/rastereffectmenucreator.h"
 #include "RasterEffects/blureffect.h"
+#include "RasterEffects/curveseffect.h"
 #include "RasterEffects/levelseffect.h"
 #include "Properties/comboboxproperty.h"
 #include "GUI/BoxesList/boxsinglewidget.h"
 #include "GUI/BoxesList/levelseffectdialog.h"
+#include "GUI/curveseditor.h"
 #include "themesupport.h"
 #include "Private/document.h"
 #include "clipboardcontainer.h"
@@ -1253,6 +1255,47 @@ void AEPropertiesInspector::setupEffectsControls(QVBoxLayout *layout, BoundingBo
             setupEffectPropertyControl(grid, p, prop, box);
         }
 
+        // PS Curves: one curve editor for the whole effect, bound to
+        // the channel combo row above; the channel wrappers are
+        // skipped in setupEffectPropertyControl
+        if (const auto curvesEff = enve_cast<CurvesEffect*>(effect)) {
+            auto lbl = new QLabel(tr("曲线"), gridWidget);
+            lbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+            lbl->setStyleSheet(QStringLiteral("color: #ffffff; font-size: 12px;"));
+            grid->addWidget(lbl, numProps, 1);
+
+            const auto editor = new CurvesEditor(curvesEff);
+            editor->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+            grid->addWidget(editor, numProps, 2);
+
+            auto resetBtn = new QToolButton();
+            resetBtn->setObjectName(QStringLiteral("FlatButton"));
+            resetBtn->setText(QStringLiteral("↺"));
+            resetBtn->setFixedSize(14, 16);
+            resetBtn->setStyleSheet(QStringLiteral("font-size: 9px; color: #c8c8d0; padding: 0; border: none; background: transparent;"));
+            resetBtn->setToolTip(tr("重置当前通道曲线"));
+            connect(resetBtn, &QToolButton::clicked, editor,
+                    [curvesEff, this]() {
+                const auto combo = curvesEff->getChannelProperty();
+                const auto wrap = curvesEff->getChannelAnimator(
+                            combo ? combo->getCurrentValue() : 0);
+                if (wrap) {
+                    wrap->prp_startTransform();
+                    for (int i = 0; i < CurvesChannelAnimator::Count; i++) {
+                        const auto anchor = wrap->getAnchor(i);
+                        if (anchor) {
+                            anchor->setCurrentBaseValue(
+                                        CurvesChannelAnimator::defaultY(i));
+                        }
+                    }
+                    wrap->prp_finishTransform();
+                }
+                if (mScene) { mScene->requestUpdate(); }
+                refreshValues();
+            });
+            grid->addWidget(resetBtn, numProps, 3, Qt::AlignCenter);
+        }
+
         eLayout->addWidget(gridWidget);
         layout->addWidget(effectWidget);
     }
@@ -1465,6 +1508,10 @@ void AEPropertiesInspector::setupEffectPropertyControl(QGridLayout *grid, int ro
             combo->blockSignals(false);
         });
         grid->addWidget(combo, rowIdx, 2);
+    } else if (enve_cast<CurvesChannelAnimator*>(prop)) {
+        // the four Curves channel wrappers are covered by the curve
+        // editor row appended for the effect itself
+        return;
     } else {
         // other parameter types (int / bool / point / nested groups)
         // stay visible with a hint instead of silently disappearing
