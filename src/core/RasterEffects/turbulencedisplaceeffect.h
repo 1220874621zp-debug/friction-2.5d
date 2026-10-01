@@ -39,6 +39,11 @@ public:
     stdsptr<RasterEffectCaller> getEffectCaller(
             const qreal relFrame, const qreal resolution,
             const qreal influence, BoxRenderData * const data) const override;
+    // displacement pulls pixels from outside the content rect: the
+    // collection margin must grow with the amount or the scene bounds
+    // never expand and the layer freezes/disappears while playing
+    // (same contract as Blur / Camera Lens Blur / Layer Styles)
+    bool forceMargin() const override { return true; }
     QMargins getMargin() const override;
 private:
     qsptr<QrealAnimator> mDisplacement;

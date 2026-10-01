@@ -546,8 +546,15 @@ stdsptr<RasterEffectCaller> CornerPinEffect::getEffectCaller(
         // aware) applied to the content bounds corners. The final
         // bitmap offset is resolved at processCpu time (fGlobalRect
         // is not settled yet at this point).
+        // NOTE: data->fRelBoundingRect is still EMPTY at assembly time
+        // (it fills in dataSet()/updateRelBoundingRect, which runs
+        // AFTER this pass) - reading it collapsed the source quad to a
+        // point and any moved pin erased the whole layer. The box's own
+        // rect holds the same value and is valid right now.
         const SkMatrix full = data->getFullRenderTransform();
-        const QRectF rel = data->fRelBoundingRect;
+        const QRectF rel = data->fParentBox ?
+                    data->fParentBox->getRelBoundingRect() :
+                    data->fRelBoundingRect;
         const QPointF relC[4] = {
             rel.topLeft(), rel.topRight(),
             rel.bottomRight(), rel.bottomLeft()
@@ -556,11 +563,36 @@ stdsptr<RasterEffectCaller> CornerPinEffect::getEffectCaller(
             ed.mQuadSrc[i] = toQTransform(full).map(relC[i]);
         }
         ed.mHaveQuad = true;
+
+        // caller margin straight from rendered-space bounds (source
+        // quad vs destination quad): unlike calcMargin this also
+        // honours layer scale/rotation, which the local-space math
+        // could not (a 200% scaled layer clipped its dragged corners).
+        QRectF srcBox = QRectF(ed.mQuadSrc[0], ed.mQuadSrc[2]).normalized();
+        for(int i = 1; i < 4; i++) {
+            srcBox = srcBox.united(QRectF(ed.mQuadSrc[i], ed.mQuadSrc[i]));
+        }
+        QPointF dstQ[4];
+        for(int i = 0; i < 4; i++) {
+            const QPointF uv = ed.mUV[gSquareIndex[i]];
+            dstQ[i] = bilinearQuad(ed.mQuadSrc, uv.x(), uv.y());
+        }
+        QRectF dstBox = QRectF(dstQ[0], dstQ[2]).normalized();
+        for(int i = 1; i < 4; i++) {
+            dstBox = dstBox.united(QRectF(dstQ[i], dstQ[i]));
+        }
+        const QMargins margin = QMargins(
+                    qCeil(qMax(0.0, srcBox.left() - dstBox.left())) + 2,
+                    qCeil(qMax(0.0, srcBox.top() - dstBox.top())) + 2,
+                    qCeil(qMax(0.0, dstBox.right() - srcBox.right())) + 2,
+                    qCeil(qMax(0.0, dstBox.bottom() - srcBox.bottom())) + 2);
+        return enve::make_shared<CornerPinEffectCaller>(
+                    instanceHwSupport(), ed, margin);
     }
 
     return enve::make_shared<CornerPinEffectCaller>(
                 instanceHwSupport(), ed,
-                calcMargin(relFrame, data ? data->fResolution : 1.0));
+                calcMargin(relFrame, resolution));
 }
 
 void CornerPinEffectCaller::processCpu(CpuRenderTools& renderTools,

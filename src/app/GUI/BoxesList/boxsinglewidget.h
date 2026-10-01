@@ -259,6 +259,8 @@ private:
     PixmapActionButton *mHwSupportButton;
     // PS-style Levels editor opener on 色阶 (Levels) effect rows
     PixmapActionButton *mLevelsButton = nullptr;
+    // PS-style Curves editor opener on 曲线 (Curves) effect rows
+    PixmapActionButton *mCurvesButton = nullptr;
     // PS gradient sliders embedded in the input/output levels rows
     class LevelsSlider *mLevelsInputRow = nullptr;
     class LevelsSlider *mLevelsOutputRow = nullptr;

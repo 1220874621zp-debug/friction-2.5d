@@ -30,6 +30,7 @@
 #include "widgets/colorsettingswidget.h"
 #include <QPointer>
 #include <QElapsedTimer>
+#include <QDialog>
 
 #include "Boxes/containerbox.h"
 #include "widgets/qrealanimatorvalueslider.h"
@@ -46,7 +47,9 @@
 #include "Expressions/expression.h"
 #include "RasterEffects/rastereffectcollection.h"
 #include "RasterEffects/levelseffect.h"
+#include "RasterEffects/curveseffect.h"
 #include "levelseffectdialog.h"
+#include "GUI/curveseditor.h"
 #include "Properties/boolproperty.h"
 #include "Properties/boolpropertycontainer.h"
 #include "Animators/qpointfanimator.h"
@@ -1001,6 +1004,52 @@ BoxSingleWidget::BoxSingleWidget(BoxScroller * const parent)
         if (eff) { LevelsEffectDialog::openFor(eff); }
     });
 
+    // PS-style Curves editor opener: the inspector embeds the editor
+    // directly, this button gives the property-tree rows (where users
+    // actually edit effect parameters) the same visual editing
+    mCurvesButton = new PixmapActionButton(this);
+    mCurvesButton->setToolTip(tr("打开曲线编辑器 (Curves)"));
+    mCurvesButton->setPixmapChooser([]() {
+        static QPixmap icon;
+        if (icon.isNull()) {
+            const int s = 64;
+            icon = QPixmap(s, s);
+            icon.fill(Qt::transparent);
+            QPainter p(&icon);
+            p.setRenderHint(QPainter::Antialiasing);
+            // plot frame + identity diagonal
+            p.setPen(QPen(QColor(150, 150, 155), 2));
+            p.drawRoundedRect(QRectF(8, 8, 48, 48), 4, 4);
+            p.setPen(QPen(QColor(110, 110, 118), 1, Qt::DashLine));
+            p.drawLine(QPointF(12, 52), QPointF(52, 12));
+            // an S-curve through the diagonal
+            p.setPen(QPen(QColor(255, 200, 90), 2.5));
+            QPainterPath path;
+            path.moveTo(12, 52);
+            path.cubicTo(26, 52, 28, 12, 52, 12);
+            p.drawPath(path);
+            p.end();
+        }
+        return &icon;
+    });
+    mMainLayout->addWidget(mCurvesButton);
+    connect(mCurvesButton, &BoxesListActionButton::pressed, this, [this]() {
+        if (!mTarget) { return; }
+        const auto eff = enve_cast<CurvesEffect*>(mTarget->getTarget());
+        if (!eff) { return; }
+        auto dialog = new QDialog(this);
+        dialog->setAttribute(Qt::WA_DeleteOnClose);
+        dialog->setWindowTitle(tr("曲线编辑器 (Curves)"));
+        dialog->setModal(false);
+        auto lay = new QVBoxLayout(dialog);
+        lay->setContentsMargins(8, 8, 8, 8);
+        const auto editor = new CurvesEditor(eff, dialog);
+        editor->setMinimumSize(360, 240);
+        lay->addWidget(editor);
+        dialog->resize(420, 300);
+        dialog->show();
+    });
+
     mFillWidget = new QWidget(this);
     mMainLayout->addWidget(mFillWidget);
     mFillWidget->setObjectName("transparentWidget");
@@ -1651,6 +1700,7 @@ void BoxSingleWidget::setTargetAbstraction(SWT_Abstraction *abs) {
     }
     mHwSupportButton->setVisible(rasterEffect);
     mLevelsButton->setVisible(enve_cast<LevelsEffect*>(prop));
+    mCurvesButton->setVisible(enve_cast<CurvesEffect*>(prop));
 
     // levels wrapper rows render as embedded PS gradient sliders
     const auto levelsInWrap = enve_cast<LevelsInputAnimator*>(prop);

@@ -7,12 +7,15 @@ uniform float saturation; // percent, -1..1
 uniform float lightness;  // percent, -1..1
 
 vec3 rgb2hsl(const vec3 c) {
-    const float maxc = max(c.r, max(c.g, c.b));
-    const float minc = min(c.r, min(c.g, c.b));
-    const float l = (maxc + minc) * 0.5;
+    // NOTE: no `const` on locals initialized from the parameter - a
+    // const initializer must be a constant expression in GLSL 330 and
+    // strict compilers (glslang-based) reject `const float maxc = ...`
+    float maxc = max(c.r, max(c.g, c.b));
+    float minc = min(c.r, min(c.g, c.b));
+    float l = (maxc + minc) * 0.5;
     if (maxc == minc) { return vec3(0.0, 0.0, l); }
-    const float d = maxc - minc;
-    const float s = l > 0.5 ? d / (2.0 - maxc - minc)
+    float d = maxc - minc;
+    float s = l > 0.5 ? d / (2.0 - maxc - minc)
                             : d / (maxc + minc);
     float h;
     if (maxc == c.r)      { h = (c.g - c.b) / d + (c.g < c.b ? 6.0 : 0.0); }
@@ -32,9 +35,9 @@ float hue2rgb(const float p, const float q, float t) {
 
 vec3 hsl2rgb(const vec3 hsl) {
     if (hsl.y == 0.0) { return vec3(hsl.z); }
-    const float q = hsl.z < 0.5 ? hsl.z * (1.0 + hsl.y)
+    float q = hsl.z < 0.5 ? hsl.z * (1.0 + hsl.y)
                                 : hsl.z + hsl.y - hsl.z * hsl.y;
-    const float p = 2.0 * hsl.z - q;
+    float p = 2.0 * hsl.z - q;
     return vec3(hue2rgb(p, q, hsl.x + 1.0 / 3.0),
                 hue2rgb(p, q, hsl.x),
                 hue2rgb(p, q, hsl.x - 1.0 / 3.0));

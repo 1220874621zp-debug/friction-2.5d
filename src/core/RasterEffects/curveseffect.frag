@@ -7,10 +7,13 @@ uniform vec3 lut[66];
 // composite curve table (master applied first, then per-channel),
 // 66 samples linearly interpolated - mirrors the CPU 256-entry LUT
 vec3 curveMap(const vec3 c) {
-    const vec3 t = clamp(c, 0.0, 1.0) * 65.0;
-    const ivec3 i = ivec3(min(t, vec3(64.0)));
-    const vec3 a = vec3(lut[i.r].r, lut[i.g].g, lut[i.b].b);
-    const vec3 b = vec3(lut[i.r + 1].r, lut[i.g + 1].g, lut[i.b + 1].b);
+    // NOTE: no `const` on locals initialized from the parameter - a
+    // const initializer must be a constant expression in GLSL 330 and
+    // strict compilers (glslang-based) reject `const vec3 t = clamp(...)`
+    vec3 t = clamp(c, 0.0, 1.0) * 65.0;
+    ivec3 i = ivec3(min(t, vec3(64.0)));
+    vec3 a = vec3(lut[i.r].r, lut[i.g].g, lut[i.b].b);
+    vec3 b = vec3(lut[i.r + 1].r, lut[i.g + 1].g, lut[i.b + 1].b);
     return mix(a, b, t - vec3(i));
 }
 

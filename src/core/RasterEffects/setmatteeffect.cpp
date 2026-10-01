@@ -102,7 +102,13 @@ stdsptr<RasterEffectCaller> SetMatteEffect::getEffectCaller(
     // track-matte queExternalRender pattern)
     sSampleChain.append(parentBox);
     const auto guard = qScopeGuard([]() { sSampleChain.removeLast(); });
-    const auto sample = target->queExternalRender(relFrame, true);
+    // relFrame is the HOST's relative frame; the matte layer has its
+    // own trim/start - convert through absolute scene frames or the
+    // matte samples the wrong moment (a trimmed matte layer read an
+    // out-of-range frame and hid the host entirely)
+    const qreal absFrame = parentBox->prp_relFrameToAbsFrameF(relFrame);
+    const qreal tRel = target->prp_absFrameToRelFrameF(absFrame);
+    const auto sample = target->queExternalRender(tRel, true);
     if(sample) sample->addDependent(data);
     // a null sample reaches the caller as an empty matte: AE hides the
     // layer entirely (inverted modes show everything)

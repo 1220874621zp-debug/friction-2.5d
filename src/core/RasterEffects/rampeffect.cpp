@@ -9,14 +9,18 @@
 */
 
 #include "rampeffect.h"
+#include "glhelpers.h"
 #include "gpurendertools.h"
-#include "openglrastereffectcaller.h"
+#include "cpurendertools.h"
 #include "Animators/qrealanimator.h"
 #include "Animators/qpointfanimator.h"
 #include "Animators/coloranimator.h"
 #include "Properties/comboboxproperty.h"
 #include "MovablePoints/pointshandler.h"
 #include "RasterEffects/effectcanvaspoint.h"
+#include "Boxes/boundingbox.h"
+#include "Boxes/boxrenderdata.h"
+#include "skia/skqtconversions.h"
 #include "appsupport.h"
 
 RampEffect::RampEffect() :
@@ -60,7 +64,7 @@ RampEffect::RampEffect() :
                 mEndPoint.get(), this, EffectCanvasPoint::Space::Normalized));
 }
 
-class RampEffectCaller : public OpenGLRasterEffectCaller {
+class RampEffectCaller : public RasterEffectCaller {
 public:
     RampEffectCaller(const HardwareSupport hwSupport,
                      const QPointF& startPoint,
@@ -68,37 +72,23 @@ public:
                      const QPointF& endPoint,
                      const QColor& endColor,
                      const int shape,
-                     const qreal mix) :
-        OpenGLRasterEffectCaller(sInitialized, sProgramId,
-                                 ":/shaders/rampeffect.frag",
-                                 hwSupport),
+                     const qreal mix,
+                     const QRectF& contentAbs) :
+        RasterEffectCaller(hwSupport),
         mStartPoint(startPoint),
         mStartColor(startColor),
         mEndPoint(endPoint),
         mEndColor(endColor),
         mShape(shape),
-        mMix(mix) {}
+        mMix(mix),
+        mContentAbs(contentAbs) {}
 
+    void processGpu(QGL33 * const gl, GpuRenderTools& renderTools) override;
     void processCpu(CpuRenderTools& renderTools, const CpuRenderData& data) override;
-protected:
-    void iniVars(QGL33 * const gl) const override {
-        sStartPointU = gl->glGetUniformLocation(sProgramId, "startPoint");
-        sStartColorU = gl->glGetUniformLocation(sProgramId, "startColor");
-        sEndPointU = gl->glGetUniformLocation(sProgramId, "endPoint");
-        sEndColorU = gl->glGetUniformLocation(sProgramId, "endColor");
-        sShapeU = gl->glGetUniformLocation(sProgramId, "shape");
-        sMixU = gl->glGetUniformLocation(sProgramId, "mixOriginal");
-    }
 
-    void setVars(QGL33 * const gl) const override {
-        gl->glUseProgram(sProgramId);
-        gl->glUniform2f(sStartPointU, toSkScalar(mStartPoint.x()), toSkScalar(mStartPoint.y()));
-        gl->glUniform4f(sStartColorU, mStartColor.redF(), mStartColor.greenF(), mStartColor.blueF(), mStartColor.alphaF());
-        gl->glUniform2f(sEndPointU, toSkScalar(mEndPoint.x()), toSkScalar(mEndPoint.y()));
-        gl->glUniform4f(sEndColorU, mEndColor.redF(), mEndColor.greenF(), mEndColor.blueF(), mEndColor.alphaF());
-        gl->glUniform1i(sShapeU, mShape);
-        gl->glUniform1f(sMixU, toSkScalar(mMix));
-    }
+    // content-rect UV -> texture UV (the texture may carry the base
+    // margin and chained effect margins around the content)
+    QPointF uvToTexture(const QPointF& uv, const QRectF& texAbs) const;
 private:
     static bool sInitialized;
     static GLuint sProgramId;
@@ -116,6 +106,9 @@ private:
     const QColor mEndColor;
     const int mShape;
     const qreal mMix;
+    // rendered-space rect of the host box content (the point domain);
+    // empty for offscreen previews (whole texture stands in)
+    const QRectF mContentAbs;
 };
 
 bool RampEffectCaller::sInitialized = false;
@@ -132,7 +125,6 @@ stdsptr<RasterEffectCaller> RampEffect::getEffectCaller(
         const qreal relFrame, const qreal resolution,
         const qreal influence, BoxRenderData * const data) const {
     Q_UNUSED(resolution)
-    Q_UNUSED(data)
 
     const QPointF startPoint = mStartPoint->getEffectiveValue(relFrame);
     const QColor startColor = mStartColor->getColor(relFrame);
@@ -143,9 +135,90 @@ stdsptr<RasterEffectCaller> RampEffect::getEffectCaller(
     // influence 0 => show the original, 1 => the slider value
     const qreal mix = 1.0 - (1.0 - mMix->getEffectiveValue(relFrame) / 100.0) * influence;
 
+    // the points live in content-rect UV (the canvas handle domain);
+    // the render texture carries margins around the content, so the
+    // caller needs the content's rendered-space rect to place them
+    // correctly. Reading data->fRelBoundingRect here is wrong (still
+    // empty at assembly time) - the box's own rect is valid now.
+    QRectF contentAbs;
+    if(data) {
+        const QRectF rel = data->fParentBox ?
+                    data->fParentBox->getRelBoundingRect() :
+                    data->fRelBoundingRect;
+        contentAbs = toQTransform(data->getFullRenderTransform())
+                     .mapRect(rel);
+    }
+
     return enve::make_shared<RampEffectCaller>(
                 instanceHwSupport(), startPoint, startColor,
-                endPoint, endColor, shape, mix);
+                endPoint, endColor, shape, mix, contentAbs);
+}
+
+QPointF RampEffectCaller::uvToTexture(const QPointF& uv,
+                                      const QRectF& texAbs) const {
+    if(mContentAbs.width() <= 0. || mContentAbs.height() <= 0. ||
+       texAbs.width() <= 0 || texAbs.height() <= 0) {
+        // no content domain (offscreen preview): whole texture stands in
+        return uv;
+    }
+    const qreal texW = texAbs.width();
+    const qreal texH = texAbs.height();
+    const qreal ox = (mContentAbs.left() - texAbs.left()) / texW;
+    const qreal oy = (mContentAbs.top() - texAbs.top()) / texH;
+    const qreal cx = mContentAbs.width() / texW;
+    const qreal cy = mContentAbs.height() / texH;
+    return QPointF(ox + uv.x() * cx, oy + uv.y() * cy);
+}
+
+void RampEffectCaller::processGpu(QGL33 * const gl,
+                                  GpuRenderTools& renderTools) {
+    renderTools.switchToOpenGL(gl);
+
+    if(!sInitialized) {
+        try {
+            gIniProgram(gl, sProgramId, GL_TEXTURED_VERT,
+                        ":/shaders/rampeffect.frag");
+        } catch(...) {
+            RuntimeThrow("Could not initialize a program for "
+                         "'rampeffect.frag'");
+        }
+        gl->glUseProgram(sProgramId);
+        const auto texLocation = gl->glGetUniformLocation(sProgramId, "tex");
+        gl->glUniform1i(texLocation, 0);
+        sStartPointU = gl->glGetUniformLocation(sProgramId, "startPoint");
+        sStartColorU = gl->glGetUniformLocation(sProgramId, "startColor");
+        sEndPointU = gl->glGetUniformLocation(sProgramId, "endPoint");
+        sEndColorU = gl->glGetUniformLocation(sProgramId, "endColor");
+        sShapeU = gl->glGetUniformLocation(sProgramId, "shape");
+        sMixU = gl->glGetUniformLocation(sProgramId, "mixOriginal");
+        sInitialized = true;
+    }
+
+    renderTools.requestTargetFbo().bind(gl);
+    gl->glClear(GL_COLOR_BUFFER_BIT);
+
+    gl->glUseProgram(sProgramId);
+
+    const QPointF texStart = uvToTexture(mStartPoint, renderTools.fGlobalRect);
+    const QPointF texEnd = uvToTexture(mEndPoint, renderTools.fGlobalRect);
+    gl->glUniform2f(sStartPointU, toSkScalar(texStart.x()),
+                    toSkScalar(texStart.y()));
+    gl->glUniform4f(sStartColorU, mStartColor.redF(), mStartColor.greenF(),
+                    mStartColor.blueF(), mStartColor.alphaF());
+    gl->glUniform2f(sEndPointU, toSkScalar(texEnd.x()),
+                    toSkScalar(texEnd.y()));
+    gl->glUniform4f(sEndColorU, mEndColor.redF(), mEndColor.greenF(),
+                    mEndColor.blueF(), mEndColor.alphaF());
+    gl->glUniform1i(sShapeU, mShape);
+    gl->glUniform1f(sMixU, toSkScalar(mMix));
+
+    gl->glActiveTexture(GL_TEXTURE0);
+    renderTools.getSrcTexture().bind(gl);
+
+    gl->glBindVertexArray(renderTools.getSquareVAO());
+    gl->glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+    renderTools.swapTextures();
 }
 
 void RampEffectCaller::processCpu(CpuRenderTools& renderTools, const CpuRenderData& data) {
@@ -162,11 +235,23 @@ void RampEffectCaller::processCpu(CpuRenderTools& renderTools, const CpuRenderDa
     const int yMin = std::max(0, data.fTexTile.top());
     const int yMax = std::min((int)data.fTexTile.bottom() - 1, imgHeight - 1);
 
-    // gradient math in pixel space so radial stays circular
-    const qreal sx = mStartPoint.x() * imgWidth;
-    const qreal sy = mStartPoint.y() * imgHeight;
-    const qreal dx = mEndPoint.x() * imgWidth - sx;
-    const qreal dy = mEndPoint.y() * imgHeight - sy;
+    // gradient math in pixel space so radial stays circular; the
+    // points live in content-rect UV and the bitmap may carry margins
+    // around the content - map through the content's rendered rect
+    qreal sx = mStartPoint.x() * imgWidth;
+    qreal sy = mStartPoint.y() * imgHeight;
+    qreal ex = mEndPoint.x() * imgWidth;
+    qreal ey = mEndPoint.y() * imgHeight;
+    if(mContentAbs.width() > 0. && mContentAbs.height() > 0.) {
+        const QPointF off(mContentAbs.left() - data.fPos.x(),
+                          mContentAbs.top() - data.fPos.y());
+        sx = off.x() + mStartPoint.x() * mContentAbs.width();
+        sy = off.y() + mStartPoint.y() * mContentAbs.height();
+        ex = off.x() + mEndPoint.x() * mContentAbs.width();
+        ey = off.y() + mEndPoint.y() * mContentAbs.height();
+    }
+    const qreal dx = ex - sx;
+    const qreal dy = ey - sy;
     const qreal len2 = dx * dx + dy * dy;
     const qreal radius = std::sqrt(len2);
 

@@ -23,7 +23,8 @@ public:
 private:
     FrameRange getEchoPropsIdenticalRange(const int relFrame) const;
 
-    mutable bool mBlocked = false;
+    // reentrancy guard lives as a file-scope thread_local in the cpp
+    // (getEffectCaller runs on several scheduler threads at once)
     qptr<BoundingBox> mParentBox;
     qsptr<QrealAnimator> mEchoTime;
     qsptr<QrealAnimator> mEchoCount;

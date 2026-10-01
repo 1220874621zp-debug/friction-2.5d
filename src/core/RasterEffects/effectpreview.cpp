@@ -825,6 +825,56 @@ QList<QImage> renderEffectFrames(const RasterEffectType type,
             return result;
         }
 
+        // set matte: the real caller needs a matte layer's render data,
+        // which an offscreen preview has none - stand in with a moving
+        // gradient matte applied the same way TrackMatteCaller does
+        // (alpha multiply, DstIn). Without this the tile was fully
+        // transparent (getEffectCaller returns nullptr with no data).
+        if (type == RasterEffectType::SET_MATTE) {
+            const SkBitmap src = makeTextSample(imgSize.width(),
+                                                imgSize.height());
+            for (int i = 0; i < nFrames; i++) {
+                const qreal t = i / static_cast<qreal>(nFrames);
+                const qreal sweep = 0.5 + 0.5 * std::sin(2. * M_PI * t);
+                const float left = static_cast<float>(-src.width() * 0.2 +
+                        sweep * src.width() * 1.4);
+                const float right = left + src.width() * 0.55f;
+                SkBitmap matte;
+                matte.allocN32Pixels(src.width(), src.height());
+                SkCanvas mc(matte);
+                SkPaint mp;
+                mp.setAntiAlias(true);
+                const SkColor stops[3] = {
+                    SK_ColorTRANSPARENT, SK_ColorWHITE, SK_ColorTRANSPARENT
+                };
+                const SkScalar pos[3] = {0.f, 0.5f, 1.f};
+                const SkPoint pts[2] = {
+                    SkPoint::Make(left, 0.f),
+                    SkPoint::Make(right, 0.f)
+                };
+                mp.setShader(SkGradientShader::MakeLinear(
+                                 pts, stops, pos, 3, SkTileMode::kClamp));
+                mc.drawPaint(mp);
+
+                SkBitmap dst;
+                dst.allocN32Pixels(src.width(), src.height());
+                dst.eraseARGB(0, 0, 0, 0);
+                dst.writePixels(src.pixmap(), 0, 0);
+                SkCanvas dc(dst);
+                SkPaint pd;
+                pd.setBlendMode(SkBlendMode::kDstIn);
+                dc.drawImage(SkImage::MakeFromBitmap(matte), 0, 0, &pd);
+
+                QImage img(imgSize, QImage::Format_ARGB32_Premultiplied);
+                if (img.sizeInBytes() > 0) {
+                    memcpy(img.bits(), dst.getPixels(),
+                           static_cast<size_t>(img.sizeInBytes()));
+                }
+                result << img;
+            }
+            return result;
+        }
+
         const auto eff = createRasterEffectForNonCustomType(type);
         if (!eff) { return result; }
         setupDefaults(eff.get(), type);

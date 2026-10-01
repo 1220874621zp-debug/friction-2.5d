@@ -98,12 +98,18 @@ private:
     bool& mBlock;
 };
 
+// per-thread reentrancy guard: getEffectCaller runs on multiple
+// scheduler threads at the same time for the same effect instance; a
+// plain member bool lets one thread's assembly pass skip another's
+// caller and the echo intermittently vanishes
+thread_local bool sAssemblyGuard = false;
+
 stdsptr<RasterEffectCaller> EchoEffect::getEffectCaller(
             const qreal relFrame, const qreal resolution,
             const qreal influence, BoxRenderData * const data) const {
     Q_UNUSED(resolution)
-    if(mBlocked) return nullptr;
-    const EchoEffectBlock block(mBlocked);
+    if(sAssemblyGuard) return nullptr;
+    const EchoEffectBlock block(sAssemblyGuard);
     if(!mParentBox) return nullptr;
 
     const auto scene = mParentBox->getParentScene();
@@ -134,6 +140,14 @@ stdsptr<RasterEffectCaller> EchoEffect::getEffectCaller(
                 } else {
                     sample->addDependent(data);
                 }
+                // the motion-blur hook: the sample's afterProcessing
+                // folds its global rect into this data's
+                // fOtherGlobalRects, so the host render rect covers
+                // the echo. Without it echoes landing outside the
+                // current content rect were clipped away - the faster
+                // the motion (or the larger the echo time), the more
+                // the echo silently disappeared.
+                sample->fMotionBlurTarget = data;
                 samples << sample;
             }
         }

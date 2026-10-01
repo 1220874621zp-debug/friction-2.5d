@@ -9,13 +9,17 @@
 */
 
 #include "grideffect.h"
+#include "glhelpers.h"
 #include "gpurendertools.h"
-#include "openglrastereffectcaller.h"
+#include "cpurendertools.h"
 #include "Animators/qrealanimator.h"
 #include "Animators/qpointfanimator.h"
 #include "Animators/coloranimator.h"
 #include "MovablePoints/pointshandler.h"
 #include "RasterEffects/effectcanvaspoint.h"
+#include "Boxes/boundingbox.h"
+#include "Boxes/boxrenderdata.h"
+#include "skia/skqtconversions.h"
 #include "appsupport.h"
 
 GridEffect::GridEffect() :
@@ -60,7 +64,7 @@ GridEffect::GridEffect() :
                 mAnchor.get(), this, EffectCanvasPoint::Space::Normalized));
 }
 
-class GridEffectCaller : public OpenGLRasterEffectCaller {
+class GridEffectCaller : public RasterEffectCaller {
 public:
     GridEffectCaller(const HardwareSupport hwSupport,
                      const QPointF& anchor,
@@ -69,38 +73,24 @@ public:
                      const qreal border,
                      const QColor& color,
                      const qreal invert,
-                     const qreal mix) :
-        OpenGLRasterEffectCaller(sInitialized, sProgramId,
-                                 ":/shaders/grideffect.frag",
-                                 hwSupport),
+                     const qreal mix,
+                     const QRectF& contentAbs) :
+        RasterEffectCaller(hwSupport),
         mAnchor(anchor),
         mSizeW(sizeW),
         mSizeH(sizeH),
         mBorder(border),
         mColor(color),
         mInvert(invert),
-        mMix(mix) {}
+        mMix(mix),
+        mContentAbs(contentAbs) {}
 
+    void processGpu(QGL33 * const gl, GpuRenderTools& renderTools) override;
     void processCpu(CpuRenderTools& renderTools, const CpuRenderData& data) override;
-protected:
-    void iniVars(QGL33 * const gl) const override {
-        sAnchorU = gl->glGetUniformLocation(sProgramId, "anchor");
-        sCellSizeU = gl->glGetUniformLocation(sProgramId, "cellSize");
-        sBorderU = gl->glGetUniformLocation(sProgramId, "border");
-        sColorU = gl->glGetUniformLocation(sProgramId, "color");
-        sInvertU = gl->glGetUniformLocation(sProgramId, "invert");
-        sMixU = gl->glGetUniformLocation(sProgramId, "mixOriginal");
-    }
 
-    void setVars(QGL33 * const gl) const override {
-        gl->glUseProgram(sProgramId);
-        gl->glUniform2f(sAnchorU, toSkScalar(mAnchor.x()), toSkScalar(mAnchor.y()));
-        gl->glUniform2f(sCellSizeU, toSkScalar(mSizeW), toSkScalar(mSizeH));
-        gl->glUniform1f(sBorderU, toSkScalar(mBorder));
-        gl->glUniform4f(sColorU, mColor.redF(), mColor.greenF(), mColor.blueF(), mColor.alphaF());
-        gl->glUniform1f(sInvertU, toSkScalar(mInvert));
-        gl->glUniform1f(sMixU, toSkScalar(mMix));
-    }
+    // anchor in content-rect UV -> texture UV (the texture may carry
+    // the base margin and chained effect margins around the content)
+    QPointF anchorInTexture(const QRectF& texAbs) const;
 private:
     static bool sInitialized;
     static GLuint sProgramId;
@@ -119,6 +109,9 @@ private:
     const QColor mColor;
     const qreal mInvert;
     const qreal mMix;
+    // rendered-space rect of the host box content (anchor domain);
+    // empty for offscreen previews (whole texture stands in)
+    const QRectF mContentAbs;
 };
 
 bool GridEffectCaller::sInitialized = false;
@@ -134,7 +127,6 @@ GLint GridEffectCaller::sMixU = -1;
 stdsptr<RasterEffectCaller> GridEffect::getEffectCaller(
         const qreal relFrame, const qreal resolution,
         const qreal influence, BoxRenderData * const data) const {
-    Q_UNUSED(data)
 
     const QPointF anchor = mAnchor->getEffectiveValue(relFrame);
     // pixel-space params scale with the render resolution
@@ -146,9 +138,87 @@ stdsptr<RasterEffectCaller> GridEffect::getEffectCaller(
     // fold the effect-row influence into the blend-back factor
     const qreal mix = 1.0 - (1.0 - mMix->getEffectiveValue(relFrame) / 100.0) * influence;
 
+    // the anchor lives in content-rect UV (the canvas handle domain);
+    // the render texture carries the base margin + chained effect
+    // margins around the content, so the caller needs the content's
+    // rendered-space rect to place the anchor correctly. Reading
+    // data->fRelBoundingRect here is wrong (still empty at assembly
+    // time) - the box's own rect is the same value and is valid now.
+    QRectF contentAbs;
+    if(data) {
+        const QRectF rel = data->fParentBox ?
+                    data->fParentBox->getRelBoundingRect() :
+                    data->fRelBoundingRect;
+        contentAbs = toQTransform(data->getFullRenderTransform())
+                     .mapRect(rel);
+    }
+
     return enve::make_shared<GridEffectCaller>(
                 instanceHwSupport(), anchor, sizeW, sizeH,
-                border, color, invert, mix);
+                border, color, invert, mix, contentAbs);
+}
+
+QPointF GridEffectCaller::anchorInTexture(const QRectF& texAbs) const {
+    if(mContentAbs.width() <= 0. || mContentAbs.height() <= 0. ||
+       texAbs.width() <= 0 || texAbs.height() <= 0) {
+        // no content domain (offscreen preview): whole texture stands in
+        return mAnchor;
+    }
+    const qreal texW = texAbs.width();
+    const qreal texH = texAbs.height();
+    const qreal ox = (mContentAbs.left() - texAbs.left()) / texW;
+    const qreal oy = (mContentAbs.top() - texAbs.top()) / texH;
+    const qreal cx = mContentAbs.width() / texW;
+    const qreal cy = mContentAbs.height() / texH;
+    return QPointF(ox + mAnchor.x() * cx, oy + mAnchor.y() * cy);
+}
+
+void GridEffectCaller::processGpu(QGL33 * const gl,
+                                  GpuRenderTools& renderTools) {
+    renderTools.switchToOpenGL(gl);
+
+    if(!sInitialized) {
+        try {
+            gIniProgram(gl, sProgramId, GL_TEXTURED_VERT,
+                        ":/shaders/grideffect.frag");
+        } catch(...) {
+            RuntimeThrow("Could not initialize a program for "
+                         "'grideffect.frag'");
+        }
+        gl->glUseProgram(sProgramId);
+        const auto texLocation = gl->glGetUniformLocation(sProgramId, "tex");
+        gl->glUniform1i(texLocation, 0);
+        sAnchorU = gl->glGetUniformLocation(sProgramId, "anchor");
+        sCellSizeU = gl->glGetUniformLocation(sProgramId, "cellSize");
+        sBorderU = gl->glGetUniformLocation(sProgramId, "border");
+        sColorU = gl->glGetUniformLocation(sProgramId, "color");
+        sInvertU = gl->glGetUniformLocation(sProgramId, "invert");
+        sMixU = gl->glGetUniformLocation(sProgramId, "mixOriginal");
+        sInitialized = true;
+    }
+
+    renderTools.requestTargetFbo().bind(gl);
+    gl->glClear(GL_COLOR_BUFFER_BIT);
+
+    gl->glUseProgram(sProgramId);
+
+    const QPointF texAnchor = anchorInTexture(renderTools.fGlobalRect);
+    gl->glUniform2f(sAnchorU, toSkScalar(texAnchor.x()),
+                    toSkScalar(texAnchor.y()));
+    gl->glUniform2f(sCellSizeU, toSkScalar(mSizeW), toSkScalar(mSizeH));
+    gl->glUniform1f(sBorderU, toSkScalar(mBorder));
+    gl->glUniform4f(sColorU, mColor.redF(), mColor.greenF(),
+                    mColor.blueF(), mColor.alphaF());
+    gl->glUniform1f(sInvertU, toSkScalar(mInvert));
+    gl->glUniform1f(sMixU, toSkScalar(mMix));
+
+    gl->glActiveTexture(GL_TEXTURE0);
+    renderTools.getSrcTexture().bind(gl);
+
+    gl->glBindVertexArray(renderTools.getSquareVAO());
+    gl->glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+    renderTools.swapTextures();
 }
 
 void GridEffectCaller::processCpu(CpuRenderTools& renderTools, const CpuRenderData& data) {
@@ -165,8 +235,16 @@ void GridEffectCaller::processCpu(CpuRenderTools& renderTools, const CpuRenderDa
     const int yMin = std::max(0, data.fTexTile.top());
     const int yMax = std::min((int)data.fTexTile.bottom() - 1, imgHeight - 1);
 
-    const qreal ax = mAnchor.x() * imgWidth;
-    const qreal ay = mAnchor.y() * imgHeight;
+    // anchor in content-rect UV -> bitmap pixels; the bitmap may carry
+    // margins around the content (base margin + chained effect margins)
+    qreal ax = mAnchor.x() * imgWidth;
+    qreal ay = mAnchor.y() * imgHeight;
+    if(mContentAbs.width() > 0. && mContentAbs.height() > 0.) {
+        const QPointF off(mContentAbs.left() - data.fPos.x(),
+                          mContentAbs.top() - data.fPos.y());
+        ax = off.x() + mAnchor.x() * mContentAbs.width();
+        ay = off.y() + mAnchor.y() * mContentAbs.height();
+    }
     const qreal cw = std::max(1.0, mSizeW);
     const qreal ch = std::max(1.0, mSizeH);
     const qreal half = mBorder * 0.5;

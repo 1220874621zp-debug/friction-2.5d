@@ -29,11 +29,13 @@
 #include "RasterEffects/rastereffectmenucreator.h"
 #include "RasterEffects/blureffect.h"
 #include "RasterEffects/curveseffect.h"
+#include "RasterEffects/huesaturationeffect.h"
 #include "RasterEffects/levelseffect.h"
 #include "Properties/comboboxproperty.h"
 #include "GUI/BoxesList/boxsinglewidget.h"
 #include "GUI/BoxesList/levelseffectdialog.h"
 #include "GUI/curveseditor.h"
+#include "GUI/huewheelwidget.h"
 #include "themesupport.h"
 #include "Private/document.h"
 #include "clipboardcontainer.h"
@@ -1294,6 +1296,40 @@ void AEPropertiesInspector::setupEffectsControls(QVBoxLayout *layout, BoundingBo
                 refreshValues();
             });
             grid->addWidget(resetBtn, numProps, 3, Qt::AlignCenter);
+        }
+
+        // AE Channel-Hue style wheel for Hue/Saturation: drag around
+        // the ring to rotate the hue, double-click to reset (the value
+        // slider row above stays for precise numeric entry)
+        if (const auto hueSatEff = enve_cast<HueSaturationEffect*>(effect)) {
+            auto lbl = new QLabel(tr("色相环"), gridWidget);
+            lbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+            lbl->setStyleSheet(QStringLiteral("color: #ffffff; font-size: 12px;"));
+            grid->addWidget(lbl, numProps + 1, 1);
+
+            const auto wheel = new HueWheelWidget(
+                        hueSatEff->getHueAnimator());
+            wheel->setMaximumHeight(150);
+            grid->addWidget(wheel, numProps + 1, 2);
+
+            auto resetBtn = new QToolButton();
+            resetBtn->setObjectName(QStringLiteral("FlatButton"));
+            resetBtn->setText(QStringLiteral("↺"));
+            resetBtn->setFixedSize(14, 16);
+            resetBtn->setStyleSheet(QStringLiteral("font-size: 9px; color: #c8c8d0; padding: 0; border: none; background: transparent;"));
+            resetBtn->setToolTip(tr("重置色相"));
+            connect(resetBtn, &QToolButton::clicked, wheel,
+                    [hueSatEff, this]() {
+                const auto hue = hueSatEff->getHueAnimator();
+                if (hue) {
+                    hue->prp_startTransform();
+                    hue->setCurrentBaseValue(0.0);
+                    hue->prp_finishTransform();
+                }
+                if (mScene) { mScene->requestUpdate(); }
+                refreshValues();
+            });
+            grid->addWidget(resetBtn, numProps + 1, 3, Qt::AlignCenter);
         }
 
         eLayout->addWidget(gridWidget);

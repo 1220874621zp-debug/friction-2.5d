@@ -42,6 +42,11 @@ public:
     stdsptr<RasterEffectCaller> getEffectCaller(
             const qreal relFrame, const qreal resolution,
             const qreal influence, BoxRenderData * const data) const override;
+
+    // accessors for the GUI widgets (hue wheel / sliders)
+    QrealAnimator* getHueAnimator() const { return mHue.get(); }
+    QrealAnimator* getSaturationAnimator() const { return mSaturation.get(); }
+    QrealAnimator* getLightnessAnimator() const { return mLightness.get(); }
 private:
     qsptr<QrealAnimator> mHue;
     qsptr<QrealAnimator> mSaturation;

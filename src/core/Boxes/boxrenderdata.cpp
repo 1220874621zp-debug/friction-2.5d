@@ -342,6 +342,13 @@ void BoxRenderData::queTaskNow() {
 }
 
 bool BoxRenderData::nextStep() {
+    // an effect stage raised an exception (e.g. GPU shader compile
+    // failure before the effects renderer was fully consumed): do NOT
+    // re-queue this same task - it would throw again forever and the
+    // frame would never finish, leaving the canvas frozen black and
+    // the error invisible. Terminating lets finishedProcessing()
+    // cancel it and print the exception instead.
+    if(unhandledException()) return false;
     const bool result = !mEffectsRenderer.isEmpty() &&
                         fRenderedImage;
     if(result) {
