@@ -1591,8 +1591,9 @@ static int runImportEffectProbe(Document& document, Actions& actions,
     fprintf(stderr, "[harness] IMPEFFECT multi-drop layers=%d (want 2)\n", nBoxes);
     if(nBoxes != 2) fails++;
 
-    // fitted size + centered position (the 2nd layer is staggered by 24px
-    // by the multi-drop handler so a stack is visible)
+    // fitted size + centered position: every imported bitmap lands exactly
+    // on the canvas center (no per-file stagger - that offset used to break
+    // "matches the canvas exactly" for the 2nd+ layer of a multi-drop)
     const auto contentRect = [](BoundingBox* const box, const QSizeF& src) {
         return box->getTotalTransformAtFrame(box->anim_getCurrentRelFrame())
                 .mapRect(QRectF(QPointF(0., 0.), src));
@@ -1605,7 +1606,7 @@ static int runImportEffectProbe(Document& document, Actions& actions,
     };
     const FitExpect expects[2] = {
         {"probe_wide", QSizeF(400, 200), QSizeF(800, 400), QPointF(400, 300)},
-        {"probe_tall", QSizeF(200, 800), QSizeF(150, 600), QPointF(424, 324)}
+        {"probe_tall", QSizeF(200, 800), QSizeF(150, 600), QPointF(400, 300)}
     };
     BoundingBox* wideBox = nullptr;
     for(const auto box : scene->getContainedBoxes()) {

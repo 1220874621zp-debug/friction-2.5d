@@ -791,22 +791,14 @@ eBoxOrSound* Actions::handleDropEvent(QDropEvent * const event,
         for (int i = 0; i < urlList.size() && i < 32; i++) {
             try {
                 // every dropped file must land on the canvas: the old early
-                // return imported only the first one. Extra layers are
-                // staggered a little so a multi-file drop reads as a stack
-                // instead of a single picture (bitmaps are fit to the canvas
-                // and centered by importFile, hence the offset afterwards)
+                // return imported only the first one. No stagger offset:
+                // imported bitmaps are fit to the canvas and centered, and
+                // any offset would break "matches the canvas exactly"
                 const auto importedBox = importFile(urlList.at(i).toLocalFile(),
                                                     mActiveScene->getCurrentGroup(),
                                                     0, relDropPos, frame);
                 if(!importedBox) continue;
                 if(!firstResult) firstResult = importedBox;
-                if(imported > 0) {
-                    if(const auto box = enve_cast<BoundingBox*>(importedBox)) {
-                        box->startPosTransform();
-                        box->moveByAbs(QPointF(24.*imported, 24.*imported));
-                        box->finishTransform();
-                    }
-                }
                 imported++;
             } catch(const std::exception& e) {
                 gPrintExceptionCritical(e);
