@@ -25,12 +25,21 @@
 #define CAMERALENSBLUREFFECT_H
 
 #include "rastereffect.h"
+#include "Properties/boxtargetproperty.h"
 
 class QrealAnimator;
+class BoolAnimator;
 
 // AE Camera Lens Blur approximation: whole-frame defocus blur
 // plus threshold-extracted highlights re-blurred and screen-composited
 // back on top (bright spots bloom into soft bokeh discs).
+//
+// With a DEPTH MAP layer attached (AE: Blur Map Layer) the blur radius
+// becomes per-pixel: the depth layer's luminance drives it, "focal
+// distance" picks the depth that stays sharp and "depth of field" scales
+// how fast the blur ramps away from it. That mode builds a small blur
+// level pyramid and blends between levels per pixel, so it runs on the
+// CPU (the uniform mode keeps its GPU path).
 class CORE_EXPORT CameraLensBlurEffect : public RasterEffect {
     e_OBJECT
 protected:
@@ -41,10 +50,26 @@ public:
             const qreal influence, BoxRenderData* const data) const;
     QMargins getMargin() const;
     bool forceMargin() const { return true; }
+
+    // the host's pixels depend on the depth layer's content: a static host
+    // under an animated depth map is NOT frame-identical (same pattern as
+    // SetMatteEffect / TargetTransformEffect)
+    FrameRange prp_getIdenticalRelRange(const int relFrame) const;
+protected:
+    // depth map block (target/focal/dof/invert) was appended as 4
+    // serialized children in format 53; older files carry only
+    // radius/threshold/gain (positional child layout)
+    int ca_readChildCount(const int evFileVersion) const override;
 private:
     qsptr<QrealAnimator> mRadius;
     qsptr<QrealAnimator> mThreshold;
     qsptr<QrealAnimator> mGain;
+
+    qsptr<BoxTargetProperty> mDepthTarget;
+    qsptr<QrealAnimator> mFocal;
+    qsptr<QrealAnimator> mDof;
+    qsptr<BoolAnimator> mInvert;
+    ConnContextQPtr<BoundingBox> mFollowConn;
 };
 
 #endif // CAMERALENSBLUREFFECT_H

@@ -48,6 +48,9 @@
 #include <QImage>
 #include <QDir>
 #include "Animators/motionpathhandler.h"
+#include "Animators/qrealanimator.h"
+#include "RasterEffects/rastereffectcollection.h"
+#include "Properties/boxtargetproperty.h"
 
 #define NOMINMAX
 #include <psapi.h>
@@ -1310,6 +1313,227 @@ static int runImageGeomProbe(Document& document,
     return fails ? 1 : 0;
 }
 
+// ---------------------------------------------------------------------------
+// camera lens blur depth-map probe (headless): a sharp stripe pattern is
+// blurred with a depth map whose left half sits exactly on the focal
+// distance (must stay sharp) and whose right half is far away (must blur).
+// The mean horizontal gradient of each half proves the depth map drives the
+// radius; a control layer with the same effect but no depth map must blur
+// both halves equally.
+static int runLensDepthProbe(Document& document, TaskScheduler& tasks) {
+    Q_UNUSED(tasks)
+    if(eSettings::sInstance) eSettings::sInstance->fPathGpuAcc = false;
+    const auto pump = [](const int n) {
+        for(int j = 0; j < n; j++) QApplication::processEvents();
+    };
+
+    // inputs: 10px black/white stripes (sharp edges) + a depth map with a
+    // sharp zone (left, luma 128 = the focal distance) and a blurred zone
+    // (right, luma 255)
+    QImage stripes(800, 600, QImage::Format_ARGB32_Premultiplied);
+    QImage depth(800, 600, QImage::Format_ARGB32_Premultiplied);
+    for(int y = 0; y < 600; y++) {
+        auto* sRow = reinterpret_cast<QRgb*>(stripes.scanLine(y));
+        auto* dRow = reinterpret_cast<QRgb*>(depth.scanLine(y));
+        for(int x = 0; x < 800; x++) {
+            sRow[x] = ((x / 10) % 2) ? qRgb(255, 255, 255) : qRgb(0, 0, 0);
+            dRow[x] = x < 400 ? qRgb(128, 128, 128) : qRgb(255, 255, 255);
+        }
+    }
+    const QString stripesPath = QDir::tempPath() + "/lensdepth_stripes.png";
+    const QString depthPath = QDir::tempPath() + "/lensdepth_depth.png";
+    if(!stripes.save(stripesPath) || !depth.save(depthPath)) {
+        fprintf(stderr, "[harness] LENSDEPTH FAIL: cannot write inputs\n");
+        return 10;
+    }
+
+    const auto scene = document.createNewScene(false);
+    scene->setCanvasSize(800, 600);
+    scene->setResolution(1.);
+    pump(30);
+
+    const auto mkImage = [&](const QString& path) {
+        const auto img = enve::make_shared<ImageBox>();
+        img->setFilePath(path);
+        scene->addContained(img);
+        return img;
+    };
+    const auto srcA = mkImage(stripesPath);   // depth-map driven
+    const auto srcB = mkImage(stripesPath);   // uniform control
+    const auto depthBox = mkImage(depthPath);
+    // drive the preview pipeline by hand (no canvas widget exists here):
+    // the scene render queues every child, the child's setupRenderData
+    // schedules the decode and the effects phase needs updateScenes()
+    const auto sceneRounds = [&](const int n) {
+        for(int r = 0; r < n; r++) {
+            const auto sceneRd = scene->queExternalRender(0, false);
+            for(int w = 0; w < 4000; w++) {
+                if(sceneRd && sceneRd->finished()) break;
+                pump(1);
+            }
+            document.updateScenes();
+            pump(200);
+        }
+    };
+    sceneRounds(4);
+    fprintf(stderr, "[harness] LENSDEPTH images loaded: src=%d/%d depth=%d\n",
+            int(srcA->hasLoadedImage()), int(srcB->hasLoadedImage()),
+            int(depthBox->hasLoadedImage()));
+
+    // the depth map must not be blurred itself; keep it above and out of
+    // the sampled layers' way (it only feeds the effect)
+    const auto mkEffect = [](const bool withDepth, BoxTargetProperty* const depth) {
+        Q_UNUSED(withDepth) Q_UNUSED(depth)
+        const auto fx = createRasterEffectForNonCustomType(
+                    RasterEffectType::CAMERA_LENS_BLUR);
+        if(!fx) return qsptr<RasterEffect>();
+        // radius 20 (max), no highlight pass (gain 0), focal 0.5, dof 2
+        const auto set = [&fx](const int i, const qreal v) {
+            if(const auto anim = fx->ca_getChildAt<QrealAnimator>(i)) {
+                anim->setCurrentBaseValue(v);
+            }
+        };
+        set(0, 20.);   // radius
+        set(1, 1.);    // threshold (unused with gain 0)
+        set(2, 0.);    // gain -> highlights off
+        set(4, 0.5);   // focal distance
+        set(5, 2.0);   // depth of field
+        return fx;
+    };
+    const auto fxDepth = mkEffect(true, nullptr);
+    const auto fxPlain = mkEffect(false, nullptr);
+    if(!fxDepth || !fxPlain) {
+        fprintf(stderr, "[harness] LENSDEPTH FAIL: effect factory returned null\n");
+        return 11;
+    }
+    // depth target is the 4th child (radius/threshold/gain/depth)
+    const auto depthProp = fxDepth->ca_getChildAt<BoxTargetProperty>(3);
+    if(!depthProp) {
+        fprintf(stderr, "[harness] LENSDEPTH FAIL: no depth target child\n");
+        return 12;
+    }
+    depthProp->setTarget(depthBox.get());
+    srcA->rasterEffectsCollection()->addChild(fxDepth);
+    srcB->rasterEffectsCollection()->addChild(fxPlain);
+    // headless: there is no GL context, so a GPU-preferred effect would
+    // park forever - force the control effect onto the CPU (the depth-map
+    // effect reports cpuOnly by itself). gpuPreffered toggles through
+    // gpuOnly first, hence the loop
+    for(int i = 0; i < 4 &&
+        fxPlain->instanceHwSupport() != HardwareSupport::cpuOnly; i++) {
+        fxPlain->switchInstanceHwSupport();
+    }
+    fprintf(stderr, "[harness] LENSDEPTH effect hw: plain=%d depth=%d "
+                    "(1 = cpuOnly)\n",
+            int(fxPlain->instanceHwSupport()),
+            int(fxDepth->instanceHwSupport()));
+    sceneRounds(4);
+
+    // the effects phase runs on the task scheduler, so it needs
+    // updateScenes() (which calls TaskScheduler::queTasks) inside the wait
+    // loop - plain processEvents() never advances the queue. The wait must
+    // really reach finished(): the rasterized source is already stored in
+    // fRenderedImage BEFORE the effects phase, so measuring early would
+    // report the unblurred layer
+    const auto renderLayer = [&](ImageBox* const img) {
+        const auto rd = img->queExternalRender(0, true);
+        for(int w = 0; w < 20000 && !(rd && rd->finished()); w++) {
+            document.updateScenes();
+            pump(4);
+        }
+        return rd;
+    };
+    // mean absolute horizontal luminance gradient inside a region
+    const auto gradient = [](const SkPixmap& pm, const int x0, const int x1,
+                             const int y0, const int y1) {
+        double sum = 0.;
+        int n = 0;
+        for(int y = y0; y < y1; y++) {
+            for(int x = x0; x < x1 - 1; x++) {
+                const auto lum = [&pm](const int x, const int y) {
+                    const SkColor c = pm.getColor(x, y);
+                    return (int(SkColorGetR(c)) + int(SkColorGetG(c)) +
+                            int(SkColorGetB(c))) / 3;
+                };
+                sum += qAbs(lum(x, y) - lum(x + 1, y));
+                n++;
+            }
+        }
+        return n > 0 ? sum / n : -1.;
+    };
+    const auto measure = [&](ImageBox* const img, const char* const tag,
+                             double* const leftOut, double* const rightOut) {
+        const auto rd = renderLayer(img);
+        if(!rd || !rd->finished() || !rd->fRenderedImage) {
+            fprintf(stderr, "[harness] LENSDEPTH [%s] FAIL: no finished render "
+                            "(rd=%d finished=%d state=%d callers=%d img=%d)\n",
+                    tag, int(rd != nullptr),
+                    rd ? int(rd->finished()) : -1,
+                    rd ? int(rd->getState()) : -1,
+                    rd ? rd->fEffectCallers.count() : -1,
+                    rd && rd->fRenderedImage ? 1 : 0);
+            return false;
+        }
+        const auto raster = rd->fRenderedImage->makeRasterImage();
+        SkPixmap pm;
+        if(!raster || !raster->peekPixels(&pm)) {
+            fprintf(stderr, "[harness] LENSDEPTH [%s] FAIL: no pixels\n", tag);
+            return false;
+        }
+        // the layer content sits at (-fGlobalRect.topLeft()) inside the
+        // (effect-margin padded) output image
+        const int offX = -rd->fGlobalRect.x();
+        const int offY = -rd->fGlobalRect.y();
+        const double left = gradient(pm, offX + 60, offX + 340, offY + 120, offY + 480);
+        const double right = gradient(pm, offX + 460, offX + 740, offY + 120, offY + 480);
+        const double ratio = right > 0.001 ? left / right : -1.;
+        fprintf(stderr, "[harness] LENSDEPTH [%s] img=%dx%d imgOff=%d,%d "
+                        "callers=%d sharp(left)=%.2f blurred(right)=%.2f "
+                        "ratio=%.2f\n",
+                tag, pm.width(), pm.height(), offX, offY,
+                rd->fEffectCallers.count(), left, right, ratio);
+        if(leftOut) *leftOut = left;
+        if(rightOut) *rightOut = right;
+        return true;
+    };
+
+    int fails = 0;
+    double sharpL = -1., blurR = -1., plainL = -1., plainR = -1.;
+    const bool plainOk = measure(srcB.get(), "plain", &plainL, &plainR);
+    const bool depthOk = measure(srcA.get(), "depth", &sharpL, &blurR);
+    if(!plainOk || !depthOk) {
+        fails++;
+    } else {
+        // the depth map's focal half must stay markedly sharper
+        if(sharpL < blurR * 3.) {
+            fprintf(stderr, "[harness] LENSDEPTH FAIL: focal zone not sharp "
+                            "(sharp=%.2f blurred=%.2f)\n", sharpL, blurR);
+            fails++;
+        }
+        // without a depth map both halves are blurred the same
+        const double diff = qAbs(plainL - plainR);
+        const double worst = qMax(plainL, plainR);
+        if(worst <= 0.001 || diff > worst * 0.35) {
+            fprintf(stderr, "[harness] LENSDEPTH FAIL: uniform control not "
+                            "uniform (%.2f vs %.2f)\n", plainL, plainR);
+            fails++;
+        }
+        // and the depth mode's focal half must be sharper than the uniform
+        // blur of the same layer
+        if(sharpL < plainL * 3.) {
+            fprintf(stderr, "[harness] LENSDEPTH FAIL: depth mode did not "
+                            "restore the focal zone (%.2f vs %.2f)\n",
+                    sharpL, plainL);
+            fails++;
+        }
+    }
+
+    fprintf(stderr, "[harness] LENSDEPTH %s (fails=%d)\n",
+            fails ? "FAIL" : "PASS", fails);
+    fflush(stderr);
+    return fails ? 1 : 0;
+}
+
 // synthetic differential test: every layer creates a MotionPathHandler
 // in prp_updateCanvasProps(); repeated create/destroy cycles used to be
 // lethal with the double-shared PointsHandler ownership
@@ -1548,6 +1772,19 @@ int main(int argc, char *argv[]) {
         Actions actions(document);
         return runImageGeomProbe(document, taskScheduler,
                                  args.count() > 1 ? args.at(1) : QString());
+    }
+    if(!args.isEmpty() && args.first() == "--lensdepth") {
+        eSettings settings(HardwareInfo::sCpuThreads(),
+                           HardwareInfo::sRamKB());
+        ImportHandler importHandler;
+        TaskScheduler taskScheduler;
+        Document document(taskScheduler);
+        FilesHandler filesHandler;
+        MemoryHandler memoryHandler;
+        eFilterSettings filterSettings;
+        // Canvas::queTasks dereferences Actions::sInstance
+        Actions actions(document);
+        return runLensDepthProbe(document, taskScheduler);
     }
     if(!args.isEmpty() && args.first() == "--synthetic") {
         const int cycles = args.count() > 1 ? args.at(1).toInt() : 5;

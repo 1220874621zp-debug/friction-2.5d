@@ -50,6 +50,16 @@ public:
     void applySettings();
     void updateSettings(bool restore = false);
 
+    // Friction (non-AE) default for a settings id; binding sites use it as
+    // the QSettings fallback so a fresh config gets the AE-style property
+    // reveal keys (P/S/R/T) without opening this dialog first
+    static QString frictionDefault(const QString &id);
+
+    // one-time config migration, call once at startup before shortcuts are
+    // bound: the property reveal keys (P/S/R/T) became the Friction default
+    // and P was released by the never-bound "pivot global/local" entry
+    static void applyDefaultMigrations();
+
 private:
     void applyPreset(const QString &preset);
     void populateTable(const QString &preset = QString());

@@ -114,6 +114,13 @@ namespace EvFormat {
         // commit and this gate are not loadable)
         desaturateInvert = 52,
 
+        // Camera Lens Blur gained the depth-map driven defocus block
+        // (depth layer target + focal distance + depth of field +
+        // invert) as 4 new serialized children after radius/threshold/
+        // gain; older files carry only the first 3 and must read 4
+        // children less (positional child layout)
+        cameraLensBlurDepth = 53,
+
         nextVersion
     };
 

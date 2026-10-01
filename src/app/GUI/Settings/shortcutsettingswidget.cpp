@@ -34,9 +34,9 @@
 // active entries are read at startup by toolbox/menu/timeline;
 // inactive entries are reserved for planned features (kept in
 // settings so they survive restarts and are ready to bind later).
-// NOTE: in the AE preset, P/S/R/T/A/U belong to the property
-// reveal shortcuts (like AE), so tool keys that would conflict
-// (localPivot P, colorBookmark B, pointTransform A) are disabled.
+// NOTE: the property reveal keys follow AE in BOTH presets (A/P/S/R/T/U);
+// the "pivot global / local" tool key is therefore unbound by default
+// (localPivot) - it can be assigned in this dialog when needed.
 const QList<ShortcutEntry> &ShortcutSettingsWidget::entries()
 {
     static const QList<ShortcutEntry> list = {
@@ -51,17 +51,20 @@ const QList<ShortcutEntry> &ShortcutSettingsWidget::entries()
         {"textMode", tr("Add Text"), tr("Tools"), "F7", "Ctrl+T", true},
         {"nullMode", tr("Add Null Object"), tr("Tools"), "F8", "F8", true},
         {"pickMode", tr("Color Pick Mode (Eyedropper)"), tr("Tools"), "F9", "F9", true},
-        {"localPivot", tr("Pivot Global / Local"), tr("Tools"), "P", "", true},
+        {"localPivot", tr("Pivot Global / Local"), tr("Tools"), "", "", true},
         {"colorBookmark", tr("Bookmark Current Color"), tr("Tools"), "B", "", true},
         // --- playback / navigation (bound in TimelineDockWidget) ---
         {"rewind", tr("Go to First Frame"), tr("Timeline"), "Shift+Left", "Home", true},
         {"fastForward", tr("Go to Last Frame"), tr("Timeline"), "Shift+Right", "End", true},
         // --- property reveal (AE A/P/S/R/T/U, bound in TimelineDockWidget) ---
+        // P/S/R/T follow AE in the Friction preset too; A (anchor) and U
+        // (show animated) stay AE-preset-only (not requested for the
+        // default keymap)
         {"showAnchor", tr("Show Anchor Point Property"), tr("Properties"), "", "A", true},
-        {"showPosition", tr("Show Position Property"), tr("Properties"), "", "P", true},
-        {"showScale", tr("Show Scale Property"), tr("Properties"), "", "S", true},
-        {"showRotation", tr("Show Rotation Property"), tr("Properties"), "", "R", true},
-        {"showOpacity", tr("Show Opacity Property"), tr("Properties"), "", "T", true},
+        {"showPosition", tr("Show Position Property"), tr("Properties"), "P", "P", true},
+        {"showScale", tr("Show Scale Property"), tr("Properties"), "S", "S", true},
+        {"showRotation", tr("Show Rotation Property"), tr("Properties"), "R", "R", true},
+        {"showOpacity", tr("Show Opacity Property"), tr("Properties"), "T", "T", true},
         {"showAnimated", tr("Show Animated Properties (U)"), tr("Properties"), "", "U", true},
         // --- global (bound in Menu / main window) ---
         {"quickEffects", tr("Quick Search Effects (AE: FX Console)"), tr("Effects"), "Ctrl+Space", "Ctrl+Space", true},
@@ -89,6 +92,45 @@ const QList<ShortcutEntry> &ShortcutSettingsWidget::entries()
         {"stepFrameFwd", tr("Step One Frame Forward"), tr("Timeline"), "", "Right", false}
     };
     return list;
+}
+
+QString ShortcutSettingsWidget::frictionDefault(const QString &id)
+{
+    for (const auto &e : entries()) {
+        if (e.id == id) { return e.def; }
+    }
+    return QString();
+}
+
+void ShortcutSettingsWidget::applyDefaultMigrations()
+{
+    // v1: the AE-style property reveal keys (A/P/S/R/T/U family, minus the
+    // ones left to the AE preset) became part of the FRICTION default, and
+    // P was released by "pivot global / local" (an entry that is bound in
+    // the toolbox but had P as its default, which now belongs to Show
+    // Position). Configs written before this carry an EMPTY value for the
+    // property keys - and an empty value means "unbound", so the new
+    // defaults have to be written once here; afterwards the user is free
+    // to clear them again in the settings dialog.
+    static const QString kVersionKey = QStringLiteral("defaultsVersion");
+    if (AppSupport::getSettings("shortcuts", kVersionKey, 0).toInt() >= 1) {
+        return;
+    }
+    static const QStringList kNewDefaults{"showPosition", "showScale",
+                                          "showRotation", "showOpacity"};
+    for (const auto &id : kNewDefaults) {
+        const QString cur = AppSupport::getSettings("shortcuts", id, "")
+                .toString();
+        if (!cur.isEmpty()) { continue; }   // user already set something
+        AppSupport::setSettings("shortcuts", id, frictionDefault(id));
+    }
+    // the old localPivot default was "P" (unless the user never applied a
+    // preset, in which case it is empty and stays unbound)
+    if (AppSupport::getSettings("shortcuts", "localPivot", "").toString()
+            == QLatin1String("P")) {
+        AppSupport::setSettings("shortcuts", "localPivot", QString());
+    }
+    AppSupport::setSettings("shortcuts", kVersionKey, 1);
 }
 
 ShortcutSettingsWidget::ShortcutSettingsWidget(QWidget *parent)

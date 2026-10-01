@@ -97,6 +97,7 @@ static LONG WINAPI writeCrashMiniDump(EXCEPTION_POINTERS* const pep) {
 #include "appsupport.h"
 #include "themesupport.h"
 #include "wizards/quicksetup.h"
+#include "GUI/Settings/shortcutsettingswidget.h"
 
 #ifdef Q_OS_WIN
 #include "windowsincludes.h"
@@ -762,6 +763,12 @@ int main(int argc, char *argv[])
         splash.showMessage(QObject::tr("Loading User Interface ..."),
                            Qt::AlignRight | Qt::AlignBottom, Qt::white);
     }
+
+    // one-time shortcut defaults migration: the AE-style property reveal
+    // keys (P/S/R/T) became the Friction default and P was released by the
+    // old "pivot global / local" binding - must run BEFORE the UI binds
+    // any shortcut (toolbox / menu / timeline dock)
+    if (!isRenderer) { ShortcutSettingsWidget::applyDefaultMigrations(); }
 
     // load UI
     const QString openProject = argc > 1 ? argv[1] : QString();

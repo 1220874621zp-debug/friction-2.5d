@@ -74,6 +74,7 @@
 #include "layouthandler.h"
 #include "memoryhandler.h"
 #include "appsupport.h"
+#include "GUI/Settings/shortcutsettingswidget.h"
 
 namespace {
 // recursively gather every keyed QrealAnimator under prop (property
@@ -1676,8 +1677,12 @@ void TimelineDockWidget::setupPropertyShortcuts()
 {
     const auto makeShortcut = [this](const QString &id,
                                      const std::function<void()> &fn) {
-        const auto seq = AppSupport::getSettings("shortcuts",
-                                                 id, "").toString();
+        // the table default (AE-style property reveal keys) is the
+        // fallback, so a config that never touched these keys still gets
+        // P/S/R/T; an explicitly cleared (empty) value stays unbound
+        const auto seq = AppSupport::getSettings(
+                    "shortcuts", id,
+                    ShortcutSettingsWidget::frictionDefault(id)).toString();
         if (seq.isEmpty()) { return; }
         const auto keySeq = QKeySequence(seq);
         // user-configured property shortcuts take priority over
