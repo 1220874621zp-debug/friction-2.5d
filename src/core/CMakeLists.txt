@@ -229,6 +229,7 @@ set(
     RasterEffects/brightnesscontrasteffect.cpp
     RasterEffects/cameralensblureffect.cpp
     RasterEffects/setmatteeffect.cpp
+    RasterEffects/turbulencedisplaceeffect.cpp
     RasterEffects/chromakeyeffect.cpp
     RasterEffects/liquidglasseffect.cpp
     RasterEffects/pagecurleffect.cpp
@@ -637,6 +638,7 @@ set(
     RasterEffects/brightnesscontrasteffect.h
     RasterEffects/cameralensblureffect.h
     RasterEffects/setmatteeffect.h
+    RasterEffects/turbulencedisplaceeffect.h
     RasterEffects/chromakeyeffect.h
     RasterEffects/liquidglasseffect.h
     RasterEffects/pagecurleffect.h

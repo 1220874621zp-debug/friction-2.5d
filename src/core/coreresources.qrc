@@ -40,6 +40,7 @@
         <file alias="fractalnoiseeffect.frag">RasterEffects/fractalnoiseeffect.frag</file>
         <file alias="rampeffect.frag">RasterEffects/rampeffect.frag</file>
         <file alias="grideffect.frag">RasterEffects/grideffect.frag</file>
+        <file alias="turbulencedisplaceeffect.frag">RasterEffects/turbulencedisplaceeffect.frag</file>
         <file alias="lightsweepeffect.frag">RasterEffects/lightsweepeffect.frag</file>
         <file alias="displacementwarpeffect.frag">RasterEffects/displacementwarpeffect.frag</file>
         <file alias="filmgraineffect.frag">RasterEffects/filmgraineffect.frag</file>

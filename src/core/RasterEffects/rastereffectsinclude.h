@@ -61,5 +61,6 @@
 #include "cornerpineffect.h"
 #include "cameralensblureffect.h"
 #include "setmatteeffect.h"
+#include "turbulencedisplaceeffect.h"
 
 #endif // RASTEREFFECTSINCLUDE_H

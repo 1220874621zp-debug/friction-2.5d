@@ -850,7 +850,8 @@ int main(int argc, char *argv[])
             RasterEffectType::DESATURATE,
             RasterEffectType::LEVELS,
             RasterEffectType::ECHO,
-            RasterEffectType::CORNER_PIN
+            RasterEffectType::CORNER_PIN,
+            RasterEffectType::TURBULENT_DISPLACE
         };
             for (const auto t : typesAll) {
                 const auto eff = createRasterEffectForNonCustomType(t);
@@ -943,7 +944,8 @@ int main(int argc, char *argv[])
             RasterEffectType::DESATURATE,
             RasterEffectType::LEVELS,
             RasterEffectType::ECHO,
-            RasterEffectType::CORNER_PIN
+            RasterEffectType::CORNER_PIN,
+            RasterEffectType::TURBULENT_DISPLACE
         };
 
         for (const auto t : types) {
@@ -1208,7 +1210,8 @@ int main(int argc, char *argv[])
             RasterEffectType::DESATURATE,
             RasterEffectType::LEVELS,
             RasterEffectType::ECHO,
-            RasterEffectType::CORNER_PIN
+            RasterEffectType::CORNER_PIN,
+            RasterEffectType::TURBULENT_DISPLACE
         };
         QString dumpDir;
         if (argc >= 3) {

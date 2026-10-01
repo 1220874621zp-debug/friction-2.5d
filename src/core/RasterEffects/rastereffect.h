@@ -170,7 +170,11 @@ enum class RasterEffectType : short {
     // AE Set Matte: mask this layer with another layer's alpha/luma,
     // as an effect-stack entry (appended last, never reorder -
     // serialized ids must stay stable)
-    SET_MATTE
+    SET_MATTE,
+    // AE Turbulent Displace: fractal gradient-noise displacement with
+    // cyclic evolution and edge pinning (appended last, never reorder
+    // - serialized ids must stay stable)
+    TURBULENT_DISPLACE
 };
 
 struct BoxRenderData;

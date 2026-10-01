@@ -156,6 +156,8 @@ void RasterEffectMenuCreator::forEveryEffectCore(const EffectAdder &add)
         []() { return enve::make_shared<LayerStylesEffect>(); });
     add(QObject::tr("边角定位 (Corner Pin)"), QObject::tr("Distort"),
         []() { return enve::make_shared<CornerPinEffect>(); });
+    add(QObject::tr("湍流置换 (Turbulent Displace)"), QObject::tr("Distort"),
+        []() { return enve::make_shared<TurbulentDisplaceEffect>(); });
 }
 
 void RasterEffectMenuCreator::forEveryEffectCustom(const EffectAdder &add)

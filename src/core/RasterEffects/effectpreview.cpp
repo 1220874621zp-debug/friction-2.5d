@@ -542,6 +542,11 @@ NamedScan namedScanFor(const RasterEffectType type) {
         // stays off the exact 0 grid point - a choke of exactly 0 is
         // a passthrough and would flash one empty frame mid-loop
         return { "choke matte", nullptr, -6., 5.9 };
+    case RasterEffectType::TURBULENT_DISPLACE:
+        // sweeping the displacement makes the tile visibly crawl;
+        // the animator's name is the Chinese tr source string, so it
+        // travels through altName (page-curl style)
+        return { "displacement", "置换量", 0., 90. };
     default:
         return { nullptr, nullptr, 0., 0. };
     }
@@ -685,6 +690,11 @@ void setupDefaults(RasterEffect* const eff, const RasterEffectType type) {
         styles->setStroke(true, 0, 7, 100, QColor(255, 60, 60));
         break;
     }
+    case RasterEffectType::TURBULENT_DISPLACE:
+        // factory pinning keeps all edges locked, which reads as a
+        // dead border on a thumbnail - unpin so the whole tile crawls
+        setCombo("固定", 3);
+        break;
     default:
         break;
     }
