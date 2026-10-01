@@ -189,6 +189,11 @@ void QrealAnimatorValueSlider::startTransform(const qreal value)
         if (other) {
             other->prp_startTransform();
         }
+        // AE-style: with several layers selected, dragging a value field
+        // moves the matching property of all of them together
+        if (const auto scene = mTarget->getParentScene()) {
+            scene->beginValueEditAcrossLayers(mTarget);
+        }
     }
     QDoubleSlider::startTransform(value);
 }
@@ -205,6 +210,13 @@ void QrealAnimatorValueSlider::setValue(const qreal value)
 {
     if (mTransformTarget) {
         mTransformTarget->setCurrentBaseValue(value);
+        // typed values (no startTransform) still mirror across the selection
+        if (const auto scene = mTransformTarget->getParentScene()) {
+            if (!scene->valueEditAcrossLayersActive()) {
+                scene->beginValueEditAcrossLayers(mTransformTarget);
+            }
+            scene->updateValueEditAcrossLayers();
+        }
         emit valueEdited(this->value());
     } else  { QDoubleSlider::setValue(value); }
 }
@@ -222,6 +234,9 @@ void QrealAnimatorValueSlider::finishTransform(const qreal value)
             }
             other->prp_finishTransform();
         }
+        if (const auto scene = mTarget->getParentScene()) {
+            scene->endValueEditAcrossLayers();
+        }
         mTransformTarget = nullptr;
     }
     QDoubleSlider::finishTransform(value);
@@ -234,6 +249,9 @@ void QrealAnimatorValueSlider::cancelTransform()
         const auto other = getTransformTargetSibling();
         if (other) {
             other->prp_cancelTransform();
+        }
+        if (const auto scene = mTarget->getParentScene()) {
+            scene->endValueEditAcrossLayers();
         }
         mTransformTarget = nullptr;
     }

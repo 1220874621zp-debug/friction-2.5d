@@ -2036,6 +2036,66 @@ static int runRound7Probe(Document& document, Actions& actions,
         fprintf(stderr, "[harness] ROUND7 [cross-key] affected=%d keyed="
                         "%d/%d/%d %s\n", affected, int(keyed(a.get())),
                 int(keyed(b.get())), int(keyed(c.get())), ok ? "PASS" : "FAIL");
+
+        // ---- 4) cross-layer VALUE editing (dragging a value field) ----
+        const auto posAX = posA->getXAnimator();
+        const auto posBX = b->getBoxTransformAnimator()->getPosAnimator()
+                ->getXAnimator();
+        const auto posCX = c->getBoxTransformAnimator()->getPosAnimator()
+                ->getXAnimator();
+        if(!posAX || !posBX || !posCX) {
+            fprintf(stderr, "[harness] ROUND7 [cross-value] FAIL: no x anim\n");
+            fails++;
+        } else {
+            // plain (unkeyed) value: the counterpart takes the same value
+            posBX->setCurrentBaseValue(7.);
+            posCX->setCurrentBaseValue(7.);
+            scene->beginValueEditAcrossLayers(posAX);
+            posAX->setCurrentBaseValue(123.5);
+            scene->updateValueEditAcrossLayers();
+            scene->endValueEditAcrossLayers();
+            const bool plainOk =
+                    qAbs(posBX->getCurrentBaseValue() - 123.5) < 0.001 &&
+                    qAbs(posCX->getCurrentBaseValue() - 123.5) < 0.001;
+            // capture before the animated case (which also mirrors onto b/c)
+            const qreal plainB = posBX->getCurrentBaseValue();
+            const qreal plainC = posCX->getCurrentBaseValue();
+            // animated value: the source holds a key on the drag frame, so the
+            // counterparts must get a key with the same value (not a static
+            // change). Fresh layers without keys; the frame comes from the
+            // source animator itself (the harness does not drive the scene
+            // frame into the animators)
+            const auto d = enve::make_shared<RectangleBox>();
+            const auto e = enve::make_shared<RectangleBox>();
+            scene->addContained(d);
+            scene->addContained(e);
+            pump(20);
+            scene->addBoxToSelection(d.get());
+            scene->addBoxToSelection(e.get());
+            const auto posDX = d->getBoxTransformAnimator()->getPosAnimator()
+                    ->getXAnimator();
+            const auto posEX = e->getBoxTransformAnimator()->getPosAnimator()
+                    ->getXAnimator();
+            const bool hadNoKeys = posEX && !posEX->anim_hasKeys();
+            posDX->anim_setRecording(true);          // keys the current frame
+            const int keyFrame = posDX->anim_getCurrentRelFrame();
+            scene->beginValueEditAcrossLayers(posDX);
+            posDX->setCurrentBaseValue(80.);
+            scene->updateValueEditAcrossLayers();
+            scene->endValueEditAcrossLayers();
+            const bool keyOk = hadNoKeys && posDX->anim_hasKeys() &&
+                    posEX->anim_hasKeys() &&
+                    qAbs(posEX->getEffectiveValue(keyFrame) - 80.) < 0.01;
+            if(!plainOk || !keyOk) fails++;
+            fprintf(stderr, "[harness] ROUND7 [cross-value] plain: b=%.2f "
+                            "c=%.2f (want 123.5) keyed@%d: src=%.2f dst=%.2f "
+                            "(want 80) keys=%d/%d %s\n",
+                    plainB, plainC,
+                    keyFrame, posDX->getEffectiveValue(keyFrame),
+                    posEX->getEffectiveValue(keyFrame),
+                    int(posDX->anim_hasKeys()), int(posEX->anim_hasKeys()),
+                    (plainOk && keyOk) ? "PASS" : "FAIL");
+        }
     }
 
     fprintf(stderr, "[harness] ROUND7 %s (fails=%d)\n",

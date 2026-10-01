@@ -1314,6 +1314,83 @@ int Canvas::keyOnSelectedLayers(Animator * const source, const KeyOp op) {
     return affected;
 }
 
+// ---------------------------------------------------------------- value edit
+// AE-style multi-layer value editing: the value field of one layer writes the
+// same value through to the matching property of every other selected layer.
+// Only the interactive edit is mirrored (the value slider brackets it), so
+// loading a project, undo and expressions never leak across layers.
+
+namespace {
+// mirror one scalar value (and its key at the current frame, when the source
+// is animated) onto the counterpart axis
+void applyValueToCounterpart(QrealAnimator* const src,
+                             Animator* const target) {
+    if(!src || !target) return;
+    const auto dst = enve_cast<QrealAnimator*>(target);
+    if(!dst) return;
+    // the source that has just been dragged carries a key on the current
+    // frame when it is animated: give the counterpart the same key with the
+    // same value instead of a one-off static change
+    if(src->anim_getKeyOnCurrentFrame()) {
+        dst->anim_setRecording(true);
+        dst->saveValueToKey(
+                    src->prp_relFrameToAbsFrame(src->anim_getCurrentRelFrame()),
+                    src->getCurrentBaseValue());
+    } else {
+        dst->setCurrentBaseValue(src->getCurrentBaseValue());
+    }
+}
+}
+
+void Canvas::beginValueEditAcrossLayers(Animator * const source) {
+    mValueEditTargets.clear();
+    mValueEditSource.clear();
+    if(!source) return;
+    const auto sourceBox = source->getFirstAncestor<BoundingBox>();
+    for(const auto& box : mSelectedBoxes.getList()) {
+        if(!box || box == sourceBox) continue;
+        if(box->isLocked()) continue;
+        const auto counterpart = enve_cast<Animator*>(
+                    findCounterpartByPath(source, box));
+        if(counterpart) mValueEditTargets << counterpart;
+    }
+    if(!mValueEditTargets.isEmpty()) {
+        mValueEditSource = source;
+        auto block = blockUndoRedo();
+        pushUndoRedoName(tr("Change Value"));
+    }
+}
+
+void Canvas::updateValueEditAcrossLayers() {
+    const auto source = mValueEditSource.data();
+    if(!source || mValueEditTargets.isEmpty()) return;
+    if(const auto srcQreal = enve_cast<QrealAnimator*>(source)) {
+        for(const auto target : mValueEditTargets) {
+            applyValueToCounterpart(srcQreal, target);
+        }
+        return;
+    }
+    // compound point property (e.g. "translation" edited as a whole): mirror
+    // the axes through the same helper
+    if(const auto srcPoint = enve_cast<QPointFAnimator*>(source)) {
+        const auto srcX = srcPoint->getXAnimator();
+        const auto srcY = srcPoint->getYAnimator();
+        for(const auto target : mValueEditTargets) {
+            const auto dstPoint = enve_cast<QPointFAnimator*>(target);
+            if(!dstPoint) continue;
+            applyValueToCounterpart(srcX, dstPoint->getXAnimator());
+            applyValueToCounterpart(srcY, dstPoint->getYAnimator());
+        }
+    }
+}
+
+void Canvas::endValueEditAcrossLayers() {
+    const bool had = valueEditAcrossLayersActive();
+    mValueEditTargets.clear();
+    mValueEditSource.clear();
+    if(had) mDocument.actionFinished();
+}
+
 stdsptr<BoxRenderData> Canvas::createRenderData() {
     return enve::make_shared<CanvasRenderData>(this);
 }

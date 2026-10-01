@@ -211,6 +211,18 @@ public:
     enum class KeyOp { AddCurrent, RemoveCurrent, RemoveAll };
     int keyOnSelectedLayers(Animator* const source, const KeyOp op);
 
+    // AE-style cross-layer VALUE editing: while a value field is being
+    // dragged/typed, the matching property of every other selected layer
+    // follows the same value - and gets a keyframe when the edited property
+    // is keyed at the current frame - so a multi-selection moves together.
+    // begin/update/end bracket the interactive edit (QrealAnimatorValueSlider
+    // calls them); everything lands in the caller's single undo step.
+    void beginValueEditAcrossLayers(Animator* const source);
+    void updateValueEditAcrossLayers();
+    void endValueEditAcrossLayers();
+    bool valueEditAcrossLayersActive() const
+    { return !mValueEditTargets.isEmpty() && !mValueEditSource.isNull(); }
+
     void ungroupSelectedBoxes();
     void scaleSelectedBy(const qreal scaleBy,
                          const QPointF &absOrigin,
@@ -1223,6 +1235,12 @@ protected:
 
     qptr<BoundingBox> mPressedBox;
     stdsptr<PathPivot> mRotPivot;
+
+    // cross-layer value editing session (see beginValueEditAcrossLayers);
+    // QPointer: Animator is not a StdSelfRef type, and a target can be
+    // destroyed while a drag is running (deleted layer, undo)
+    QPointer<Animator> mValueEditSource;
+    QList<QPointer<Animator>> mValueEditTargets;
 
     stdptr<SmartNodePoint> mLastEndPoint;
 
