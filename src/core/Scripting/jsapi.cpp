@@ -65,7 +65,9 @@
 #include "Expressions/propertybindingparser.h"
 #include "Timeline/durationrectangle.h"
 #include "Sound/eindependentsound.h"
+#include "Sound/esound.h"
 #include "actions.h"
+#include "jsaudioanalyzer.h"
 
 #include <QFile>
 #include <QTextStream>
@@ -95,6 +97,24 @@ namespace Friction
                     if (box) { result.append(box); }
                 }
                 return result;
+            }
+
+            // collect audio layers depth-first (document order);
+            // sounds are eBoxOrSound but not BoundingBox, so the box
+            // helpers above never see them
+            void collectSounds(ContainerBox * const container,
+                               QList<eSound*> &out)
+            {
+                if (!container) { return; }
+                const auto &contained = container->getContained();
+                for (const auto &child : contained) {
+                    if (const auto snd = enve_cast<eSound*>(child.get())) {
+                        out.append(snd);
+                    } else if (const auto group =
+                               enve_cast<ContainerBox*>(child.get())) {
+                        collectSounds(group, out);
+                    }
+                }
             }
 
             Canvas *activeSceneOrNull()
@@ -453,6 +473,35 @@ namespace Friction
                                              const QJSValue &v)
         {
             setValueAtFrame(qRound(seconds * fps()), v);
+        }
+
+        void JsPropertyProxy::setValuesAtFrames(const int startFrame,
+                                                const QJSValue &values)
+        {
+            if (!mProp || !values.isArray()) { return; }
+            const int len = int(values.property(QStringLiteral("length"))
+                                .toInt());
+            if (mKind == Kind::Point) {
+                const auto point = static_cast<QPointFAnimator*>(mProp.data());
+                const auto xAnim = point->getXAnimator();
+                const auto yAnim = point->getYAnimator();
+                for (int i = 0; i < len; i++) {
+                    qreal x = 0.;
+                    qreal y = 0.;
+                    if (!readPoint(values.property(uint(i)), x, y)) {
+                        continue;
+                    }
+                    if (xAnim) { xAnim->saveValueToKey(startFrame + i, x); }
+                    if (yAnim) { yAnim->saveValueToKey(startFrame + i, y); }
+                }
+            } else {
+                const auto scalar = static_cast<QrealAnimator*>(mProp.data());
+                for (int i = 0; i < len; i++) {
+                    scalar->saveValueToKey(
+                                startFrame + i,
+                                values.property(uint(i)).toNumber());
+                }
+            }
         }
 
         int JsPropertyProxy::numKeys()
@@ -2202,6 +2251,72 @@ namespace Friction
             return wrapOwnedQObject(mEngine.data(), proxy);
         }
 
+        //---------------------------- JsSoundProxy ----------------------------
+
+        JsSoundProxy::JsSoundProxy(const QPointer<eSound> &sound,
+                                   const QPointer<Canvas> &scene,
+                                   QJSEngine * const engine,
+                                   QObject * const parent)
+            : QObject(parent)
+            , mSound(sound)
+            , mScene(scene)
+            , mEngine(engine)
+        {}
+
+        JsSoundProxy::~JsSoundProxy() = default;
+
+        QString JsSoundProxy::name() const
+        {
+            return mSound ? mSound->prp_getName() : QString();
+        }
+
+        bool JsSoundProxy::visible() const
+        {
+            return mSound ? mSound->isVisible() : false;
+        }
+
+        qreal JsSoundProxy::duration() const
+        {
+            return mSound ? mSound->durationSeconds() : 0.;
+        }
+
+        QString JsSoundProxy::filePath() const
+        {
+            if (!mSound) { return QString(); }
+            const auto indep =
+                    enve_cast<eIndependentSound*>(mSound.data());
+            return indep ? indep->filePath() : QString();
+        }
+
+        QJSValue JsSoundProxy::frameRange() const
+        {
+            if (!mSound || !mEngine) {
+                return QJSValue(QJSValue::NullValue);
+            }
+            const auto range = mSound->prp_absInfluenceRange();
+            QJSValue arr = mEngine->newArray(2);
+            arr.setProperty(0, range.fMin);
+            arr.setProperty(1, range.fMax);
+            return arr;
+        }
+
+        QJSValue JsSoundProxy::analyze(const int bands)
+        {
+            if (!mSound || !mEngine) {
+                return QJSValue(QJSValue::NullValue);
+            }
+            const QString path = filePath();
+            if (path.isEmpty()) {
+                QJSValue obj = mEngine->newObject();
+                obj.setProperty(QStringLiteral("ok"), false);
+                obj.setProperty(QStringLiteral("error"),
+                                QStringLiteral("sound has no source file"));
+                return obj;
+            }
+            const qreal sceneFps = mScene ? mScene->getFps() : 30.;
+            return analyzeAudioFile(mEngine.data(), path, sceneFps, bands);
+        }
+
         //---------------------------- JsSceneProxy ----------------------------
 
         JsSceneProxy::JsSceneProxy(const QPointer<Canvas> &scene,
@@ -2611,6 +2726,24 @@ namespace Friction
             return result;
         }
 
+        QJSValue JsSceneProxy::sounds()
+        {
+            if (!mScene || !mEngine) {
+                return QJSValue(QJSValue::NullValue);
+            }
+            QList<eSound*> found;
+            collectSounds(mScene.data(), found);
+            QJSValue arr = mEngine->newArray(uint(found.size()));
+            for (int i = 0; i < found.size(); i++) {
+                const auto proxy = new JsSoundProxy(
+                            QPointer<eSound>(found.at(i)),
+                            mScene, mEngine.data(), nullptr);
+                arr.setProperty(uint(i),
+                                wrapOwnedQObject(mEngine.data(), proxy));
+            }
+            return arr;
+        }
+
         QJSValue JsSceneProxy::addSound(const QString &filePath,
                                        const QString &name)
         {
@@ -2716,6 +2849,16 @@ namespace Friction
             return mHost ? mHost->appProject() : QJSValue(QJSValue::NullValue);
         }
 
+        QJSValue JsAppProxy::analyzeAudio(const QString &filePath,
+                                          const qreal fps,
+                                          const int bands)
+        {
+            if (!mHost || !mHost->engine()) {
+                return QJSValue(QJSValue::NullValue);
+            }
+            return analyzeAudioFile(mHost->engine(), filePath, fps, bands);
+        }
+
         void JsAppProxy::beginUndoGroup(const QString &name)
         {
             // the group name is not used yet (the undo set inherits
@@ -2766,6 +2909,9 @@ namespace Friction
                 "};"
                 "this.updateCombo = function(id, options, index) {"
                 "    __host.setComboOptions(id, options, index);"
+                "};"
+                "this.chooseFile = function(caption, filter) {"
+                "    return __host.chooseFile(caption, filter || '');"
                 "};"));
         }
 
@@ -2776,6 +2922,20 @@ namespace Friction
             mPrintHandler = print;
             mAlertHandler = alert;
             mConfirmHandler = confirm;
+        }
+
+        void JsHost::setChooseFileHandler(const ChooseFileHandler &handler)
+        {
+            mChooseFileHandler = handler;
+        }
+
+        QString JsHost::chooseFile(const QString &caption,
+                                   const QString &filter)
+        {
+            if (mChooseFileHandler) {
+                return mChooseFileHandler(caption, filter);
+            }
+            return QString();
         }
 
         void JsHost::print(const QString &message)

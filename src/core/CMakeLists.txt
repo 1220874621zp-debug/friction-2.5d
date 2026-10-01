@@ -86,6 +86,7 @@ set(
     Expressions/expression.cpp
     Expressions/expressionpresets.cpp
     Scripting/jsapi.cpp
+    Scripting/jsaudioanalyzer.cpp
     Animators/motionpathhandler.cpp
     Expressions/framebinding.cpp
     Expressions/scenebinding.cpp
@@ -475,6 +476,7 @@ set(
     Expressions/expression.h
     Expressions/expressionpresets.h
     Scripting/jsapi.h
+    Scripting/jsaudioanalyzer.h
     Animators/motionpathhandler.h
     Expressions/framebinding.h
     Expressions/scenebinding.h

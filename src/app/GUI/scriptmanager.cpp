@@ -46,6 +46,7 @@
 #include <QDoubleSpinBox>
 #include <QComboBox>
 #include <QColorDialog>
+#include <QFileDialog>
 #include <QDateTime>
 #include <QPainter>
 #include <QPen>
@@ -336,6 +337,12 @@ void ScriptManager::loadScripts()
                             mMainWindow, tr("Script"), message,
                             QMessageBox::Yes | QMessageBox::No)
                         == QMessageBox::Yes;
+            });
+        // chooseFile -> native open-file dialog (audio import etc.)
+        host->setChooseFileHandler(
+            [this](const QString &caption, const QString &filter) {
+                return QFileDialog::getOpenFileName(
+                            mMainWindow, caption, QString(), filter);
             });
 
         const QString error = host->loadScript(entry.absoluteFilePath());

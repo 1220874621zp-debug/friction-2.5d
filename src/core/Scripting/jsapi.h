@@ -36,6 +36,7 @@
 class Canvas;
 class ContainerBox;
 class BoundingBox;
+class eSound;
 class Property;
 class QPointFAnimator;
 class QrealAnimator;
@@ -95,6 +96,14 @@ namespace Friction
             Q_INVOKABLE QJSValue valueAtFrame(const int frame);
             Q_INVOKABLE void setValueAtFrame(const int frame,
                                              const QJSValue &v);
+            // bulk keyframing: values is a JS array of numbers
+            // (scalar property) or of [x,y] arrays (point property);
+            // one key per element, starting at startFrame. Use this
+            // for baked curves (audio-driven animation etc.) - a
+            // single JS->C++ call replaces thousands of
+            // setValueAtFrame() round-trips
+            Q_INVOKABLE void setValuesAtFrames(const int startFrame,
+                                               const QJSValue &values);
 
             Q_INVOKABLE int numKeys();
             // seconds of key at 1-based index (AE convention)
@@ -373,6 +382,42 @@ namespace Friction
             QPointer<QJSEngine> mEngine;
         };
 
+        // audio layer facade (eSound is an eBoxOrSound, not a
+        // BoundingBox, so sound layers are unreachable through
+        // JsLayerProxy / scene.layer()); returned by scene.sounds()
+        class CORE_EXPORT JsSoundProxy : public QObject
+        {
+            Q_OBJECT
+            Q_PROPERTY(QString name READ name)
+            Q_PROPERTY(bool visible READ visible)
+            Q_PROPERTY(qreal duration READ duration)
+        public:
+            JsSoundProxy(const QPointer<eSound> &sound,
+                         const QPointer<Canvas> &scene,
+                         QJSEngine * const engine,
+                         QObject * const parent);
+            ~JsSoundProxy();
+
+            QString name() const;
+            bool visible() const;
+            // source length in seconds
+            qreal duration() const;
+            // source audio file path ("" for sounds without an own
+            // file, e.g. video-embedded audio tracks)
+            Q_INVOKABLE QString filePath() const;
+            // absolute scene frame range [first, last]
+            Q_INVOKABLE QJSValue frameRange() const;
+            // decode + analyze the source file; same result shape as
+            // app.analyzeAudio(filePath(), sceneFps, bands)
+            Q_INVOKABLE QJSValue analyze(const int bands = 0);
+
+            bool valid() const { return !mSound.isNull(); }
+        private:
+            QPointer<eSound> mSound;
+            QPointer<Canvas> mScene;
+            QPointer<QJSEngine> mEngine;
+        };
+
         class CORE_EXPORT JsSceneProxy : public QObject
         {
             Q_OBJECT
@@ -393,6 +438,10 @@ namespace Friction
             Q_INVOKABLE QJSValue layer(const QJSValue &indexOrName);
             Q_INVOKABLE QJSValue layers();
             Q_INVOKABLE QJSValue selectedLayers();
+            // all audio layers in the scene (recursively, document
+            // order) as JsSoundProxy array; sound layers are NOT
+            // returned by layers()/layer() since they are not boxes
+            Q_INVOKABLE QJSValue sounds();
 
             Q_INVOKABLE QJSValue addRect(const QString &name,
                                          const qreal x, const qreal y,
@@ -491,6 +540,13 @@ namespace Friction
             // accumulates in a single undo set (one undo step)
             Q_INVOKABLE void beginUndoGroup(const QString &name);
             Q_INVOKABLE void endUndoGroup();
+            // synchronous FFmpeg decode + per-frame audio analysis
+            // (music visualization); returns { ok, error, path,
+            // duration, sampleRate, fps, frames, peak, rms, bands,
+            // bandFreqs } - see Scripting/jsaudioanalyzer.h
+            Q_INVOKABLE QJSValue analyzeAudio(const QString &filePath,
+                                              const qreal fps,
+                                              const int bands = 0);
         private:
             JsHost *mHost;
         };
@@ -508,9 +564,14 @@ namespace Friction
             using PrintHandler = std::function<void(const QString&)>;
             using AlertHandler = std::function<void(const QString&)>;
             using ConfirmHandler = std::function<bool(const QString&)>;
+            // (caption, filter) -> chosen file path ("" = canceled);
+            // implemented by the UI layer with a native file dialog
+            using ChooseFileHandler =
+                    std::function<QString(const QString&, const QString&)>;
             void setHandlers(const PrintHandler &print,
                              const AlertHandler &alert,
                              const ConfirmHandler &confirm);
+            void setChooseFileHandler(const ChooseFileHandler &handler);
 
             // loads and evaluates the file; returns the error message
             // (uncaught exception) or an empty string on success
@@ -530,6 +591,7 @@ namespace Friction
             const QStringList commandLabels() const;
 
             Canvas *activeScene() const;
+            QJSEngine *engine() const { return mEngine.get(); }
             // cached JS wrapper of the active scene (recreated when the
             // active scene changes); null QJSValue when there is none
             QJSValue appScene();
@@ -540,6 +602,11 @@ namespace Friction
             Q_INVOKABLE void print(const QString &message);
             Q_INVOKABLE void alert(const QString &message);
             Q_INVOKABLE bool confirm(const QString &message);
+            // native "open file" dialog; returns the chosen path or
+            // "" when canceled or unsupported (no UI handler)
+            Q_INVOKABLE QString chooseFile(
+                    const QString &caption,
+                    const QString &filter = QString());
             Q_INVOKABLE void registerCommand(const QString &label,
                                              const QJSValue &callable);
             // register a panel UI: config { title, buttons: [{label,
@@ -582,6 +649,7 @@ namespace Friction
             PrintHandler mPrintHandler;
             AlertHandler mAlertHandler;
             ConfirmHandler mConfirmHandler;
+            ChooseFileHandler mChooseFileHandler;
 
         public:
             // panel description filled by registerPanel(), consumed by

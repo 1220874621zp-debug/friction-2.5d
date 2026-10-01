@@ -53,6 +53,9 @@ protected:
     void updateDurationRectLength();
 public:
     void setFilePath(const QString &path);
+    // source audio file path ("" when unassigned); used by the
+    // script engine to analyze the underlying file
+    QString filePath() const { return mFileHandler.path(); }
 
     // AE "Convert Audio to Keyframes": bake a per-frame mixed-channel
     // peak (0..1) curve onto a new null layer, bindable by expressions
