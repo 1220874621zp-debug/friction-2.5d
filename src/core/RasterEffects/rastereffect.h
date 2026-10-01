@@ -143,7 +143,19 @@ enum class RasterEffectType : short {
     // PS Levels: input black/white points + midtone gamma + output
     // black/white points, per channel or composite (appended last,
     // never reorder - serialized ids must stay stable)
-    LEVELS
+    LEVELS,
+    // AE Hue/Saturation (master): hue rotation + saturation and
+    // lightness scaling (appended last, never reorder - serialized
+    // ids must stay stable)
+    HUE_SATURATION,
+    // AE Gradient Ramp: two-color linear/radial gradient generator
+    // (appended, never reorder - serialized ids must stay stable)
+    RAMP
+};
+    // AE Echo: composite past/future frame samples under the current
+    // frame with decaying intensity (appended last, never reorder -
+    // serialized ids must stay stable)
+    ECHO
 };
 
 struct BoxRenderData;

@@ -52,6 +52,8 @@ void RasterEffectMenuCreator::forEveryEffectCore(const EffectAdder &add)
     add(QObject::tr("Drop Shadow"), QObject::tr("Light"),
         []() { return enve::make_shared<DropShadowEffect>(); });
     add(QObject::tr("Motion Blur"), "", []() { return enve::make_shared<MotionBlurEffect>(); });
+    add(QObject::tr("残影 (Echo)"), QObject::tr("Time"),
+        []() { return enve::make_shared<EchoEffect>(); });
     add(QObject::tr("Brightness-Contrast"), QObject::tr("Color"),
         []() { return enve::make_shared<BrightnessContrastEffect>(); });
     add(QObject::tr("Colorize"), QObject::tr("Color"),
@@ -70,6 +72,8 @@ void RasterEffectMenuCreator::forEveryEffectCore(const EffectAdder &add)
         []() { return enve::make_shared<DesaturateEffect>(); });
     add(QObject::tr("色阶 (Levels)"), QObject::tr("Color"),
         []() { return enve::make_shared<LevelsEffect>(); });
+    add(QObject::tr("色相/饱和度 (Hue-Saturation)"), QObject::tr("Color"),
+        []() { return enve::make_shared<HueSaturationEffect>(); });
     add(QObject::tr("简单阻塞 (Simple Choker)"), QObject::tr("Matte"),
         []() { return enve::make_shared<SimpleChokerEffect>(); });
     add(QObject::tr("Chroma Key"), QObject::tr("Color"),
@@ -106,6 +110,8 @@ void RasterEffectMenuCreator::forEveryEffectCore(const EffectAdder &add)
         []() { return enve::make_shared<MotionTileEffect>(); });
     add(QObject::tr("Fractal Noise"), QObject::tr("Generate"),
         []() { return enve::make_shared<FractalNoiseEffect>(); });
+    add(QObject::tr("渐变 (Ramp)"), QObject::tr("Generate"),
+        []() { return enve::make_shared<RampEffect>(); });
     add(QObject::tr("Light Sweep"), QObject::tr("Light"),
         []() { return enve::make_shared<LightSweepEffect>(); });
     add(QObject::tr("Displacement Warp"), QObject::tr("Distort"),

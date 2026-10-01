@@ -345,6 +345,10 @@ qsptr<RasterEffect> createRasterEffectForNonCustomType(const RasterEffectType ty
             return enve::make_shared<DesaturateEffect>();
         case(RasterEffectType::LEVELS):
             return enve::make_shared<LevelsEffect>();
+        case(RasterEffectType::HUE_SATURATION):
+            return enve::make_shared<HueSaturationEffect>();
+        case(RasterEffectType::ECHO):
+            return enve::make_shared<EchoEffect>();
         default: return nullptr;
     }
 }
@@ -354,7 +358,7 @@ qsptr<RasterEffect> readIdCreateRasterEffect(eReadStream &src) {
     src.read(&type, sizeof(RasterEffectType));
     // out-of-range id = the stream desynced earlier; fail the load
     // with a clear error instead of fabricating a garbage effect
-    if (int(type) < 0 || int(type) > int(RasterEffectType::LEVELS)) {
+    if (int(type) < 0 || int(type) > int(RasterEffectType::ECHO)) {
         RuntimeThrow("Invalid raster effect id " +
                      std::to_string(int(type)) + " at pos " +
                      std::to_string(src.pos()));

@@ -27,6 +27,7 @@
         <file alias="thresholdeffect.frag">RasterEffects/thresholdeffect.frag</file>
         <file alias="desaturateeffect.frag">RasterEffects/desaturateeffect.frag</file>
         <file alias="levelseffect.frag">RasterEffects/levelseffect.frag</file>
+        <file alias="huesaturationeffect.frag">RasterEffects/huesaturationeffect.frag</file>
         <file alias="twirleffect.frag">RasterEffects/twirleffect.frag</file>
         <file alias="channelblureffect.frag">RasterEffects/channelblureffect.frag</file>
         <file alias="halftoneeffect.frag">RasterEffects/halftoneeffect.frag</file>
@@ -37,6 +38,7 @@
         <file alias="stripeeffect.frag">RasterEffects/stripeeffect.frag</file>
         <file alias="motiontileeffect.frag">RasterEffects/motiontileeffect.frag</file>
         <file alias="fractalnoiseeffect.frag">RasterEffects/fractalnoiseeffect.frag</file>
+        <file alias="rampeffect.frag">RasterEffects/rampeffect.frag</file>
         <file alias="lightsweepeffect.frag">RasterEffects/lightsweepeffect.frag</file>
         <file alias="displacementwarpeffect.frag">RasterEffects/displacementwarpeffect.frag</file>
         <file alias="filmgraineffect.frag">RasterEffects/filmgraineffect.frag</file>

@@ -534,6 +534,9 @@ NamedScan namedScanFor(const RasterEffectType type) {
         // points are pre-spread in applyPreviewDefaults so the
         // curve visibly crushes shadows and highlights too
         return { "gamma", nullptr, 0.5, 2.1 };
+    case RasterEffectType::HUE_SATURATION:
+        // full wheel swing reads instantly even at thumbnail size
+        return { "hue", nullptr, -180., 180. };
     case RasterEffectType::SIMPLE_CHOKER:
         // negative spread -> positive choke breathing; the to-value
         // stays off the exact 0 grid point - a choke of exactly 0 is
@@ -713,13 +716,16 @@ QList<QImage> renderEffectFrames(const RasterEffectType type,
         // purpose-built sample paths (their callers cannot produce
         // the look offscreen): liquid glass needs the composite below
         // the layer; fractal noise's CPU path ignores parameters;
-        // motion blur needs layer motion from the box render data;
+        // motion blur needs layer motion from the box render data
+        // (echo shares the same streak sample - it needs past frames
+        // from queExternalRender which an offscreen preview has none);
         // rain gets a plain black-sky/white-streaks animation per
         // user request. Roughen edges and lattice warp now run their
         // real CPU callers.
         if (type == RasterEffectType::LIQUID_GLASS ||
             type == RasterEffectType::FRACTAL_NOISE ||
             type == RasterEffectType::MOTION_BLUR ||
+            type == RasterEffectType::ECHO ||
             type == RasterEffectType::RAIN ||
             type == RasterEffectType::LATTICE_WARP) {
             for (int i = 0; i < nFrames; i++) {
@@ -728,7 +734,8 @@ QList<QImage> renderEffectFrames(const RasterEffectType type,
                         type == RasterEffectType::LIQUID_GLASS
                         ? makeLiquidSample(imgSize.width(),
                                            imgSize.height(), t)
-                        : type == RasterEffectType::MOTION_BLUR
+                        : (type == RasterEffectType::MOTION_BLUR ||
+                           type == RasterEffectType::ECHO)
                         ? makeMotionBlurSample(imgSize.width(),
                                                imgSize.height(), t)
                         : type == RasterEffectType::RAIN

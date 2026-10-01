@@ -235,6 +235,8 @@ set(
     RasterEffects/simplechokereffect.cpp
     RasterEffects/desaturateeffect.cpp
     RasterEffects/levelseffect.cpp
+    RasterEffects/huesaturationeffect.cpp
+    RasterEffects/echoeffect.cpp
     RasterEffects/colorizeeffect.cpp
     RasterEffects/customrastereffect.cpp
     RasterEffects/motionblureffect.cpp
@@ -280,6 +282,7 @@ set(
     RasterEffects/stripeeffect.cpp
     RasterEffects/motiontileeffect.cpp
     RasterEffects/fractalnoiseeffect.cpp
+    RasterEffects/rampeffect.cpp
     RasterEffects/lightsweepeffect.cpp
     RasterEffects/displacementwarpeffect.cpp
     RasterEffects/filmgraineffect.cpp
@@ -636,6 +639,7 @@ set(
     RasterEffects/simplechokereffect.h
     RasterEffects/desaturateeffect.h
     RasterEffects/levelseffect.h
+    RasterEffects/huesaturationeffect.h
     RasterEffects/colorizeeffect.h
     RasterEffects/customrastereffect.h
     RasterEffects/motionblureffect.h
@@ -677,6 +681,7 @@ set(
     RasterEffects/stripeeffect.h
     RasterEffects/motiontileeffect.h
     RasterEffects/fractalnoiseeffect.h
+    RasterEffects/rampeffect.h
     RasterEffects/lightsweepeffect.h
     RasterEffects/displacementwarpeffect.h
     RasterEffects/filmgraineffect.h

@@ -1244,7 +1244,9 @@ namespace Friction
             { RasterEffectType::THRESHOLD, "threshold" },
             { RasterEffectType::SIMPLE_CHOKER, "simple_choker|choker|choke" },
             { RasterEffectType::DESATURATE, "desaturate|black_white|grayscale|greyscale" },
-            { RasterEffectType::LEVELS, "levels|color_levels|色阶" }
+            { RasterEffectType::LEVELS, "levels|color_levels|色阶" },
+            { RasterEffectType::HUE_SATURATION, "hue_saturation|huesaturation|色相饱和度" },
+            { RasterEffectType::ECHO, "echo|echoes|残影" }
         };
 
         QString normalizeEffectName(const QString &name)
