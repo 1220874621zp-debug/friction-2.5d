@@ -60,5 +60,6 @@
 #include "grideffect.h"
 #include "cornerpineffect.h"
 #include "cameralensblureffect.h"
+#include "setmatteeffect.h"
 
 #endif // RASTEREFFECTSINCLUDE_H

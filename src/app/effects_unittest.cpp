@@ -2056,6 +2056,43 @@ int main(int argc, char *argv[])
         }
     });
 
+    // Test 5d: Set Matte - factory creation, child properties,
+    // no-target / no-data no-op semantics
+    runTest("Test 5d: Set Matte semantics", [&]() {
+        const auto eff = createRasterEffectForNonCustomType(
+                    RasterEffectType::SET_MATTE);
+        if (!eff) { throw std::runtime_error("factory returned null"); }
+        const auto sm = enve_cast<SetMatteEffect*>(eff.get());
+        if (!sm) { throw std::runtime_error("not a SetMatteEffect"); }
+
+        // children: matte-layer picker (combo style) + channel combo
+        BoxTargetProperty* picker = nullptr;
+        ComboBoxProperty* channel = nullptr;
+        for (int i = 0; i < eff->ca_getNumberOfChildren(); i++) {
+            const auto child = eff->ca_getChildAt(i);
+            if (!picker) picker = enve_cast<BoxTargetProperty*>(child);
+            if (!channel) channel = enve_cast<ComboBoxProperty*>(child);
+        }
+        if (!picker) { throw std::runtime_error("missing matte layer picker"); }
+        if (!picker->comboPicker()) {
+            throw std::runtime_error("picker is not a layer-name combo");
+        }
+        if (!channel) { throw std::runtime_error("missing channel combo"); }
+        // AE channels: alpha / alphaInv / luma / lumaInv
+        if (channel->getValueNames().count() != 4) {
+            throw std::runtime_error("expected 4 matte channels");
+        }
+        if (channel->getCurrentValue() != 0) {
+            throw std::runtime_error("default channel is not Alpha");
+        }
+
+        // no matte layer picked: AE no-op (caller must be null even
+        // with a null BoxRenderData, matching the other effects' tests)
+        if (eff->getEffectCaller(0.0, 1.0, 1.0, nullptr)) {
+            throw std::runtime_error("no-target must be a no-op");
+        }
+    });
+
     // Test 3: Menu registry coverage
     runTest("Test 3: RasterEffectMenuCreator coverage", [&]() {
         int count = 0;

@@ -166,7 +166,11 @@ enum class RasterEffectType : short {
     CORNER_PIN,
     // AE Camera Lens Blur: defocus blur + thresholded highlight bokeh
     // (appended last, never reorder - serialized ids must stay stable)
-    CAMERA_LENS_BLUR
+    CAMERA_LENS_BLUR,
+    // AE Set Matte: mask this layer with another layer's alpha/luma,
+    // as an effect-stack entry (appended last, never reorder -
+    // serialized ids must stay stable)
+    SET_MATTE
 };
 
 struct BoxRenderData;

@@ -78,6 +78,8 @@ void RasterEffectMenuCreator::forEveryEffectCore(const EffectAdder &add)
         []() { return enve::make_shared<HueSaturationEffect>(); });
     add(QObject::tr("简单阻塞 (Simple Choker)"), QObject::tr("Matte"),
         []() { return enve::make_shared<SimpleChokerEffect>(); });
+    add(QObject::tr("设置遮罩 (Set Matte)"), QObject::tr("Matte"),
+        []() { return enve::make_shared<SetMatteEffect>(); });
     add(QObject::tr("Chroma Key"), QObject::tr("Color"),
         []() { return enve::make_shared<ChromaKeyEffect>(); });
     add(QObject::tr("Glow"), QObject::tr("Light"),

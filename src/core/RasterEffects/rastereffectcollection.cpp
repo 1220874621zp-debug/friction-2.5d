@@ -357,6 +357,8 @@ qsptr<RasterEffect> createRasterEffectForNonCustomType(const RasterEffectType ty
             return enve::make_shared<CornerPinEffect>();
         case(RasterEffectType::CAMERA_LENS_BLUR):
             return enve::make_shared<CameraLensBlurEffect>();
+        case(RasterEffectType::SET_MATTE):
+            return enve::make_shared<SetMatteEffect>();
         default: return nullptr;
     }
 }
@@ -366,7 +368,7 @@ qsptr<RasterEffect> readIdCreateRasterEffect(eReadStream &src) {
     src.read(&type, sizeof(RasterEffectType));
     // out-of-range id = the stream desynced earlier; fail the load
     // with a clear error instead of fabricating a garbage effect
-    if (int(type) < 0 || int(type) > int(RasterEffectType::CAMERA_LENS_BLUR)) {
+    if (int(type) < 0 || int(type) > int(RasterEffectType::SET_MATTE)) {
         RuntimeThrow("Invalid raster effect id " +
                      std::to_string(int(type)) + " at pos " +
                      std::to_string(src.pos()));
