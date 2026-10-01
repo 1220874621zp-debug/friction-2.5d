@@ -391,14 +391,12 @@ const Grid::Settings Grid::loadSettings()
         if (var.isValid()) { settings.stepRotShift = var.toDouble(); }
     }
 
-    qDebug() << "Load Grid Settings";
     debugSettings(settings);
     return settings;
 }
 
 void Grid::saveSettings(const Settings &settings)
 {
-    qDebug() << "Save Grid Settings";
     debugSettings(settings);
     AppSupport::setSettings("grid", "sizeX", settings.sizeX);
     AppSupport::setSettings("grid", "sizeY", settings.sizeY);
@@ -483,7 +481,9 @@ void Grid::setOption(const Option &option,
                      const QVariant &value,
                      const bool global)
 {
-    qDebug() << "Grid::setOption" << (int)option << value << global;
+    if (AppSupport::verboseLogs()) {
+        qDebug() << "Grid::setOption" << (int)option << value << global;
+    }
     QString key;
     switch(option){
     case Option::SizeX:

@@ -289,8 +289,10 @@ void Canvas::updateHoveredBox(const eMouseEvent &e)
 void Canvas::updateHoveredPoint(const eMouseEvent &e)
 {
     mHoveredPoint_d = getPointAtAbsPos(e.fPos, mCurrentMode, 1/e.fScale);
-    // POINT-PROBE: throttled hover report (type + coarse pos)
-    if(mHoveredPoint_d) {
+    // POINT-PROBE: throttled hover report (type + coarse pos); off by
+    // default - it prints on every hover change while the mouse moves over
+    // the canvas and buried the debug log
+    if(mHoveredPoint_d && AppSupport::verboseLogs()) {
         static int lastType = -1;
         static int lastX = 0x7FFFFFFF;
         static int lastY = 0x7FFFFFFF;
@@ -2353,7 +2355,14 @@ void Canvas::addUndoRedo(const QString& name,
                          const stdfunc<void()>& undo,
                          const stdfunc<void()>& redo)
 {
-    qDebug() << "addUndoRedo" << name;
+    // per-animator edits are named "<property> 更改" and fire on every drag
+    // frame, which buried the debug log in dozens of identical lines; named
+    // operations (import / delete / align / ...) stay visible
+    if (AppSupport::verboseLogs() ||
+        !(name.endsWith(QStringLiteral("更改")) ||
+          name.endsWith(QLatin1String("Change")))) {
+        qDebug() << "addUndoRedo" << name;
+    }
     mUndoRedoStack->addUndoRedo(name, undo, redo);
 }
 

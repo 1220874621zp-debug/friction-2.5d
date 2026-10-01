@@ -293,6 +293,13 @@ void debugLogMessageHandler(const QtMsgType type,
             msg.startsWith(QStringLiteral("qrc:/jizura/"))) {
         return;
     }
+    // Qt's DirectWrite font engine complains about the legacy bitmap fonts
+    // Windows always exposes (Fixedsys/Modern/MS Sans Serif/...): 9 identical
+    // lines on every start, nothing we can act on
+    if (type == QtWarningMsg &&
+            msg.contains(QStringLiteral("CreateFontFaceFromHDC"))) {
+        return;
+    }
     QString typeName;
     switch (type) {
         case QtDebugMsg:    typeName = QStringLiteral("DEBUG"); break;
@@ -306,6 +313,25 @@ void debugLogMessageHandler(const QtMsgType type,
         suffix = QStringLiteral(" (%1:%2)")
                 .arg(QString::fromLatin1(context.file))
                 .arg(context.line);
+    }
+    // collapse a run of identical messages into one line with a count: the
+    // log the user copies stays readable even when something loops
+    {
+        static QMutex repeatMutex;
+        static QString lastMsg;
+        static int repeatCount = 0;
+        QMutexLocker lock(&repeatMutex);
+        if (msg == lastMsg) {
+            repeatCount++;
+            return;
+        }
+        if (repeatCount > 0) {
+            debugLogAppendLine(QStringLiteral("DEBUG"),
+                               QStringLiteral("(previous line repeated %1x)")
+                                   .arg(repeatCount));
+            repeatCount = 0;
+        }
+        lastMsg = msg;
     }
     debugLogAppendLine(typeName, msg, suffix);
     if (gDefaultMessageHandler) {
@@ -1331,8 +1357,6 @@ void MainWindow::readSettings(const QString &openProject)
     const int stateVersion = AppSupport::getSettings("ui",
                                                      "stateVersion",
                                                      1).toInt();
-    qWarning() << "WORKSPACE: stateVersion" << stateVersion
-               << "restoreDefaultUi" << eSettings::instance().fRestoreDefaultUi;
     if (!eSettings::instance().fRestoreDefaultUi && stateVersion == 2) {
         // A custom workspace that the user applied/saved takes priority
         // over the ad-hoc last session layout, so it is re-applied on
@@ -1344,13 +1368,13 @@ void MainWindow::readSettings(const QString &openProject)
             stateToRestore = AppSupport::getSettings("workspaces",
                                                      workspaceStateKey(activeWorkspace)).toByteArray();
         }
-        qWarning() << "WORKSPACE: active" << activeWorkspace
-                   << "state bytes" << stateToRestore.size();
+        QString stateSource = activeWorkspace.isEmpty() ?
+                    QStringLiteral("last session") :
+                    QStringLiteral("workspace '%1'").arg(activeWorkspace);
         if (stateToRestore.isEmpty()) {
             stateToRestore = AppSupport::getSettings("ui",
                                                      "state").toByteArray();
-            qWarning() << "WORKSPACE: fallback to ui/state bytes"
-                       << stateToRestore.size();
+            stateSource = QStringLiteral("last session (fallback)");
         }
         if (!stateToRestore.isEmpty()) {
             // Do NOT call restoreState() here: the window is not shown
@@ -1360,10 +1384,13 @@ void MainWindow::readSettings(const QString &openProject)
             // applyPendingStateRestore() once the window geometry is
             // stable (debounced in showEvent/resizeEvent).
             mPendingStateRestore = stateToRestore;
-            qWarning() << "WORKSPACE: state restore deferred until shown,"
-                       << stateToRestore.size() << "bytes";
+            // one line instead of the previous five
+            qWarning() << "WORKSPACE: restoring" << stateSource << "layout,"
+                       << stateToRestore.size() << "bytes, stateVersion"
+                       << stateVersion;
         } else {
-            qWarning() << "WORKSPACE: no state to restore, using default layout";
+            qWarning() << "WORKSPACE: no saved layout, using the default"
+                          " layout (stateVersion" << stateVersion << ")";
         }
     }
 

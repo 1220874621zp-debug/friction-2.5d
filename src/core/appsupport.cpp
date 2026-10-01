@@ -1234,6 +1234,18 @@ bool AppSupport::isAppPortable()
 #endif
 }
 
+bool AppSupport::verboseLogs()
+{
+    // opt-in per-item diagnostics: the debug log the user copies must stay
+    // readable (one line per import / error, not one per expression preset,
+    // animator edit or grid change). Set FRICTION_VERBOSE_LOG=1 to debug.
+    static const bool on = []() {
+        const auto v = qEnvironmentVariable("FRICTION_VERBOSE_LOG");
+        return !v.isEmpty() && v != QLatin1String("0");
+    }();
+    return on;
+}
+
 bool AppSupport::isAppImage()
 {
 #ifdef Q_OS_LINUX
@@ -1644,14 +1656,11 @@ const QString AppSupport::filterId(const QString &input)
 const QColor AppSupport::adjustColorVisibility(const QColor &color,
                                                const QColor &background)
 {
-    qDebug() << "compare" << "color" << color << "background" << background;
-
     if (color.alpha() == 0) { // if no alpha return gray
         return QColor(128, 128, 128);
     }
     if (color == background &&
-        (color == Qt::black || color == Qt::white)) {
-        // if same color and that is white or black return gray
+        (color == Qt::black || color == Qt::white)) {        // if same color and that is white or black return gray
         return QColor(128, 128, 128, color.alpha());
     }
 

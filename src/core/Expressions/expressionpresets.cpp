@@ -173,9 +173,13 @@ bool ExpressionPresets::editExpr(const QString &id,
 void ExpressionPresets::loadExpr(const QString &path)
 {
     if (!QFile::exists(path)) { return; }
-    qDebug() << "Load expression" << path;
+    if (AppSupport::verboseLogs()) {
+        qDebug() << "Load expression" << path;
+    }
     if (!isValidExprFile(path)) {
-        qDebug() << "Bad expression" << path;
+        // a broken preset is worth a line, a working one is not (35 built-in
+        // presets logged two lines each on every start)
+        qWarning() << "Bad expression" << path;
         return;
     }
 
@@ -183,7 +187,9 @@ void ExpressionPresets::loadExpr(const QString &path)
     expr.enabled = isExprEnabled(expr.id);
 
     if (!hasExpr(expr.id) && expr.enabled) {
-        qDebug() << "Added expression" << expr.title << expr.id;
+        if (AppSupport::verboseLogs()) {
+            qDebug() << "Added expression" << expr.title << expr.id;
+        }
         mExpr << expr;
     } else {
         if (hasExpr(expr.id)) {
@@ -413,11 +419,16 @@ void ExpressionPresets::scanAll(const bool &clear)
     expressions << ":/expressions/easeOutQuint.fexpr";
     expressions << ":/expressions/easeOutSine.fexpr";
 
+    const int builtInCount = expressions.size();
     for (const auto &file : AppSupport::getFilesFromPath(AppSupport::getAppUserExPresetsPath(),
                                                          QStringList() << "*.fexpr")) {
-        qDebug() << "Checking user expression" << file;
         if (isValidExprFile(file)) { expressions << file; }
     }
+    // one summary line instead of two log lines per preset (the 35 built-in
+    // presets alone flooded the debug log with ~70 lines on every start)
+    qDebug() << "Expressions:" << builtInCount << "built-in,"
+             << expressions.size() - builtInCount << "user"
+             << (AppSupport::verboseLogs() ? "" : "(FRICTION_VERBOSE_LOG=1 for details)");
 
     loadExpr(expressions);
 }

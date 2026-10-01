@@ -961,9 +961,12 @@ void TimelineDockWidget::spaceToggle()
 {
     const auto state = RenderHandler::sInstance->currentPreviewState();
     // diagnostic: distinguishes "Space never reached this slot" from
-    // "reached but wrong branch" when users report dead Space keys
-    qWarning() << "[SPACE] spaceToggle state=" << int(state)
-               << "stepTimer=" << mStepPreviewTimer->isActive();
+    // "reached but wrong branch" when users report dead Space keys - off by
+    // default (it prints on every single Space press)
+    if (AppSupport::verboseLogs()) {
+        qWarning() << "[SPACE] spaceToggle state=" << int(state)
+                   << "stepTimer=" << mStepPreviewTimer->isActive();
+    }
     // Space = play <-> full stop: any preview activity (rendering,
     // playing, paused) stops the preview completely; the next press
     // starts playback again
@@ -1005,9 +1008,11 @@ void TimelineDockWidget::spaceToggle()
         } else {
             started = playPreview();
         }
-        qWarning() << "[SPACE] start playPreview=" << started
-                   << "activeScene="
-                   << (*mDocument.fActiveScene ? "yes" : "null");
+        if (AppSupport::verboseLogs()) {
+            qWarning() << "[SPACE] start playPreview=" << started
+                       << "activeScene="
+                       << (*mDocument.fActiveScene ? "yes" : "null");
+        }
     }
 }
 

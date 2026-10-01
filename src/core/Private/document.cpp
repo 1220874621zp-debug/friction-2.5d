@@ -79,7 +79,8 @@ void Document::actionFinished()
     for (const auto& scene : fVisibleScenes) {
         const auto newUndoRedo = scene.first->newUndoRedoSet();
         if (newUndoRedo) {
-            qDebug() << "document changed";
+            // no log line here: this fires on every single edit and the undo
+            // name logged by Canvas::addUndoRedo already says what changed
             emit documentChanged();
         }
     }

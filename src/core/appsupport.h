@@ -161,6 +161,11 @@ public:
                                    const QStringList &customPresets = QStringList());
 
     static QStringList getOpenGLInfo();
+    // per-item diagnostics (each expression preset, each animator undo edit,
+    // each grid option change, ...) stay OUT of the debug log by default so
+    // the log the user copies stays readable; set FRICTION_VERBOSE_LOG=1 for
+    // a debugging session to get them back
+    static bool verboseLogs();
     static const QString filterTextAZW(const QString &text);
     static const QString filterFormatsName(const QString &text);
     static int getProjectVersion(const QString &fileName = QString());

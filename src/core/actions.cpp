@@ -862,22 +862,21 @@ eBoxOrSound *Actions::importFile(const QString &path,
     qsptr<eBoxOrSound> result;
     // set by the bitmap route: the picture is fitted to the canvas below
     bool fitBitmapToCanvas = false;
+    // one log line per import instead of the previous start/route/done/fit
+    // quartet (see the summary at the end of this function)
+    QString route = QStringLiteral("folder");
+    QString detail;
     const QFile file(path);
     if (!file.exists()) {
         RuntimeThrow("File " + path + " does not exit.");
     }
 
     QFileInfo fInfo(path);
-    qWarning() << "IMPORT: start" << path
-               << "ext" << fInfo.suffix().toLower()
-               << "isDir" << fInfo.isDir();
-
     if (fInfo.dir().absolutePath() != QDir::homePath()) {
         AppSupport::setSettings("files",
                                 "recentImportDir",
                                 fInfo.dir().absolutePath());
     }
-
     if (fInfo.isDir()) {
         // OCA folders (Open Cel Animation) build a full layer tree
         // from the manifest instead of a plain image sequence;
@@ -907,7 +906,7 @@ eBoxOrSound *Actions::importFile(const QString &path,
                 if (extLower == QLatin1String("lottie") ||
                     (extLower == QLatin1String("json") &&
                      LottieBox::looksLikeLottie(path))) {
-                    qWarning() << "IMPORT: route=lottie";
+                    route = QStringLiteral("lottie");
                     result = createLottieBoxForPath(path);
                 } else if (extLower == QLatin1String("oca") ||
                     (extLower == QLatin1String("json") &&
@@ -915,20 +914,20 @@ eBoxOrSound *Actions::importFile(const QString &path,
                     // the OCA manifest FILE itself was picked (the
                     // Krita exporter names it <doc>.oca); frame images
                     // resolve relative to its folder
-                    qWarning() << "IMPORT: route=oca-manifest";
+                    route = QStringLiteral("oca");
                     result = ImportOCA::loadOCAManifestFile(path, scene);
                 } else if (isImageExt(extension)) {
-                    qWarning() << "IMPORT: route=image";
+                    route = QStringLiteral("image");
                     result = createImageBox(path);
                     // bitmap automation: fit the imported picture to the
                     // canvas below (same result as the timeline "match
                     // canvas width/height" buttons, applied automatically)
                     fitBitmapToCanvas = true;
                 } else if (isVideoExt(extension)) {
-                    qWarning() << "IMPORT: route=video";
+                    route = QStringLiteral("video");
                     result = createVideoForPath(path);
                 } else {
-                    qWarning() << "IMPORT: route=importer";
+                    route = QStringLiteral("importer");
                     result = ImportHandler::sInstance->import(path, scene);
                 }
             } catch(const std::exception& e) {
@@ -936,7 +935,6 @@ eBoxOrSound *Actions::importFile(const QString &path,
             }
         }
     }
-    qWarning() << "IMPORT: done" << path << "hasResult" << bool(result);
     if (result) {
         if (frame) { result->shiftAll(frame); }
         block.reset();
@@ -966,7 +964,8 @@ eBoxOrSound *Actions::importFile(const QString &path,
                 const QSize imgSize = QImageReader(path).size();
                 if (imgSize.isValid()) {
                     scene->fitBoxToCanvas(importedBox, QSizeF(imgSize));
-                    qWarning() << "IMPORT: fitted bitmap to canvas" << imgSize;
+                    detail = QStringLiteral(" fitted=%1x%2")
+                            .arg(imgSize.width()).arg(imgSize.height());
                 }
             }
         }
@@ -974,6 +973,10 @@ eBoxOrSound *Actions::importFile(const QString &path,
             Document::sInstance->newVideo(videoBox->getSpecs());
         }
     }
+    // single import line (was: start + route + done + fitted = up to four)
+    qWarning() << "IMPORT:" << fInfo.fileName()
+               << (result ? "ok" : "FAILED")
+               << "route=" + route + detail;
     afterAction();
     return result.get();
 }
