@@ -773,6 +773,7 @@ const QPalette ThemeSupport::getDefaultPalette(const QColor &highlight)
     palette.setColor(QPalette::LinkVisited, getThemeHighlightColor());
     palette.setColor(QPalette::ToolTipText, Qt::white);
     palette.setColor(QPalette::ToolTipBase, getThemeBaseDarkerColor());
+    palette.setColor(QPalette::PlaceholderText, Qt::white);
     palette.setColor(QPalette::Text, QColor(240, 240, 242));
     palette.setColor(QPalette::Button, getThemeButtonBaseColor());
     palette.setColor(QPalette::ButtonText, QColor(240, 240, 242));
