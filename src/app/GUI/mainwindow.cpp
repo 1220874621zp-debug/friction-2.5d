@@ -48,6 +48,9 @@
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QDateTime>
+#include <QScreen>
+#include <QWindow>
+#include <QGuiApplication>
 #include <QMutex>
 #include <QMutexLocker>
 #include <QScrollBar>
@@ -463,8 +466,7 @@ MainWindow::MainWindow(Document& document,
                        const QString &openProject,
                        QWidget * const parent)
     : QMainWindow(parent)
-    , mShutdown(false)
-    , mWelcomeDialog(nullptr)
+    , mShutdown(false)    , mWelcomeDialog(nullptr)
     , mStackWidget(nullptr)
     , mTabProperties(nullptr)
     , mTimeline(nullptr)
@@ -527,6 +529,7 @@ MainWindow::MainWindow(Document& document,
 {
     Q_ASSERT(!sInstance);
     sInstance = this;
+    mStartupElapsed.start();
 
     setWindowIcon(QIcon::fromTheme(AppSupport::getAppID()));
     setContextMenuPolicy(Qt::NoContextMenu);
@@ -1437,8 +1440,22 @@ void MainWindow::readSettings(const QString &openProject)
         if (toolbar) { insertToolBarBreak(toolbar); }
     }
 
+    // the mode has to be known BEFORE showing: showMaximized() delivers
+    // show/resize synchronously, and armPendingStateRestore() must not
+    // mistake the transient size for the final one
+    mStateRestoreAwaitsBigWindow = isFull || isMax;
     if (isFull) { showFullScreen(); }
     else if (isMax) { showMaximized(); }
+    else {
+        // A normal window already has its final geometry: restoreGeometry()
+        // above applied the saved size, so the saved dock layout can be
+        // restored right now - the first painted frame then shows the
+        // custom workspace instead of the default layout, which used to sit
+        // there for a second until the debounced restore caught up.
+        // Maximized/fullscreen windows get their size from the window
+        // manager later; those still go through armPendingStateRestore().
+        applyPendingStateRestore();
+    }
 
     updateAutoSaveBackupState();
 
@@ -2669,13 +2686,38 @@ void MainWindow::armPendingStateRestore()
     if (!mStateRestoreTimer) {
         mStateRestoreTimer = new QTimer(this);
         mStateRestoreTimer->setSingleShot(true);
-        mStateRestoreTimer->setInterval(60);
+        mStateRestoreTimer->setInterval(30);
         connect(mStateRestoreTimer, &QTimer::timeout,
                 this, &MainWindow::applyPendingStateRestore);
+    }
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (mStateRestoreDeadline == 0) { mStateRestoreDeadline = now + 400; }
+    // apply as soon as the final geometry is here, or once the deadline
+    // passed: restarting the debounce on every further resize was what made
+    // the custom layout show up only after the default one
+    if (windowGeometrySettled() || now >= mStateRestoreDeadline) {
+        mStateRestoreTimer->stop();
+        applyPendingStateRestore();
+        return;
     }
     // debounce: every show/resize restarts the countdown so the state
     // is restored only once the final window geometry is in place
     mStateRestoreTimer->start();
+}
+
+bool MainWindow::windowGeometrySettled() const
+{
+    // a window that is not supposed to be maximized/fullscreen keeps the
+    // geometry restoreGeometry() gave it
+    if (!mStateRestoreAwaitsBigWindow) { return true; }
+    const auto screen = windowHandle() ? windowHandle()->screen()
+                                       : QGuiApplication::primaryScreen();    if (!screen) { return true; }
+    // a maximized window fills the available area, a fullscreen one the
+    // whole screen; a few pixels of slack for frames and rounding
+    const QRect target = isFullScreen() ? screen->geometry()
+                                        : screen->availableGeometry();
+    return qAbs(width() - target.width()) <= 8 &&
+           qAbs(height() - target.height()) <= 8;
 }
 
 void MainWindow::applyPendingStateRestore()
@@ -2683,13 +2725,17 @@ void MainWindow::applyPendingStateRestore()
     if (mPendingStateRestore.isEmpty()) { return; }
     const QByteArray state = mPendingStateRestore;
     mPendingStateRestore.clear();
+    mStateRestoreDeadline = 0;
     // the restored state (active workspace or window state) can
     // reference script panels lazy creation never made - create them
     // first or restoreState drops their layout silently
     if (mScriptManager) { mScriptManager->ensurePanelsInState(state); }
     const bool restored = restoreState(state);
-    qWarning() << "WORKSPACE: stable-geometry restoreState returned"
-               << restored << "window" << width() << "x" << height();
+    qWarning() << "WORKSPACE: saved layout applied"
+               << mStartupElapsed.elapsed() << "ms after startup, restoreState"
+               << "returned" << restored << "window" << width() << "x" << height()
+               << (isFullScreen() ? "(fullscreen)" :
+                   isMaximized() ? "(maximized)" : "(normal)");
 
     // keep view menu actions in sync with the restored docks
     mViewTimelineAct->blockSignals(true);

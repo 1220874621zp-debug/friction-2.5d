@@ -480,9 +480,19 @@ private:
     // minimums and loses the saved sizes. Every resize restarts the
     // debounce timer; restoreState() runs once the size settles.
     QByteArray mPendingStateRestore;
+    // a maximized/fullscreen window only has its final size once the window
+    // manager delivered the resize, so the restore waits for it - but with a
+    // hard deadline (and an immediate apply for normal windows), because
+    // re-arming the debounce on every resize made the workspace appear ~1s
+    // late on top of the default layout
+    qint64 mStateRestoreDeadline = 0;
+    bool mStateRestoreAwaitsBigWindow = false;
+    // measures how late the saved layout lands (logged when it is applied)
+    class QElapsedTimer mStartupElapsed;
     class QTimer *mStateRestoreTimer = nullptr;
     void armPendingStateRestore();
     void applyPendingStateRestore();
+    bool windowGeometrySettled() const;
 
     intMB mMemoryUsed;
 
