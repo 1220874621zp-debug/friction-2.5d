@@ -48,13 +48,13 @@ void RasterEffectMenuCreator::forEveryEffectCore(const EffectAdder &add)
         []() { return enve::make_shared<ChannelBlurEffect>(); });
     add(QObject::tr("Zoom Blur"), QObject::tr("Blur"),
         []() { return enve::make_shared<ZoomBlurEffect>(); });
-    add(QObject::tr("Camera Lens Blur"), QObject::tr("Blur"),
+    add(QObject::tr("镜头模糊 (Camera Lens Blur)"), QObject::tr("Blur"),
         []() { return enve::make_shared<CameraLensBlurEffect>(); });
     add(QObject::tr("Shadow"), "", []() { return enve::make_shared<ShadowEffect>(); });
     add(QObject::tr("Drop Shadow"), QObject::tr("Light"),
         []() { return enve::make_shared<DropShadowEffect>(); });
     add(QObject::tr("Motion Blur"), "", []() { return enve::make_shared<MotionBlurEffect>(); });
-    add(QObject::tr("残影 (Echo)"), QObject::tr("Time"),
+    add(QObject::tr("残影 (Echo)"), QObject::tr("时间"),
         []() { return enve::make_shared<EchoEffect>(); });
     add(QObject::tr("Brightness-Contrast"), QObject::tr("Color"),
         []() { return enve::make_shared<BrightnessContrastEffect>(); });
@@ -78,9 +78,9 @@ void RasterEffectMenuCreator::forEveryEffectCore(const EffectAdder &add)
         []() { return enve::make_shared<CurvesEffect>(); });
     add(QObject::tr("色相/饱和度 (Hue-Saturation)"), QObject::tr("Color"),
         []() { return enve::make_shared<HueSaturationEffect>(); });
-    add(QObject::tr("简单阻塞 (Simple Choker)"), QObject::tr("Matte"),
+    add(QObject::tr("简单阻塞 (Simple Choker)"), QObject::tr("遮罩"),
         []() { return enve::make_shared<SimpleChokerEffect>(); });
-    add(QObject::tr("设置遮罩 (Set Matte)"), QObject::tr("Matte"),
+    add(QObject::tr("设置遮罩 (Set Matte)"), QObject::tr("遮罩"),
         []() { return enve::make_shared<SetMatteEffect>(); });
     add(QObject::tr("Chroma Key"), QObject::tr("Color"),
         []() { return enve::make_shared<ChromaKeyEffect>(); });

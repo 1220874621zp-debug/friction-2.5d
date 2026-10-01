@@ -151,7 +151,7 @@ CurvesEffect::CurvesEffect() :
                 QObject::tr("绿") <<
                 QObject::tr("蓝");
     mChannel = enve::make_shared<ComboBoxProperty>(
-                QObject::tr("channel"), channels);
+                QObject::tr("通道"), channels);
     ca_addChild(mChannel);
 
     // the wrapper names double as the timeline rows for the four

@@ -38,10 +38,10 @@ DesaturateEffect::DesaturateEffect() :
                  RasterEffectType::DESATURATE)
 {
     mAmount = enve::make_shared<QrealAnimator>(
-                100.0, 0.0, 100.0, 1.0, "amount");
+                100.0, 0.0, 100.0, 1.0, QObject::tr("程度"));
     ca_addChild(mAmount);
 
-    mInvert = enve::make_shared<BoolAnimator>("invert");
+    mInvert = enve::make_shared<BoolAnimator>(QObject::tr("反相"));
     mInvert->setCurrentBoolValue(false);
     ca_addChild(mInvert);
 }

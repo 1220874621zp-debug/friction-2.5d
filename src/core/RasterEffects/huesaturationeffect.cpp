@@ -39,15 +39,15 @@ HueSaturationEffect::HueSaturationEffect() :
                  RasterEffectType::HUE_SATURATION)
 {
     mHue = enve::make_shared<QrealAnimator>(
-                0.0, -180.0, 180.0, 1.0, "hue");
+                0.0, -180.0, 180.0, 1.0, QObject::tr("色相"));
     ca_addChild(mHue);
 
     mSaturation = enve::make_shared<QrealAnimator>(
-                0.0, -100.0, 100.0, 1.0, "saturation");
+                0.0, -100.0, 100.0, 1.0, QObject::tr("饱和度"));
     ca_addChild(mSaturation);
 
     mLightness = enve::make_shared<QrealAnimator>(
-                0.0, -100.0, 100.0, 1.0, "lightness");
+                0.0, -100.0, 100.0, 1.0, QObject::tr("明度"));
     ca_addChild(mLightness);
 }
 

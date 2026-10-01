@@ -45,19 +45,19 @@ LevelsEffect::LevelsEffect() :
                 QObject::tr("绿") <<
                 QObject::tr("蓝");
     mChannel = enve::make_shared<ComboBoxProperty>(
-                QObject::tr("channel"), channels);
+                QObject::tr("通道"), channels);
     ca_addChild(mChannel);
 
     mInBlack = enve::make_shared<QrealAnimator>(
-                0.0, 0.0, 253.0, 1.0, "input black");
+                0.0, 0.0, 253.0, 1.0, QObject::tr("输入黑场"));
     mGamma = enve::make_shared<QrealAnimator>(
-                1.0, sMinGamma, sMaxGamma, 0.01, "gamma");
+                1.0, sMinGamma, sMaxGamma, 0.01, QObject::tr("灰度系数"));
     mInWhite = enve::make_shared<QrealAnimator>(
-                255.0, 2.0, 255.0, 1.0, "input white");
+                255.0, 2.0, 255.0, 1.0, QObject::tr("输入白场"));
     mOutBlack = enve::make_shared<QrealAnimator>(
-                0.0, 0.0, 254.0, 1.0, "output black");
+                0.0, 0.0, 254.0, 1.0, QObject::tr("输出黑场"));
     mOutWhite = enve::make_shared<QrealAnimator>(
-                255.0, 1.0, 255.0, 1.0, "output white");
+                255.0, 1.0, 255.0, 1.0, QObject::tr("输出白场"));
 
     // the wrappers own the value animators; their rows render as the
     // PS gradient sliders, expanding reveals the keyframable rows
@@ -74,10 +74,10 @@ LevelsEffect::LevelsEffect() :
 }
 
 LevelsInputAnimator::LevelsInputAnimator() :
-    StaticComplexAnimator("input levels") {}
+    StaticComplexAnimator(QObject::tr("输入色阶")) {}
 
 LevelsOutputAnimator::LevelsOutputAnimator() :
-    StaticComplexAnimator("output levels") {}
+    StaticComplexAnimator(QObject::tr("输出色阶")) {}
 
 class LevelsEffectCaller : public OpenGLRasterEffectCaller {
 public:

@@ -116,7 +116,7 @@ SimpleChokerEffect::SimpleChokerEffect() :
     // AE sign convention: positive chokes the matte inward, negative
     // spreads it outward; ~1 slider unit moves the edge ~1 px
     mChokeMatte = enve::make_shared<QrealAnimator>(
-                0.0, -10.0, 10.0, 0.1, "choke matte");
+                0.0, -10.0, 10.0, 0.1, QObject::tr("阻塞遮罩"));
     ca_addChild(mChokeMatte);
 }
 

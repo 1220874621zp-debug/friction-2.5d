@@ -1345,7 +1345,7 @@ int main(int argc, char *argv[])
                 auto* qa = enve_cast<QrealAnimator*>(
                             eff->ca_getChildAt(i));
                 if (qa && qa->prp_getName().contains(
-                            QString::fromLatin1(name))) {
+                            QString::fromUtf8(name))) {
                     return qa;
                 }
             }
@@ -1378,7 +1378,7 @@ int main(int argc, char *argv[])
         {
             const auto eff = createRasterEffectForNonCustomType(
                         RasterEffectType::THRESHOLD);
-            auto* level = findParam(eff.get(), "level");
+            auto* level = findParam(eff.get(), "色阶");
             if (!level) { throw std::runtime_error("no level param"); }
             level->setCurrentBaseValue(50.);
 
@@ -1418,7 +1418,7 @@ int main(int argc, char *argv[])
         {
             const auto eff = createRasterEffectForNonCustomType(
                         RasterEffectType::SIMPLE_CHOKER);
-            auto* choke = findParam(eff.get(), "choke matte");
+            auto* choke = findParam(eff.get(), "阻塞遮罩");
             if (!choke) { throw std::runtime_error("no choke param"); }
 
             SkBitmap src;
@@ -1481,7 +1481,7 @@ int main(int argc, char *argv[])
         {
             const auto eff = createRasterEffectForNonCustomType(
                         RasterEffectType::DESATURATE);
-            auto* amount = findParam(eff.get(), "amount");
+            auto* amount = findParam(eff.get(), "程度");
             if (!amount) { throw std::runtime_error("no amount param"); }
 
             SkBitmap src;
@@ -1537,7 +1537,7 @@ int main(int argc, char *argv[])
                     auto* ba = enve_cast<BoolAnimator*>(
                                 eff->ca_getChildAt(i));
                     if (ba && ba->prp_getName().contains(
-                                QStringLiteral("invert"))) {
+                                QStringLiteral("反相"))) {
                         return ba;
                     }
                 }

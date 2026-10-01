@@ -29,23 +29,25 @@
 #include "appsupport.h"
 
 CameraLensBlurEffect::CameraLensBlurEffect() :
-    RasterEffect(QObject::tr("Camera Lens Blur"),
+    RasterEffect(QObject::tr("镜头模糊 (Camera Lens Blur)"),
                  AppSupport::getRasterEffectHardwareSupport(
                      "CameraLensBlur", HardwareSupport::gpuPreffered),
                  true,
                  RasterEffectType::CAMERA_LENS_BLUR)
 {
-    mRadius = enve::make_shared<QrealAnimator>(15, 0, 250, 0.5, "radius");
+    mRadius = enve::make_shared<QrealAnimator>(15, 0, 250, 0.5,
+                                               QObject::tr("半径"));
     ca_addChild(mRadius);
     connect(mRadius.get(), &QrealAnimator::effectiveValueChanged,
             this, &RasterEffect::forcedMarginChanged);
     ca_setGUIProperty(mRadius.get());
 
     mThreshold = enve::make_shared<QrealAnimator>(0.7, 0.0, 1.0, 0.01,
-                                                  "threshold");
+                                                  QObject::tr("阈值"));
     ca_addChild(mThreshold);
 
-    mGain = enve::make_shared<QrealAnimator>(2.0, 0.0, 10.0, 0.05, "gain");
+    mGain = enve::make_shared<QrealAnimator>(2.0, 0.0, 10.0, 0.05,
+                                             QObject::tr("增益"));
     ca_addChild(mGain);
 }
 

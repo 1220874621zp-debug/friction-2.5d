@@ -58,7 +58,7 @@ private:
 };
 
 EchoEffect::EchoEffect() :
-    RasterEffect(QObject::tr("Echo"),
+    RasterEffect(QObject::tr("残影 (Echo)"),
                  AppSupport::getRasterEffectHardwareSupport("Echo",
                                                             HardwareSupport::cpuOnly),
                  false,
@@ -66,22 +66,22 @@ EchoEffect::EchoEffect() :
 {
     mEchoTime = enve::make_shared<QrealAnimator>(
                 -0.033, -999.0, 999.0, 0.001,
-                QObject::tr("echo time"));
+                QObject::tr("回声时间"));
     ca_addChild(mEchoTime);
 
     mEchoCount = enve::make_shared<QrealAnimator>(
                 3.0, 0.0, 50.0, 1.0,
-                QObject::tr("echo count"));
+                QObject::tr("回声数量"));
     ca_addChild(mEchoCount);
 
     mStartIntensity = enve::make_shared<QrealAnimator>(
                 50.0, 0.0, 100.0, 1.0,
-                QObject::tr("start intensity"));
+                QObject::tr("起始强度"));
     ca_addChild(mStartIntensity);
 
     mDecay = enve::make_shared<QrealAnimator>(
                 0.5, 0.0, 1.0, 0.01,
-                QObject::tr("decay"));
+                QObject::tr("衰减"));
     ca_addChild(mDecay);
 
     connect(this, &Property::prp_parentChanged,

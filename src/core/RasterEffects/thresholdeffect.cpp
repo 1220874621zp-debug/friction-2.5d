@@ -38,7 +38,8 @@ ThresholdEffect::ThresholdEffect() :
     // AE semantics: level is a percent of luminance; pixels at or above
     // it turn white, pixels below turn black (level 0 = all white,
     // level 100 = only pure-white pixels survive white)
-    mLevel = enve::make_shared<QrealAnimator>(50.0, 0.0, 100.0, 1.0, "level");
+    mLevel = enve::make_shared<QrealAnimator>(50.0, 0.0, 100.0, 1.0,
+                                              QObject::tr("色阶"));
     ca_addChild(mLevel);
 }
 

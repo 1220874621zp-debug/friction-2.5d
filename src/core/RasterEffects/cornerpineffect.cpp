@@ -312,7 +312,7 @@ private:
 };
 
 CornerPinEffect::CornerPinEffect() :
-    RasterEffect(QObject::tr("边角定位"),
+    RasterEffect(QObject::tr("边角定位 (Corner Pin)"),
                  AppSupport::getRasterEffectHardwareSupport("CornerPin",
                                                             HardwareSupport::cpuOnly),
                  false,

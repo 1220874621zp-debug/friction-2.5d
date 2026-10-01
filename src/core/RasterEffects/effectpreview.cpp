@@ -524,16 +524,16 @@ NamedScan namedScanFor(const RasterEffectType type) {
         return { "gamma", "中心色范围", 0.6, 2.6 };
     case RasterEffectType::THRESHOLD:
         // full-range sweep flips the silhouette in/out of white
-        return { "level", nullptr, 10., 90. };
+        return { "level", "色阶", 10., 90. };
     case RasterEffectType::DESATURATE:
         // color <-> grayscale breathing (default 100 would sweep
         // nowhere: 100 * 2.5 clamps back to 100)
-        return { "amount", nullptr, 0., 100. };
+        return { "amount", "程度", 0., 100. };
     case RasterEffectType::LEVELS:
         // midtone breathing around the identity gamma 1; the input
         // points are pre-spread in applyPreviewDefaults so the
         // curve visibly crushes shadows and highlights too
-        return { "gamma", nullptr, 0.5, 2.1 };
+        return { "gamma", "灰度系数", 0.5, 2.1 };
     case RasterEffectType::CURVES:
         // breathing the mids anchor bends the curve S <-> inverse;
         // the anchor animator is named in Chinese (tr source string),
@@ -541,12 +541,12 @@ NamedScan namedScanFor(const RasterEffectType type) {
         return { "mids", "中间调", 40., 216. };
     case RasterEffectType::HUE_SATURATION:
         // full wheel swing reads instantly even at thumbnail size
-        return { "hue", nullptr, -180., 180. };
+        return { "hue", "色相", -180., 180. };
     case RasterEffectType::SIMPLE_CHOKER:
         // negative spread -> positive choke breathing; the to-value
         // stays off the exact 0 grid point - a choke of exactly 0 is
         // a passthrough and would flash one empty frame mid-loop
-        return { "choke matte", nullptr, -6., 5.9 };
+        return { "choke matte", "阻塞遮罩", -6., 5.9 };
     case RasterEffectType::TURBULENT_DISPLACE:
         // sweeping the displacement makes the tile visibly crawl;
         // the animator's name is the Chinese tr source string, so it
@@ -634,7 +634,7 @@ QrealAnimator* findMainParam(RasterEffect* const eff) {
 // not show anything interesting on the demo samples
 void setupDefaults(RasterEffect* const eff, const RasterEffectType type) {
     const auto setParam = [eff](const char* name, const qreal value) {
-        auto* const qa = findAnimatorByName(eff, QString::fromLatin1(name),
+        auto* const qa = findAnimatorByName(eff, QString::fromUtf8(name),
                                             QString());
         if (qa) { qa->setCurrentBaseValue(value); }
     };
@@ -649,7 +649,7 @@ void setupDefaults(RasterEffect* const eff, const RasterEffectType type) {
         // shows a real page turn - and a fat curl tube reads at
         // thumbnail size
         setCombo("模式", 2);
-        setParam("radius", 20.);
+        setParam("卷曲半径", 20.);
         break;
     case RasterEffectType::CHANNEL_BLUR:
         // factory 0/0/0 = no blur at all; strong per-channel spread
@@ -678,8 +678,8 @@ void setupDefaults(RasterEffect* const eff, const RasterEffectType type) {
     case RasterEffectType::LEVELS:
         // factory 0/255 is passthrough on the ends; pre-spread the
         // input points so the gamma sweep has real range to crush
-        setParam("input black", 40.);
-        setParam("input white", 225.);
+        setParam("输入黑场", 40.);
+        setParam("输入白场", 225.);
         break;
     case RasterEffectType::CURVES:
         // factory = identity = null caller; a bold S-curve so the
