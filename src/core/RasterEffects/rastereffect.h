@@ -163,7 +163,10 @@ enum class RasterEffectType : short {
     ECHO,
     // AE Corner Pin: four-point perspective fit (screen replacement);
     // appended last, never reorder - serialized ids must stay stable
-    CORNER_PIN
+    CORNER_PIN,
+    // AE Camera Lens Blur: defocus blur + thresholded highlight bokeh
+    // (appended last, never reorder - serialized ids must stay stable)
+    CAMERA_LENS_BLUR
 };
 
 struct BoxRenderData;

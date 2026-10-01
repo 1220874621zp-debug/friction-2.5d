@@ -48,6 +48,8 @@ void RasterEffectMenuCreator::forEveryEffectCore(const EffectAdder &add)
         []() { return enve::make_shared<ChannelBlurEffect>(); });
     add(QObject::tr("Zoom Blur"), QObject::tr("Blur"),
         []() { return enve::make_shared<ZoomBlurEffect>(); });
+    add(QObject::tr("Camera Lens Blur"), QObject::tr("Blur"),
+        []() { return enve::make_shared<CameraLensBlurEffect>(); });
     add(QObject::tr("Shadow"), "", []() { return enve::make_shared<ShadowEffect>(); });
     add(QObject::tr("Drop Shadow"), QObject::tr("Light"),
         []() { return enve::make_shared<DropShadowEffect>(); });

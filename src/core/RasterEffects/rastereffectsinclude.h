@@ -59,5 +59,6 @@
 #include "rampeffect.h"
 #include "grideffect.h"
 #include "cornerpineffect.h"
+#include "cameralensblureffect.h"
 
 #endif // RASTEREFFECTSINCLUDE_H

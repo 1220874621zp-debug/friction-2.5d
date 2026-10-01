@@ -226,6 +226,7 @@ set(
     Properties/boxtargetproperty.cpp
     RasterEffects/blureffect.cpp
     RasterEffects/brightnesscontrasteffect.cpp
+    RasterEffects/cameralensblureffect.cpp
     RasterEffects/chromakeyeffect.cpp
     RasterEffects/liquidglasseffect.cpp
     RasterEffects/pagecurleffect.cpp
@@ -631,6 +632,7 @@ set(
     Properties/newproperty.h
     RasterEffects/blureffect.h
     RasterEffects/brightnesscontrasteffect.h
+    RasterEffects/cameralensblureffect.h
     RasterEffects/chromakeyeffect.h
     RasterEffects/liquidglasseffect.h
     RasterEffects/pagecurleffect.h
