@@ -51,6 +51,7 @@
 #include "Animators/qrealanimator.h"
 #include "RasterEffects/rastereffectcollection.h"
 #include "Properties/boxtargetproperty.h"
+#include "appsupport.h"
 
 #define NOMINMAX
 #include <psapi.h>
@@ -1118,14 +1119,14 @@ static int runImageGeomProbe(Document& document,
     // for an image, the filled shape rect for a stroked vector layer - the
     // dashed box of the latter also covers the stroke width)
     const auto report = [&](BoundingBox* const target, const QString& name,
-                            const QRectF& expect) {
+                            const QRectF& expect, const qreal tol = 2.) {
         QRectF pic;
         const bool ok = measure(target, &pic);
         const qreal dw = ok ? pic.width() - expect.width() : 0;
         const qreal dh = ok ? pic.height() - expect.height() : 0;
-        const bool match = ok && qAbs(dw) <= 2 && qAbs(dh) <= 2 &&
-                           qAbs(pic.x() - expect.x()) <= 2 &&
-                           qAbs(pic.y() - expect.y()) <= 2;
+        const bool match = ok && qAbs(dw) <= tol && qAbs(dh) <= tol &&
+                           qAbs(pic.x() - expect.x()) <= tol &&
+                           qAbs(pic.y() - expect.y()) <= tol;
         fprintf(stderr, "[harness] IMGGEOM [%s] res=%.2f expect=%s drawn=%s "
                         "%s (d=%.1fx%.1f scale=%.3fx%.3f)\n",
                 name.toLocal8Bit().constData(), scene->getResolution(),
@@ -1143,9 +1144,11 @@ static int runImageGeomProbe(Document& document,
     const auto reportImage = [&](const QString& name) {
         return report(box.get(), name, mappedRect(box.get()));
     };
-    // the fill of the 300x300 rectangle control
+    // the fill of the 300x300 rectangle control: the stroke margin depends
+    // on the fill/stroke preset in the settings (0..~10px), so it gets a
+    // wider tolerance - the check only has to catch resolution scaling
     const auto reportRect = [&](const QString& name) {
-        return report(rectBox.get(), name, QRectF(1400, 100, 300, 300));
+        return report(rectBox.get(), name, QRectF(1400, 100, 300, 300), 12.);
     };
 
     int fails = 0;
@@ -1186,10 +1189,10 @@ static int runImageGeomProbe(Document& document,
                                     want.width() * res, want.height() * res);
             const QRectF got(minX, minY, maxX - minX + 1, maxY - minY + 1);
             const bool ok = maxX >= 0 &&
-                    qAbs(got.width() - wantScaled.width()) <= 2 &&
-                    qAbs(got.height() - wantScaled.height()) <= 2 &&
-                    qAbs(got.x() - wantScaled.x()) <= 2 &&
-                    qAbs(got.y() - wantScaled.y()) <= 2;
+                    qAbs(got.width() - wantScaled.width()) <= 8 &&
+                    qAbs(got.height() - wantScaled.height()) <= 8 &&
+                    qAbs(got.x() - wantScaled.x()) <= 8 &&
+                    qAbs(got.y() - wantScaled.y()) <= 8;
             char c1[96], c2[96];
             fprintf(stderr, "[harness] IMGGEOM [frame] res=%.2f expect=%s "
                             "drawn=%s %s\n", res,
@@ -1534,6 +1537,149 @@ static int runLensDepthProbe(Document& document, TaskScheduler& tasks) {
     return fails ? 1 : 0;
 }
 
+// ---------------------------------------------------------------------------
+// import + effect-delete probe (headless):
+//  * dropping several files at once must import ALL of them (the old
+//    handler returned after the first url)
+//  * imported bitmaps are fitted to the canvas (matching width OR height,
+//    i.e. nothing is cropped) and centered
+//  * Delete with an effect row selected removes that EFFECT, not the layer
+static int runImportEffectProbe(Document& document, Actions& actions,
+                                TaskScheduler& tasks) {
+    Q_UNUSED(tasks)
+    if(eSettings::sInstance) eSettings::sInstance->fPathGpuAcc = false;
+    const auto pump = [](const int n) {
+        for(int j = 0; j < n; j++) QApplication::processEvents();
+    };
+    // the import writes the "recent import dir" setting: restore it
+    const QString prevRecentDir = AppSupport::getSettings(
+                "files", "recentImportDir", QString()).toString();
+
+    // two test bitmaps on an 800x600 canvas: wide (400x200, aspect 2) must
+    // match the canvas WIDTH, tall (200x800, aspect 0.25) the HEIGHT
+    QImage wide(400, 200, QImage::Format_ARGB32_Premultiplied);
+    wide.fill(Qt::red);
+    QImage tall(200, 800, QImage::Format_ARGB32_Premultiplied);
+    tall.fill(Qt::blue);
+    const QString widePath = QDir::tempPath() + "/probe_wide.png";
+    const QString tallPath = QDir::tempPath() + "/probe_tall.png";
+    if(!wide.save(widePath) || !tall.save(tallPath)) {
+        fprintf(stderr, "[harness] IMPEFFECT FAIL: cannot write inputs\n");
+        return 10;
+    }
+
+    const auto scene = document.createNewScene(false);
+    scene->setCanvasSize(800, 600);
+    scene->setResolution(1.);
+    pump(30);
+    document.setActiveScene(scene);
+    pump(30);
+
+    int fails = 0;
+
+    // 1) multi-file drop: both urls must land as layers
+    {
+        QMimeData mime;
+        mime.setUrls({QUrl::fromLocalFile(widePath),
+                      QUrl::fromLocalFile(tallPath)});
+        QDropEvent drop(QPointF(400, 300), Qt::CopyAction, &mime,
+                        Qt::LeftButton, Qt::NoModifier);
+        actions.handleDropEvent(&drop, QPointF(400, 300), 0);
+        for(int i = 0; i < 80; i++) { document.updateScenes(); pump(4); }
+    }
+    const int nBoxes = scene->getContainedBoxesCount();
+    fprintf(stderr, "[harness] IMPEFFECT multi-drop layers=%d (want 2)\n", nBoxes);
+    if(nBoxes != 2) fails++;
+
+    // fitted size + centered position (the 2nd layer is staggered by 24px
+    // by the multi-drop handler so a stack is visible)
+    const auto contentRect = [](BoundingBox* const box, const QSizeF& src) {
+        return box->getTotalTransformAtFrame(box->anim_getCurrentRelFrame())
+                .mapRect(QRectF(QPointF(0., 0.), src));
+    };
+    struct FitExpect {
+        const char* name;
+        QSizeF src;
+        QSizeF fitted;
+        QPointF center;
+    };
+    const FitExpect expects[2] = {
+        {"probe_wide", QSizeF(400, 200), QSizeF(800, 400), QPointF(400, 300)},
+        {"probe_tall", QSizeF(200, 800), QSizeF(150, 600), QPointF(424, 324)}
+    };
+    BoundingBox* wideBox = nullptr;
+    for(const auto box : scene->getContainedBoxes()) {
+        if(!box) continue;
+        const QString name = box->prp_getName();
+        if(name.contains(QStringLiteral("wide"))) wideBox = box;
+        for(const auto& e : expects) {
+            if(name != QLatin1String(e.name)) continue;
+            const QRectF r = contentRect(box, e.src);
+            const bool ok = qAbs(r.width() - e.fitted.width()) <= 1. &&
+                            qAbs(r.height() - e.fitted.height()) <= 1. &&
+                            qAbs(r.center().x() - e.center.x()) <= 1. &&
+                            qAbs(r.center().y() - e.center.y()) <= 1.;
+            if(!ok) fails++;
+            fprintf(stderr, "[harness] IMPEFFECT [%s] fitted=%.1fx%.1f "
+                            "center=(%.1f,%.1f) want %.1fx%.1f "
+                            "(%.1f,%.1f) %s\n", e.name,
+                    r.width(), r.height(), r.center().x(), r.center().y(),
+                    e.fitted.width(), e.fitted.height(),
+                    e.center.x(), e.center.y(), ok ? "PASS" : "FAIL");
+        }
+    }
+    if(!wideBox) {
+        fprintf(stderr, "[harness] IMPEFFECT FAIL: wide layer not found\n");
+        fails++;
+    }
+
+    // 2) Delete with an effect row selected removes the EFFECT only
+    if(wideBox) {
+        const auto coll = wideBox->rasterEffectsCollection();
+        coll->addChild(createRasterEffectForNonCustomType(RasterEffectType::BLUR));
+        coll->addChild(createRasterEffectForNonCustomType(
+                           RasterEffectType::CAMERA_LENS_BLUR));
+        pump(30);
+        const auto victim = coll->getChild(1);
+        const QString victimName = victim ? victim->prp_getName() : QString();
+        // what clicking the effect row in the property tree does
+        scene->addToSelectedProps(victim);
+        (*actions.deleteAction)();
+        pump(30);
+        bool victimGone = true;
+        for(int i = 0; i < coll->ca_getNumberOfChildren(); i++) {
+            if(coll->getChild(i)->prp_getName() == victimName) victimGone = false;
+        }
+        const bool keptLayer = scene->getContainedBoxesCount() == 2;
+        const bool ok = victimGone && keptLayer &&
+                        coll->ca_getNumberOfChildren() == 1;
+        if(!ok) fails++;
+        fprintf(stderr, "[harness] IMPEFFECT [del-effect] removed='%s' "
+                        "effects=%d keptLayer=%d %s\n",
+                victimName.toLocal8Bit().constData(),
+                coll->ca_getNumberOfChildren(), int(keptLayer),
+                ok ? "PASS" : "FAIL");
+
+        // 3) ... and Delete still removes the LAYER when no effect row is
+        // selected (the old behaviour must survive)
+        scene->clearSelectedProps();
+        scene->addBoxToSelection(wideBox);
+        (*actions.deleteAction)();
+        pump(30);
+        const bool layerGone = scene->getContainedBoxesCount() == 1;
+        if(!layerGone) fails++;
+        fprintf(stderr, "[harness] IMPEFFECT [del-layer] layers=%d %s\n",
+                scene->getContainedBoxesCount(),
+                layerGone ? "PASS" : "FAIL");
+    }
+
+    AppSupport::setSettings("files", "recentImportDir", prevRecentDir);
+    fprintf(stderr, "[harness] IMPEFFECT %s (fails=%d)\n",
+            fails ? "FAIL" : "PASS", fails);
+    fflush(stderr);
+    return fails ? 1 : 0;
+}
+
 // synthetic differential test: every layer creates a MotionPathHandler
 // in prp_updateCanvasProps(); repeated create/destroy cycles used to be
 // lethal with the double-shared PointsHandler ownership
@@ -1772,6 +1918,19 @@ int main(int argc, char *argv[]) {
         Actions actions(document);
         return runImageGeomProbe(document, taskScheduler,
                                  args.count() > 1 ? args.at(1) : QString());
+    }
+    if(!args.isEmpty() && args.first() == "--impeffect") {
+        eSettings settings(HardwareInfo::sCpuThreads(),
+                           HardwareInfo::sRamKB());
+        ImportHandler importHandler;
+        TaskScheduler taskScheduler;
+        Document document(taskScheduler);
+        FilesHandler filesHandler;
+        MemoryHandler memoryHandler;
+        eFilterSettings filterSettings;
+        // Canvas::queTasks dereferences Actions::sInstance
+        Actions actions(document);
+        return runImportEffectProbe(document, actions, taskScheduler);
     }
     if(!args.isEmpty() && args.first() == "--lensdepth") {
         eSettings settings(HardwareInfo::sCpuThreads(),

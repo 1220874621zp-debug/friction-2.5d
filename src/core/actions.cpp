@@ -346,11 +346,20 @@ Actions::Actions(Document &document) : mDocument(document) {
     { // deleteAction
         const auto actionCan = [this]() {
             if(!mActiveScene) return false;
+            // a selected effect row (or a parameter row under it) also
+            // enables Delete - see selectedRasterEffects()
+            if(!selectedRasterEffects().isEmpty()) return true;
             return !mActiveScene->isBoxSelectionEmpty() ||
                    !mActiveScene->isPointSelectionEmpty();
         };
         const auto actionExec = [this]() {
-            mActiveScene->deleteAction();
+            // a selected EFFECT wins over the layer selection: clicking an
+            // effect row in the property tree also selects its layer, so
+            // Delete used to remove the whole layer when the user meant the
+            // effect they had just picked
+            if(!removeSelectedRasterEffects()) {
+                mActiveScene->deleteAction();
+            }
             afterAction();
         };
         deleteAction = new UndoableAction(actionCan, actionExec,
@@ -707,7 +716,50 @@ void Actions::setPathEffectsVisible(const bool bT) {
 //#include "svgimporter.h"
 #include "Boxes/videobox.h"
 #include "Boxes/imagebox.h"
+#include "RasterEffects/rastereffect.h"
+#include "RasterEffects/rastereffectcollection.h"
 #include "importhandler.h"
+
+#include <QImageReader>
+
+QList<RasterEffect*> Actions::selectedRasterEffects() const {
+    QList<RasterEffect*> effects;
+    if(!mActiveScene) return effects;
+    // the property-row selection is the same source Canvas::copyAction uses
+    // to recognize "the effect the user clicked"; a parameter row counts as
+    // its owning effect so tweaking a slider then pressing Delete also
+    // removes the effect
+    for(const auto prop : mActiveScene->getSelectedPropsList()) {
+        if(!prop) continue;
+        auto eff = enve_cast<RasterEffect*>(prop);
+        if(!eff) {
+            eff = prop->getFirstAncestor<RasterEffect>(
+                        [](Property* const p) {
+                return enve_cast<RasterEffect*>(p) != nullptr;
+            });
+        }
+        if(eff && !effects.contains(eff)) effects.append(eff);
+    }
+    return effects;
+}
+
+bool Actions::removeSelectedRasterEffects() {
+    const auto effects = selectedRasterEffects();
+    if(effects.isEmpty()) return false;
+    for(const auto eff : effects) {
+        const auto box = eff->getFirstAncestor<BoundingBox>();
+        const auto collection = box ? box->rasterEffectsCollection() : nullptr;
+        if(collection) {
+            // undoable (DynamicComplexAnimator::removeChild pushes the
+            // "Remove <name>" step)
+            collection->removeChild(eff->ref<RasterEffect>());
+        }
+    }
+    if(!mActiveScene->getSelectedPropsList().isEmpty()) {
+        mActiveScene->clearSelectedProps();
+    }
+    return true;
+}
 
 eBoxOrSound* Actions::handleDropEvent(QDropEvent * const event,
                                       const QPointF& relDropPos,
@@ -734,15 +786,36 @@ eBoxOrSound* Actions::handleDropEvent(QDropEvent * const event,
     if (mimeData->hasUrls() || internalUrls.count() > 0) {
         event->acceptProposedAction();
         const QList<QUrl> urlList = internalUrls.count() > 0 ? internalUrls : mimeData->urls();
+        eBoxOrSound* firstResult = nullptr;
+        int imported = 0;
         for (int i = 0; i < urlList.size() && i < 32; i++) {
             try {
-                return importFile(urlList.at(i).toLocalFile(),
-                                  mActiveScene->getCurrentGroup(),
-                                  0, relDropPos, frame);
+                // every dropped file must land on the canvas: the old early
+                // return imported only the first one. Extra layers are
+                // staggered a little so a multi-file drop reads as a stack
+                // instead of a single picture (bitmaps are fit to the canvas
+                // and centered by importFile, hence the offset afterwards)
+                const auto importedBox = importFile(urlList.at(i).toLocalFile(),
+                                                    mActiveScene->getCurrentGroup(),
+                                                    0, relDropPos, frame);
+                if(!importedBox) continue;
+                if(!firstResult) firstResult = importedBox;
+                if(imported > 0) {
+                    if(const auto box = enve_cast<BoundingBox*>(importedBox)) {
+                        box->startPosTransform();
+                        box->moveByAbs(QPointF(24.*imported, 24.*imported));
+                        box->finishTransform();
+                    }
+                }
+                imported++;
             } catch(const std::exception& e) {
                 gPrintExceptionCritical(e);
             }
         }
+        if(imported > 1) {
+            qWarning() << "IMPORT: multi-drop imported" << imported << "layers";
+        }
+        return firstResult;
     }
     return nullptr;
 }
@@ -795,6 +868,8 @@ eBoxOrSound *Actions::importFile(const QString &path,
     auto block = scene ? scene->blockUndoRedo() :
                          UndoRedoStack::StackBlock();
     qsptr<eBoxOrSound> result;
+    // set by the bitmap route: the picture is fitted to the canvas below
+    bool fitBitmapToCanvas = false;
     const QFile file(path);
     if (!file.exists()) {
         RuntimeThrow("File " + path + " does not exit.");
@@ -853,6 +928,10 @@ eBoxOrSound *Actions::importFile(const QString &path,
                 } else if (isImageExt(extension)) {
                     qWarning() << "IMPORT: route=image";
                     result = createImageBox(path);
+                    // bitmap automation: fit the imported picture to the
+                    // canvas below (same result as the timeline "match
+                    // canvas width/height" buttons, applied automatically)
+                    fitBitmapToCanvas = true;
                 } else if (isVideoExt(extension)) {
                     qWarning() << "IMPORT: route=video";
                     result = createVideoForPath(path);
@@ -888,6 +967,16 @@ eBoxOrSound *Actions::importFile(const QString &path,
                             canvasCenter - importedBox->getPivotAbsPos());
             }
             importedBox->finishTransform();
+            // imported bitmaps match the canvas (width or height, whichever
+            // fits) and are centered - the layer has no bounds yet (the
+            // decode is async), so the size comes from the file header
+            if (fitBitmapToCanvas && scene) {
+                const QSize imgSize = QImageReader(path).size();
+                if (imgSize.isValid()) {
+                    scene->fitBoxToCanvas(importedBox, QSizeF(imgSize));
+                    qWarning() << "IMPORT: fitted bitmap to canvas" << imgSize;
+                }
+            }
         }
         if (const auto videoBox = enve_cast<VideoBox*>(result)) {
             Document::sInstance->newVideo(videoBox->getSpecs());
@@ -1141,6 +1230,14 @@ void Actions::connectToActiveScene(Canvas* const scene) {
                         deleteAction, &Action::raiseCanExecuteChanged);
         conn << connect(mActiveScene, &Canvas::pointSelectionChanged,
                         deleteAction, &Action::raiseCanExecuteChanged);
+        // selecting an effect row in the property tree enables Delete (it
+        // removes that effect) and Copy/Cut (they carry the effect stack)
+        conn << connect(mActiveScene, &Canvas::selectedPropsChanged,
+                        deleteAction, &Action::raiseCanExecuteChanged);
+        conn << connect(mActiveScene, &Canvas::selectedPropsChanged,
+                        copyAction, &Action::raiseCanExecuteChanged);
+        conn << connect(mActiveScene, &Canvas::selectedPropsChanged,
+                        cutAction, &Action::raiseCanExecuteChanged);
         conn << connect(mActiveScene, &Canvas::objectSelectionChanged,
                         copyAction, &Action::raiseCanExecuteChanged);
         conn << connect(mActiveScene, &Canvas::objectSelectionChanged,

@@ -42,6 +42,7 @@ class QrealAction;
 class eBoxOrSound;
 class ContainerBox;
 class ExternalLinkBox;
+class RasterEffect;
 
 class CORE_EXPORT Actions : public QObject {
     Q_OBJECT
@@ -177,6 +178,12 @@ public:
 private:
     void connectToActiveScene(Canvas* const scene);
     void afterAction() const;
+
+    // effect rows selected in the property tree (an effect or one of its
+    // parameter rows): Delete removes those instead of the layer, because
+    // clicking an effect row also selects its layer
+    QList<RasterEffect*> selectedRasterEffects() const;
+    bool removeSelectedRasterEffects();
 
     bool mSmoothChange = false;
     Document& mDocument;

@@ -355,6 +355,15 @@ public:
     // matches the canvas, then center it on the canvas (one undo step)
     void scaleSelectedBoxesToCanvas(const bool byWidth);
 
+    // scale ONE box so its content matches the canvas width or height -
+    // whichever fits, so nothing is cropped - then center it. Same result
+    // as the timeline "match canvas" buttons, used by the bitmap import
+    // automation. contentSize can be given explicitly when the layer has no
+    // bounds yet (a freshly imported bitmap: the file header knows its size
+    // before the first render fills the rel rect)
+    void fitBoxToCanvas(BoundingBox * const box,
+                        const QSizeF &contentSize = QSizeF());
+
     void selectAndAddContainedPointsToSelection(const QRectF &absRect);
 //
     //void newPaintBox(const QPointF &pos);
@@ -595,6 +604,10 @@ signals:
     void selectedPaintSettingsChanged();
     void objectSelectionChanged();
     void pointSelectionChanged();
+    // a property row (e.g. an effect in the effect stack) was selected or
+    // deselected - actions whose canExecute depends on
+    // getSelectedPropsList() (delete/copy of a selected effect) refresh on it
+    void selectedPropsChanged();
     void currentFrameChanged(int);
     void currentContainerSet(ContainerBox*);
     void dimensionsChanged(int, int);

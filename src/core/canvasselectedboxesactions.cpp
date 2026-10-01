@@ -1345,6 +1345,51 @@ void Canvas::alignSelectedBoxes(const Qt::Alignment align,
     }
 }
 
+void Canvas::fitBoxToCanvas(BoundingBox * const box,
+                            const QSizeF &contentSize) {
+    if (!box) { return; }
+    const QRectF canvasRect(0., 0., mWidth, mHeight);
+    if (canvasRect.isEmpty()) { return; }
+    // world-space content rect: explicit size when given (import: the file
+    // header size, before the first render set the rel rect), otherwise the
+    // layer's own bounds mapped through its total transform. The rel rect is
+    // assumed to start at the layer origin (bitmaps do) when the size comes
+    // from the caller.
+    const qreal relFrame = box->anim_getCurrentRelFrame();
+    const auto contentRectAt = [box, contentSize, relFrame]() {
+        const QTransform total = box->getTotalTransformAtFrame(relFrame);
+        return total.mapRect(contentSize.isEmpty() ?
+                                 box->getRelBoundingRect() :
+                                 QRectF(QPointF(0., 0.), contentSize));
+    };
+    QRectF content = contentRectAt();
+    if (content.width() <= 0. || content.height() <= 0.) { return; }
+    // match the axis that FITS: comparing the aspect ratios picks the same
+    // factor as min(canvasW/w, canvasH/h), so the whole layer stays inside
+    // the canvas (the timeline buttons match one axis explicitly)
+    const bool byWidth = content.width()/content.height() >=
+                         canvasRect.width()/canvasRect.height();
+
+    pushUndoRedoName(tr("Fit to Canvas"));
+    {
+        const qreal factor = byWidth ? canvasRect.width()/content.width()
+                                     : canvasRect.height()/content.height();
+        box->startScaleTransform();
+        box->scale(factor);
+        box->finishTransform();
+    }
+    // re-read the transform after the scale (cached bounds are not
+    // guaranteed to be refreshed yet) and move the world center onto the
+    // canvas center
+    content = contentRectAt();
+    const QPointF shift = canvasRect.center() - content.center();
+    if (!qFuzzyIsNull(shift.x()) || !qFuzzyIsNull(shift.y())) {
+        box->startPosTransform();
+        box->moveByAbs(shift);
+        box->finishTransform();
+    }
+}
+
 void Canvas::scaleSelectedBoxesToCanvas(const bool byWidth) {
     if (mSelectedBoxes.isEmpty()) { return; }
     // per-layer: compute the uniform factor from the layer's

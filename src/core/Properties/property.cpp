@@ -404,6 +404,9 @@ void Property::prp_selectionChangeTriggered(const bool shiftPressed) {
         mParentScene->clearSelectedProps();
         mParentScene->addToSelectedProps(this);
     }
+    // let actions that depend on the property-row selection (delete /
+    // copy of a selected effect) refresh their enabled state
+    emit mParentScene->selectedPropsChanged();
 }
 
 qreal Property::prp_getSceneFPS() const {
