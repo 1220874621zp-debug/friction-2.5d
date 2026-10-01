@@ -848,7 +848,8 @@ int main(int argc, char *argv[])
             RasterEffectType::THRESHOLD,
             RasterEffectType::SIMPLE_CHOKER,
             RasterEffectType::DESATURATE,
-            RasterEffectType::LEVELS
+            RasterEffectType::LEVELS,
+            RasterEffectType::ECHO
         };
             for (const auto t : typesAll) {
                 const auto eff = createRasterEffectForNonCustomType(t);
@@ -939,7 +940,8 @@ int main(int argc, char *argv[])
             RasterEffectType::THRESHOLD,
             RasterEffectType::SIMPLE_CHOKER,
             RasterEffectType::DESATURATE,
-            RasterEffectType::LEVELS
+            RasterEffectType::LEVELS,
+            RasterEffectType::ECHO
         };
 
         for (const auto t : types) {
@@ -1202,7 +1204,8 @@ int main(int argc, char *argv[])
             RasterEffectType::THRESHOLD,
             RasterEffectType::SIMPLE_CHOKER,
             RasterEffectType::DESATURATE,
-            RasterEffectType::LEVELS
+            RasterEffectType::LEVELS,
+            RasterEffectType::ECHO
         };
         QString dumpDir;
         if (argc >= 3) {

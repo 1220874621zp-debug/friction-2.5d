@@ -112,6 +112,8 @@ void RasterEffectMenuCreator::forEveryEffectCore(const EffectAdder &add)
         []() { return enve::make_shared<FractalNoiseEffect>(); });
     add(QObject::tr("渐变 (Ramp)"), QObject::tr("Generate"),
         []() { return enve::make_shared<RampEffect>(); });
+    add(QObject::tr("网格 (Grid)"), QObject::tr("Generate"),
+        []() { return enve::make_shared<GridEffect>(); });
     add(QObject::tr("Light Sweep"), QObject::tr("Light"),
         []() { return enve::make_shared<LightSweepEffect>(); });
     add(QObject::tr("Displacement Warp"), QObject::tr("Distort"),
@@ -148,6 +150,8 @@ void RasterEffectMenuCreator::forEveryEffectCore(const EffectAdder &add)
         []() { return enve::make_shared<RoughenEdgesEffect>(); });
     add(QObject::tr("图层样式"), "",
         []() { return enve::make_shared<LayerStylesEffect>(); });
+    add(QObject::tr("边角定位 (Corner Pin)"), QObject::tr("Distort"),
+        []() { return enve::make_shared<CornerPinEffect>(); });
 }
 
 void RasterEffectMenuCreator::forEveryEffectCustom(const EffectAdder &add)

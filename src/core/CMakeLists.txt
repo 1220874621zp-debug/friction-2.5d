@@ -283,6 +283,8 @@ set(
     RasterEffects/motiontileeffect.cpp
     RasterEffects/fractalnoiseeffect.cpp
     RasterEffects/rampeffect.cpp
+    RasterEffects/grideffect.cpp
+    RasterEffects/cornerpineffect.cpp
     RasterEffects/lightsweepeffect.cpp
     RasterEffects/displacementwarpeffect.cpp
     RasterEffects/filmgraineffect.cpp
@@ -682,6 +684,7 @@ set(
     RasterEffects/motiontileeffect.h
     RasterEffects/fractalnoiseeffect.h
     RasterEffects/rampeffect.h
+    RasterEffects/grideffect.h
     RasterEffects/lightsweepeffect.h
     RasterEffects/displacementwarpeffect.h
     RasterEffects/filmgraineffect.h

@@ -349,6 +349,10 @@ qsptr<RasterEffect> createRasterEffectForNonCustomType(const RasterEffectType ty
             return enve::make_shared<HueSaturationEffect>();
         case(RasterEffectType::ECHO):
             return enve::make_shared<EchoEffect>();
+        case(RasterEffectType::RAMP):
+            return enve::make_shared<RampEffect>();
+        case(RasterEffectType::GRID):
+            return enve::make_shared<GridEffect>();
         default: return nullptr;
     }
 }

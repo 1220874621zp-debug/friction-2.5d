@@ -56,5 +56,8 @@
 #include "levelseffect.h"
 #include "huesaturationeffect.h"
 #include "echoeffect.h"
+#include "rampeffect.h"
+#include "grideffect.h"
+#include "cornerpineffect.h"
 
 #endif // RASTEREFFECTSINCLUDE_H

@@ -69,6 +69,9 @@
 #ifdef ERROR
 #undef ERROR
 #endif
+#ifdef ECHO
+#undef ECHO
+#endif
 
 enum class RasterEffectType : short {
     BLUR,
@@ -150,12 +153,17 @@ enum class RasterEffectType : short {
     HUE_SATURATION,
     // AE Gradient Ramp: two-color linear/radial gradient generator
     // (appended, never reorder - serialized ids must stay stable)
-    RAMP
-};
+    RAMP,
+    // AE Grid: anchored grid-line generator (appended, never
+    // reorder - serialized ids must stay stable)
+    GRID,
     // AE Echo: composite past/future frame samples under the current
     // frame with decaying intensity (appended last, never reorder -
     // serialized ids must stay stable)
-    ECHO
+    ECHO,
+    // AE Corner Pin: four-point perspective fit (screen replacement);
+    // appended last, never reorder - serialized ids must stay stable
+    CORNER_PIN
 };
 
 struct BoxRenderData;
