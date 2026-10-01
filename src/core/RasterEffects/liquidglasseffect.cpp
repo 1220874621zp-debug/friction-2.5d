@@ -250,12 +250,21 @@ public:
             m.postTranslate(-float(dev.left()), -float(dev.top()));
             mc.setMatrix(m);
             if(box.fUseRenderTransform) {
+                // direct-drawn layer (source image in layer space): its
+                // render transform maps layer -> render space, so the
+                // destination is the layer rect (see
+                // BoxRenderData::drawOnParentLayer)
                 mc.concat(toSkMatrix(box.fRenderTransform));
             }
             SkPaint mp;
             mp.setAntiAlias(box.fAntiAlias);
-            mc.drawImage(box.fRenderedImage,
-                         box.fGlobalRect.x(), box.fGlobalRect.y(), &mp);
+            if(box.fUseRenderTransform) {
+                mc.drawImageRect(box.fRenderedImage,
+                                 toSkRect(box.fRelBoundingRect), &mp);
+            } else {
+                mc.drawImage(box.fRenderedImage,
+                             box.fGlobalRect.x(), box.fGlobalRect.y(), &mp);
+            }
         }
 
         // shape bounding box (device space, relative to dev origin)
@@ -312,14 +321,20 @@ public:
             m.postTranslate(-float(dev.left()), -float(dev.top()));
             SkCanvas bc(backB);
             bc.setMatrix(m);
-            if(s.fUseRenderTransform) {
-                bc.concat(toSkMatrix(s.fRenderTransform));
-            }
             SkPaint bp;
             bp.setFilterQuality(box.fAntiAlias ? kLow_SkFilterQuality
                                                : kNone_SkFilterQuality);
-            bc.drawImage(s.fRenderedImage,
-                         s.fGlobalRect.x(), s.fGlobalRect.y(), &bp);
+            if(s.fUseRenderTransform) {
+                // direct-drawn sample (source image in layer space): draw it
+                // into the layer rect under its render transform, matching
+                // BoxRenderData::drawOnParentLayer
+                bc.concat(toSkMatrix(s.fRenderTransform));
+                bc.drawImageRect(s.fRenderedImage,
+                                 toSkRect(s.fRelBoundingRect), &bp);
+            } else {
+                bc.drawImage(s.fRenderedImage,
+                             s.fGlobalRect.x(), s.fGlobalRect.y(), &bp);
+            }
             haveBg = true;
         }
         if(!haveBg) {

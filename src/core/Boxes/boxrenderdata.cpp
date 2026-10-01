@@ -143,13 +143,20 @@ void BoxRenderData::drawOnParentLayer(SkCanvas * const canvas,
     paint.setAlpha(static_cast<U8CPU>(qRound(fOpacity*2.55)));
     paint.setBlendMode(fBlendMode);
     paint.setAntiAlias(fAntiAlias);
-    // drawImageRect (instead of drawImage at natural size) so a
-    // reduced-resolution fallback raster still covers the whole global
-    // rect; for a full-resolution image the rect matches exactly and the
-    // result is identical
-    const SkRect dst = SkRect::MakeXYWH(fGlobalRect.x(), fGlobalRect.y(),
-                                        fGlobalRect.width(),
-                                        fGlobalRect.height());
+    // Destination rect. A rasterized layer holds a bitmap that is exactly
+    // fGlobalRect-sized (inside it the render resolution is already baked),
+    // so it is drawn into fGlobalRect - that also lets a reduced-resolution
+    // fallback raster still cover the whole rect. A DIRECT-DRAWN layer
+    // (fUseRenderTransform, only set by ImageRenderData::setupDirectDraw)
+    // instead delivers the source image in layer space and fRenderTransform
+    // maps layer -> render space, so its destination is the layer rect:
+    // using the global rect here scaled the picture by the render
+    // resolution a second time (half size at a 50% scene resolution, while
+    // the dashed box stayed at layer size).
+    const SkRect dst = fUseRenderTransform ?
+                toSkRect(fRelBoundingRect) :
+                SkRect::MakeXYWH(fGlobalRect.x(), fGlobalRect.y(),
+                                 fGlobalRect.width(), fGlobalRect.height());
     canvas->drawImageRect(fRenderedImage, dst, &paint);
 }
 

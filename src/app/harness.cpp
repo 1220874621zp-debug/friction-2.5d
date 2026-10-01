@@ -1016,6 +1016,300 @@ static int runTipTest(Document& document, TaskScheduler& tasks) {
     return 0;
 }
 
+// ---------------------------------------------------------------------------
+// image layer geometry probe (headless): the Anchor 9Grid report says
+// "after importing a picture its real size does not match the dashed box,
+// so the script moves the pivot to the wrong place". The dashed box is the
+// layer rel rect through the total transform, the picture is whatever
+// drawPixmapSk puts on the canvas - draw both offscreen and measure.
+// A plain rectangle is measured the same way as a control: if only the
+// image is off, the direct-draw path (ImageRenderData::setupDirectDraw)
+// is the suspect; if both are off, the edit view scales raster content.
+static int runImageGeomProbe(Document& document,
+                            TaskScheduler& tasks,
+                            const QString& pngPath) {
+    Q_UNUSED(tasks)
+    if(eSettings::sInstance) eSettings::sInstance->fPathGpuAcc = false;
+    const auto pump = [](const int n) {
+        for(int j = 0; j < n; j++) QApplication::processEvents();
+    };
+    const auto scene = document.createNewScene(false);
+    if(!scene) {
+        fprintf(stderr, "[harness] IMGGEOM FAIL: no scene\n");
+        return 10;
+    }
+    scene->setCanvasSize(1920, 1080);
+    pump(50);
+
+    const auto box = enve::make_shared<ImageBox>();
+    box->setFilePath(pngPath);
+    scene->addContained(box);
+
+    // control: a plain vector rectangle (rasterized path, no direct draw)
+    const auto rectBox = enve::make_shared<RectangleBox>();
+    rectBox->setTopLeftPos(QPointF(1400, 100));
+    rectBox->setBottomRightPos(QPointF(1700, 400));
+    scene->addContained(rectBox);
+
+    // no canvas widget exists here, so drive the preview pipeline by hand:
+    // the scene render queues every child and the child's setupRenderData
+    // schedules the image decode; the drawing container only fills through
+    // the scene pipeline (fParentIsTarget)
+    const auto sceneRounds = [&](const int n) {
+        for(int r = 0; r < n; r++) {
+            const auto sceneRd = scene->queExternalRender(0, false);
+            for(int w = 0; w < 4000; w++) {
+                if(sceneRd && sceneRd->finished()) break;
+                pump(1);
+            }
+            document.updateScenes();
+            pump(200);
+        }
+    };
+    sceneRounds(4);
+    const bool hasData = box->getCurrentRenderData(0) != nullptr;
+    fprintf(stderr, "[harness] IMGGEOM loaded=%d renderData=%d res=%.3f "
+                    "canvas=%dx%d\n",
+            int(box->hasLoadedImage()), int(hasData),
+            scene->getResolution(),
+            scene->getCanvasWidth(), scene->getCanvasHeight());
+
+    // measure the drawn content of one layer: draw its render container on a
+    // black bitmap (the edit-view path) and take the non-black bbox; the
+    // surface is much larger than the canvas so offset/rotated layers fit
+    const int offX = 900, offY = 200;
+    const int bmpW = 3400, bmpH = 2600;
+    const auto measure = [&](BoundingBox* const target, QRectF* const out) {
+        SkBitmap bmp;
+        if(!bmp.tryAllocN32Pixels(bmpW, bmpH)) return false;
+        bmp.eraseColor(SK_ColorBLACK);
+        SkCanvas canvas(bmp);
+        canvas.translate(offX, offY);
+        target->drawPixmapSk(&canvas, kHigh_SkFilterQuality);
+        const auto* px = static_cast<const uint32_t*>(bmp.getPixels());
+        const int stride = int(bmp.rowBytes() / 4);
+        int minX = bmpW, minY = bmpH, maxX = -1, maxY = -1;
+        for(int y = 0; y < bmpH; y++) {
+            const auto* row = px + qint64(y) * stride;
+            for(int x = 0; x < bmpW; x++) {
+                if((row[x] & 0x00FFFFFFu) != 0) {
+                    if(x < minX) minX = x;
+                    if(x > maxX) maxX = x;
+                    if(y < minY) minY = y;
+                    if(y > maxY) maxY = y;
+                }
+            }
+        }
+        if(maxX < 0) return false;
+        *out = QRectF(minX - offX, minY - offY,
+                      maxX - minX + 1, maxY - minY + 1);
+        return true;
+    };
+    const auto rectStr = [](char* const buf, const int cap, const QRectF& r) {
+        snprintf(buf, cap, "(%.1f,%.1f %.1fx%.1f)",
+                 r.x(), r.y(), r.width(), r.height());
+        return buf;
+    };
+    char b1[96], b2[96], b3[96];
+    // rectStyle: what the drawn content is expected to cover (the layer rect
+    // for an image, the filled shape rect for a stroked vector layer - the
+    // dashed box of the latter also covers the stroke width)
+    const auto report = [&](BoundingBox* const target, const QString& name,
+                            const QRectF& expect) {
+        QRectF pic;
+        const bool ok = measure(target, &pic);
+        const qreal dw = ok ? pic.width() - expect.width() : 0;
+        const qreal dh = ok ? pic.height() - expect.height() : 0;
+        const bool match = ok && qAbs(dw) <= 2 && qAbs(dh) <= 2 &&
+                           qAbs(pic.x() - expect.x()) <= 2 &&
+                           qAbs(pic.y() - expect.y()) <= 2;
+        fprintf(stderr, "[harness] IMGGEOM [%s] res=%.2f expect=%s drawn=%s "
+                        "%s (d=%.1fx%.1f scale=%.3fx%.3f)\n",
+                name.toLocal8Bit().constData(), scene->getResolution(),
+                rectStr(b1, sizeof(b1), expect),
+                ok ? rectStr(b2, sizeof(b2), pic) : "(none)",
+                match ? "PASS" : "FAIL", dw, dh,
+                expect.width() > 0 && ok ? pic.width()/expect.width() : -1.,
+                expect.height() > 0 && ok ? pic.height()/expect.height() : -1.);
+        return match;
+    };
+    const auto mappedRect = [](BoundingBox* const target) {
+        return target->getBoxTransformAnimator()->getTotalTransformAtFrame(0)
+                .mapRect(target->getRelBoundingRect());
+    };
+    const auto reportImage = [&](const QString& name) {
+        return report(box.get(), name, mappedRect(box.get()));
+    };
+    // the fill of the 300x300 rectangle control
+    const auto reportRect = [&](const QString& name) {
+        return report(rectBox.get(), name, QRectF(1400, 100, 300, 300));
+    };
+
+    int fails = 0;
+    if(!reportImage("image") || !reportRect("rect ")) fails++;
+
+    // scene frame (preview / export / clip-to-canvas view): the same
+    // direct-drawn picture must land at the render resolution inside the
+    // composited frame - measured as the non-background bbox of the frame
+    {
+        const auto sceneRd = scene->queExternalRender(0, false);
+        for(int w = 0; w < 4000 && !(sceneRd && sceneRd->finished()); w++) pump(1);
+        const auto img = sceneRd ? sceneRd->fRenderedImage : sk_sp<SkImage>();
+        const auto raster = img ? img->makeRasterImage() : sk_sp<SkImage>();
+        SkPixmap pm;
+        if(raster && raster->peekPixels(&pm)) {
+            const auto bg = scene->getBgColorAnimator()->getColor();
+            const int W = pm.width(), H = pm.height();
+            int minX = W, minY = H, maxX = -1, maxY = -1;
+            for(int y = 0; y < H; y++) {
+                for(int x = 0; x < W; x++) {
+                    const SkColor c = pm.getColor(x, y);
+                    if(qAbs(int(SkColorGetR(c)) - bg.red()) <= 8 &&
+                       qAbs(int(SkColorGetG(c)) - bg.green()) <= 8 &&
+                       qAbs(int(SkColorGetB(c)) - bg.blue()) <= 8) continue;
+                    if(x < minX) minX = x;
+                    if(x > maxX) maxX = x;
+                    if(y < minY) minY = y;
+                    if(y > maxY) maxY = y;
+                }
+            }
+            const qreal res = scene->getResolution();
+            // the frame holds every layer of the scene: union the image with
+            // the rectangle control's FILL (its dashed box also covers the
+            // 10px stroke), both at the render resolution
+            QRectF want = mappedRect(box.get())
+                    .united(mappedRect(rectBox.get()).adjusted(5, 5, -5, -5));
+            const QRectF wantScaled(want.x() * res, want.y() * res,
+                                    want.width() * res, want.height() * res);
+            const QRectF got(minX, minY, maxX - minX + 1, maxY - minY + 1);
+            const bool ok = maxX >= 0 &&
+                    qAbs(got.width() - wantScaled.width()) <= 2 &&
+                    qAbs(got.height() - wantScaled.height()) <= 2 &&
+                    qAbs(got.x() - wantScaled.x()) <= 2 &&
+                    qAbs(got.y() - wantScaled.y()) <= 2;
+            char c1[96], c2[96];
+            fprintf(stderr, "[harness] IMGGEOM [frame] res=%.2f expect=%s "
+                            "drawn=%s %s\n", res,
+                    rectStr(c1, sizeof(c1), wantScaled),
+                    maxX >= 0 ? rectStr(c2, sizeof(c2), got) : "(none)",
+                    ok ? "PASS" : "FAIL");
+            if(!ok) fails++;
+        } else {
+            fprintf(stderr, "[harness] IMGGEOM [frame] FAIL: no frame image\n");
+            fails++;
+        }
+    }
+
+    // offset position: the drawn picture must sit exactly on the dashed box,
+    // not at the render-resolution fraction of its position
+    const auto bAnim = box->getBoxTransformAnimator();
+    bAnim->translate(300, 200);
+    pump(30);
+    sceneRounds(2);
+    if(!reportImage("move ")) fails++;
+
+    // rotation: the source image has to be mapped by the layer transform, so
+    // the drawn AABB matches the rotated layer rect (1726x1546 for a 30 deg
+    // rotation of 1280x958) instead of a render-scaled AABB
+    box->rotateBy(30);
+    pump(30);
+    sceneRounds(2);
+    {
+        const auto b = box->getRelBoundingRect();
+        const auto t = bAnim->getTotalTransformAtFrame(0);
+        const QPointF cs[4] = {t.map(b.topLeft()), t.map(b.topRight()),
+                               t.map(b.bottomRight()), t.map(b.bottomLeft())};
+        qreal mnX = cs[0].x(), mxX = cs[0].x(), mnY = cs[0].y(), mxY = cs[0].y();
+        for(int i = 1; i < 4; i++) {
+            mnX = qMin(mnX, cs[i].x()); mxX = qMax(mxX, cs[i].x());
+            mnY = qMin(mnY, cs[i].y()); mxY = qMax(mxY, cs[i].y());
+        }
+        const QRectF want(mnX, mnY, mxX - mnX, mxY - mnY);
+        QRectF pic;
+        const bool ok = measure(box.get(), &pic);
+        char c1[96], c2[96];
+        const bool match = ok && qAbs(pic.width() - want.width()) <= 3 &&
+                           qAbs(pic.height() - want.height()) <= 3;
+        if(!match) fails++;
+        fprintf(stderr, "[harness] IMGGEOM [rot30] wantAabb=%s drawn=%s %s\n",
+                rectStr(c1, sizeof(c1), want),
+                ok ? rectStr(c2, sizeof(c2), pic) : "(none)",
+                match ? "PASS" : "FAIL");
+    }
+
+    // what the render data actually asks for (direct draw delivers the
+    // SOURCE image, so a resolution-scaled destination shrinks it)
+    {
+        const auto rd = box->queExternalRender(0, false);
+        for(int w = 0; w < 4000 && !(rd && rd->finished()); w++) pump(1);
+        if(rd) {
+            char c1[96], c2[96], c3[96];
+            fprintf(stderr, "[harness] IMGGEOM renderData res=%.2f "
+                            "useRenderTransform=%d rel=%s global=%s "
+                            "scaled=%s srcImage=%dx%d\n",
+                    rd->fResolution, int(rd->fUseRenderTransform),
+                    rectStr(c1, sizeof(c1), rd->fRelBoundingRect),
+                    rectStr(c2, sizeof(c2), QRectF(rd->fGlobalRect)),
+                    rectStr(c3, sizeof(c3),
+                            QRectF(rd->fScaledTransform.mapRect(
+                                       rd->fRelBoundingRect))),
+                    rd->fRenderedImage ? rd->fRenderedImage->width() : -1,
+                    rd->fRenderedImage ? rd->fRenderedImage->height() : -1);
+        }
+    }
+
+    // anchor 9 grid: the script reads the rel rect and calls
+    // setPivotRelPos - the pivot must land on that content point AND the
+    // picture must stay exactly where it is
+    const qreal ratios[3] = {0., 0.5, 1.};
+    const auto rel = box->getRelBoundingRect();
+    for(int ry = 0; ry < 3; ry++) {
+        for(int rx = 0; rx < 3; rx++) {
+            const QPointF target(rel.left() + rel.width() * ratios[rx],
+                                 rel.top() + rel.height() * ratios[ry]);
+            const auto before = bAnim->getTotalTransformAtFrame(0);
+            const QRectF rectBefore = before.mapRect(rel);
+            box->setPivotRelPos(target);
+            pump(30);
+            const auto after = bAnim->getTotalTransformAtFrame(0);
+            const QRectF rectAfter = after.mapRect(rel);
+            const QPointF pivotAbs = box->getPivotAbsPos();
+            const QPointF wantAbs = before.map(target);
+            const qreal posErr = QLineF(pivotAbs, wantAbs).length();
+            const qreal drift = qMax(
+                    qMax(qAbs(rectAfter.x() - rectBefore.x()),
+                         qAbs(rectAfter.y() - rectBefore.y())),
+                    qMax(qAbs(rectAfter.width() - rectBefore.width()),
+                         qAbs(rectAfter.height() - rectBefore.height())));
+            const bool good = posErr <= 0.5 && drift <= 0.5;
+            if(!good) fails++;
+            fprintf(stderr, "[harness] IMGGEOM anchor[%d,%d] %s "
+                            "pivot=(%.1f,%.1f) want=(%.1f,%.1f) "
+                            "err=%.3f rectDrift=%.3f\n",
+                    ry, rx, good ? "PASS" : "FAIL",
+                    pivotAbs.x(), pivotAbs.y(), wantAbs.x(), wantAbs.y(),
+                    posErr, drift);
+        }
+    }
+
+    // resolution differential: the container compensates the resolution
+    // scale in its paint transform, the dashed box never does
+    const auto probeAtRes = [&](const qreal res, const char* const tag) {
+        scene->setResolution(res);
+        sceneRounds(3);
+        fprintf(stderr, "[harness] IMGGEOM --- res %s (%.2f) ---\n", tag, res);
+        if(!reportImage("image")) fails++;
+        if(!reportRect("rect ")) fails++;
+    };
+    probeAtRes(1., "full");
+    probeAtRes(0.5, "half");
+
+    fprintf(stderr, "[harness] IMGGEOM %s (fails=%d)\n",
+            fails ? "FAIL" : "PASS", fails);
+    fflush(stderr);
+    return fails ? 1 : 0;
+}
+
 // synthetic differential test: every layer creates a MotionPathHandler
 // in prp_updateCanvasProps(); repeated create/destroy cycles used to be
 // lethal with the double-shared PointsHandler ownership
@@ -1240,6 +1534,20 @@ int main(int argc, char *argv[]) {
         // Canvas::queTasks dereferences Actions::sInstance
         Actions actions(document);
         return runRectToolTest(document, taskScheduler);
+    }
+    if(!args.isEmpty() && args.first() == "--imggeom") {
+        eSettings settings(HardwareInfo::sCpuThreads(),
+                           HardwareInfo::sRamKB());
+        ImportHandler importHandler;
+        TaskScheduler taskScheduler;
+        Document document(taskScheduler);
+        FilesHandler filesHandler;
+        MemoryHandler memoryHandler;
+        eFilterSettings filterSettings;
+        // Canvas::queTasks dereferences Actions::sInstance
+        Actions actions(document);
+        return runImageGeomProbe(document, taskScheduler,
+                                 args.count() > 1 ? args.at(1) : QString());
     }
     if(!args.isEmpty() && args.first() == "--synthetic") {
         const int cycles = args.count() > 1 ? args.at(1).toInt() : 5;

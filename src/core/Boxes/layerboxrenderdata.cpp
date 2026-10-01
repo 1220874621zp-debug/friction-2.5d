@@ -169,9 +169,19 @@ void ContainerBoxRenderData::drawMaskRun(SkCanvas * const canvas,
         paint.setBlendMode(child->fBlendMode == SkBlendMode::kDstOut ?
                            SkBlendMode::kDstOut : SkBlendMode::kSrcOver);
         paint.setAntiAlias(child->fAntiAlias);
-        mCanvas->drawImage(child->fRenderedImage,
-                           child->fGlobalRect.x(),
-                           child->fGlobalRect.y(), &paint);
+        if(child->fUseRenderTransform) {
+            // direct-drawn child (source image in layer space, mapped by
+            // fRenderTransform): draw it into the LAYER rect, exactly like
+            // BoxRenderData::drawOnParentLayer - the global rect is the
+            // raster destination and would scale it by the render
+            // resolution
+            mCanvas->drawImageRect(child->fRenderedImage,
+                                   toSkRect(child->fRelBoundingRect), &paint);
+        } else {
+            mCanvas->drawImage(child->fRenderedImage,
+                               child->fGlobalRect.x(),
+                               child->fGlobalRect.y(), &paint);
+        }
         mCanvas->restore();
     }
     const auto maskImage = surface->makeImageSnapshot();

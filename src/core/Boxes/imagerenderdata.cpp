@@ -60,10 +60,17 @@ void ImageRenderData::setupDirectDraw() {
     fBaseMargin = QMargins();
     dataSet();
     updateGlobalRect();
-    fRenderTransform.reset();
-    fRenderTransform.translate(fRelBoundingRect.x(), fRelBoundingRect.y());
-    fRenderTransform *= fScaledTransform;
-    fRenderTransform.translate(-fGlobalRect.x(), -fGlobalRect.y());
+    // The drawn content is the SOURCE image, which lives in LAYER space (its
+    // own pixels), so the render transform is exactly layer -> render space
+    // (total transform * resolution scale). The old variant shifted the
+    // transform by the rel rect / global AABB and then drew the image into
+    // fGlobalRect, which double-applied the resolution: the container's
+    // 1/res paint compensation cancelled the resolution baked into the
+    // data and the picture came out at the render scale (half size at a 50%
+    // scene resolution) while the dashed box stayed at layer size. The
+    // destination rect is the layer rect for the same reason - see
+    // BoxRenderData::drawOnParentLayer.
+    fRenderTransform = fScaledTransform;
     fUseRenderTransform = true;
     fRenderedImage = fImage;
     fAntiAlias = true;
