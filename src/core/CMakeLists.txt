@@ -235,6 +235,7 @@ set(
     RasterEffects/pagecurleffect.cpp
     RasterEffects/latticewarpeffect.cpp
     RasterEffects/celvolumeeffect.cpp
+    RasterEffects/autolighteffect.cpp
     RasterEffects/thresholdeffect.cpp
     RasterEffects/simplechokereffect.cpp
     RasterEffects/desaturateeffect.cpp
@@ -646,6 +647,8 @@ set(
     RasterEffects/latticewarpeffect.h
     RasterEffects/celvolumealgo.h
     RasterEffects/celvolumeeffect.h
+    RasterEffects/autolightalgo.h
+    RasterEffects/autolighteffect.h
     RasterEffects/thresholdeffect.h
     RasterEffects/simplechokereffect.h
     RasterEffects/desaturateeffect.h

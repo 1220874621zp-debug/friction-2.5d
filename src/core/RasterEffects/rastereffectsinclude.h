@@ -63,5 +63,6 @@
 #include "cameralensblureffect.h"
 #include "setmatteeffect.h"
 #include "turbulencedisplaceeffect.h"
+#include "autolighteffect.h"
 
 #endif // RASTEREFFECTSINCLUDE_H

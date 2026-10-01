@@ -363,6 +363,8 @@ qsptr<RasterEffect> createRasterEffectForNonCustomType(const RasterEffectType ty
             return enve::make_shared<SetMatteEffect>();
         case(RasterEffectType::TURBULENT_DISPLACE):
             return enve::make_shared<TurbulentDisplaceEffect>();
+        case(RasterEffectType::AUTO_LIGHT):
+            return enve::make_shared<AutoLightEffect>();
         default: return nullptr;
     }
 }
@@ -372,7 +374,7 @@ qsptr<RasterEffect> readIdCreateRasterEffect(eReadStream &src) {
     src.read(&type, sizeof(RasterEffectType));
     // out-of-range id = the stream desynced earlier; fail the load
     // with a clear error instead of fabricating a garbage effect
-    if (int(type) < 0 || int(type) > int(RasterEffectType::TURBULENT_DISPLACE)) {
+    if (int(type) < 0 || int(type) > int(RasterEffectType::AUTO_LIGHT)) {
         RuntimeThrow("Invalid raster effect id " +
                      std::to_string(int(type)) + " at pos " +
                      std::to_string(src.pos()));

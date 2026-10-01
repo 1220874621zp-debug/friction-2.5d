@@ -1298,7 +1298,8 @@ namespace Friction
             { RasterEffectType::HUE_SATURATION, "hue_saturation|huesaturation|色相饱和度" },
             { RasterEffectType::ECHO, "echo|echoes|残影" },
             { RasterEffectType::SET_MATTE, "set_matte|setmatte|设置遮罩" },
-            { RasterEffectType::TURBULENT_DISPLACE, "turbulent_displace|turbulent|湍流置换" }
+            { RasterEffectType::TURBULENT_DISPLACE, "turbulent_displace|turbulent|湍流置换" },
+            { RasterEffectType::AUTO_LIGHT, "auto_light|autolight|自动打光" }
         };
 
         QString normalizeEffectName(const QString &name)

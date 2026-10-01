@@ -160,6 +160,8 @@ void RasterEffectMenuCreator::forEveryEffectCore(const EffectAdder &add)
         []() { return enve::make_shared<CornerPinEffect>(); });
     add(QObject::tr("湍流置换 (Turbulent Displace)"), QObject::tr("Distort"),
         []() { return enve::make_shared<TurbulentDisplaceEffect>(); });
+    add(QObject::tr("自动打光 (Auto Light)"), QObject::tr("Light"),
+        []() { return enve::make_shared<AutoLightEffect>(); });
 }
 
 void RasterEffectMenuCreator::forEveryEffectCustom(const EffectAdder &add)

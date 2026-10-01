@@ -178,7 +178,11 @@ enum class RasterEffectType : short {
     // AE Turbulent Displace: fractal gradient-noise displacement with
     // cyclic evolution and edge pinning (appended last, never reorder
     // - serialized ids must stay stable)
-    TURBULENT_DISPLACE
+    TURBULENT_DISPLACE,
+    // auto lighting: depth/normal cel shading with levels-controlled
+    // shadow edge hardness, halftone and rim light (appended last,
+    // never reorder - serialized ids must stay stable)
+    AUTO_LIGHT
 };
 
 struct BoxRenderData;
