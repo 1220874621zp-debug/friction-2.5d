@@ -3159,8 +3159,53 @@ void BoxSingleWidget::startParentLinkDrag() {
     BoxScroller::plDragEnded();
 }
 
+namespace {
+// recursive abstraction lookup: selected layers can sit inside groups, and
+// getChildAbsFor only looks at direct children
+SWT_Abstraction *findAbsForTarget(SWT_Abstraction * const root,
+                                  const SingleWidgetTarget * const target) {
+    if (!root) { return nullptr; }
+    if (root->getTarget() == target) { return root; }
+    for (const auto& child : root->children()) {
+        if (const auto found = findAbsForTarget(child.get(), target)) {
+            return found;
+        }
+    }
+    return nullptr;
+}
+}
+
 void BoxSingleWidget::switchContentVisibleAction() {
     if(!mTarget) return;
+    const auto target = mTarget->getTarget();
+    const auto scene = mParent ? mParent->currentScene() : nullptr;
+    const auto ebos = enve_cast<eBoxOrSound*>(target);
+    // multi-selection: when this row's layer belongs to the selection, every
+    // selected layer expands/collapses with it - unified to the new state,
+    // exactly like the visibility / lock / motion-blur toggles
+    if(scene && ebos && ebos->isSelected()) {
+        const bool newVisible = !mTarget->contentVisible();
+        const auto mainAbs = mParent->getMainAbstration();
+        bool changed = false;
+        if(mainAbs) {
+            const auto apply = [&](eBoxOrSound * const box) {
+                const auto abs = findAbsForTarget(mainAbs, box);
+                if(!abs) return;
+                abs->setContentVisible(newVisible);
+                changed = true;
+            };
+            for(const auto& box : scene->getSelectedBoxesList()) {
+                if(box) apply(box);
+            }
+            scene->forEachSelectedSound([&apply](eBoxOrSound* const s) {
+                if(s) apply(s);
+            });
+        }
+        if(changed) {
+            Document::sInstance->actionFinished();
+            return;
+        }
+    }
     mTarget->switchContentVisible();
     Document::sInstance->actionFinished();
     //mParent->callUpdaters();

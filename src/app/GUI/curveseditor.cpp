@@ -27,6 +27,7 @@
 #include "Animators/qrealanimator.h"
 #include "Properties/comboboxproperty.h"
 #include "Private/document.h"
+#include "canvas.h"
 
 #include <QMouseEvent>
 #include <QPainter>
@@ -103,13 +104,26 @@ qreal CurvesEditor::valueFromPos(const QPointF& pos) const {
     return qBound(0., v, 255.);
 }
 
+qreal CurvesEditor::inputFromPos(const QPointF& pos) const {
+    const QRectF plot = plotRect();
+    if (plot.width() <= 0.) { return 0.; }
+    const qreal v = (pos.x() - plot.left()) / plot.width() * 255.;
+    return qBound(0., v, 255.);
+}
+
 QPointF CurvesEditor::handlePos(const int i) const {
     const QRectF plot = plotRect();
     const auto wrap = mEffect ? mEffect->getChannelAnimator(mChannel) : nullptr;
     const auto anchor = wrap ? wrap->getAnchor(i) : nullptr;
     const qreal val = anchor ? anchor->getEffectiveValue() :
                                CurvesChannelAnimator::defaultY(i);
-    const qreal in = CurvesChannelAnimator::inputX(i);
+    // live input position: the three middle anchors can be dragged along x
+    qreal in = CurvesChannelAnimator::inputX(i);
+    if (wrap) {
+        qreal xs[CurvesChannelAnimator::Count];
+        wrap->inputsAt(mEffect ? mEffect->anim_getCurrentRelFrame() : 0., xs);
+        in = xs[qBound(0, i, CurvesChannelAnimator::Count - 1)];
+    }
     return QPointF(plot.left() + in * plot.width(),
                    plot.bottom() - val / 255. * plot.height());
 }
@@ -219,14 +233,39 @@ void CurvesEditor::mouseMoveEvent(QMouseEvent* e) {
         const auto wrap = mDragWrapper.data();
         const auto anchor = wrap ? wrap->getAnchor(mDragHandle) : nullptr;
         if (wrap && anchor) {
+            // the three middle anchors move freely in both axes (like PS);
+            // the two ends keep their fixed input and only move vertically
+            if (CurvesChannelAnimator::isMovable(mDragHandle)) {
+                if (const auto input =
+                        wrap->getInputAnimator(mDragHandle)) {
+                    input->setCurrentBaseValue(
+                                wrap->clampInputAt(mDragHandle,
+                                                   inputFromPos(e->position()),
+                                                   mEffect ?
+                                                       mEffect->anim_getCurrentRelFrame() :
+                                                       0.));
+                }
+            }
             anchor->setCurrentBaseValue(valueFromPos(e->position()));
-            Document::sInstance->updateScenes();
+            refreshCanvas();
         }
     } else {
         const int hover = handleAt(e->position());
         if (hover != mHoverHandle) {
             mHoverHandle = hover;
             update();
+        }
+    }
+}
+
+void CurvesEditor::refreshCanvas() {
+    // the edit view paints the cached scene frame: without an explicit
+    // update request the curve edit stayed invisible on the canvas until
+    // something else forced a repaint
+    Document::sInstance->updateScenes();
+    if (mEffect) {
+        if (const auto scene = mEffect->getParentScene()) {
+            scene->requestUpdate();
         }
     }
 }
@@ -253,9 +292,14 @@ void CurvesEditor::mouseDoubleClickEvent(QMouseEvent* e) {
     const auto anchor = wrap ? wrap->getAnchor(hit) : nullptr;
     if (!wrap || !anchor) { return; }
     wrap->prp_startTransform();
+    // a double click resets the anchor completely, input position included
+    if (const auto input = wrap->getInputAnimator(hit)) {
+        input->setCurrentBaseValue(
+                    CurvesChannelAnimator::inputX(hit) * 255.);
+    }
     anchor->setCurrentBaseValue(CurvesChannelAnimator::defaultY(hit));
     wrap->prp_finishTransform();
-    Document::sInstance->updateScenes();
+    refreshCanvas();
     Document::sInstance->actionFinished();
     update();
 }

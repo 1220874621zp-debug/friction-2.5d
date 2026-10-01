@@ -32,10 +32,12 @@ class CurvesEffect;
 class CurvesChannelAnimator;
 
 // PS-style curve editor for CurvesEffect: shows the current channel's
-// spline (master or R/G/B, chosen by the effect's channel combo) and
-// lets the five fixed anchors be dragged vertically. A drag is one
-// undo step (start/finishTransform on the channel wrapper, exactly
-// like the timeline value rows); double-clicking an anchor resets it.
+// spline (master or R/G/B, chosen by the effect's channel combo). The
+// three middle anchors (dark / mid / light) drag freely in both axes,
+// the two end anchors (black / white point) keep their fixed input and
+// drag vertically - exactly like PS. A drag is one undo step
+// (start/finishTransform on the channel wrapper, exactly like the
+// timeline value rows); double-clicking an anchor resets it.
 class CurvesEditor : public QWidget {
     Q_OBJECT
 public:
@@ -50,10 +52,14 @@ protected:
     void leaveEvent(QEvent*) override;
 private:
     void setChannel(const int channel);
+    // push a value edit to the scene: updateScenes() alone leaves the
+    // cached edit view untouched, so the canvas must be asked to repaint
+    void refreshCanvas();
     int handleAt(const QPointF& pos) const;
     QPointF handlePos(const int i) const;
     QRectF plotRect() const;
     qreal valueFromPos(const QPointF& pos) const;
+    qreal inputFromPos(const QPointF& pos) const;
     QColor channelColor() const;
 
     qptr<CurvesEffect> mEffect;

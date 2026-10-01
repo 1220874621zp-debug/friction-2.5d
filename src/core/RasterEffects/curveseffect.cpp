@@ -27,6 +27,7 @@
 
 #include "Animators/qrealanimator.h"
 #include "Properties/comboboxproperty.h"
+#include "ReadWrite/evformat.h"
 #include "appsupport.h"
 
 #include <cmath>
@@ -39,6 +40,9 @@ const qreal sInX[CurvesChannelAnimator::Count] = {
     0.0, 64.0 / 255.0, 128.0 / 255.0, 192.0 / 255.0, 1.0
 };
 
+// minimum distance between neighbouring anchors (one output level)
+const qreal sMinGap = 1.0 / 255.0;
+
 // Fritsch-Carlson monotone cubic through the five anchors. The
 // tangents are secant-limited so the spline never overshoots a
 // neighbouring anchor - steep edits can't invent banding halos.
@@ -48,11 +52,28 @@ struct CurveSpline {
     qreal y[5];
     qreal m[5];
 
+    // legacy: fixed inputs (0/64/128/192/255) - kept for the unit tests
     explicit CurveSpline(const qreal out[5]) {
+        qreal in[5];
+        for (int i = 0; i < 5; i++) { in[i] = sInX[i]; }
+        init(in, out);
+    }
+
+    // live inputs: the three middle anchors can be dragged along x
+    CurveSpline(const qreal in[5], const qreal out[5]) {
+        init(in, out);
+    }
+
+    void init(const qreal in[5], const qreal out[5]) {
         for (int i = 0; i < 5; i++) {
-            x[i] = sInX[i];
+            x[i] = qBound(0., in[i], 1.);
             y[i] = qBound(0., out[i], 255.) / 255.;
         }
+        for (int i = 1; i < 5; i++) {
+            // guards the secant below against a degenerate (equal) input
+            if (x[i] - x[i - 1] < sMinGap) { x[i] = x[i - 1] + sMinGap; }
+        }
+        for (int i = 4; i >= 0; i--) { x[i] = qMin(x[i], 1.); }
         qreal d[4];
         for (int i = 0; i < 4; i++) {
             d[i] = (y[i + 1] - y[i]) / (x[i + 1] - x[i]);
@@ -102,10 +123,65 @@ qreal CurvesChannelAnimator::defaultY(const int i) {
     return qBound(0, i, Count - 1) == i ? ys[i] : ys[0];
 }
 
+QrealAnimator *CurvesChannelAnimator::getInputAnimator(const int i) const {
+    if(!isMovable(i)) return nullptr;
+    // the inputs follow the five outputs (positional child layout)
+    return enve_cast<QrealAnimator*>(ca_getChildAt(Count + i - FirstMovable));
+}
+
+void CurvesChannelAnimator::inputsAt(const qreal relFrame,
+                                     qreal x[Count]) const {
+    x[Shadows] = 0.;
+    x[Highlights] = 1.;
+    for(int i = FirstMovable; i <= LastMovable; i++) {
+        const auto anim = getInputAnimator(i);
+        x[i] = anim ? anim->getEffectiveValue(relFrame) / 255. : inputX(i);
+    }
+    // the three middle anchors never cross each other or the ends: dragging
+    // one past a neighbour stops it at the neighbour (PS/AE behaviour)
+    qreal prev = 0.;
+    for(int i = FirstMovable; i <= LastMovable; i++) {
+        x[i] = qMax(x[i], prev + sMinGap);
+        prev = x[i];
+    }
+    qreal next = 1.;
+    for(int i = LastMovable; i >= FirstMovable; i--) {
+        x[i] = qMin(x[i], next - sMinGap);
+        next = x[i];
+    }
+    prev = 0.;
+    for(int i = FirstMovable; i <= LastMovable; i++) {
+        x[i] = qMax(x[i], prev + sMinGap);
+        prev = x[i];
+    }
+}
+
+qreal CurvesChannelAnimator::clampInputAt(const int i, const qreal level255,
+                                          const qreal relFrame) const {
+    const int anchor = qBound(0, i, Count - 1);
+    if(!isMovable(anchor)) return inputX(anchor) * 255.;
+    qreal x[Count];
+    inputsAt(relFrame, x);
+    const qreal low = x[anchor - 1] + sMinGap;
+    const qreal high = (anchor + 1 <= LastMovable ? x[anchor + 1] :
+                                                  x[Highlights]) - sMinGap;
+    const qreal v = qBound(low, level255 / 255., qMax(low, high));
+    return v * 255.;
+}
+
 void CurvesEffect::buildLUT(const qreal y[CurvesChannelAnimator::Count],
-                            uint8_t lut[256])
-{
-    const CurveSpline spline(y);
+                            uint8_t lut[256]) {
+    qreal x[CurvesChannelAnimator::Count];
+    for(int i = 0; i < CurvesChannelAnimator::Count; i++) {
+        x[i] = CurvesChannelAnimator::inputX(i);
+    }
+    buildLUT(x, y, lut);
+}
+
+void CurvesEffect::buildLUT(const qreal x[CurvesChannelAnimator::Count],
+                            const qreal y[CurvesChannelAnimator::Count],
+                            uint8_t lut[256]) {
+    const CurveSpline spline(x, y);
     for (int v = 0; v < 256; v++) {
         const qreal out = spline.eval(v / 255.);
         lut[v] = static_cast<uint8_t>(qBound(0., out * 255. + 0.5, 255.));
@@ -122,6 +198,28 @@ bool CurvesEffect::isIdentity(const qreal y[CurvesChannelAnimator::Count])
     return true;
 }
 
+bool CurvesEffect::isIdentity(const qreal x[CurvesChannelAnimator::Count],
+                              const qreal y[CurvesChannelAnimator::Count])
+{
+    if(!isIdentity(y)) return false;
+    for (int i = 0; i < CurvesChannelAnimator::Count; i++) {
+        if (!qFuzzyIsNull(x[i] - CurvesChannelAnimator::inputX(i))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+int CurvesChannelAnimator::ca_readChildCount(const int evFileVersion) const
+{
+    // the three input-position animators were appended after the five
+    // outputs (positional child layout)
+    return evFileVersion < EvFormat::curvesAnchorInputs ?
+                qMin(CurvesChannelAnimator::Count,
+                     ca_getNumberOfChildren()) :
+                ca_getNumberOfChildren();
+}
+
 CurvesChannelAnimator::CurvesChannelAnimator(const QString& name) :
     StaticComplexAnimator(name) {
     // the anchor names show as the expanded timeline rows and are
@@ -135,6 +233,18 @@ CurvesChannelAnimator::CurvesChannelAnimator(const QString& name) :
                     defaultY(i), 0., 255., 1.,
                     QObject::tr(sAnchorNames[i]));
         ca_addChild(anchor);
+    }
+    // input positions of the three movable anchors (the ends are fixed at
+    // 0 and 255 like PS); full 0..255 range, the ordering clamp lives in
+    // inputsAt()/clampInputAt()
+    static const char* sInputNames[InputCount] = {
+        QT_TR_NOOP("暗部位置"), QT_TR_NOOP("中间调位置"), QT_TR_NOOP("亮部位置")
+    };
+    for (int i = 0; i < InputCount; i++) {
+        const auto input = enve::make_shared<QrealAnimator>(
+                    inputX(FirstMovable + i) * 255., 0., 255., 1.,
+                    QObject::tr(sInputNames[i]));
+        ca_addChild(input);
     }
 }
 
@@ -168,6 +278,7 @@ CurvesEffect::CurvesEffect() :
 class CurvesEffectCaller : public OpenGLRasterEffectCaller {
 public:
     CurvesEffectCaller(const HardwareSupport hwSupport,
+                       const qreal x[4][5],
                        const qreal y[4][5]) :
         OpenGLRasterEffectCaller(sInitialized, sProgramId,
                                  ":/shaders/curveseffect.frag",
@@ -176,10 +287,10 @@ public:
         // composite = master first, then the per-channel curve
         // (matching PS); the GPU samples a 66-point float table, the
         // CPU a 256-entry byte LUT chain
-        const CurveSpline master(y[0]);
-        const CurveSpline chans[3] = { CurveSpline(y[1]),
-                                       CurveSpline(y[2]),
-                                       CurveSpline(y[3]) };
+        const CurveSpline master(x[0], y[0]);
+        const CurveSpline chans[3] = { CurveSpline(x[1], y[1]),
+                                       CurveSpline(x[2], y[2]),
+                                       CurveSpline(x[3], y[3]) };
         for (int i = 0; i < 66; i++) {
             const qreal t = i / 65.;
             const qreal mid = master.eval(t);
@@ -190,9 +301,9 @@ public:
 
         uint8_t mLut8[256];
         uint8_t clut[3][256];
-        CurvesEffect::buildLUT(y[0], mLut8);
+        CurvesEffect::buildLUT(x[0], y[0], mLut8);
         for (int c = 0; c < 3; c++) {
-            CurvesEffect::buildLUT(y[c + 1], clut[c]);
+            CurvesEffect::buildLUT(x[c + 1], y[c + 1], clut[c]);
         }
         for (int v = 0; v < 256; v++) {
             const uint8_t m = mLut8[v];
@@ -236,19 +347,22 @@ stdsptr<RasterEffectCaller> CurvesEffect::getEffectCaller(
     Q_UNUSED(influence)
     Q_UNUSED(data)
 
+    qreal x[4][5];
     qreal y[4][5];
     bool identity = true;
     for (int c = 0; c < 4; c++) {
         const auto wrap = mChannels[c];
+        wrap->inputsAt(relFrame, x[c]);
         for (int i = 0; i < CurvesChannelAnimator::Count; i++) {
             const auto anchor = wrap->getAnchor(i);
             const qreal v = anchor ?
                         qBound(0., anchor->getEffectiveValue(relFrame), 255.) :
                         CurvesChannelAnimator::defaultY(i);
             y[c][i] = v;
-            if (!qFuzzyIsNull(v - CurvesChannelAnimator::defaultY(i))) {
-                identity = false;
-            }
+        }
+        // a moved input position is an edit too, even with default outputs
+        if (!CurvesEffect::isIdentity(x[c], y[c])) {
+            identity = false;
         }
     }
 
@@ -256,7 +370,7 @@ stdsptr<RasterEffectCaller> CurvesEffect::getEffectCaller(
     if (identity) { return nullptr; }
 
     return enve::make_shared<CurvesEffectCaller>(
-                instanceHwSupport(), y);
+                instanceHwSupport(), x, y);
 }
 
 void CurvesEffectCaller::processCpu(CpuRenderTools& renderTools,

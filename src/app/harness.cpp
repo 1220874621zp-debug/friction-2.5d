@@ -51,6 +51,7 @@
 #include "Animators/qrealanimator.h"
 #include "RasterEffects/rastereffectcollection.h"
 #include "RasterEffects/cornerpineffect.h"
+#include "RasterEffects/curveseffect.h"
 #include "Animators/qpointfanimator.h"
 #include "Properties/boxtargetproperty.h"
 #include "appsupport.h"
@@ -2104,6 +2105,165 @@ static int runRound7Probe(Document& document, Actions& actions,
     return fails ? 1 : 0;
 }
 
+// ---------------------------------------------------------------------------
+// curves probe (headless): the three middle anchors (dark/mid/light) own an
+// input-position animator, so dragging one sideways must change the render
+// even with the outputs at their defaults, and the anchors must never cross
+static int runCurvesProbe(Document& document, TaskScheduler& tasks) {
+    Q_UNUSED(tasks)
+    if(eSettings::sInstance) eSettings::sInstance->fPathGpuAcc = false;
+    const auto pump = [](const int n) {
+        for(int j = 0; j < n; j++) QApplication::processEvents();
+    };
+    // 8-bit grey ramp so a curve edit is clearly visible
+    QImage src(256, 64, QImage::Format_ARGB32_Premultiplied);
+    for(int y = 0; y < src.height(); y++) {
+        for(int x = 0; x < src.width(); x++) {
+            src.setPixelColor(x, y, QColor(x, x, x));
+        }
+    }
+    const QString pngPath = QDir::tempPath() + "/probe_ramp.png";
+    if(!src.save(pngPath)) {
+        fprintf(stderr, "[harness] CURVES FAIL: cannot write input\n");
+        return 10;
+    }
+    const auto scene = document.createNewScene(false);
+    scene->setCanvasSize(800, 600);
+    scene->setResolution(1.);
+    pump(30);
+    document.setActiveScene(scene);
+    pump(30);
+
+    int fails = 0;
+    const auto sceneRounds = [&](const int n) {
+        for(int r = 0; r < n; r++) {
+            const auto sceneRd = scene->queExternalRender(0, false);
+            for(int w = 0; w < 4000 && !(sceneRd && sceneRd->finished()); w++) {
+                pump(1);
+            }
+            document.updateScenes();
+            pump(200);
+        }
+    };
+    const auto renderLayer = [&](BoundingBox* const box) {
+        const auto rd = box->queExternalRender(0, true);
+        const qint64 deadline = QDateTime::currentMSecsSinceEpoch() + 30000;
+        while(QDateTime::currentMSecsSinceEpoch() < deadline) {
+            document.updateScenes();
+            pump(4);
+            if(rd && rd->finished()) break;
+        }
+        return rd;
+    };
+    const auto signatureOf = [](const stdsptr<BoxRenderData>& rd,
+                                qint64* const count, qint64* const sum) {
+        if(!rd || !rd->finished() || !rd->fRenderedImage) return false;
+        const auto raster = rd->fRenderedImage->makeRasterImage();
+        SkPixmap pm;
+        if(!raster || !raster->peekPixels(&pm)) return false;
+        *count = 0;
+        *sum = 0;
+        for(int y = 0; y < pm.height(); y++) {
+            for(int x = 0; x < pm.width(); x++) {
+                const SkColor c = pm.getColor(x, y);
+                if(SkColorGetA(c) == 0) continue;
+                (*count)++;
+                *sum += SkColorGetR(c) + SkColorGetG(c) + SkColorGetB(c) +
+                        SkColorGetA(c);
+            }
+        }
+        return true;
+    };
+
+    const auto mkBox = [&]() {
+        const auto b = enve::make_shared<ImageBox>();
+        b->setFilePath(pngPath);
+        scene->addContained(b);
+        b->getBoxTransformAnimator()->translate(-320., -60.);
+        return b;
+    };
+    const auto ctrlBox = mkBox();
+    const auto curvesBox = mkBox();
+
+    const auto eff = createRasterEffectForNonCustomType(
+                RasterEffectType::CURVES);
+    curvesBox->rasterEffectsCollection()->addChild(eff);
+    const auto curves = enve_cast<CurvesEffect*>(eff.get());
+    if(!curves) {
+        fprintf(stderr, "[harness] CURVES FAIL: no effect\n");
+        return 11;
+    }
+    // headless: no GL context, so the gpuPreffered effect would park forever
+    for(int i = 0; i < 4 &&
+        curves->instanceHwSupport() != HardwareSupport::cpuOnly; i++) {
+        curves->switchInstanceHwSupport();
+    }
+    const auto wrap = curves->getChannelAnimator(CurvesEffect::RGB);
+    if(!wrap) {
+        fprintf(stderr, "[harness] CURVES FAIL: no channel\n");
+        return 12;
+    }
+    // API shape: only the three middle anchors own an input animator
+    const bool endsFixed = wrap->getInputAnimator(0) == nullptr &&
+                           wrap->getInputAnimator(4) == nullptr;
+    const bool middlesMovable = wrap->getInputAnimator(1) != nullptr &&
+                                wrap->getInputAnimator(2) != nullptr &&
+                                wrap->getInputAnimator(3) != nullptr;
+    if(!endsFixed || !middlesMovable) fails++;
+    fprintf(stderr, "[harness] CURVES [api] endsFixed=%d middlesMovable=%d %s\n",
+            int(endsFixed), int(middlesMovable),
+            (endsFixed && middlesMovable) ? "PASS" : "FAIL");
+
+    pump(30);
+    sceneRounds(4);
+    qint64 ctrlCount = 0, ctrlSum = 0;
+    qint64 idCount = 0, idSum = 0;
+    signatureOf(renderLayer(ctrlBox.get()), &ctrlCount, &ctrlSum);
+    signatureOf(renderLayer(curvesBox.get()), &idCount, &idSum);
+    const bool identityOk = ctrlCount == idCount && ctrlSum == idSum;
+    if(!identityOk) fails++;
+    fprintf(stderr, "[harness] CURVES [identity] ctrl=%lld/%lld curves=%lld/%lld %s\n",
+            ctrlCount, ctrlSum, idCount, idSum, identityOk ? "PASS" : "FAIL");
+
+    // move ONLY the input position of the middle anchor: still an edit
+    if(const auto input = wrap->getInputAnimator(2)) {
+        input->setCurrentBaseValue(64.);
+        document.actionFinished();
+        pump(40);
+        sceneRounds(2);
+        qint64 movedCount = 0, movedSum = 0;
+        signatureOf(renderLayer(curvesBox.get()), &movedCount, &movedSum);
+        const bool inputChanges = movedCount != ctrlCount ||
+                                  movedSum != ctrlSum;
+        if(!inputChanges) fails++;
+        fprintf(stderr, "[harness] CURVES [input-drag] ctrl=%lld/%lld moved=%lld/%lld %s\n",
+                ctrlCount, ctrlSum, movedCount, movedSum,
+                inputChanges ? "PASS" : "FAIL");
+    } else {
+        fprintf(stderr, "[harness] CURVES [input-drag] FAIL: no input anim\n");
+        fails++;
+    }
+
+    // ordering: dragging the mid input far right stops before the light anchor
+    qreal xs[CurvesChannelAnimator::Count];
+    if(const auto input = wrap->getInputAnimator(2)) {
+        input->setCurrentBaseValue(wrap->clampInputAt(2, 254., 0.));
+        wrap->inputsAt(0., xs);
+        const bool ordered = xs[0] < xs[1] && xs[1] < xs[2] &&
+                             xs[2] < xs[3] && xs[3] < xs[4] &&
+                             xs[4] <= 1.;
+        if(!ordered) fails++;
+        fprintf(stderr, "[harness] CURVES [clamp] x=%.3f/%.3f/%.3f/%.3f/%.3f "
+                        "(want ordered) %s\n", xs[0], xs[1], xs[2], xs[3], xs[4],
+                ordered ? "PASS" : "FAIL");
+    }
+
+    fprintf(stderr, "[harness] CURVES %s (fails=%d)\n",
+            fails ? "FAIL" : "PASS", fails);
+    fflush(stderr);
+    return fails ? 1 : 0;
+}
+
 // synthetic differential test: every layer creates a MotionPathHandler
 // in prp_updateCanvasProps(); repeated create/destroy cycles used to be
 // lethal with the double-shared PointsHandler ownership
@@ -2342,6 +2502,18 @@ int main(int argc, char *argv[]) {
         Actions actions(document);
         return runImageGeomProbe(document, taskScheduler,
                                  args.count() > 1 ? args.at(1) : QString());
+    }
+    if(!args.isEmpty() && args.first() == "--curves") {
+        eSettings settings(HardwareInfo::sCpuThreads(),
+                           HardwareInfo::sRamKB());
+        ImportHandler importHandler;
+        TaskScheduler taskScheduler;
+        Document document(taskScheduler);
+        FilesHandler filesHandler;
+        MemoryHandler memoryHandler;
+        eFilterSettings filterSettings;
+        Actions actions(document);
+        return runCurvesProbe(document, taskScheduler);
     }
     if(!args.isEmpty() && args.first() == "--round7") {
         eSettings settings(HardwareInfo::sCpuThreads(),

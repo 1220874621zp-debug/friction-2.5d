@@ -121,6 +121,12 @@ namespace EvFormat {
         // children less (positional child layout)
         cameraLensBlurDepth = 53,
 
+        // Curves gained an input-position animator for each of the three
+        // movable anchors (dark/mid/light) after the five output anchors;
+        // older files carry only the 5 outputs and must read 3 children
+        // less (positional child layout)
+        curvesAnchorInputs = 54,
+
         nextVersion
     };
 

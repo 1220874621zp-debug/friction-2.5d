@@ -30,12 +30,15 @@
 class ComboBoxProperty;
 
 // PS/AE "Curves" (曲线): remap each channel through a spline defined
-// by five fixed-input anchors (at input 0 / 64 / 128 / 192 / 255).
-// Each anchor's output is a keyframable 0..255 value (default =
-// input = identity); alpha passes through untouched. The composite
-// (RGB) master curve is applied first, then the per-channel curves -
-// matching PS. When every anchor sits at its default the effect
-// yields no caller at all (AE-style passthrough).
+// by five anchors. The two end anchors sit at input 0 / 255 (their
+// input is fixed, exactly like PS); the three middle ones (dark / mid /
+// light) additionally own an input-position animator, so they can be
+// dragged freely in both axes and animated over time. Each anchor's
+// output is a keyframable 0..255 value (default = input = identity);
+// alpha passes through untouched. The composite (RGB) master curve is
+// applied first, then the per-channel curves - matching PS. When every
+// anchor sits at its default the effect yields no caller at all
+// (AE-style passthrough).
 //
 // the anchors live inside four wrapper animators ("RGB"/"红"/"绿"/
 // "蓝") whose row renders as a curve editor in the AE properties
@@ -55,13 +58,29 @@ public:
     static constexpr int Highlights = 4; // input 255
     static constexpr int Count = 5;
 
-    // anchor input positions, normalized 0..1
+    // input-position animators exist for the three middle anchors only
+    static constexpr int FirstMovable = Darks;
+    static constexpr int LastMovable = Lights;
+    static constexpr int InputCount = LastMovable - FirstMovable + 1;
+    static bool isMovable(const int i)
+    { return i >= FirstMovable && i <= LastMovable; }
+
+    // default anchor input positions, normalized 0..1
     static qreal inputX(const int i);
     // anchor default output levels 0..255 (= the inputs)
     static qreal defaultY(const int i);
 
     QrealAnimator* getAnchor(const int i) const
     { return enve_cast<QrealAnimator*>(ca_getChildAt(i)); }
+    // input-position animator (nullptr for the two fixed end anchors)
+    QrealAnimator* getInputAnimator(const int i) const;
+    // all five input positions at relFrame, ordered and inside 0..1
+    void inputsAt(const qreal relFrame, qreal x[Count]) const;
+    // clamp a dragged input so the anchors can never cross
+    qreal clampInputAt(const int i, const qreal level255,
+                       const qreal relFrame) const;
+
+    int ca_readChildCount(const int evFileVersion) const override;
 };
 
 class CORE_EXPORT CurvesEffect : public RasterEffect {
@@ -84,12 +103,18 @@ public:
 
     // monotone cubic (Fritsch-Carlson) through the five anchors,
     // sampled to a 256-entry LUT; shared with the GUI editor and the
-    // unit tests. y[] are output levels 0..255
+    // unit tests. y[] are output levels 0..255; the overload takes the
+    // live (draggable) input positions in x[] as well
     static void buildLUT(const qreal y[CurvesChannelAnimator::Count],
+                         uint8_t lut[256]);
+    static void buildLUT(const qreal x[CurvesChannelAnimator::Count],
+                         const qreal y[CurvesChannelAnimator::Count],
                          uint8_t lut[256]);
 
     // every anchor at its default (= the identity curve)
     static bool isIdentity(const qreal y[CurvesChannelAnimator::Count]);
+    static bool isIdentity(const qreal x[CurvesChannelAnimator::Count],
+                           const qreal y[CurvesChannelAnimator::Count]);
 private:
     qsptr<ComboBoxProperty> mChannel;
     qsptr<CurvesChannelAnimator> mChannels[4];
