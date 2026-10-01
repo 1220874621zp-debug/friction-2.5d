@@ -25,6 +25,29 @@
 
 #include "openglrastereffectcaller.h"
 
+#include <QSet>
+
+namespace {
+// shader resource paths that failed to compile/link on this machine
+QSet<QString>& failedShaders() {
+    static QSet<QString> sFailed;
+    return sFailed;
+}
+}
+
+bool OpenGLRasterEffectCaller::sShaderFailed(const QString& path) {
+    return failedShaders().contains(path);
+}
+
+void OpenGLRasterEffectCaller::sMarkShaderFailed(const QString& path) {
+    failedShaders().insert(path);
+}
+
+void OpenGLRasterEffectCaller::onGpuFailure() {
+    sMarkShaderFailed(mShaderPath);
+    fallBackToCpu();
+}
+
 OpenGLRasterEffectCaller::OpenGLRasterEffectCaller(
         bool& initialized,
         GLuint& programId,
@@ -32,7 +55,9 @@ OpenGLRasterEffectCaller::OpenGLRasterEffectCaller(
         const HardwareSupport hwSupport,
         const bool forceMargin,
         const QMargins& margin) :
-    RasterEffectCaller(hwSupport, forceMargin, margin),
+    RasterEffectCaller(sShaderFailed(shaderPath) ?
+                           HardwareSupport::cpuOnly : hwSupport,
+                       forceMargin, margin),
     mInitialized(initialized),
     mProgramId(programId),
     mShaderPath(shaderPath) {}
@@ -64,8 +89,11 @@ void OpenGLRasterEffectCaller::processGpu(QGL33* const gl, GpuRenderTools& rende
 void OpenGLRasterEffectCaller::iniProgram(QGL33* const gl) {
     try {
         gIniProgram(gl, mProgramId, GL_TEXTURED_VERT, mShaderPath);
-    } catch(...) {
-        RuntimeThrow("Could not initialize a program for '" + mShaderPath + "'");
+    } catch(const std::exception& e) {
+        // keep the underlying reason (missing resource vs a GLSL error) so
+        // the debug log says what actually failed
+        RuntimeThrow(QString("Could not initialize a program for '%1': %2")
+                     .arg(mShaderPath, QString::fromUtf8(e.what())));
     }
 
     gl->glUseProgram(mProgramId);

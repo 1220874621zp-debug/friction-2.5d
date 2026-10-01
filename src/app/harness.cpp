@@ -52,6 +52,7 @@
 #include "RasterEffects/rastereffectcollection.h"
 #include "RasterEffects/cornerpineffect.h"
 #include "RasterEffects/curveseffect.h"
+#include "RasterEffects/openglrastereffectcaller.h"
 #include "Animators/qpointfanimator.h"
 #include "Properties/boxtargetproperty.h"
 #include "appsupport.h"
@@ -2109,6 +2110,16 @@ static int runRound7Probe(Document& document, Actions& actions,
 // curves probe (headless): the three middle anchors (dark/mid/light) own an
 // input-position animator, so dragging one sideways must change the render
 // even with the outputs at their defaults, and the anchors must never cross
+static bool gProbeShaderIni = false;
+static GLuint gProbeShaderProgram = 0;
+class ProbeShaderCaller : public OpenGLRasterEffectCaller {
+public:
+    ProbeShaderCaller(const QString& path, const HardwareSupport hw) :
+        OpenGLRasterEffectCaller(gProbeShaderIni, gProbeShaderProgram, path, hw) {}
+    void iniVars(QGL33 * const gl) const override { Q_UNUSED(gl) }
+    void setVars(QGL33 * const gl) const override { Q_UNUSED(gl) }
+};
+
 static int runCurvesProbe(Document& document, TaskScheduler& tasks) {
     Q_UNUSED(tasks)
     if(eSettings::sInstance) eSettings::sInstance->fPathGpuAcc = false;
@@ -2256,6 +2267,60 @@ static int runCurvesProbe(Document& document, TaskScheduler& tasks) {
         fprintf(stderr, "[harness] CURVES [clamp] x=%.3f/%.3f/%.3f/%.3f/%.3f "
                         "(want ordered) %s\n", xs[0], xs[1], xs[2], xs[3], xs[4],
                 ordered ? "PASS" : "FAIL");
+    }
+
+    // ---- shader hygiene -------------------------------------------------
+    // The curves shader used to declare `const vec4 src = texture(...)`,
+    // which is not a constant expression in GLSL 330: strict drivers
+    // rejected the whole program, the effect was skipped every frame and
+    // "adding the effect changes nothing" (user report). Scan every bundled
+    // shader for the same trap and make sure the resources are embedded.
+    {
+        QDir shaderDir(QStringLiteral(":/shaders"));
+        const auto entries = shaderDir.entryList(QStringList() << "*.frag"
+                                                              << "*.vert",
+                                                 QDir::Files);
+        int resourceFails = 0;
+        int lintFails = 0;
+        const QRegularExpression constSample(QStringLiteral(
+            "const\\s+\\w+\\s+\\w+\\s*=\\s*(texture|textureLod|texelFetch)\\s*\\("));
+        for(const auto& name : entries) {
+            QFile f(QStringLiteral(":/shaders/") + name);
+            if(!f.open(QIODevice::ReadOnly)) { resourceFails++; continue; }
+            const QString text = QString::fromUtf8(f.readAll());
+            if(text.isEmpty()) { resourceFails++; continue; }
+            if(constSample.match(text).hasMatch()) {
+                lintFails++;
+                fprintf(stderr, "[harness] CURVES [shader-lint] %s declares a "
+                                "const initialized from a texture sample\n",
+                        name.toLocal8Bit().constData());
+            }
+        }
+        const bool ok = entries.count() > 20 && resourceFails == 0 &&
+                        lintFails == 0;
+        if(!ok) fails++;
+        fprintf(stderr, "[harness] CURVES [shaders] embedded=%d resourceFails=%d "
+                        "constSampleLint=%d %s\n", entries.count(),
+                resourceFails, lintFails, ok ? "PASS" : "FAIL");
+
+        // the GPU-failure contract: a shader marked bad makes later callers
+        // CPU-only, so a broken shader degrades to the CPU path instead of
+        // making the effect invisible
+        const QString badPath = QStringLiteral(":/shaders/__harness_bad.frag");
+        OpenGLRasterEffectCaller::sMarkShaderFailed(badPath);
+        gProbeShaderIni = false;
+        gProbeShaderProgram = 0;
+        ProbeShaderCaller good(QStringLiteral(":/shaders/curveseffect.frag"),
+                               HardwareSupport::gpuPreffered);
+        ProbeShaderCaller bad(badPath, HardwareSupport::gpuPreffered);
+        const bool contractOk =
+                good.hardwareSupport() == HardwareSupport::gpuPreffered &&
+                bad.hardwareSupport() == HardwareSupport::cpuOnly &&
+                OpenGLRasterEffectCaller::sShaderFailed(badPath);
+        if(!contractOk) fails++;
+        fprintf(stderr, "[harness] CURVES [gpu-fallback] good=%d bad=%d %s\n",
+                int(good.hardwareSupport()), int(bad.hardwareSupport()),
+                contractOk ? "PASS" : "FAIL");
     }
 
     fprintf(stderr, "[harness] CURVES %s (fails=%d)\n",

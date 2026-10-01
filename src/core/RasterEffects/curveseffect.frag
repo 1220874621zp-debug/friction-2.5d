@@ -18,6 +18,9 @@ vec3 curveMap(const vec3 c) {
 }
 
 void main(void) {
-    const vec4 src = texture(tex, texCoord);
+    // NOTE: NOT `const` - a const initializer must be a constant expression
+    // in GLSL 330 and a texture sample is not one; strict drivers rejected
+    // the whole program (the effect then silently vanished on the canvas)
+    vec4 src = texture(tex, texCoord);
     fragColor = vec4(clamp(curveMap(src.rgb), 0.0, 1.0), src.a);
 }

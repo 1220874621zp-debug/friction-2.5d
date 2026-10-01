@@ -46,17 +46,21 @@ void EffectsRenderer::processGpu(QGL33 * const gl,
         try {
             effect->processGpu(gl, renderTools);
         } catch(const std::exception& e) {
-            // shader compile/link or FBO failure: skip THIS effect and
-            // keep going instead of letting the exception cancel the
-            // whole box. Cancelling made the layer vanish, and the
-            // executor's generic exception path re-queued the SAME task
-            // forever (nextStep saw the renderer still unconsumed and
-            // fRenderedImage still set) - the canvas froze black and
-            // the error never surfaced. Skipping keeps the frame (and
-            // the remaining effects) alive; the effect row's GPU/CPU
-            // button lets the user switch to the CPU path.
-            qWarning() << "GPU effect failed, skipped for this frame:"
+            // shader compile/link or FBO failure: run THIS effect on the CPU
+            // from now on instead of dropping it. Dropping kept the frame
+            // alive but made the effect invisible - the user saw "adding an
+            // effect changes nothing" (a strict driver rejecting one const
+            // initializer in a shader was enough). onGpuFailure() marks the
+            // shader bad (sticky) and switches this caller to cpuOnly; not
+            // advancing mCurrentId lets BoxRenderData::nextStep re-read
+            // hardwareSupport() and take the processCpu branch.
+            qWarning() << "GPU effect failed, falling back to the CPU:"
                        << e.what();
+            effect->onGpuFailure();
+            if(effect->hardwareSupport() == HardwareSupport::cpuOnly) {
+                break;
+            }
+            // no CPU implementation to fall back to: skip it this frame
             mCurrentId++;
             continue;
         }

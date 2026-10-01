@@ -81,6 +81,13 @@ public:
         return fHwSupport;
     }
 
+    // the GPU implementation failed for this caller (typically a shader
+    // that does not compile on this driver): run it through processCpu from
+    // now on - the next render step re-reads hardwareSupport(), so the
+    // effect keeps working instead of silently vanishing
+    void fallBackToCpu() { fHwSupport = HardwareSupport::cpuOnly; }
+    virtual void onGpuFailure() { fallBackToCpu(); }
+
     bool interchangeable() const {
         return fHwSupport != HardwareSupport::cpuOnly &&
                fHwSupport != HardwareSupport::gpuOnly;
@@ -96,7 +103,7 @@ protected:
     }
 
     const bool fForceMargin;
-    const HardwareSupport fHwSupport;
+    HardwareSupport fHwSupport;
     const QMargins fMargin;
     bool fSamplesBackdrop = false;
     SkIRect fSrcRect;

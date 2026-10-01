@@ -28,7 +28,7 @@
 
 #include "rastereffect.h"
 
-class OpenGLRasterEffectCaller : public RasterEffectCaller {
+class CORE_EXPORT OpenGLRasterEffectCaller : public RasterEffectCaller {
 protected:
     OpenGLRasterEffectCaller(bool& initialized,
                              GLuint& programId,
@@ -41,6 +41,13 @@ protected:
     virtual void setVars(QGL33 * const gl) const = 0;
 public:
     void processGpu(QGL33 * const gl, GpuRenderTools &renderTools) final;
+
+    // a shader that failed to compile/link on this machine is remembered for
+    // the session: callers using it are created CPU-only from the start, so a
+    // single GPU failure costs one warning instead of one per frame
+    void onGpuFailure() override;
+    static bool sShaderFailed(const QString& path);
+    static void sMarkShaderFailed(const QString& path);
 private:
     void iniProgram(QGL33 * const gl);
 
