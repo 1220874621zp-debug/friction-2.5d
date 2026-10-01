@@ -68,6 +68,12 @@ public:
 
     QMargins getMargin() const override;
 
+    // pins can drag content outside the layer's own bounds; without this
+    // the effect's margin is ignored by the collection, the scene bounds
+    // never grow and the dragged content is clipped away (same fix as
+    // TurbulentDisplace)
+    bool forceMargin() const override { return true; }
+
     void prp_drawCanvasControls(SkCanvas * const canvas,
                                 const CanvasMode mode,
                                 const float invScale,

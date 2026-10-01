@@ -34,12 +34,10 @@ class EchoCaller : public RasterEffectCaller {
     e_OBJECT
     friend class StdSelfRef;
     EchoCaller(const HardwareSupport hwSupport,
-               const qreal startIntensity,
-               const qreal decay,
+               const QVector<qreal>& sampleOpacities,
                const QList<stdsptr<BoxRenderData>>& samples) :
         RasterEffectCaller(hwSupport),
-        mStartIntensity(startIntensity),
-        mDecay(decay),
+        mSampleOpacities(sampleOpacities),
         mSamples(samples) {}
 public:
     void processCpu(CpuRenderTools& renderTools,
@@ -52,8 +50,9 @@ private:
                                  SkPixmap& dstPixmap,
                                  const CpuRenderData& data);
 
-    const qreal mStartIntensity;
-    const qreal mDecay;
+    // per-sample opacity: with motion blur one echo contributes several
+    // sub-frame samples that each carry a fraction of the echo's intensity
+    const QVector<qreal> mSampleOpacities;
     const QList<stdsptr<BoxRenderData>> mSamples;
 };
 
@@ -83,6 +82,13 @@ EchoEffect::EchoEffect() :
                 0.5, 0.0, 1.0, 0.01,
                 QObject::tr("衰减"));
     ca_addChild(mDecay);
+
+    // 0 = sharp echo copies (the effect's original look); raising it
+    // averages each echo over a shutter window so the trails smear
+    mMotionBlur = enve::make_shared<QrealAnimator>(
+                0.0, 0.0, 100.0, 1.0,
+                QObject::tr("动态模糊"));
+    ca_addChild(mMotionBlur);
 
     connect(this, &Property::prp_parentChanged,
             this, [this]() {
@@ -120,6 +126,10 @@ stdsptr<RasterEffectCaller> EchoEffect::getEffectCaller(
     const qreal echoCount = mEchoCount->getEffectiveValue(relFrame)*influence;
     const qreal startIntensity = mStartIntensity->getEffectiveValue(relFrame)*0.01*influence;
     const qreal decay = mDecay->getEffectiveValue(relFrame);
+    // 0..1 shutter fraction of one echo step (100% = the echo is smeared
+    // over the whole step, i.e. the trail becomes continuous)
+    const qreal motionBlur = qBound(0.0,
+                mMotionBlur->getEffectiveValue(relFrame)*0.01*influence, 1.0);
 
     const int nSamples = qCeil(echoCount);
     if(nSamples <= 0) return nullptr;
@@ -128,33 +138,49 @@ stdsptr<RasterEffectCaller> EchoEffect::getEffectCaller(
     const qreal frameStep = echoTime * fps;
     const auto idRange = mParentBox->prp_getIdenticalRelRange(relFrame);
 
+    // how many sub-frame samples each echo averages (0 blur -> a single
+    // sample, exactly the previous behaviour)
+    const int nSub = motionBlur > 0.001 ?
+                qBound(2, int(qCeil(motionBlur*4.0)), 4) : 1;
+
     QList<stdsptr<BoxRenderData>> samples;
+    QVector<qreal> sampleOpacities;
     qreal sampleRelFrame = relFrame;
     for(int i = 0; i < nSamples; i++) {
         sampleRelFrame += frameStep;
-        if(!idRange.inRange(sampleRelFrame)) {
-            const auto sample = mParentBox->queExternalRender(sampleRelFrame, true);
-            if(sample) {
-                if(sample->finished()) {
-                    data->fOtherGlobalRects << sample->fGlobalRect;
-                } else {
-                    sample->addDependent(data);
-                }
-                // the motion-blur hook: the sample's afterProcessing
-                // folds its global rect into this data's
-                // fOtherGlobalRects, so the host render rect covers
-                // the echo. Without it echoes landing outside the
-                // current content rect were clipped away - the faster
-                // the motion (or the larger the echo time), the more
-                // the echo silently disappeared.
-                sample->fMotionBlurTarget = data;
-                samples << sample;
+        const qreal echoOpacity = startIntensity * qPow(decay, i);
+        // the composite skips echoes below this threshold, so sampling
+        // them would only cost time
+        if(echoOpacity <= 0.001) continue;
+        for(int k = 0; k < nSub; k++) {
+            // shutter window centred on the echo's own frame
+            const qreal t = nSub == 1 ? 0.0 :
+                        ((k + 0.5)/nSub - 0.5)*motionBlur;
+            const qreal f = sampleRelFrame + t*frameStep;
+            // a sub-frame inside the identical range is the current
+            // frame's own image (already drawn, opaquely, in front)
+            if(idRange.inRange(f)) continue;
+            const auto sample = mParentBox->queExternalRender(f, true);
+            if(!sample) continue;
+            if(sample->finished()) {
+                data->fOtherGlobalRects << sample->fGlobalRect;
+            } else {
+                sample->addDependent(data);
             }
+            // the motion-blur hook: the sample's afterProcessing folds its
+            // global rect into this data's fOtherGlobalRects, so the host
+            // render rect covers the echo. Without it echoes landing
+            // outside the current content rect were clipped away - the
+            // faster the motion (or the larger the echo time), the more
+            // the echo silently disappeared.
+            sample->fMotionBlurTarget = data;
+            samples << sample;
+            sampleOpacities << echoOpacity/nSub;
         }
     }
     if(samples.isEmpty()) return nullptr;
     return enve::make_shared<EchoCaller>(
-                instanceHwSupport(), startIntensity, decay, samples);
+                instanceHwSupport(), sampleOpacities, samples);
 }
 
 FrameRange EchoEffect::getEchoPropsIdenticalRange(const int relFrame) const
@@ -168,7 +194,13 @@ FrameRange EchoEffect::getEchoPropsIdenticalRange(const int relFrame) const
     const qreal echoTime = mEchoTime->getEffectiveValue(relFrame);
     const qreal echoCount = mEchoCount->getEffectiveValue(relFrame);
     const qreal frameStep = echoTime * fps;
-    const qreal marginF = echoCount * qAbs(frameStep);
+    // the shutter window of every echo also reaches outside the echo
+    // steps themselves (half of motionBlur*step on each side), so it
+    // widens the range the effect depends on
+    const qreal motionBlur = qBound(0.0,
+                mMotionBlur->getEffectiveValue(relFrame)*0.01, 1.0);
+    const qreal marginF = echoCount*qAbs(frameStep) +
+                          0.5*motionBlur*qAbs(frameStep);
     const int margin = qCeil(marginF);
     if(margin == 0) return range;
     const int positive = frameStep > 0 ? margin : 0;
@@ -263,9 +295,10 @@ void EchoCaller::processCpu(CpuRenderTools& renderTools,
 
     // newest echo slides in first (immediately under the current frame),
     // each older echo stacks further behind - "behind" compositing
-    for(int i = 0; i < mSamples.count(); i++) {
-        const qreal sampleOpacity = mStartIntensity * qPow(mDecay, i);
-        if(sampleOpacity <= 0.001) continue;
-        sCompositeSample(mSamples.at(i), sampleOpacity, dstPixmap, data);
+    const int n = qMin(mSamples.count(), mSampleOpacities.count());
+    for(int i = 0; i < n; i++) {
+        if(mSampleOpacities.at(i) <= 0.001) continue;
+        sCompositeSample(mSamples.at(i), mSampleOpacities.at(i),
+                         dstPixmap, data);
     }
 }

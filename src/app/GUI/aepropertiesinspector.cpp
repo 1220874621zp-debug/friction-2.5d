@@ -132,19 +132,26 @@ void KeyframeDiamondButton::mousePressEvent(QMouseEvent *event)
                         (mAnimY && mAnimY->anim_getKeyOnCurrentFrame());
     if (hasKey) {
         if (mAnim && mAnim->anim_getKeyOnCurrentFrame()) {
-            mAnim->anim_removeKey(mAnim->anim_getKeyOnCurrentFrame()->ref<Key>());
+            // the Action variant records the removal on the undo stack
+            mAnim->anim_removeKeyAction(mAnim->anim_getKeyOnCurrentFrame()->ref<Key>());
         }
         if (mAnimY && mAnimY->anim_getKeyOnCurrentFrame()) {
-            mAnimY->anim_removeKey(mAnimY->anim_getKeyOnCurrentFrame()->ref<Key>());
+            mAnimY->anim_removeKeyAction(mAnimY->anim_getKeyOnCurrentFrame()->ref<Key>());
         }
+        // AE-style: with several layers selected the keyframe is also
+        // removed from the matching property of the other selected layers
+        if (mAnim) { mScene->keyOnSelectedLayers(mAnim, Canvas::KeyOp::RemoveCurrent); }
+        if (mAnimY) { mScene->keyOnSelectedLayers(mAnimY, Canvas::KeyOp::RemoveCurrent); }
     } else {
         if (mAnim) {
             mAnim->anim_setRecording(true);
             mAnim->anim_saveCurrentValueAsKey();
+            mScene->keyOnSelectedLayers(mAnim, Canvas::KeyOp::AddCurrent);
         }
         if (mAnimY) {
             mAnimY->anim_setRecording(true);
             mAnimY->anim_saveCurrentValueAsKey();
+            mScene->keyOnSelectedLayers(mAnimY, Canvas::KeyOp::AddCurrent);
         }
     }
 

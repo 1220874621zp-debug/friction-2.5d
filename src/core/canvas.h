@@ -56,6 +56,7 @@
 
 class AnimatedSurface;
 //class PaintBox;
+class Animator;
 class TextBox;
 class Circle;
 class RectangleBox;
@@ -201,6 +202,14 @@ public:
     // selected property rows (e.g. Position clicked in the timeline)
     QList<Property*> getSelectedPropsList() const
     { return mSelectedProps.getList(); }
+
+    // AE-style cross-layer keying: with several layers selected, adding or
+    // removing a keyframe on one layer's property does the same to the
+    // matching property (same name path + runtime type) of every other
+    // selected layer; every layer keys its own current value. Returns how
+    // many other layers were affected.
+    enum class KeyOp { AddCurrent, RemoveCurrent, RemoveAll };
+    int keyOnSelectedLayers(Animator* const source, const KeyOp op);
 
     void ungroupSelectedBoxes();
     void scaleSelectedBy(const qreal scaleBy,

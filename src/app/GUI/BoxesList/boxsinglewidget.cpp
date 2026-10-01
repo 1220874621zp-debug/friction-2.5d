@@ -3171,7 +3171,15 @@ void BoxSingleWidget::switchRecordingAction() {
     const auto target = mTarget->getTarget();
     if(!target) return;
     if(const auto asAnim = enve_cast<Animator*>(target)) {
+        // AE-style: with several layers selected the stopwatch (and with it
+        // the first keyframe / the keyframe removal) applies to the matching
+        // property of every other selected layer too
+        const bool turningOn = !asAnim->anim_isRecording();
         asAnim->anim_switchRecording();
+        if(const auto scene = asAnim->getParentScene()) {
+            scene->keyOnSelectedLayers(asAnim, turningOn ?
+                        Canvas::KeyOp::AddCurrent : Canvas::KeyOp::RemoveAll);
+        }
         Document::sInstance->actionFinished();
         update();
     }

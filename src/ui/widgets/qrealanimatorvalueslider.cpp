@@ -381,7 +381,14 @@ void QrealAnimatorValueSlider::openContextMenu(const QPoint &globalPos)
 
     const auto addKey = menu.addAction(tr("Add Key"),
                                        aTarget,
-                                       &Animator::anim_saveCurrentValueAsKey);
+                                       [aTarget]() {
+        aTarget->anim_saveCurrentValueAsKey();
+        // AE-style: with several layers selected the keyframe also lands on
+        // the matching property of the other selected layers
+        if(const auto scene = aTarget->getParentScene()) {
+            scene->keyOnSelectedLayers(aTarget, Canvas::KeyOp::AddCurrent);
+        }
+    });
     addKey->setEnabled(!keyOnFrame);
 
     menu.addSeparator();

@@ -30,6 +30,10 @@ private:
     qsptr<QrealAnimator> mEchoCount;
     qsptr<QrealAnimator> mStartIntensity;
     qsptr<QrealAnimator> mDecay;
+    // per-echo motion blur: each echo is averaged over a shutter window of
+    // motionBlur * echoTime centred on the echo's own frame (0 = off, the
+    // echo is a single sharp copy like before)
+    qsptr<QrealAnimator> mMotionBlur;
     qsptr<ComboBoxProperty> mOperator;
 };
 

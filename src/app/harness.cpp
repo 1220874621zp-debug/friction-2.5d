@@ -50,6 +50,8 @@
 #include "Animators/motionpathhandler.h"
 #include "Animators/qrealanimator.h"
 #include "RasterEffects/rastereffectcollection.h"
+#include "RasterEffects/cornerpineffect.h"
+#include "Animators/qpointfanimator.h"
 #include "Properties/boxtargetproperty.h"
 #include "appsupport.h"
 
@@ -1681,6 +1683,367 @@ static int runImportEffectProbe(Document& document, Actions& actions,
     return fails ? 1 : 0;
 }
 
+// ---------------------------------------------------------------------------
+// round-7 probe (headless verification of three user reports):
+//  * corner pin: a MOVED layer plus a moved pin must still draw its content.
+//    getEffectCaller used to read data->getFullRenderTransform(), which is the
+//    identity at assembly time (fScaledTransform is only filled while
+//    processing), so the source quad collapsed to layer-local coordinates: the
+//    mesh shifted by the layer's canvas position, flew off the bitmap and the
+//    layer vanished - the "black screen" during playback
+//  * echo: 动态模糊 > 0 must smear each echo (temporal shutter sub-samples)
+//  * cross-layer keying: Canvas::keyOnSelectedLayers must key the matching
+//    property of every other selected layer
+static int runRound7Probe(Document& document, Actions& actions,
+                          TaskScheduler& tasks) {
+    Q_UNUSED(actions)
+    Q_UNUSED(tasks)
+    if(eSettings::sInstance) eSettings::sInstance->fPathGpuAcc = false;
+    const auto pump = [](const int n) {
+        for(int j = 0; j < n; j++) QApplication::processEvents();
+    };
+    QImage src(200, 120, QImage::Format_ARGB32_Premultiplied);
+    src.fill(Qt::red);
+    const QString pngPath = QDir::tempPath() + "/probe_pin.png";
+    if(!src.save(pngPath)) {
+        fprintf(stderr, "[harness] ROUND7 FAIL: cannot write input\n");
+        return 10;
+    }
+    const auto scene = document.createNewScene(false);
+    scene->setCanvasSize(800, 600);
+    scene->setResolution(1.);
+    pump(30);
+    document.setActiveScene(scene);
+    pump(30);
+
+    int fails = 0;
+    // the layer only fills through the scene pipeline (fParentIsTarget):
+    // warm the scene up first, exactly like the image-geometry probe
+    const auto sceneRounds = [&](const int n) {
+        for(int r = 0; r < n; r++) {
+            const auto sceneRd = scene->queExternalRender(0, false);
+            for(int w = 0; w < 4000 && !(sceneRd && sceneRd->finished()); w++) {
+                pump(1);
+            }
+            document.updateScenes();
+            pump(200);
+        }
+    };
+    // layer render: measuring the SCENE frame would report the unblurred /
+    // un-pinned content, the effects phase runs after the rasterized source
+    // is stored. Also needs wall-clock time, not just event loops: the echo
+    // queues dependent sample renders of other frames.
+    const auto renderLayer = [&](BoundingBox* const box, const int frame) {
+        const auto rd = box->queExternalRender(frame, true);
+        const qint64 deadline = QDateTime::currentMSecsSinceEpoch() + 30000;
+        while(QDateTime::currentMSecsSinceEpoch() < deadline) {
+            document.updateScenes();
+            pump(4);
+            if(rd && rd->finished()) break;
+        }
+        return rd;
+    };
+    // non-transparent bbox of a finished layer render, in WORLD coordinates
+    // (the layer content sits at -fGlobalRect.topLeft() inside the margin
+    // padded output image; resolution is 1 here)
+    const auto bboxOf = [](const stdsptr<BoxRenderData>& rd, QRectF* const out) {
+        if(!rd || !rd->finished() || !rd->fRenderedImage) return false;
+        const auto raster = rd->fRenderedImage->makeRasterImage();
+        SkPixmap pm;
+        if(!raster || !raster->peekPixels(&pm)) return false;
+        int minX = pm.width(), minY = pm.height(), maxX = -1, maxY = -1;
+        for(int y = 0; y < pm.height(); y++) {
+            for(int x = 0; x < pm.width(); x++) {
+                if(SkColorGetA(pm.getColor(x, y)) == 0) continue;
+                if(x < minX) minX = x;
+                if(x > maxX) maxX = x;
+                if(y < minY) minY = y;
+                if(y > maxY) maxY = y;
+            }
+        }
+        if(maxX < 0) return false;
+        *out = QRectF(minX + rd->fGlobalRect.x(), minY + rd->fGlobalRect.y(),
+                      maxX - minX + 1, maxY - minY + 1);
+        return true;
+    };
+    // cheap image signature: opaque-ish pixel count + colour sum INCLUDING
+    // alpha. SkPixmap::getColor unpremultiplies, so a semi transparent ghost
+    // still reads as pure red: without the alpha term a smeared ghost (same
+    // colour, lower alpha) would look identical to a sharp one.
+    const auto signatureOf = [](const stdsptr<BoxRenderData>& rd,
+                                qint64* const count, qint64* const sum) {
+        if(!rd || !rd->finished() || !rd->fRenderedImage) return false;
+        const auto raster = rd->fRenderedImage->makeRasterImage();
+        SkPixmap pm;
+        if(!raster || !raster->peekPixels(&pm)) return false;
+        *count = 0;
+        *sum = 0;
+        for(int y = 0; y < pm.height(); y++) {
+            for(int x = 0; x < pm.width(); x++) {
+                const SkColor c = pm.getColor(x, y);
+                const int a = SkColorGetA(c);
+                if(a == 0) continue;
+                (*count)++;
+                *sum += (SkColorGetR(c) + SkColorGetG(c) + SkColorGetB(c) +
+                         a);
+            }
+        }
+        return true;
+    };
+    // opaque pixel count + colour/alpha sum inside a small probe window
+    const auto windowOf = [](const stdsptr<BoxRenderData>& rd,
+                             const int wx, const int wy,
+                             const int ww, const int wh,
+                             qint64* const count, qint64* const sum) {
+        *count = 0;
+        *sum = 0;
+        if(!rd || !rd->finished() || !rd->fRenderedImage) return false;
+        const auto raster = rd->fRenderedImage->makeRasterImage();
+        SkPixmap pm;
+        if(!raster || !raster->peekPixels(&pm)) return false;
+        const int x0 = wx - int(rd->fGlobalRect.x());
+        const int y0 = wy - int(rd->fGlobalRect.y());
+        for(int y = y0; y < y0 + wh; y++) {
+            if(y < 0 || y >= pm.height()) continue;
+            for(int x = x0; x < x0 + ww; x++) {
+                if(x < 0 || x >= pm.width()) continue;
+                const SkColor c = pm.getColor(x, y);
+                const int a = SkColorGetA(c);
+                if(a < 16) continue;
+                (*count)++;
+                *sum += SkColorGetR(c) + SkColorGetG(c) + SkColorGetB(c) + a;
+            }
+        }
+        return true;
+    };
+
+    // ---- 1) corner pin on a moved layer ----
+    // two identical layers: a control without the effect and one with the
+    // corner pin (adding an effect after a layer was already rendered leaves
+    // the cached pipeline stale in this harness, so each case gets its own
+    // layer, exactly like the lens-depth probe)
+    {
+        const auto mkBox = [&](const qreal x) {
+            const auto b = enve::make_shared<ImageBox>();
+            b->setFilePath(pngPath);
+            scene->addContained(b);
+            // far from the canvas origin: the old bug cancelled out exactly
+            // when the layer sat at (0,0)
+            b->getBoxTransformAnimator()->translate(x, 160.);
+            return b;
+        };
+        const auto plainBox = mkBox(250.);
+        const auto pinBox = mkBox(-300.);
+        const auto eff = createRasterEffectForNonCustomType(
+                    RasterEffectType::CORNER_PIN);
+        pinBox->rasterEffectsCollection()->addChild(eff);
+        const auto pin = enve_cast<CornerPinEffect*>(eff.get());
+        if(!pin) {
+            fprintf(stderr, "[harness] ROUND7 [pin] FAIL: no effect\n");
+            fails++;
+        } else {
+            // move the top-right pin well inside the layer. Set the u/v
+            // animators directly: setPointLocalPos() maps through the layer
+            // rel rect, which is still empty before the first render
+            if(const auto pt = pin->point(1)) {
+                if(const auto uA = pt->uAnim()) uA->setCurrentBaseValue(0.7);
+                if(const auto vA = pt->vAnim()) vA->setCurrentBaseValue(0.1);
+            }
+            const auto pt = pin->point(1);
+            fprintf(stderr, "[harness] ROUND7 [pin-uv] u=%.3f v=%.3f\n",
+                    pt && pt->uAnim() ? pt->uAnim()->getEffectiveValue(0) : -1.,
+                    pt && pt->vAnim() ? pt->vAnim()->getEffectiveValue(0) : -1.);
+        }
+        pump(30);
+        sceneRounds(4);
+
+        const auto plainRd = renderLayer(plainBox.get(), 0);
+        const auto pinRd = renderLayer(pinBox.get(), 0);
+        QRectF plain, pinned;
+        const bool plainOk = bboxOf(plainRd, &plain);
+        const bool pinnedOk = bboxOf(pinRd, &pinned);
+        const bool plainPlaced = plainOk &&
+                qAbs(plain.x() - 250.) <= 3 && qAbs(plain.y() - 160.) <= 3 &&
+                qAbs(plain.width() - 200.) <= 4 && qAbs(plain.height() - 120.) <= 4;
+        if(!plainPlaced) fails++;
+        fprintf(stderr, "[harness] ROUND7 [pin-plain] world=(%.0f,%.0f %.0fx%.0f) "
+                        "want=(250,160 200x120) callers=%d %s\n",
+                plain.x(), plain.y(), plain.width(), plain.height(),
+                plainRd ? plainRd->fEffectCallers.count() : -1,
+                plainPlaced ? "PASS" : "FAIL");
+        if(pin) {
+            // the content must still be there (not erased, not flown away)
+            const bool sane = pinnedOk &&
+                    qAbs(pinned.x() - (-300.)) <= 6 && qAbs(pinned.y() - 160.) <= 6 &&
+                    qAbs(pinned.width() - 200.) <= 6 &&
+                    qAbs(pinned.height() - 120.) <= 6;
+            // dragging the top-right pin to uv(0.7,0.1) slants the top edge
+            // down from (0,0) to (140,12) and (200,120) starts at y~102, so
+            // the top-right strip must be EMPTY now and opaque without the
+            // pin (the bbox cannot see this: the warped quad stays inside
+            // the un-warped one)
+            qint64 plainStrip = 0, plainSum = 0;
+            qint64 pinStrip = 0, pinSum = 0;
+            // same relative window (top-right 20x20) on each layer
+            windowOf(plainRd, 250 + 180, 160, 20, 20, &plainStrip, &plainSum);
+            windowOf(pinRd, -300 + 180, 160, 20, 20, &pinStrip, &pinSum);
+            const bool warped = plainStrip > 100 && pinStrip == 0;
+            if(!sane || !warped) fails++;
+            fprintf(stderr, "[harness] ROUND7 [pin-drag] world=(%.0f,%.0f %.0fx%.0f) "
+                            "want=(-300,160 200x120) callers=%d sane=%d "
+                            "topRight(plain=%lld pin=%lld) warped=%d %s\n",
+                    pinned.x(), pinned.y(), pinned.width(), pinned.height(),
+                    pinRd ? pinRd->fEffectCallers.count() : -1,
+                    int(sane), plainStrip, pinStrip, int(warped),
+                    sane && warped ? "PASS" : "FAIL");
+        }
+    }
+
+    // ---- 2) echo motion blur on an animated layer ----
+    {
+        const auto mkMoving = [&]() {
+            const auto b = enve::make_shared<ImageBox>();
+            b->setFilePath(pngPath);
+            scene->addContained(b);
+            const auto pos = b->getBoxTransformAnimator()->getPosAnimator();
+            // keys without touching the current frame:
+            // QrealAnimator::saveValueToKey(frame, value), the same call the
+            // scripting API uses (driving the current frame first does not
+            // propagate to the animators in a widget-less harness)
+            if(const auto xA = pos->getXAnimator()) {
+                xA->saveValueToKey(0, -200.);
+                xA->saveValueToKey(30, 200.);
+            }
+            if(const auto yA = pos->getYAnimator()) {
+                yA->saveValueToKey(0, 0.);
+                yA->saveValueToKey(30, 0.);
+            }
+            return b;
+        };
+        // control (no effect) and echo layer; both stay inside the canvas
+        // (a layer's render rect is clamped to the scene bounds)
+        const auto ctrlBox = mkMoving();
+        const auto echoBox = mkMoving();
+        const auto eff = createRasterEffectForNonCustomType(
+                    RasterEffectType::ECHO);
+        echoBox->rasterEffectsCollection()->addChild(eff);
+        // find the effect's animators by name (they are private members)
+        const auto findAnim = [](Property* const root, const QString& name) {
+            QList<Property*> stack{root};
+            int guard = 0;
+            while(!stack.isEmpty() && guard++ < 512) {
+                const auto node = stack.takeFirst();
+                if(!node) continue;
+                if(node->prp_getName() == name) {
+                    if(const auto qa = enve_cast<QrealAnimator*>(node)) return qa;
+                }
+                if(const auto ca = enve_cast<ComplexAnimator*>(node)) {
+                    const int n = ca->ca_getNumberOfChildren();
+                    for(int i = 0; i < n; i++) stack << ca->ca_getChildAt(i);
+                }
+            }
+            return static_cast<QrealAnimator*>(nullptr);
+        };
+        const auto timeAnim = findAnim(eff.get(), QStringLiteral("回声时间"));
+        const auto blurAnim = findAnim(eff.get(), QStringLiteral("动态模糊"));
+        if(!timeAnim || !blurAnim) {
+            fprintf(stderr, "[harness] ROUND7 [echo] FAIL: params not found "
+                            "(time=%d blur=%d)\n",
+                    int(timeAnim != nullptr), int(blurAnim != nullptr));
+            fails++;
+        } else {
+            // a LONG echo time so the ghost lands far from the current
+            // position (a visible separate copy, not just a smear)
+            timeAnim->setCurrentBaseValue(-0.5);   // -15 frames at 30fps
+            blurAnim->setCurrentBaseValue(0.);
+            pump(30);
+            sceneRounds(4);
+
+            // sanity: the position keys really animate the layer
+            QRectF at0, at30;
+            const bool animOk = bboxOf(renderLayer(ctrlBox.get(), 0), &at0) &&
+                                bboxOf(renderLayer(ctrlBox.get(), 30), &at30);
+            const bool moved = animOk && qAbs(at30.x() - at0.x() - 400.) <= 6;
+            if(!moved) fails++;
+            fprintf(stderr, "[harness] ROUND7 [echo-move] frame0.x=%.0f "
+                            "frame30.x=%.0f (want +400) %s\n",
+                    at0.x(), at30.x(), moved ? "PASS" : "FAIL");
+
+            qint64 ctrlCount = 0, ctrlSum = 0;
+            qint64 sharpCount = 0, sharpSum = 0;
+            qint64 blurCount = 0, blurSum = 0;
+            const auto ctrlRd = renderLayer(ctrlBox.get(), 30);
+            const bool ctrlOk = signatureOf(ctrlRd, &ctrlCount, &ctrlSum);
+            const auto sharpRd = renderLayer(echoBox.get(), 30);
+            const bool sharpOk = signatureOf(sharpRd, &sharpCount, &sharpSum);
+            blurAnim->setCurrentBaseValue(100.);
+            document.actionFinished();
+            pump(40);
+            sceneRounds(2);
+            const auto blurRd = renderLayer(echoBox.get(), 30);
+            const bool blurOk = signatureOf(blurRd, &blurCount, &blurSum);
+
+            // the echo must add the ghost (more opaque pixels than the
+            // plain layer) and 动态模糊 must change how it looks
+            const bool ghost = ctrlOk && sharpOk && sharpCount > ctrlCount + 5000;
+            const bool differs = sharpOk && blurOk &&
+                    (sharpCount != blurCount || sharpSum != blurSum);
+            if(!ghost || !differs) fails++;
+            fprintf(stderr, "[harness] ROUND7 [echo-blur] ctrl=%lldpx "
+                            "sharp=%lldpx/%lld blur=%lldpx/%lld ghost=%d "
+                            "differs=%d callers=%d %s\n",
+                    ctrlCount, sharpCount, sharpSum, blurCount, blurSum,
+                    int(ghost), int(differs),
+                    sharpRd ? sharpRd->fEffectCallers.count() : -1,
+                    (ghost && differs) ? "PASS" : "FAIL");
+        }
+    }
+
+    // ---- 3) cross-layer keying ----
+    {
+        const auto a = enve::make_shared<RectangleBox>();
+        const auto b = enve::make_shared<RectangleBox>();
+        const auto c = enve::make_shared<RectangleBox>();
+        scene->addContained(a);
+        scene->addContained(b);
+        scene->addContained(c);
+        a->setTopLeftPos(QPointF(-300, -200));
+        a->setBottomRightPos(QPointF(-100, -20));
+        b->setTopLeftPos(QPointF(-50, -200));
+        b->setBottomRightPos(QPointF(150, -20));
+        c->setTopLeftPos(QPointF(200, -200));
+        c->setBottomRightPos(QPointF(400, -20));
+        pump(20);
+        scene->clearBoxesSelection();
+        scene->addBoxToSelection(a.get());
+        scene->addBoxToSelection(b.get());
+        scene->addBoxToSelection(c.get());
+        const auto posA = a->getBoxTransformAnimator()->getPosAnimator();
+        // the real call paths key the source property first, then let the
+        // canvas mirror it onto the other selected layers
+        posA->anim_setRecording(true);
+        posA->anim_saveCurrentValueAsKey();
+        const int affected = scene->keyOnSelectedLayers(
+                    posA, Canvas::KeyOp::AddCurrent);
+        pump(20);
+        const auto keyed = [](BoundingBox* const box) {
+            const auto pos = box->getBoxTransformAnimator()->getPosAnimator();
+            return pos && pos->anim_getKeyOnCurrentFrame() != nullptr;
+        };
+        const bool allKeyed = keyed(a.get()) && keyed(b.get()) && keyed(c.get());
+        const bool ok = allKeyed && affected == 2;
+        if(!ok) fails++;
+        fprintf(stderr, "[harness] ROUND7 [cross-key] affected=%d keyed="
+                        "%d/%d/%d %s\n", affected, int(keyed(a.get())),
+                int(keyed(b.get())), int(keyed(c.get())), ok ? "PASS" : "FAIL");
+    }
+
+    fprintf(stderr, "[harness] ROUND7 %s (fails=%d)\n",
+            fails ? "FAIL" : "PASS", fails);
+    fflush(stderr);
+    return fails ? 1 : 0;
+}
+
 // synthetic differential test: every layer creates a MotionPathHandler
 // in prp_updateCanvasProps(); repeated create/destroy cycles used to be
 // lethal with the double-shared PointsHandler ownership
@@ -1919,6 +2282,18 @@ int main(int argc, char *argv[]) {
         Actions actions(document);
         return runImageGeomProbe(document, taskScheduler,
                                  args.count() > 1 ? args.at(1) : QString());
+    }
+    if(!args.isEmpty() && args.first() == "--round7") {
+        eSettings settings(HardwareInfo::sCpuThreads(),
+                           HardwareInfo::sRamKB());
+        ImportHandler importHandler;
+        TaskScheduler taskScheduler;
+        Document document(taskScheduler);
+        FilesHandler filesHandler;
+        MemoryHandler memoryHandler;
+        eFilterSettings filterSettings;
+        Actions actions(document);
+        return runRound7Probe(document, actions, taskScheduler);
     }
     if(!args.isEmpty() && args.first() == "--impeffect") {
         eSettings settings(HardwareInfo::sCpuThreads(),

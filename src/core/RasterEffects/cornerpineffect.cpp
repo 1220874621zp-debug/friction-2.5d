@@ -31,6 +31,7 @@
 #include "skia/skqtconversions.h"
 #include "appsupport.h"
 #include "typemenu.h"
+#include "RasterEffects/effectcanvaspoint.h"
 
 #include "include/core/SkVertices.h"
 
@@ -190,13 +191,16 @@ protected:
     CornerPinHandle(CornerPinEffect * const effect, const int id) :
         MovablePoint(MovablePointType::TYPE_GRADIENT_POINT),
         mEffect(effect), mId(id) {
-        setRadius(8);
+        setRadius(10);
         setSelectionEnabled(false);
     }
 public:
     bool isVisible(const CanvasMode mode) const {
         Q_UNUSED(mode)
-        return true;
+        // the View menu's effect-points switch governs every effect
+        // handle, this one included (EffectCanvasPoint does the same)
+        if(!EffectCanvasPoint::pointsVisible()) return false;
+        return !mEffect.isNull();
     }
 
     QPointF getRelativePos() const {
@@ -271,11 +275,15 @@ public:
         }
 
         const SkPoint absPos = toSkPoint(getAbsolutePos());
-        const float r = 5.f * invScale;
+        // same size and crosshair as the standard effect points
+        // (EffectCanvasPoint): the pins used to be half that size and
+        // read as stray dots on the layer's corners
+        const float r = 6.f * invScale;
+        const float ch = 5.f * invScale;
 
         SkPaint pShadow;
         pShadow.setAntiAlias(true);
-        pShadow.setColor(SkColorSetARGB(160, 0, 0, 0));
+        pShadow.setColor(SkColorSetARGB(170, 0, 0, 0));
         pShadow.setStyle(SkPaint::kFill_Style);
 
         SkPaint pFill;
@@ -287,11 +295,16 @@ public:
         pRing.setAntiAlias(true);
         pRing.setColor(SkColorSetARGB(255, 255, 160, 40));
         pRing.setStyle(SkPaint::kStroke_Style);
-        pRing.setStrokeWidth(1.5f * invScale);
+        pRing.setStrokeWidth(1.8f * invScale);
+        pRing.setStrokeCap(SkPaint::kRound_Cap);
 
         canvas->drawCircle(absPos.x(), absPos.y(), r + 2.f*invScale, pShadow);
         canvas->drawCircle(absPos.x(), absPos.y(), r, pFill);
         canvas->drawCircle(absPos.x(), absPos.y(), r, pRing);
+        canvas->drawLine(absPos.x() - ch, absPos.y(),
+                         absPos.x() + ch, absPos.y(), pRing);
+        canvas->drawLine(absPos.x(), absPos.y() - ch,
+                         absPos.x(), absPos.y() + ch, pRing);
     }
 private:
     const QPointer<CornerPinEffect> mEffect;
@@ -546,12 +559,21 @@ stdsptr<RasterEffectCaller> CornerPinEffect::getEffectCaller(
         // aware) applied to the content bounds corners. The final
         // bitmap offset is resolved at processCpu time (fGlobalRect
         // is not settled yet at this point).
+        // NOTE: data->getFullRenderTransform() is NOT usable here - it
+        // returns the cached fScaledTransform, which is only filled in
+        // during processing (updateGlobalRect). At assembly time it is
+        // the identity for plain 2D layers, so the source quad collapsed
+        // to layer-local coordinates: every pin drag then shifted the
+        // mesh by the layer's canvas position, off the bitmap, and the
+        // layer vanished (a "black screen" during playback). Build the
+        // render-space matrix explicitly, like LatticeWarp does.
         // NOTE: data->fRelBoundingRect is still EMPTY at assembly time
         // (it fills in dataSet()/updateRelBoundingRect, which runs
         // AFTER this pass) - reading it collapsed the source quad to a
         // point and any moved pin erased the whole layer. The box's own
         // rect holds the same value and is valid right now.
-        const SkMatrix full = data->getFullRenderTransform();
+        const QTransform full = data->fTotalTransform *
+                data->fResolutionScale;
         const QRectF rel = data->fParentBox ?
                     data->fParentBox->getRelBoundingRect() :
                     data->fRelBoundingRect;
@@ -560,7 +582,7 @@ stdsptr<RasterEffectCaller> CornerPinEffect::getEffectCaller(
             rel.bottomRight(), rel.bottomLeft()
         };
         for(int i = 0; i < 4; i++) {
-            ed.mQuadSrc[i] = toQTransform(full).map(relC[i]);
+            ed.mQuadSrc[i] = full.map(relC[i]);
         }
         ed.mHaveQuad = true;
 

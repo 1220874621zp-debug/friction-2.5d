@@ -629,6 +629,7 @@ void Animator::prp_drawTimelineControls(
 }
 
 #include "typemenu.h"
+#include "canvas.h"
 void Animator::prp_setupTreeViewMenu(PropertyMenu * const menu) {
     if(menu->hasActionsForType<Animator>()) return;
     menu->addedActionsForType<Animator>();
@@ -636,6 +637,11 @@ void Animator::prp_setupTreeViewMenu(PropertyMenu * const menu) {
     const PropertyMenu::PlainSelectedOp<Animator> aOp =
     [](Animator * animTarget) {
         animTarget->anim_saveCurrentValueAsKey();
+        // AE-style: with several layers selected the keyframe also lands on
+        // the matching property of the other selected layers
+        if(const auto scene = animTarget->getParentScene()) {
+            scene->keyOnSelectedLayers(animTarget, Canvas::KeyOp::AddCurrent);
+        }
     };
     menu->addPlainAction(QIcon::fromTheme("plus"), tr("Add Key(s)"), aOp)->setDisabled(anim_getKeyOnCurrentFrame());
 

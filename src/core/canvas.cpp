@@ -751,8 +751,20 @@ void Canvas::renderSk(SkCanvas* const canvas,
     //if(!mPaintTarget.isValid()) {
         const auto mods = QApplication::queryKeyboardModifiers();
         const bool ctrlPressed = mods & Qt::CTRL && mods & Qt::SHIFT;
-        for (int i = mSelectedBoxes.count() - 1; i >= 0; i--) {
-            const auto& iBox = mSelectedBoxes.at(i);
+        // canvas controls follow the selected layers, PLUS the layers whose
+        // property rows are selected: clicking an effect row in the property
+        // tree does not select its layer, and without this its handles (e.g.
+        // the corner pin points) never showed up on the canvas
+        QList<BoundingBox*> controlBoxes = mSelectedBoxes.getList();
+        for (const auto prop : mSelectedProps.getList()) {
+            const auto propBox = prop ?
+                        prop->getFirstAncestor<BoundingBox>() : nullptr;
+            if (propBox && !controlBoxes.contains(propBox)) {
+                controlBoxes << propBox;
+            }
+        }
+        for (int i = controlBoxes.count() - 1; i >= 0; i--) {
+            const auto& iBox = controlBoxes.at(i);
             canvas->save();
             iBox->drawBoundingRect(canvas, invZoom);
             iBox->drawAllCanvasControls(canvas, mCurrentMode, invZoom, ctrlPressed);
@@ -1199,12 +1211,107 @@ void Canvas::restoreMarkers(const std::vector<FrameMarker> &markers)
 
 void Canvas::addKeySelectedProperties()
 {
+    if (mSelectedProps.isEmpty()) { return; }
+    auto block = blockUndoRedo();
+    pushUndoRedoName(tr("Add Keyframe"));
     for (const auto &prop : mSelectedProps.getList()) {
         const auto asAnim = enve_cast<Animator*>(prop);
         if (!asAnim) { continue; }
+        asAnim->anim_setRecording(true);
         asAnim->anim_saveCurrentValueAsKey();
+        // AE-style: with several layers selected the keyframe lands on the
+        // matching property of every selected layer
+        keyOnSelectedLayers(asAnim, KeyOp::AddCurrent);
     }
+    block.reset();
     mDocument.actionFinished();
+}
+
+namespace {
+// the property-name chain from the top-level property down to the node
+// itself (the layer/box is not part of it): "位置" -> "X" instead of just
+// "X", so keying position never lands on scale's X
+QStringList propNamePath(const Property * const node) {
+    QStringList path;
+    const Property* cur = node;
+    int guard = 0;
+    while(cur && guard++ < 64) {
+        const auto parent = cur->getParent<Property>();
+        if(!parent || enve_cast<eBoxOrSound*>(parent)) break;
+        path.prepend(cur->prp_getName());
+        cur = parent;
+    }
+    if(cur) path.prepend(cur->prp_getName());
+    return path;
+}
+
+// same property on another layer: walk the source's name path inside
+// 'box' and require the same runtime type at the end
+Property* findCounterpartByPath(Property * const source,
+                                eBoxOrSound * const box) {
+    if(!source || !box) return nullptr;
+    const auto path = propNamePath(source);
+    if(path.isEmpty()) return nullptr;
+    Property* node = box;
+    for(int i = 0; i < path.size(); i++) {
+        const auto ca = enve_cast<ComplexAnimator*>(node);
+        if(!ca) return nullptr;
+        const QString& name = path.at(i);
+        Property* next = nullptr;
+        const int n = ca->ca_getNumberOfChildren();
+        for(int c = 0; c < n; c++) {
+            const auto child = ca->ca_getChildAt(c);
+            if(child && child->prp_getName() == name) {
+                next = child;
+                break;
+            }
+        }
+        if(!next) return nullptr;
+        node = next;
+    }
+    if(node == source) return nullptr;
+    if(std::type_index(typeid(*node)) != std::type_index(typeid(*source))) {
+        return nullptr;
+    }
+    return node;
+}
+}
+
+int Canvas::keyOnSelectedLayers(Animator * const source, const KeyOp op) {
+    if(!source) return 0;
+    const auto sourceBox = source->getFirstAncestor<BoundingBox>();
+    int affected = 0;
+    auto block = blockUndoRedo();
+    pushUndoRedoName(op == KeyOp::AddCurrent ? tr("Add Keyframe") :
+                     op == KeyOp::RemoveCurrent ? tr("Remove Keyframe") :
+                                                  tr("Disable Animation"));
+    for(const auto& box : mSelectedBoxes.getList()) {
+        if(!box || box == sourceBox) continue;
+        // locked layers are not editable (same rule as the other
+        // selected-box operations)
+        if(box->isLocked()) continue;
+        const auto counterpart = enve_cast<Animator*>(
+                    findCounterpartByPath(source, box));
+        if(!counterpart) continue;
+        switch(op) {
+        case KeyOp::AddCurrent:
+            counterpart->anim_setRecording(true);
+            counterpart->anim_saveCurrentValueAsKey();
+            break;
+        case KeyOp::RemoveCurrent: {
+            const auto key = counterpart->anim_getKeyOnCurrentFrame();
+            // the Action variant records the removal on the undo stack
+            if(key) counterpart->anim_removeKeyAction(key->ref<Key>());
+        } break;
+        case KeyOp::RemoveAll:
+            counterpart->anim_setRecording(false);
+            break;
+        }
+        affected++;
+    }
+    block.reset();
+    if(affected > 0) mDocument.actionFinished();
+    return affected;
 }
 
 stdsptr<BoxRenderData> Canvas::createRenderData() {
