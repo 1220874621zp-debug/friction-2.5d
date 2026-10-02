@@ -60,6 +60,75 @@ inline void packPixel(const uint32_t c, uchar* const p)
     p[3] = uchar(a);
 }
 
+// rasterize an external layer's rendered image into the host image
+// frame (track-matte placement math + the liquid-glass resolution
+// bridge) and read it back as floats. depth mode: 0..1 (gray R, JET
+// false-color decoded); luma mode: 0..1 luminance, -1 where the
+// sample layer is transparent (no lighting data there)
+std::vector<float> rasterizeSample(const BoxRenderData& s,
+                                   const bool lumaMode,
+                                   const int w, const int h,
+                                   const QPoint& imgPos,
+                                   const qreal hostRes)
+{
+    std::vector<float> out;
+    if (!s.fRenderedImage) return out;
+    const auto img = s.fRenderedImage->makeRasterImage();
+    SkPixmap pix;
+    if (!img || !img->peekPixels(&pix) || pix.width() <= 0
+        || pix.height() <= 0) {
+        return out;
+    }
+    SkBitmap bmp;
+    bmp.allocPixels(SkImageInfo::MakeN32Premul(w, h));
+    bmp.eraseColor(lumaMode ? 0x00000000 : 0xFF808080);
+    SkCanvas dc(bmp);
+    SkMatrix m = SkMatrix::MakeTrans(-qreal(imgPos.x()),
+                                     -qreal(imgPos.y()));
+    const qreal sRes = s.fResolution > 0. ? s.fResolution : 1.;
+    const qreal hRes = hostRes > 0. ? hostRes : 1.;
+    m.postScale(hRes / sRes, hRes / sRes);
+    dc.setMatrix(m);
+    SkPaint dp;
+    dp.setFilterQuality(kLow_SkFilterQuality);
+    if (s.fUseRenderTransform) {
+        dc.concat(toSkMatrix(s.fRenderTransform));
+        dc.drawImageRect(s.fRenderedImage,
+                         toSkRect(s.fRelBoundingRect), &dp);
+    } else {
+        dc.drawImage(s.fRenderedImage,
+                     s.fGlobalRect.x(), s.fGlobalRect.y(), &dp);
+    }
+    dc.flush();
+
+    out.resize(size_t(w) * h);
+    for (int y = 0; y < h; y++) {
+        const auto row = static_cast<const uchar*>(bmp.getAddr(0, y));
+        for (int x = 0; x < w; x++) {
+            // N32 memory order is [B, G, R, A] on Windows (see
+            // unpackPixel above)
+            const float b = float(row[x * 4 + 0]) / 255.f;
+            const float g = float(row[x * 4 + 1]) / 255.f;
+            const float r = float(row[x * 4 + 2]) / 255.f;
+            const float a = float(row[x * 4 + 3]) / 255.f;
+            float& o = out[size_t(y) * w + x];
+            if (lumaMode) {
+                if (a < 0.5f) { o = -1.f; continue; }
+                if (a < 0.999f) {
+                    const float ir = r / a, ig = g / a, ib = b / a;
+                    o = 0.2126f * ir + 0.7152f * ig + 0.0722f * ib;
+                } else {
+                    o = 0.2126f * r + 0.7152f * g + 0.0722f * b;
+                }
+            } else {
+                o = (std::abs(r - g) < 0.008f && std::abs(g - b) < 0.008f)
+                        ? r : autolight::jetDecode(r, g, b);
+            }
+        }
+    }
+    return out;
+}
+
 } // namespace
 
 class AutoLightEffectCaller : public RasterEffectCaller {
@@ -67,9 +136,11 @@ public:
     AutoLightEffectCaller(const HardwareSupport hwSupport,
                           const autolight::Params& p,
                           stdsptr<BoxRenderData> depthSample,
+                          stdsptr<BoxRenderData> lumaSample,
                           const qreal hostRes) :
         RasterEffectCaller(hwSupport, false, QMargins()),
-        mP(p), mDepthSample(std::move(depthSample)), mHostRes(hostRes) {}
+        mP(p), mDepthSample(std::move(depthSample)),
+        mLumaSample(std::move(lumaSample)), mHostRes(hostRes) {}
 
     // whole-image pass (segmentation / distance fields have no tile
     // locality), computed once per caller and shared by every tile
@@ -97,64 +168,22 @@ public:
                 }
             }
 
-            // rasterize the depth sample into the host image frame so
-            // both grids share one coordinate system (the track-matte
-            // placement math plus the liquid-glass resolution bridge)
-            std::vector<float> depth;
-            if (mDepthSample && mDepthSample->fRenderedImage) {
-                const auto& s = *mDepthSample;
-                const auto img = s.fRenderedImage->makeRasterImage();
-                SkPixmap dPix;
-                if (img && img->peekPixels(&dPix) && dPix.width() > 0
-                    && dPix.height() > 0) {
-                    SkBitmap dBmp;
-                    dBmp.allocPixels(SkImageInfo::MakeN32Premul(w, h));
-                    // neutral gray where the depth layer has no pixels:
-                    // zero gradient, mid falloff
-                    dBmp.eraseColor(0xFF808080);
-                    SkCanvas dc(dBmp);
-                    SkMatrix m = SkMatrix::MakeTrans(
-                                -qreal(data.fPos.x()), -qreal(data.fPos.y()));
-                    const qreal sRes = s.fResolution > 0. ? s.fResolution : 1.;
-                    const qreal hRes = mHostRes > 0. ? mHostRes : 1.;
-                    m.postScale(qreal(hRes / sRes), qreal(hRes / sRes));
-                    dc.setMatrix(m);
-                    SkPaint dp;
-                    dp.setFilterQuality(kLow_SkFilterQuality);
-                    if (s.fUseRenderTransform) {
-                        dc.concat(toSkMatrix(s.fRenderTransform));
-                        dc.drawImageRect(s.fRenderedImage,
-                                         toSkRect(s.fRelBoundingRect), &dp);
-                    } else {
-                        dc.drawImage(s.fRenderedImage,
-                                     s.fGlobalRect.x(),
-                                     s.fGlobalRect.y(), &dp);
-                    }
-                    dc.flush();
-
-                    depth.resize(n);
-                    for (int y = 0; y < h; y++) {
-                        const auto row = static_cast<const uchar*>(
-                                    dBmp.getAddr(0, y));
-                        for (int x = 0; x < w; x++) {
-                            // N32 memory order is [B, G, R, A] on
-                            // Windows (see unpackPixel above); R
-                            // carries gray depth
-                            const float r = float(row[x * 4 + 2]) / 255.f;
-                            const float g = float(row[x * 4 + 1]) / 255.f;
-                            const float b = float(row[x * 4 + 0]) / 255.f;
-                            depth[size_t(y) * w + x] =
-                                    (std::abs(r - g) < 0.008f
-                                     && std::abs(g - b) < 0.008f)
-                                        ? r : autolight::jetDecode(r, g, b);
-                        }
-                    }
-                }
+            // rasterize the depth / luminance samples into the host
+            // image frame so all grids share one coordinate system
+            std::vector<float> depth, luma;
+            if (mDepthSample) {
+                depth = rasterizeSample(*mDepthSample, false, w, h,
+                                        data.fPos, mHostRes);
+            }
+            if (mLumaSample) {
+                luma = rasterizeSample(*mLumaSample, true, w, h,
+                                       data.fPos, mHostRes);
             }
 
             std::vector<uint32_t> dst(n);
-            autolight::compute(src.data(), depth.empty() ? nullptr
-                                                         : depth.data(),
+            autolight::compute(src.data(),
+                               depth.empty() ? nullptr : depth.data(),
+                               luma.empty() ? nullptr : luma.data(),
                                w, h, mP, dst.data());
             for (int y = 0; y < h; y++) {
                 const auto row = static_cast<uchar*>(mResult.getAddr(0, y));
@@ -181,6 +210,7 @@ public:
 private:
     const autolight::Params mP;
     const stdsptr<BoxRenderData> mDepthSample;
+    const stdsptr<BoxRenderData> mLumaSample;
     const qreal mHostRes;
     QMutex mMutex;
     bool mComputed = false;
@@ -204,6 +234,24 @@ AutoLightEffect::AutoLightEffect() :
                 << QStringLiteral("三色渐变体积")
                 << QStringLiteral("输入图亮度"));
     lightGroup->ca_addChild(mFieldSrc);
+    // luminance-field layer picker: when a layer is picked (输入图亮度
+    // mode), its rendered luminance becomes the lighting field; empty
+    // keeps the input image's own luminance (the effect stack below)
+    mLumaTarget = enve::make_shared<BoxTargetProperty>(
+                QStringLiteral("亮度图层"));
+    mLumaTarget->setComboPicker(true);
+    connect(mLumaTarget.get(), &BoxTargetProperty::targetSet,
+            this, [this](BoundingBox* const box) {
+        auto& conn = mLumaFollowConn.assign(box);
+        if(box) {
+            conn << connect(box, &BoundingBox::prp_absFrameRangeChanged,
+                            this, [this](const FrameRange&, const bool) {
+                prp_afterWholeInfluenceRangeChanged();
+            });
+        }
+        prp_afterWholeInfluenceRangeChanged();
+    });
+    lightGroup->ca_addChild(mLumaTarget);
     mLightPos = enve::make_shared<QPointFAnimator>(
                 QStringLiteral("灯光位置"));
     mLightPos->setBaseValue(0.3, 0.3);
@@ -371,47 +419,68 @@ stdsptr<RasterEffectCaller> AutoLightEffect::getEffectCaller(
     p.depthInvert = mDepthInvert->getValue();
     p.depthFalloff = float(mDepthFalloff->getEffectiveValue(relFrame));
 
-    // queue the picked depth layer for an independent render; the
+    // queue an external layer for an independent render; the
     // dependency delays this box's effects phase until the sample
     // finishes (the set-matte queExternalRender pattern)
-    stdsptr<BoxRenderData> sample;
-    const auto target = mDepthTarget ? mDepthTarget->getTarget() : nullptr;
     const auto parentBox = data ? data->fParentBox.data() : nullptr;
-    if(data && target && target != parentBox
-       && !(parentBox && parentBox->isAncestor(target))
-       && !target->isAncestor(parentBox)
-       && !sSampleChain.contains(target)
-       && target->isVisibleAndInVisibleDurationRect()) {
+    const auto queueSample = [this, &data, &parentBox, &relFrame](
+                BoundingBox* const target) -> stdsptr<BoxRenderData> {
+        if(!data || !target || target == parentBox) return nullptr;
+        if(parentBox) {
+            // self / own subtree / own ancestors would recurse
+            if(parentBox->isAncestor(target)) return nullptr;
+            if(target->isAncestor(parentBox)) return nullptr;
+        }
+        if(sSampleChain.contains(target)) return nullptr;
+        if(!target->isVisibleAndInVisibleDurationRect()) return nullptr;
         sSampleChain.append(parentBox ? parentBox : target);
         const auto guard = qScopeGuard([]() { sSampleChain.removeLast(); });
-        // relFrame is the HOST's relative frame; the depth layer has
+        // relFrame is the HOST's relative frame; the sampled layer has
         // its own trim/start - convert through the absolute frame
         const qreal absFrame =
                 parentBox ? parentBox->prp_relFrameToAbsFrameF(relFrame)
                           : relFrame;
         const qreal tRel = target->prp_absFrameToRelFrameF(absFrame);
-        sample = target->queExternalRender(tRel, true);
+        auto sample = target->queExternalRender(tRel, true);
         if(sample) sample->addDependent(data);
+        return sample;
+    };
+
+    stdsptr<BoxRenderData> depthSample, lumaSample;
+    const auto depthTarget =
+            mDepthTarget ? mDepthTarget->getTarget() : nullptr;
+    if(depthTarget) {
+        depthSample = queueSample(depthTarget);
+    }
+    if(p.fieldSrc == 2 && mLumaTarget) {
+        lumaSample = queueSample(mLumaTarget->getTarget());
     }
 
     return enve::make_shared<AutoLightEffectCaller>(
-                instanceHwSupport(), p, std::move(sample), resolution);
+                instanceHwSupport(), p, std::move(depthSample),
+                std::move(lumaSample), resolution);
 }
 
 FrameRange AutoLightEffect::prp_getIdenticalRelRange(
         const int relFrame) const {
-    const auto thisIdent = ComplexAnimator::prp_getIdenticalRelRange(relFrame);
-    const auto target = mDepthTarget ? mDepthTarget->getTarget() : nullptr;
-    if(!target) return thisIdent;
-    // the host's rendered pixels depend on the depth layer's content:
-    // a static host under an animated depth map is NOT frame-identical
-    // (set-matte pattern)
-    if(sSampleChain.contains(target)) return thisIdent;
-    sSampleChain.append(target);
-    const auto guard = qScopeGuard([]() { sSampleChain.removeLast(); });
-    const int absFrame = prp_relFrameToAbsFrame(relFrame);
-    const int tRelFrame = target->prp_absFrameToRelFrame(absFrame);
-    const auto targetIdent = target->prp_getIdenticalRelRange(tRelFrame);
-    const auto absTargetIdent = target->prp_relRangeToAbsRange(targetIdent);
-    return thisIdent*prp_absRangeToRelRange(absTargetIdent);
+    auto thisIdent = ComplexAnimator::prp_getIdenticalRelRange(relFrame);
+    // the host's rendered pixels depend on the sampled layers'
+    // content: a static host under an animated depth/luminance layer
+    // is NOT frame-identical (set-matte pattern)
+    BoundingBox* const targets[2] = {
+        mDepthTarget ? mDepthTarget->getTarget() : nullptr,
+        mLumaTarget ? mLumaTarget->getTarget() : nullptr
+    };
+    for(const auto target : targets) {
+        if(!target || sSampleChain.contains(target)) continue;
+        sSampleChain.append(target);
+        const auto guard = qScopeGuard([]() { sSampleChain.removeLast(); });
+        const int absFrame = prp_relFrameToAbsFrame(relFrame);
+        const int tRelFrame = target->prp_absFrameToRelFrame(absFrame);
+        const auto targetIdent = target->prp_getIdenticalRelRange(tRelFrame);
+        const auto absTargetIdent =
+                target->prp_relRangeToAbsRange(targetIdent);
+        thisIdent = thisIdent*prp_absRangeToRelRange(absTargetIdent);
+    }
+    return thisIdent;
 }

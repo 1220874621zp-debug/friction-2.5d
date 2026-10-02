@@ -114,10 +114,12 @@ inline void packStraight(const float r, const float g, const float b,
 }
 
 // src: packed straight-alpha image; depth: per-pixel 0..1 aligned to
-// src (1 = near) or null; dst receives the composited result with the
-// same alpha as src (except the "only" modes, which carry their mask
-// in the alpha)
+// src (1 = near) or null; lumaField: per-pixel 0..1 lighting field
+// from an external layer aligned to src (-1 = no data) or null; dst
+// receives the composited result with the same alpha as src (except
+// the "only" modes, which carry their mask in the alpha)
 inline void compute(const uint32_t* const src, const float* const depth,
+                    const float* const lumaField,
                     const int w, const int h, const Params& p,
                     uint32_t* const dst)
 {
@@ -208,6 +210,13 @@ inline void compute(const uint32_t* const src, const float* const depth,
                 const float nDotL = (-gx * dx - gy * dy + dz) * invN;
                 t[i] = 0.5f + 0.5f * nDotL;
             }
+        }
+    } else if (p.fieldSrc == 2 && lumaField) {
+        // a luminance layer was picked: its (resampled) luminance IS
+        // the light field; -1 cells (transparent there) pass through
+        for (size_t i = 0; i < n; i++) {
+            if (((src[i] >> 24) & 255) < 128) continue;
+            t[i] = lumaField[i];
         }
     } else {
         // no depth picked, or luma mode: the input's own luminance
