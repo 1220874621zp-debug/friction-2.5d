@@ -62,11 +62,15 @@ inline void packPixel(const uint32_t c, uchar* const p)
 
 // rasterize an external layer's rendered image into the host image
 // frame (track-matte placement math + the liquid-glass resolution
-// bridge) and read it back as floats. depth mode: 0..1 (gray R, JET
-// false-color decoded); luma mode: 0..1 luminance, -1 where the
-// sample layer is transparent (no lighting data there)
+// bridge) and read it back as floats. mode 0 (depth): 0..1 per pixel
+// (gray R, JET false-color decoded); mode 1 (luma): 0..1 luminance,
+// -1 where the sample is transparent (no lighting data there);
+// mode 2 (normal map): 3 floats per pixel, tangent-space normal
+// decoded from RGB (OpenGL G-up screen-space convention by default,
+// flipG switches to DirectX), (0,0,0) = no data
 std::vector<float> rasterizeSample(const BoxRenderData& s,
-                                   const bool lumaMode,
+                                   const int mode,
+                                   const bool flipG,
                                    const int w, const int h,
                                    const QPoint& imgPos,
                                    const qreal hostRes)
@@ -81,7 +85,7 @@ std::vector<float> rasterizeSample(const BoxRenderData& s,
     }
     SkBitmap bmp;
     bmp.allocPixels(SkImageInfo::MakeN32Premul(w, h));
-    bmp.eraseColor(lumaMode ? 0x00000000 : 0xFF808080);
+    bmp.eraseColor(mode == 1 ? 0x00000000 : 0xFF808080);
     SkCanvas dc(bmp);
     SkMatrix m = SkMatrix::MakeTrans(-qreal(imgPos.x()),
                                      -qreal(imgPos.y()));
@@ -101,7 +105,7 @@ std::vector<float> rasterizeSample(const BoxRenderData& s,
     }
     dc.flush();
 
-    out.resize(size_t(w) * h);
+    out.resize(size_t(w) * h * (mode == 2 ? 3 : 1));
     for (int y = 0; y < h; y++) {
         const auto row = static_cast<const uchar*>(bmp.getAddr(0, y));
         for (int x = 0; x < w; x++) {
@@ -111,8 +115,23 @@ std::vector<float> rasterizeSample(const BoxRenderData& s,
             const float g = float(row[x * 4 + 1]) / 255.f;
             const float r = float(row[x * 4 + 2]) / 255.f;
             const float a = float(row[x * 4 + 3]) / 255.f;
+            if (mode == 2) {
+                float* const o = &out[(size_t(y) * w + x) * 3];
+                if (a < 0.5f) { o[0] = 0.f; o[1] = 0.f; o[2] = 0.f; continue; }
+                const float ur = a < 0.999f ? r / a : r;
+                const float ug = a < 0.999f ? g / a : g;
+                const float ub = a < 0.999f ? b / a : b;
+                float nx = ur * 2.f - 1.f;
+                float ny = 1.f - ug * 2.f; // OpenGL G-up (screen y down)
+                float nz = ub * 2.f - 1.f;
+                if (flipG) ny = -ny;      // DirectX convention
+                const float nl = std::sqrt(nx * nx + ny * ny + nz * nz);
+                if (nl > 1e-4f) { nx /= nl; ny /= nl; nz /= nl; }
+                o[0] = nx; o[1] = ny; o[2] = nz;
+                continue;
+            }
             float& o = out[size_t(y) * w + x];
-            if (lumaMode) {
+            if (mode == 1) {
                 if (a < 0.5f) { o = -1.f; continue; }
                 if (a < 0.999f) {
                     const float ir = r / a, ig = g / a, ib = b / a;
@@ -137,10 +156,14 @@ public:
                           const autolight::Params& p,
                           stdsptr<BoxRenderData> depthSample,
                           stdsptr<BoxRenderData> lumaSample,
+                          stdsptr<BoxRenderData> normalSample,
+                          const bool normalFlipG,
                           const qreal hostRes) :
         RasterEffectCaller(hwSupport, false, QMargins()),
         mP(p), mDepthSample(std::move(depthSample)),
-        mLumaSample(std::move(lumaSample)), mHostRes(hostRes) {}
+        mLumaSample(std::move(lumaSample)),
+        mNormalSample(std::move(normalSample)),
+        mNormalFlipG(normalFlipG), mHostRes(hostRes) {}
 
     // whole-image pass (segmentation / distance fields have no tile
     // locality), computed once per caller and shared by every tile
@@ -168,22 +191,28 @@ public:
                 }
             }
 
-            // rasterize the depth / luminance samples into the host
-            // image frame so all grids share one coordinate system
-            std::vector<float> depth, luma;
+            // rasterize the depth / luminance / normal samples into
+            // the host image frame so all grids share one coordinate
+            // system
+            std::vector<float> depth, luma, nrm;
             if (mDepthSample) {
-                depth = rasterizeSample(*mDepthSample, false, w, h,
+                depth = rasterizeSample(*mDepthSample, 0, false, w, h,
                                         data.fPos, mHostRes);
             }
             if (mLumaSample) {
-                luma = rasterizeSample(*mLumaSample, true, w, h,
+                luma = rasterizeSample(*mLumaSample, 1, false, w, h,
                                        data.fPos, mHostRes);
+            }
+            if (mNormalSample) {
+                nrm = rasterizeSample(*mNormalSample, 2, mNormalFlipG,
+                                      w, h, data.fPos, mHostRes);
             }
 
             std::vector<uint32_t> dst(n);
             autolight::compute(src.data(),
                                depth.empty() ? nullptr : depth.data(),
                                luma.empty() ? nullptr : luma.data(),
+                               nrm.empty() ? nullptr : nrm.data(),
                                w, h, mP, dst.data());
             for (int y = 0; y < h; y++) {
                 const auto row = static_cast<uchar*>(mResult.getAddr(0, y));
@@ -211,6 +240,8 @@ private:
     const autolight::Params mP;
     const stdsptr<BoxRenderData> mDepthSample;
     const stdsptr<BoxRenderData> mLumaSample;
+    const stdsptr<BoxRenderData> mNormalSample;
+    const bool mNormalFlipG;
     const qreal mHostRes;
     QMutex mMutex;
     bool mComputed = false;
@@ -232,7 +263,8 @@ AutoLightEffect::AutoLightEffect() :
                 QStringLiteral("光照场"), QStringList()
                 << QStringLiteral("深度图法线")
                 << QStringLiteral("三色渐变体积")
-                << QStringLiteral("输入图亮度"));
+                << QStringLiteral("输入图亮度")
+                << QStringLiteral("法向贴图"));
     lightGroup->ca_addChild(mFieldSrc);
     // luminance-field layer picker: when a layer is picked (输入图亮度
     // mode), its rendered luminance becomes the lighting field; empty
@@ -252,6 +284,27 @@ AutoLightEffect::AutoLightEffect() :
         prp_afterWholeInfluenceRangeChanged();
     });
     lightGroup->ca_addChild(mLumaTarget);
+    // real tangent-space normal map picker (法向贴图 mode): RGB is
+    // decoded back to a per-pixel XYZ normal; flipG switches between
+    // the OpenGL (default) and DirectX green-channel conventions
+    mNormalTarget = enve::make_shared<BoxTargetProperty>(
+                QStringLiteral("法向图层"));
+    mNormalTarget->setComboPicker(true);
+    connect(mNormalTarget.get(), &BoxTargetProperty::targetSet,
+            this, [this](BoundingBox* const box) {
+        auto& conn = mNormalFollowConn.assign(box);
+        if(box) {
+            conn << connect(box, &BoundingBox::prp_absFrameRangeChanged,
+                            this, [this](const FrameRange&, const bool) {
+                prp_afterWholeInfluenceRangeChanged();
+            });
+        }
+        prp_afterWholeInfluenceRangeChanged();
+    });
+    lightGroup->ca_addChild(mNormalTarget);
+    mNormalFlipG = enve::make_shared<BoolProperty>(
+                QStringLiteral("翻转G(DirectX法线)"));
+    lightGroup->ca_addChild(mNormalFlipG);
     mLightPos = enve::make_shared<QPointFAnimator>(
                 QStringLiteral("灯光位置"));
     mLightPos->setBaseValue(0.3, 0.3);
@@ -371,7 +424,7 @@ stdsptr<RasterEffectCaller> AutoLightEffect::getEffectCaller(
         const qreal relFrame, const qreal resolution,
         const qreal influence, BoxRenderData * const data) const {
     autolight::Params p;
-    p.fieldSrc = mFieldSrc ? qBound(0, mFieldSrc->getCurrentValue(), 2) : 0;
+    p.fieldSrc = mFieldSrc ? qBound(0, mFieldSrc->getCurrentValue(), 3) : 0;
     const QPointF lp = mLightPos->getEffectiveValue(relFrame);
     p.lightPos[0] = float(lp.x());
     p.lightPos[1] = float(lp.y());
@@ -446,7 +499,7 @@ stdsptr<RasterEffectCaller> AutoLightEffect::getEffectCaller(
         return sample;
     };
 
-    stdsptr<BoxRenderData> depthSample, lumaSample;
+    stdsptr<BoxRenderData> depthSample, lumaSample, normalSample;
     const auto depthTarget =
             mDepthTarget ? mDepthTarget->getTarget() : nullptr;
     if(depthTarget) {
@@ -455,10 +508,15 @@ stdsptr<RasterEffectCaller> AutoLightEffect::getEffectCaller(
     if(p.fieldSrc == 2 && mLumaTarget) {
         lumaSample = queueSample(mLumaTarget->getTarget());
     }
+    if(p.fieldSrc == 3 && mNormalTarget) {
+        normalSample = queueSample(mNormalTarget->getTarget());
+    }
 
     return enve::make_shared<AutoLightEffectCaller>(
                 instanceHwSupport(), p, std::move(depthSample),
-                std::move(lumaSample), resolution);
+                std::move(lumaSample), std::move(normalSample),
+                mNormalFlipG ? mNormalFlipG->getValue() : false,
+                resolution);
 }
 
 FrameRange AutoLightEffect::prp_getIdenticalRelRange(
@@ -467,9 +525,10 @@ FrameRange AutoLightEffect::prp_getIdenticalRelRange(
     // the host's rendered pixels depend on the sampled layers'
     // content: a static host under an animated depth/luminance layer
     // is NOT frame-identical (set-matte pattern)
-    BoundingBox* const targets[2] = {
+    BoundingBox* const targets[3] = {
         mDepthTarget ? mDepthTarget->getTarget() : nullptr,
-        mLumaTarget ? mLumaTarget->getTarget() : nullptr
+        mLumaTarget ? mLumaTarget->getTarget() : nullptr,
+        mNormalTarget ? mNormalTarget->getTarget() : nullptr
     };
     for(const auto target : targets) {
         if(!target || sSampleChain.contains(target)) continue;

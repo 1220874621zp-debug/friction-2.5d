@@ -115,11 +115,14 @@ inline void packStraight(const float r, const float g, const float b,
 
 // src: packed straight-alpha image; depth: per-pixel 0..1 aligned to
 // src (1 = near) or null; lumaField: per-pixel 0..1 lighting field
-// from an external layer aligned to src (-1 = no data) or null; dst
-// receives the composited result with the same alpha as src (except
-// the "only" modes, which carry their mask in the alpha)
+// from an external layer aligned to src (-1 = no data) or null;
+// normalField: 3 floats per pixel, tangent-space normal (already
+// screen-oriented, normalized) or null; dst receives the composited
+// result with the same alpha as src (except the "only" modes, which
+// carry their mask in the alpha)
 inline void compute(const uint32_t* const src, const float* const depth,
                     const float* const lumaField,
+                    const float* const normalField,
                     const int w, const int h, const Params& p,
                     uint32_t* const dst)
 {
@@ -138,7 +141,35 @@ inline void compute(const uint32_t* const src, const float* const depth,
 
     // ---- 1. lighting field t -------------------------------------------
     std::vector<float> t(n, -1.f);
-    if (p.fieldSrc == 1) {
+    if (p.fieldSrc == 3 && normalField) {
+        // a real tangent-space normal map: per-pixel normals straight
+        // from the texture, lit by the positional light (crosshair +
+        // height), the same model as the depth-gradient mode
+        const float lx = p.lightPos[0] * float(w);
+        const float ly = p.lightPos[1] * float(h);
+        const float lz = std::max(1.f, p.lightZ);
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                const size_t i = size_t(y) * w + x;
+                if (((src[i] >> 24) & 255) < 128) continue;
+                const float nx = normalField[i * 3 + 0];
+                const float ny = normalField[i * 3 + 1];
+                const float nz = normalField[i * 3 + 2];
+                const float nLen = std::sqrt(nx * nx + ny * ny + nz * nz);
+                if (nLen < 0.5f) continue; // zero-length = no data cell
+                const float invN = 1.f / nLen;
+                float dx = lx - (float(x) + 0.5f);
+                float dy = ly - (float(y) + 0.5f);
+                const float dl = 1.f / std::sqrt(dx * dx + dy * dy
+                                                 + lz * lz);
+                dx *= dl; dy *= dl;
+                const float dz = lz * dl;
+                const float nDotL = nx * invN * dx + ny * invN * dy
+                                  + nz * invN * dz;
+                t[i] = 0.5f + 0.5f * nDotL;
+            }
+        }
+    } else if (p.fieldSrc == 1) {
         // the 三色渐变 volumetric field: segmentation + distance-field
         // pseudo normal lambert; the colors are discarded, only the
         // lambert term survives as the shadow/lighting driver

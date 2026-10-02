@@ -31,6 +31,8 @@ private:
     // 灯光
     qsptr<ComboBoxProperty> mFieldSrc;
     qsptr<BoxTargetProperty> mLumaTarget;
+    qsptr<BoxTargetProperty> mNormalTarget;
+    qsptr<BoolProperty> mNormalFlipG;
     qsptr<QPointFAnimator> mLightPos;
     qsptr<QrealAnimator> mLightZ;
     qsptr<QrealAnimator> mLightElev;
@@ -65,6 +67,7 @@ private:
     qsptr<QrealAnimator> mDepthFalloff;
     ConnContextQPtr<BoundingBox> mFollowConn;
     ConnContextQPtr<BoundingBox> mLumaFollowConn;
+    ConnContextQPtr<BoundingBox> mNormalFollowConn;
 };
 
 #endif // AUTOLIGHTEFFECT_H
