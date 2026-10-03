@@ -32,7 +32,11 @@
 #include "RasterEffects/huesaturationeffect.h"
 #include "RasterEffects/levelseffect.h"
 #include "Properties/comboboxproperty.h"
+#include "Properties/boolproperty.h"
+#include "Properties/boxtargetproperty.h"
+#include "Animators/staticcomplexanimator.h"
 #include "GUI/BoxesList/boxsinglewidget.h"
+#include "GUI/BoxesList/boxtargetwidget.h"
 #include "GUI/BoxesList/levelseffectdialog.h"
 #include "GUI/curveseditor.h"
 #include "GUI/huewheelwidget.h"
@@ -44,6 +48,7 @@
 #include "widgets/colorsettingswidget.h"
 
 #include <QColorDialog>
+#include <QCheckBox>
 #include <QComboBox>
 #include <QMenu>
 #include <QWidgetAction>
@@ -1257,11 +1262,15 @@ void AEPropertiesInspector::setupEffectsControls(QVBoxLayout *layout, BoundingBo
         grid->setColumnStretch(2, 1);
         grid->setColumnMinimumWidth(3, 14);
 
+        // row cursor: group parameters consume extra rows (header +
+        // indented child container), so the follow-up Curves/HueSat
+        // extras must anchor on the accumulated count, not numProps
+        int propRow = 0;
         const int numProps = effect->ca_getNumberOfChildren();
         for (int p = 0; p < numProps; ++p) {
             auto prop = effect->ca_getChildAt<Property>(p);
             if (!prop) { continue; }
-            setupEffectPropertyControl(grid, p, prop, box);
+            propRow += setupEffectPropertyControl(grid, propRow, prop, box);
         }
 
         // PS Curves: one curve editor for the whole effect, bound to
@@ -1271,11 +1280,11 @@ void AEPropertiesInspector::setupEffectsControls(QVBoxLayout *layout, BoundingBo
             auto lbl = new QLabel(tr("曲线"), gridWidget);
             lbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
             lbl->setStyleSheet(QStringLiteral("color: #ffffff; font-size: 12px;"));
-            grid->addWidget(lbl, numProps, 1);
+            grid->addWidget(lbl, propRow, 1);
 
             const auto editor = new CurvesEditor(curvesEff);
             editor->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-            grid->addWidget(editor, numProps, 2);
+            grid->addWidget(editor, propRow, 2);
 
             auto resetBtn = new QToolButton();
             resetBtn->setObjectName(QStringLiteral("FlatButton"));
@@ -1302,7 +1311,7 @@ void AEPropertiesInspector::setupEffectsControls(QVBoxLayout *layout, BoundingBo
                 if (mScene) { mScene->requestUpdate(); }
                 refreshValues();
             });
-            grid->addWidget(resetBtn, numProps, 3, Qt::AlignCenter);
+            grid->addWidget(resetBtn, propRow, 3, Qt::AlignCenter);
         }
 
         // AE Channel-Hue style wheel for Hue/Saturation: drag around
@@ -1312,12 +1321,12 @@ void AEPropertiesInspector::setupEffectsControls(QVBoxLayout *layout, BoundingBo
             auto lbl = new QLabel(tr("色相环"), gridWidget);
             lbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
             lbl->setStyleSheet(QStringLiteral("color: #ffffff; font-size: 12px;"));
-            grid->addWidget(lbl, numProps + 1, 1);
+            grid->addWidget(lbl, propRow + 1, 1);
 
             const auto wheel = new HueWheelWidget(
                         hueSatEff->getHueAnimator());
             wheel->setMaximumHeight(150);
-            grid->addWidget(wheel, numProps + 1, 2);
+            grid->addWidget(wheel, propRow + 1, 2);
 
             auto resetBtn = new QToolButton();
             resetBtn->setObjectName(QStringLiteral("FlatButton"));
@@ -1336,7 +1345,7 @@ void AEPropertiesInspector::setupEffectsControls(QVBoxLayout *layout, BoundingBo
                 if (mScene) { mScene->requestUpdate(); }
                 refreshValues();
             });
-            grid->addWidget(resetBtn, numProps + 1, 3, Qt::AlignCenter);
+            grid->addWidget(resetBtn, propRow + 1, 3, Qt::AlignCenter);
         }
 
         eLayout->addWidget(gridWidget);
@@ -1344,10 +1353,10 @@ void AEPropertiesInspector::setupEffectsControls(QVBoxLayout *layout, BoundingBo
     }
 }
 
-void AEPropertiesInspector::setupEffectPropertyControl(QGridLayout *grid, int rowIdx, Property *prop, BoundingBox *box)
+int AEPropertiesInspector::setupEffectPropertyControl(QGridLayout *grid, int rowIdx, Property *prop, BoundingBox *box)
 {
     Q_UNUSED(box)
-    if (!prop || !grid) { return; }
+    if (!prop || !grid) { return 0; }
 
     const QString propName = translatePropertyName(prop->prp_getName());
 
@@ -1474,6 +1483,7 @@ void AEPropertiesInspector::setupEffectPropertyControl(QGridLayout *grid, int ro
             refreshValues();
         });
         grid->addWidget(resetBtn, rowIdx, 3, Qt::AlignCenter);
+        return 1;
     } else if (auto qrealAnim = enve_cast<QrealAnimator*>(prop)) {
         grid->addWidget(createKeyframeNav(qrealAnim), rowIdx, 0, Qt::AlignCenter);
 
@@ -1501,6 +1511,39 @@ void AEPropertiesInspector::setupEffectPropertyControl(QGridLayout *grid, int ro
             refreshValues();
         });
         grid->addWidget(resetBtn, rowIdx, 3, Qt::AlignCenter);
+        return 1;
+    } else if (auto pointAnim = enve_cast<QPointFAnimator*>(prop)) {
+        // X/Y point parameter: one row with two value sliders and a
+        // dual keyframe diamond; must be tested before the
+        // StaticComplexAnimator branch (QPointFAnimator derives from it)
+        const auto xAnim = pointAnim->getXAnimator();
+        const auto yAnim = pointAnim->getYAnimator();
+        grid->addWidget(createDualKeyframeNav(xAnim, yAnim), rowIdx, 0, Qt::AlignCenter);
+
+        auto lbl = new QLabel(propName);
+        lbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        lbl->setStyleSheet(QStringLiteral("color: #ffffff; font-size: 12px;"));
+        grid->addWidget(lbl, rowIdx, 1);
+
+        auto values = new QWidget();
+        auto valuesLayout = new QHBoxLayout(values);
+        valuesLayout->setContentsMargins(0, 0, 0, 0);
+        valuesLayout->setSpacing(2);
+        const auto xSlider = new QrealAnimatorValueSlider(xAnim, values);
+        xSlider->setAutoAdjustWidth(false);
+        xSlider->setName(QStringLiteral("X"));
+        xSlider->setNameVisible(true);
+        xSlider->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        valuesLayout->addWidget(xSlider);
+        const auto ySlider = new QrealAnimatorValueSlider(yAnim, values);
+        ySlider->setAutoAdjustWidth(false);
+        ySlider->setName(QStringLiteral("Y"));
+        ySlider->setNameVisible(true);
+        ySlider->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        valuesLayout->addWidget(ySlider);
+        values->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        grid->addWidget(values, rowIdx, 2);
+        return 1;
     } else if (auto colAnim = enve_cast<ColorAnimator*>(prop)) {
         grid->addWidget(createKeyframeNav(colAnim), rowIdx, 0, Qt::AlignCenter);
 
@@ -1526,6 +1569,7 @@ void AEPropertiesInspector::setupEffectPropertyControl(QGridLayout *grid, int ro
             colorBtn->update();
         });
         grid->addWidget(resetBtn, rowIdx, 3, Qt::AlignCenter);
+        return 1;
     } else if (enve_cast<ComboBoxProperty*>(prop)) {
         // dropdown parameters (e.g. keying method): combobox bound to
         // the property; no keyframe diamond (not animatable)
@@ -1551,13 +1595,88 @@ void AEPropertiesInspector::setupEffectPropertyControl(QGridLayout *grid, int ro
             combo->blockSignals(false);
         });
         grid->addWidget(combo, rowIdx, 2);
+        return 1;
+    } else if (auto boolProp = enve_cast<BoolProperty*>(prop)) {
+        // switch parameter: checkbox bound both ways (not animatable,
+        // so no keyframe diamond)
+        auto lbl = new QLabel(propName);
+        lbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        lbl->setStyleSheet(QStringLiteral("color: #ffffff; font-size: 12px;"));
+        grid->addWidget(lbl, rowIdx, 1);
+
+        const auto check = new QCheckBox();
+        check->setChecked(boolProp->getValue());
+        check->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        connect(check, &QCheckBox::toggled, this,
+                [boolProp, this](const bool on) {
+            boolProp->setValue(on);
+            if (mScene) { mScene->requestUpdate(); }
+        });
+        connect(boolProp, &BoolProperty::valueChanged, check,
+                [check](const bool v) {
+            check->blockSignals(true);
+            check->setChecked(v);
+            check->blockSignals(false);
+        });
+        grid->addWidget(check, rowIdx, 2);
+        return 1;
+    } else if (auto boxTarget = enve_cast<BoxTargetProperty*>(prop)) {
+        // layer/mask source parameter: the same picker widget the
+        // timeline rows use (click opens the candidate menu, layers
+        // can also be dragged in); not animatable, no diamond
+        auto lbl = new QLabel(propName);
+        lbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        lbl->setStyleSheet(QStringLiteral("color: #ffffff; font-size: 12px;"));
+        grid->addWidget(lbl, rowIdx, 1);
+
+        const auto targetWidget = new BoxTargetWidget();
+        targetWidget->setTargetProperty(boxTarget);
+        targetWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        targetWidget->setMinimumHeight(18);
+        connect(boxTarget, &BoxTargetProperty::targetSet, targetWidget, [this]() {
+            if (mScene) { mScene->requestUpdate(); }
+        });
+        grid->addWidget(targetWidget, rowIdx, 2);
+        return 1;
     } else if (enve_cast<CurvesChannelAnimator*>(prop)) {
         // the four Curves channel wrappers are covered by the curve
-        // editor row appended for the effect itself
-        return;
+        // editor row appended for the effect itself; consume no row
+        // so the editor lands right after the channel combo
+        return 0;
+    } else if (auto group = enve_cast<StaticComplexAnimator*>(prop)) {
+        // nested parameter group (Auto Light's light/shadow/rim/depth
+        // sections, layer styles, ...): bold header, then recurse into
+        // the children on an indented sub-grid; QPointFAnimator is a
+        // StaticComplexAnimator but is caught by the point branch above
+        auto lbl = new QLabel(propName);
+        lbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        lbl->setStyleSheet(QStringLiteral("font-weight: bold; color: #e8e8ee; font-size: 12px;"));
+        grid->addWidget(lbl, rowIdx, 1);
+
+        const int nChild = group->ca_getNumberOfChildren();
+        if (nChild == 0) { return 1; }
+
+        auto subWidget = new QWidget();
+        subWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        auto subGrid = new QGridLayout(subWidget);
+        subGrid->setContentsMargins(14, 0, 0, 0);
+        subGrid->setSpacing(2);
+        subGrid->setColumnMinimumWidth(0, 36); // Keyframe controls
+        subGrid->setColumnMinimumWidth(1, 38); // Property label
+        subGrid->setColumnStretch(2, 1);       // Value inputs (flexible)
+        subGrid->setColumnMinimumWidth(3, 14); // Reset button
+
+        int subRow = 0;
+        for (int c = 0; c < nChild; ++c) {
+            const auto child = group->ca_getChildAt<Property>(c);
+            if (!child) { continue; }
+            subRow += setupEffectPropertyControl(subGrid, subRow, child, box);
+        }
+        grid->addWidget(subWidget, rowIdx + 1, 0, 1, 4);
+        return 2;
     } else {
-        // other parameter types (int / bool / point / nested groups)
-        // stay visible with a hint instead of silently disappearing
+        // remaining parameter types (int, ...) stay visible with a
+        // hint instead of silently disappearing
         auto lbl = new QLabel(propName);
         lbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
         lbl->setStyleSheet(QStringLiteral("color: #ffffff; font-size: 12px;"));
@@ -1567,5 +1686,6 @@ void AEPropertiesInspector::setupEffectPropertyControl(QGridLayout *grid, int ro
         hint->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
         hint->setStyleSheet(QStringLiteral("color: #9aa0ab; font-style: italic; font-size: 12px;"));
         grid->addWidget(hint, rowIdx, 2);
+        return 1;
     }
 }

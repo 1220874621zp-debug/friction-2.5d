@@ -128,7 +128,9 @@ private:
     void setupPathStyleControls(QGridLayout *grid, PathBox *pathBox);
     void setupMaskControls(QGridLayout *grid, class SmartVectorPath *maskPath);
     void setupEffectsControls(QVBoxLayout *layout, BoundingBox *box);
-    void setupEffectPropertyControl(QGridLayout *grid, int row, Property *prop, BoundingBox *box);
+    // returns the number of grid rows consumed (groups recurse and
+    // occupy a header row plus one container row for their children)
+    int setupEffectPropertyControl(QGridLayout *grid, int row, Property *prop, BoundingBox *box);
 
     Document &mDoc;
     Canvas *mScene = nullptr;
